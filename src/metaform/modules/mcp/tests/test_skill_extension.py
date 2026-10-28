@@ -33,7 +33,6 @@ def extension(home, tmp_path, monkeypatch):
     from metaform import skills
     from metaform.modules.mcp import skill_extension
 
-    monkeypatch.setattr(skills, 'catalog', list)
     monkeypatch.setattr(skill_extension, 'provided', lambda folder, kind: [])
     served = Server('fixture')
     skill_extension.register(served, tmp_path)
@@ -91,24 +90,6 @@ def test_direct_get_and_reads_work_without_listing_or_graph_enumeration(extensio
         FILES['references/details.md']
 
 
-def test_native_internal_skills_are_directly_readable_without_shadowing_authored_skills(extension, monkeypatch):
-    published(extension)
-    native = SimpleNamespace(name='fixture-skill', discover=False)
-    raw = TEXT.replace('Read the exact supplied fixture.', 'A distinct packaged workflow.').encode()
-    monkeypatch.setattr(extension.skills, 'catalog', lambda: [native])
-    monkeypatch.setattr(extension.skills, 'deployment_files', lambda one: {'SKILL.md': raw, **FILES})
-    listed = invoke(extension, 'skills/list', {})['skills']
-    assert [entry['uri'] for entry in listed] == ['skill://fixture-skill/SKILL.md']
-    native_uri = 'skill://metaform/fixture-skill/SKILL.md'
-    entry = invoke(extension, 'skills/get', {'uri': native_uri})['skill']
-    assert entry['uri'] == native_uri
-    assert entry['frontmatter']['description'] == 'A distinct packaged workflow.'
-    assert extension.module.read(extension.folder, native_uri) == (raw, 'text/markdown')
-    native.discover = True
-    assert {entry['uri'] for entry in invoke(extension, 'skills/list', {})['skills']} == {
-        native_uri, 'skill://fixture-skill/SKILL.md'}
-
-
 def test_pages_keep_complete_entries_atomic(extension, monkeypatch):
     published(extension)
     entry = invoke(extension, 'skills/get', {'uri': 'skill://fixture-skill/SKILL.md'})['skill']
@@ -149,7 +130,7 @@ def test_unknown_supporting_files_are_not_read(extension, uri):
     assert extension.module.read(extension.folder, uri) is None
 
 
-@pytest.mark.parametrize('uri', ['skill://expertise/code.Unchanged_Node/fixture-skill/SKILL.md',
+@pytest.mark.parametrize('uri', ['skill://skills/code.Unchanged_Node/fixture-skill/SKILL.md',
                                'skill://fixture-skill/SKILL.md'])
 def test_known_provider_document_is_loadable_without_enumerating_graph_content(extension, monkeypatch, uri):
     bundle = extension.skills.document('fixture-skill', TEXT, files=FILES, uri=uri)

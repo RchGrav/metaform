@@ -1,7 +1,6 @@
 """Review every prompt an agent reads, in a terminal: `metaform prompts review`, STORE-044.
 
-The catalog is every element of the chassis's, skill registry's and each module's `resources/prompts.xml`,
-plus the skill folders' Axiom procedures: its text, the comment
+The catalog is every element of the chassis's and each module's `resources/prompts.xml`: its text, the comment
 written above it in the file (its purpose), and the lines of code that load it. The list shows them; Enter shows
 one whole; e opens its text in an editor. A changed text is saved as a new version in the prompt store, and then
 written where the prompt lives when that can be done exactly; otherwise it becomes a packet under
@@ -24,7 +23,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import home, loader, prompt_files, skills
+from . import home, loader, prompt_files
 from .data import prompts as store
 from .errors import Stop
 
@@ -91,11 +90,6 @@ def _uses(code: Path, name: str) -> list[str]:
 def catalog() -> list[Entry]:
     chassis = Path(str(resources.files('metaform')))
     entries = _entries('chassis', chassis / 'resources' / 'prompts.xml', chassis)
-    entries.extend(_entries('skills', chassis / 'skills' / 'resources' / 'prompts.xml', chassis))
-    for one in skills.catalog():
-        source = Path(str(one.folder / 'references' / 'procedure.axiom'))
-        entries.append(Entry('skill', one.name, source, skills.procedure(one.name), one.description,
-                             ['skills.py:procedure']))
     for item in loader.discover():
         path = Path(str(item.path))
         file = path / 'resources' / 'prompts.xml'
@@ -248,8 +242,6 @@ def packet(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
 
 def _tag(entry: Entry) -> str | None:
     """The element the prompt is the text of, or None when it is a registered file's whole text."""
-    if entry.owner == 'skill':
-        return None  # a skill's authored procedure is one whole Axiom file
     reg = next((i for i in registered() if i['key'] == entry.key), None)
     if reg is not None:
         return reg.get('element') or None

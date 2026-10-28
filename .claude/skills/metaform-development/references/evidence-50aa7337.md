@@ -1,0 +1,1 @@
+metaform-board-stall-triage [global]: Use when a Metaform board stalls with no ticket worker. / metaform-ticket-orchestration [global]: Use when a Metaform ticket needs a specialist or runtime. / metaform-map-work-ops [project]: Use when writing ticket progress via map_work op=step.

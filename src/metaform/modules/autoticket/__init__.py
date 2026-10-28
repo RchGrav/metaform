@@ -33,12 +33,12 @@ REMOTE_AGENT = False  # it reads logs on the machine Metaform runs on and throug
 HERE = resources.files(__name__)
 
 settings.boolean('autoticket_watch', True, label='Watch project logs', category='automation',
-                 heading='Fault capture', person_only=True,
+                 heading='Fault capture',
                  help='Keep registered log watchers running with the server, independent of browser tabs.')
 
-settings.boolean('autoticket_file', True, label='Create repair tickets', category='automation', heading='Fault capture', person_only=True,
+settings.boolean('autoticket_file', True, label='Create repair tickets', category='automation', heading='Fault capture',
                  help='Turn captured fault groups into actionable tickets; capture continues when this is off.')
-settings.boolean('autoticket_reopen', True, label='Reopen recurring faults', category='automation', heading='Fault capture', person_only=True,
+settings.boolean('autoticket_reopen', True, label='Reopen recurring faults', category='automation', heading='Fault capture',
                  help='Reopen the same completed repair when its fault returns, preserving its evidence and history.')
 
 
@@ -244,8 +244,9 @@ def status(ctx: Context) -> Status:
     lines = (said,) if watched or groups else ()
     if watched or none:
         return Status(lines=lines)
-    role = os.environ.get('METAFORM_ROLE') or 'none'
-    name = 'intake_step' if role == 'intake' else 'connect_notice' if role == 'none' else None
+    # the intake task gets the intake step, the person's own session the connect notice, every other agent nothing
+    task = os.environ.get('METAFORM_TASK_NAME')
+    name = 'intake_step' if task == 'intake' else 'connect_notice' if not os.environ.get('METAFORM_SESSION') else None
     text = prompt_files.text(HERE, name) if name else None
     return Status(lines=lines, instruction=text or None)
 

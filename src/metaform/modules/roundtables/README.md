@@ -1,6 +1,6 @@
 # roundtables
 
-Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through fresh role assignments.
+Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through assigned tasks. The system controls stage progression without a coordinator agent.
 
 ## Purpose
 
@@ -20,11 +20,11 @@ None of its own. The web page's roundtable stage (web, `page/app/roundtable/stag
 
 ## Common base used
 
-`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats`, `orchestration.transport` and the `orchestration` provider. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
+`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats` and design-intake providers, plus `task.lifecycle`. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
 
 ### Provides
 
-Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, orchestration's `orchestration` provider, and memory's `memory.record`.
+Nothing. It uses dispatch's `dispatch.seats` and design-intake providers, tasks' `task.lifecycle`, and memory's `memory.record`.
 
 ## Prompts
 
@@ -74,7 +74,7 @@ The follower hears the table through the engine's own page server, started for i
 - Seats read and change nothing. The engine gives Claude Code only Read, Grep and Glob, runs Codex read-only, offers no file writes or terminals, and refuses every permission a seat asks to write; this module never names an MCP server for a seat. The tables carry no Metaform tool.
 - Operational events reach the person, never a seat or Jev.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
-- The page shows the engine's result directly. A separate Planner prepares the proposal; the system agent receives only the saved reference. The engine's reporter output is not saved or shown by this module.
+- The page shows the engine's result directly. The system pipeline assigns preparation tasks. The engine's reporter output is not saved or shown by this module.
 
 ## What a table leaves in the project
 
@@ -86,9 +86,8 @@ When a table ends, its follower saves the record and keeps its outcome as a memo
 
 ## Follow-through
 
-After a table ends, its saved result stays on the page. Its seats are released before one fresh
-`roundtable_follow_through` assignment receives the complete table record. The system agent receives one
-`roundtable_result` inbox line containing the table id and saved export path. That reference never starts a turn.
+After a table ends, its saved result stays on the page and its seats are released before preparation starts.
+The system pipeline controls progression. It starts no coordinator or presentation agent.
 Both direct and guided tables enter this same preparation flow. Preparation tickets attach to the source map
 at the table's functional Address or its top element.
 
@@ -102,13 +101,18 @@ Each output stays available with its question. Only the person's current decisio
    Only approval starts Decomposer.
 6. Decomposer -> a system-written execution outline containing the board and every ticket's id, title,
    stored completion dependencies and full expected outcome.
-7. Execution outline -> person approval -> Facilitator. Facilitator assigns specialists, receives their work,
-   submits completed work to Harsh Critic and assigns any concrete corrective tickets for another review.
+7. Execution outline -> person approval -> facilitation of the approved board through current project agent
+   tasks, paired contributions, registered worksheets and peer review.
 
 A no stops the pipeline. Preparation tickets do not authorize implementation. Decomposer creates its fresh
-board inactive and its tickets held until the outline is approved. Existing dispatch admission, budgets,
-stops and capacity govern every fresh role. Outline approval carries execution consent into specialist claims on
-that board, including when Full Auto is off. Other boards retain their own start controls. Intake uses its authored role rather than a replacement prompt.
+board inactive and its tickets held until the outline is approved. Dispatch admission, stops and capacity apply to every assigned task. Stage labels describe work, not privileges.
+Launch requests grant no ownership of agents. Intake uses its existing authored task instructions.
+Task request keys prevent duplicate launches when a reply is lost. Launch failures remain attached to the same
+stage ticket. Native session events retry launches refused before startup, including when a slot becomes free.
+A running task is reused on recovery, and a new attempt receives a new key after an ended task.
+Cancelled tasks stop their pipeline. Retries retain the original stage request time, so a later user halt
+still prevents their launch. A crash between ticket creation and its reservation can leave an unlaunched
+ticket because those stores commit separately. Missing reserved tickets remain errors and are never recreated.
 
 `roundtables follow-through <table>` prepares or recovers a handoff. `roundtables review <table>` reads the full
 current output. `roundtables submit` publishes an assigned stage file from its worktree into the source project's
@@ -117,7 +121,9 @@ stage calls supply `origin`, the source project id. The page's decisions carry b
 bytes and the stage revision. Changed bytes or a stale revision require another review. Comments and revision
 requests remain in the pipeline record. Status and events carry metadata rather than deliverable bodies.
 
-`pipelines` and `intake_links` use tables version 5, compatible from 5. Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
+`pipelines`, `intake_links` and `pending_stages` use tables version 6, compatible from 5. Version 6 adds only the
+current refused stage launches. Successful launches remove them, and stopped or obsolete stages cannot restart.
+Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
 events and follower cursors. Version 3 proposal decisions remain historical evidence; their direct Planner
 route is removed. Recovered tables begin at the roundtable decision rather than inheriting execution approval.
 

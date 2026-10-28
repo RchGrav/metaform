@@ -606,8 +606,6 @@ def test_the_check_is_kept_logged_and_raised_never_printed_and_fix_waits_to_be_a
     assert status.notice is None and status.lines[0].startswith('Phone: checked ')
     with pytest.raises(Stop):
         twilio.check(module.context('twilio', tmp_path, nouns={'fix': True}))  # no address to point it at
-    with pytest.raises(Stop, match="the person's own step"):
-        twilio.check(module.context('twilio', tmp_path, nouns={'fix': True}, surface='mcp'))
     assert not dead.posted
     settings.put('twilio_enabled', True, tmp_path)
     monkeypatch.setattr(twilio, 'project_of', lambda ctx: 'proj')
@@ -771,8 +769,3 @@ def test_a_raised_problem_is_the_system_agents_turn_once_it_starts(run, home, pr
     assert not [one for one in rows(store) if one['signal'] == 'setup-not-working']
 
 
-def test_calls_texts_and_the_bridge_refuse_an_agents_session(run, home, monkeypatch):
-    monkeypatch.setenv('METAFORM_SESSION', 'an-agent-session')
-    for verb in (('call',), ('text', 'hello'), ('serve',), ('check', 'fix=true')):
-        refused = run('twilio', *verb, ok=False)
-        assert refused.returncode != 0 and "never run from an agent's session" in refused.stdout + refused.stderr

@@ -100,10 +100,6 @@ from . import (
 HERE = Path(__file__).parent
 STATIC = {'page': (HERE / 'page').resolve(), 'vendor': (HERE / 'vendor').resolve()}
 COOKIE = 'metaform_token'
-# The cookie each page this server serves gets its own key in, named with the server's port: a write that is the
-# person's alone is taken only with a key this server gave a page, CLI-011 (UX review, person-consent F1).
-PAGE_COOKIE = 'metaform_page'
-PAGE_KEYS = 64  # the newest page keys kept: the pages open now and the reloads before them
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -196,7 +192,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
-    '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
+    '/api/dispatch-configure', '/api/dispatch-session-prompts',
     '/api/roundtable-open', '/api/roundtable-decision', '/api/roundtable-control'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
@@ -229,10 +225,9 @@ def route_class(method: str, path: str) -> str:
 
 def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) -> str:
     """The class a toolbar tool's verb needs, as an MCP tool call is scoped by its effect (mcp.oauth.required_scope):
-    admin for a verb with a caution or given a setting only the person sets; dispatch for the dispatch module's verbs
-    and any that changes something past the map; read for a read; write otherwise."""
-    if verb.caution or any((setting := settings.SCHEMA.get(key)) is not None and setting.person_only
-                           for key in arguments if key in verb.switches):
+    admin for a verb with a caution; dispatch for the dispatch module's verbs and any that changes something past the
+    map; read for a read; write otherwise."""
+    if verb.caution:
         return 'admin'
     if module_id == 'dispatch' or (verb.open_world and verb.effect != 'read'):
         return 'dispatch'
@@ -392,12 +387,6 @@ class Server(ThreadingHTTPServer):
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
         self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
-        # The secret the commands this server runs for the person carry, so they act as the person, CLI-011.
-        self.vouch = chassis.page_vouch()
-        # The keys this server put in its pages' cookies, newest last, held in memory alone: never in a file, the
-        # environment or a page's script, where an agent's process would read it (UX review, person-consent F1).
-        self.page_keys: dict[str, None] = {}
-        self.keys_lock = threading.Lock()
         self.handing = threading.Lock()
         self.stopping, self.handed = threading.Event(), threading.Event()
         self.replacing = self.successor = False
@@ -406,22 +395,6 @@ class Server(ThreadingHTTPServer):
         self.port = int(self.server_address[1])
         names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
         self.hosts = {host_port(name, self.port).lower() for name in names}
-
-    def page_key(self) -> str:
-        """A new key for one page this server serves, kept among the newest PAGE_KEYS."""
-        key = secrets.token_urlsafe(32)
-        with self.keys_lock:
-            self.page_keys[key] = None
-            while len(self.page_keys) > PAGE_KEYS:
-                del self.page_keys[next(iter(self.page_keys))]
-        return key
-
-    def page_key_held(self, key: str | None) -> bool:
-        """Whether `key` is one this server gave a page it served."""
-        if not key:
-            return False
-        with self.keys_lock:
-            return key in self.page_keys
 
     def server_bind(self) -> None:
         """Bind without `HTTPServer`'s own reverse lookup of the address, which can stall for many seconds on macOS
@@ -949,8 +922,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_spend({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-broadcasts':
             return self.dispatch_broadcasts({key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/api/workflow-runs':
-            return self.workflow_runs({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/roundtable':  # the roundtable stage's table, its events after a cursor
             return self.roundtable({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-claims':
@@ -1010,15 +981,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, plain(PROMPT_READS[name](given)))
             except StoreError as error:
                 return self.refuse(error, 404)
-        if name == 'workflows':
-            try:
-                # List the active folder's callable logic, the same context an ACP worker starts in.
-                found = module_verb({'project': given.get('project', '')}, 'workflow', 'list', {})
-            except StoreError as error:
-                return self.refuse(error, 404)
-            except Stop:
-                return self.send(200, {'enabled': False, 'workflows': []})
-            return self.send(200, {'enabled': True, 'workflows': plain(found)})
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
         doing(f'the {name} read of {given.get("project", "")}')
@@ -1182,18 +1144,12 @@ class Handler(BaseHTTPRequestHandler):
         if project:
             self.gui.pages_changed(project)
         self.close_connection = True
-        # A page whose key this process never gave, an open page reconnecting after a restart, gets a key of its own
-        # with its stream, in the same HttpOnly cookie the page's load sets, so its later writes are the person's
-        # again without a reload; an agent's process gets none, as with the page, CLI-011.
-        keyed = None if self.gui.page_key_held(self.page_key_given()) else self.page_cookie()
         try:
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Connection', 'close')
             self.send_header('X-Content-Type-Options', 'nosniff')
-            if keyed is not None:
-                self.send_header('Set-Cookie', keyed)
             self.end_headers()
             self.wfile.write(b': open\n\n')
             # first, the code this server runs, so a page opened on older code knows it once the server it reconnects
@@ -1249,36 +1205,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.pages_changed(shown)
 
     def write(self, path: str) -> None:
-        """One of the writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body. Whether a
-        write is the person's is decided once, for every route: the page's key is held and no agent's process sent it.
-        Every write that is the person's carries this server's vouch, so the commands it runs act as the person and a
-        message carries their word, CLI-011, whatever the route; no route loses it by being left off a list. A write
-        that is the person's alone, PERSONS_WRITES, is refused when it is not the person's; any other is taken as
-        before, carrying no vouch."""
+        """One of the writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
-        keyed = self.gui.page_key_held(self.page_key_given())
-        sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2],
-                                      home.home()) if keyed else None
-        if path in PERSONS_WRITES:
-            if not keyed:
-                return self.send(403, {'error': f"{path} is the person's to do on the page itself, and this request "
-                                                'carries no key this server gave a page it served.',
-                                       'next': 'ask the person in chat; they do it on the page'})
-            if sent_by is not None:
-                return self.send(403, {'error': f"{path} is the person's to do on the page, and this request came "
-                                                f'from an agent: {sent_by}.',
-                                       'next': 'ask the person in chat; they do it on the page'})
-        if not keyed or sent_by is not None:
-            return self.writing(path)
-        VOUCHED.server = self.gui
-        try:
-            return self.writing(path)
-        finally:
-            VOUCHED.server = None
+        return self.writing(path)
 
     def writing(self, path: str) -> None:
-        """The write itself, once it is known to come from the page, and from the person where it must."""
+        """The write itself, once it is known to come from the page."""
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers,
@@ -1311,7 +1244,6 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
-                  '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/roundtable-open': self.roundtable_open,
                   '/api/roundtable-decision': self.roundtable_decision,
                   '/api/roundtable-control': self.roundtable_control,
@@ -1611,17 +1543,13 @@ class Handler(BaseHTTPRequestHandler):
             work = store.ticket(given.get('work_id', '')).work
             fields = ticket_fields(store, work)
             graph = functional_context(store, work)
-            ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
-            ctx.store = store
-            routing = next((owner.routing_status(ctx, work.id) for _, owner in
-                            chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
             self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column,
                                        **integration_for(store, [work]).get(work.id, {}),
                                        **ticket_hold(store, work.id)}, 'revision': ticket_revision(fields),
                             'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
-                            'functionality': graph, 'routing': routing,
+                            'functionality': graph,
                             'hold_history': list(store.work_hold_history(work.id))})
         except (Stop, StoreError) as error:
             self.refuse(error, 404)
@@ -1652,12 +1580,6 @@ class Handler(BaseHTTPRequestHandler):
                                             hold_reason=given.get('hold_reason'))
                     after = ticket_fields(store, edited)
                     revision = ticket_revision(after)
-                    if before != after:
-                        ctx = chassis.context('web', Path(store.project().path), project=store.project_id,
-                                              surface='web')
-                        ctx.store = store
-                        for _, owner in chassis.provided(ctx.folder, 'orchestration'):
-                            owner.ticket_edited(ctx, work_id, revision, source="user")
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
@@ -2017,13 +1939,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {'project': project, 'created': created, 'path': found.path if found else path.strip()})
 
     def shown(self, given: dict[str, Any]) -> None:
-        """The project the page now shows, kept as the one the person used last when the page is the person's own,
-        VIEW-002; a page an agent drives is answered and kept nowhere, so it never chooses the person's project."""
+        """The project the page now shows, kept as the one the person used last, VIEW-002."""
         project = str(given.get('project') or '')
         if home.project(project) is None:
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
-        if VOUCHED.server is None:
-            return self.send(200, {'project': project, 'kept': False})
         home.mkdir_private(shown_file().parent)
         write_run(shown_file(), project)
         self.send(200, {'project': project, 'kept': True})
@@ -2170,8 +2089,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def assign_task(self, given: dict[str, Any]) -> None:
         """Assign the exact named or explicit task with its selected skills through the tasks module."""
-        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'agent_name', 'folder', 'project_name',
-                                              'node', 'options')
+        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'folder', 'project_name', 'node',
+                                              'options')
                      if key in given}
         try:
             result = module_verb(given, 'tasks', 'assign', arguments)
@@ -2427,23 +2346,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
-    def workflow_runs(self, given: dict[str, str]) -> None:
-        """The project's workflow runs for the page's Runs pane, as `metaform workflow runs` lists them: the open ones,
-        or those in one state, each with what stopped a paused one. With workflow not enabled there are none."""
-        nouns: dict[str, Any] = {'limit': 0}
-        if given.get('state'):
-            nouns['state'] = given['state']
-        try:
-            found = module_verb(given, 'workflow', 'runs', nouns)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            if 'not on this project' in str(error):
-                return self.send(200, {'enabled': False, 'runs': []})
-            return self.refuse(error, 400)
-        self.reply(200, chassis.result_json({'enabled': True, **cast(dict[str, Any], found)}).encode('utf-8'),
-                   'application/json', {'Cache-Control': 'no-store'})
-
     def roundtable(self, given: dict[str, str]) -> None:
         """The roundtable stage's read, through the roundtables module: with a table, its events after the `after` the
         page holds, and with `whole` its status too, for a stage that starts watching it; without one, the seats a
@@ -2547,36 +2449,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.send(200, plain(found))
 
-    def workflow_answer(self, given: dict[str, Any]) -> None:
-        """The person's answer to a run paused on them, as `metaform workflow answer` takes it on the command line, the
-        person's own surface; the answer after `--`, so nothing typed is read as a switch. The page then tells the
-        agent that paused it, with the web module's `resume_run` prompt, when the person asks it to."""
-        run, said = given.get('run'), given.get('answer')
-        if not isinstance(run, str) or not run:
-            return self.send(400, {'error': 'A run is answered by its run id.'})
-        if not isinstance(said, str) or not said.strip():
-            return self.send(400, {'error': 'An answer says something.'})
-        status, found = cli_result(given, 'workflow', 'answer', [f'run={run}'], said.strip())
-        ticket = found.get('ticket')
-        if status == 200 and given.get('resume') is True and isinstance(ticket, str) and ticket \
-                and not ticket.startswith('not noted'):
-            told = prompt_files.module('web', 'resume_run', run=run) or ''
-            sent, reply = cli_result(given, 'dispatch', 'message', [ticket], told)
-            found['resumed'] = sent == 200
-            if sent != 200:
-                found['resume_error'] = reply.get('error')
-        self.send(status, found)
-
-    def workflow_cancel(self, given: dict[str, Any]) -> None:
-        """Cancel a run and every run below it, as `metaform workflow cancel` does, with the person's reason."""
-        run, reason = given.get('run'), given.get('reason')
-        if not isinstance(run, str) or not run:
-            return self.send(400, {'error': 'A run is cancelled by its run id.'})
-        if reason is not None and not isinstance(reason, str):
-            return self.send(400, {'error': 'A reason is text.'})
-        nouns = [f'run={run}', *([f'reason={reason.strip()}'] if reason and reason.strip() else [])]
-        self.dispatched(given, 'cancel', nouns, module_id='workflow')
-
     def dispatch_sessions(self, given: dict[str, str]) -> None:
         """The agent sessions and their threads, from the dispatch module's own tables, VIEW-039 and VIEW-036. With
         dispatch not enabled there are none."""
@@ -2613,14 +2485,14 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_claims(self, given: dict[str, str]) -> None:
-        """The work claims and the sentinels' proposals, from the dispatch module's own tables, LAYER-029 and VIEW-045.
-        With dispatch not enabled there are none."""
+        """The work claims, from the dispatch module's own tables, LAYER-029. With dispatch not enabled there are
+        none."""
         try:
             found = module_verb(given, 'dispatch', 'claims', {}, chosen=True)
         except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
             return self.refuse(error, 404)
         except Stop:
-            return self.send(200, {'claims': [], 'proposals': {}})
+            return self.send(200, {'claims': []})
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_prompts(self, project_id: str) -> None:
@@ -2655,7 +2527,7 @@ class Handler(BaseHTTPRequestHandler):
         done = subprocess.run([sys.executable, '-m', 'metaform', 'set', *confirmed, f'--dispatch-prompts={value}'],
                               cwd=project.path,
                               capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
-                              timeout=DISPATCH_LIMIT, check=False, env=vouched(None))
+                              timeout=DISPATCH_LIMIT, check=False)
         if done.returncode == 0:
             return self.send(200, {'value': value})
         said = (done.stderr + done.stdout).strip().splitlines()
@@ -2931,19 +2803,6 @@ class Handler(BaseHTTPRequestHandler):
         self.body_read = True
         return json.loads(self.rfile.read(length) or b'null')
 
-    def page_key_given(self) -> str | None:
-        """The page key this request's cookie carries, the one this server set when it served the page."""
-        cookie = SimpleCookie(self.headers.get('Cookie') or '')
-        named = f'{PAGE_COOKIE}_{self.gui.port}'
-        return cookie[named].value if named in cookie else None
-
-    def page_cookie(self) -> str | None:
-        """The cookie that gives the page being served its own key, CLI-011; None when the process asking for the
-        page is known as an agent's, which gets the page without one, so its writes of the person's are refused."""
-        if chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home()) is not None:
-            return None
-        return f'{PAGE_COOKIE}_{self.gui.port}={self.gui.page_key()}; Path=/; HttpOnly; SameSite=Strict'
-
     def given_token(self, query: dict[str, list[str]]) -> str | None:
         if query.get('t'):
             return query['t'][0]
@@ -2988,9 +2847,6 @@ class Handler(BaseHTTPRequestHandler):
             headers['Vary'] = 'Accept-Encoding'
         cookies = [f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'] \
             if set_cookie and self.gui.token is not None else []
-        if page and resolved == base / 'index.html':  # each page served gets a key of its own, CLI-011
-            keyed = self.page_cookie()
-            cookies += [keyed] if keyed is not None else []
         if cookies:
             headers['Set-Cookie'] = '\n'.join(cookies)  # each sent as its own header, `sent_headers`
         if current:
@@ -3727,42 +3583,8 @@ def chosen_base(given: dict[str, Any]) -> str | None:
 
 
 def based(base: str | None) -> dict[str, str] | None:
-    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none. A
-    command run for a write that is the person's carries this server's vouch too, `vouched`."""
-    return vouched({**os.environ, BASE_VARIABLE: base} if base else None)
-
-
-# The writes only the person makes: clearing, switching or removing the map, discarding an intake, the page's memory
-# edits, locking and unlocking among them, the settings and modules, among them the person-only ones, and what
-# dispatch keeps the person's own (an agent's permissions at its start, a ticket's model and effort, cancelling a
-# ticket, `persons_own`). One sent by an agent's process is refused, CLI-011.
-PERSONS_WRITES = frozenset({
-    '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
-    '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
-    '/api/board-wipe', '/api/board-restore',
-    '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
-    '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
-    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/task-assign',
-    # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
-    # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
-    '/api/move', '/api/ticket', '/api/distribute', '/api/unhold-all'})
-
-
-class _Vouched(threading.local):
-    """The server whose person's write this thread is serving, so the commands it runs carry its vouch."""
-    server: Any = None
-
-
-VOUCHED = _Vouched()
-
-
-def vouched(env: dict[str, str] | None) -> dict[str, str] | None:
-    """`env`, None for this process's own, with this server's vouch while the thread serves a write that is the
-    person's: the command it runs then acts as the person, since its parent is this server, CLI-011."""
-    server = VOUCHED.server
-    if server is None:
-        return env
-    return {**(env if env is not None else os.environ), **server.vouch.environment()}
+    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none."""
+    return {**os.environ, BASE_VARIABLE: base} if base else None
 
 
 MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
@@ -3773,8 +3595,7 @@ def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     doing(f'metaform {args[0]}')
     try:
         return subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, capture_output=True, text=True,
-                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False,
-                              env=vouched(None))
+                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'metaform {args[0]} did not finish: {error}', f'metaform {args[0]}, in {folder}') from None
 
@@ -3801,7 +3622,7 @@ def stored_list_there(folder: Path, key: str, members: list[str], *, glue: bool)
     Stop when it cannot be run or does not answer."""
     program = 'from metaform.modules.web.server import store_list_here; store_list_here()'
     try:
-        done = subprocess.run([sys.executable, '-c', program], cwd=folder, env=vouched(None),
+        done = subprocess.run([sys.executable, '-c', program], cwd=folder,
                               input=json.dumps({'key': key, 'members': members, 'glue': glue}), capture_output=True, text=True, encoding='utf-8', timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'saving {key} did not finish: {error}', f'metaform config --show, in {folder}') from None
@@ -3866,14 +3687,14 @@ def configured(folder: Path, *, listing: bool = True) -> dict[str, Any]:
 
 def declared(row: dict[str, Any]) -> dict[str, Any]:
     """What a setting's declaration says beyond what describe gives: its label and longer details, its bounds, its
-    `--no-` form, and whether only the person changes it. A setting this server has not loaded, a module's in the
+    `--no-` form. A setting this server has not loaded, a module's in the
     project's own place, is given its label from its key and no more; the command that saves it still checks it."""
     setting = settings.SCHEMA.get(str(row.get('key')))
     if setting is None or setting.owner != row.get('owner'):
         return {'label': row.get('label') or str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '',
-                'min': None, 'max': None, 'negative': None, 'person_only': None, 'exclusive': None, 'section': None}
+                'min': None, 'max': None, 'negative': None, 'exclusive': None, 'section': None}
     return {'label': setting.label, 'details': setting.details, 'min': setting.min, 'max': setting.max,
-            'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive,
+            'negative': setting.negative, 'exclusive': setting.exclusive,
             'section': setting.section}
 
 
@@ -4049,7 +3870,6 @@ def serve(given: argparse.Namespace) -> int:
     with listener:
         server.run()  # the stop signal ends the process; a hand-over to newer code ends `run`
     server.close_backgrounds()
-    server.vouch.close()
     log(f'Process {os.getpid()} stopped')
     return 0
 
@@ -4064,8 +3884,6 @@ def stopped(number: int, frame: Any) -> None:
     """The stop signal, `metaform web stop`'s: write it to the log and end the process at once, as the signal's own
     default would. On Windows the signal ends the process before any handler runs, so no line is written there."""
     log(f'Process {os.getpid()} stopped by {signal.Signals(number).name}')
-    for server in SERVING:  # its vouch goes with it
-        server.vouch.close()
     os._exit(0)
 
 

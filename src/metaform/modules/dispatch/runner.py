@@ -84,7 +84,6 @@ from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, Wo
 from metaform.data.refs import placed, relative, sources_index
 from metaform.module import (
     COMPACTED_KEY,
-    WITHHELD,
     Context,
     Stop,
     agent_context_epoch,
@@ -100,11 +99,9 @@ from metaform.module import (
     record_agent_context,
     record_shown,
     shown_before,
-    surface,
 )
 
 from . import (
-    CONSENT_WAIT,
     HANDED,
     LEASE_VARIABLE,
     PROMPTS,
@@ -119,6 +116,7 @@ from . import (
     end_group,
     eyes_line,
     fork_capacity,
+    from_agent,
     glyph_of,
     group_options,
     handed_path,
@@ -134,7 +132,6 @@ from . import (
     leave_ledger,
     memory_read,
     memory_text,
-    module_read,
     note_agent,
     option_key,
     origin,
@@ -156,11 +153,9 @@ from . import (
     startup_fault,
     ticket,
     today,
-    waiting_in,
     wanted_options,
     work_line,
     work_over,
-    workflow_skill,
 )
 from .merge import (
     capture_state,
@@ -174,15 +169,16 @@ from .merge import (
     ticket_message,
     ticket_title,
 )
-from .names import Ranking, free, ranked
+from .names import session_name
 from .signals import THREAD_TABLES, add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
-# The prompts the person's system agent's conversation opens with that an edit reaches while it runs, `reopened`.
-REOPENED = ('prompt.dispatch:system', 'prompt.dispatch:mascot')
+# The prompt the person's system agent's conversation opens with, the tasks module's user agent prompt as the prompt
+# store names it, that an edit reaches while the conversation runs, `reopened`.
+REOPENED = ('prompt.tasks:user_agent.txt',)
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
@@ -333,17 +329,17 @@ def server_environment(**own: str) -> list[EnvVariable]:
 
 def role(nouns: dict[str, Any], work_id: str) -> str:
     """What a session's agent is, from the nouns its runner was started with, BASE-052: an intake agent, one of the
-    agents the person summons (the sentinel on an issue, a talk, the system agent), a merge preparation, or a worker
+    agents the person summons (a talk, the system agent), a merge preparation, or a worker
     on its ticket, or a helper the system agent started with a brief. The nouns and the work id decide and not the
     session's flags, since intake, helpers and the summoned agents run as prep too."""
-    if nouns.get('task'):
-        return ''
+    if nouns.get('task'):  # an assigned task's agent: the intake task is the intake, the others carry no role
+        return 'intake' if nouns.get('intake_task') else ''
     if intake_id(work_id):
         return 'intake'
     if helper_id(work_id) and not nouns.get('talk'):
         return 'helper'
     if nouns.get('system'):
-        return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'
+        return 'talk' if nouns.get('talk') else 'system'
     return 'prep' if nouns.get('prep') else 'worker'
 
 
@@ -744,6 +740,18 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     finally:
         leave_ledger()
         let_lease_go(lease)
+        # Session end is announced before this runner releases its capacity. Wake pending work only after release.
+        with contextlib.suppress(Exception):  # The project may have been removed while its runner was ending.
+            held = ctx.require_store()
+            # `raised` is a table of the map: a conversation on a project with no map, cleared or never made, writes
+            # no map at its end (the person's rule, 2026-10-16), so the launch row is dropped only where a map holds it
+            bound = held.bound_base()
+            if bound is not None:
+                with Store(held.project_id, base=bound.id, module='dispatch').tables() as tx:
+                    tx.delete('raised', {'work_id': str(ctx.nouns['id'])})
+                    tx.concern(work_id=str(ctx.nouns['id']), kind='session')
+            await ctx.publish_async('map.changed', {'project': held.project_id, 'tables': 'dispatch',
+                                                   'work_ids': [str(ctx.nouns['id'])], 'kinds': ['session']})
 
 
 def withdrawn_task(store: Store, work_id: str) -> None:
@@ -799,6 +807,7 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         from .task_sessions import assigned
         task = await asyncio.to_thread(assigned, ctx, str(ctx.nouns['task']))
         if task is not None and task['name'] == 'intake':
+            ctx.nouns['intake_task'] = True  # the session is the intake: its role applies
             # The launch marker and payload are written under this same lock before the runner consumes them.
             def hold_recording() -> dict[str, Any] | None:
                 from . import intake_folder
@@ -905,15 +914,13 @@ def worked_in(store: Store, work_id: str, session_id: str) -> str | None:
 TERMINALS_KEPT = 64  # the terminals a session's recovery record keeps, the latest, for the sweep after its runner dies
 # the thread lines that change what a session is, its state and its subagents, announced with kind session
 STATE_LINES = frozenset({'state', 'subagent'})
-# the map's tables a change to a ticket, its questions or its workflow runs writes, for a change that does not say
-# which ticket it concerns
+# the map's tables a change to a ticket or its questions writes, for a change that does not say which ticket it concerns
 TICKET_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work'})
 
 
 def concerns(payload: dict[str, Any], work_id: str, session_id: str | None, tables: list[str] | None) -> bool:
     """Whether a `map.changed` from another process can concern this session, BASE-053: it names its ticket or its
-    session; or it does not say which tickets it wrote, and wrote tickets, questions or workflow runs, or did not say
-    what it wrote. One that names only other tickets and sessions does not."""
+    session; or it does not say which tickets it wrote, and wrote tickets or questions, or did not say what it wrote. One that names only other tickets and sessions does not."""
     named: Any = payload.get('work_ids')
     sessions: Any = payload.get('session_ids')
     if isinstance(named, list) and work_id in named or \
@@ -921,7 +928,7 @@ def concerns(payload: dict[str, Any], work_id: str, session_id: str | None, tabl
         return True
     if isinstance(named, list) or isinstance(sessions, list):
         return False
-    return tables is None or any(table in TICKET_TABLES or table.startswith('workflow.') for table in tables)
+    return tables is None or any(table in TICKET_TABLES for table in tables)
 
 
 def choose(options: list[PermissionOption], answer: str | None) -> str | None:
@@ -1058,10 +1065,6 @@ def traced(attributes: dict[str, Any], started_ns: int, error: str | None = None
 # What a tool call reaches for: a Metaform tool by its MCP name, mcp__metaform__map_node or metaform_map_node as hosts
 # show it, or the command line, metaform map node. The tool is <module>_<verb>, a verb's dashes as written.
 METAFORM_TOOL = re.compile(r'(?i)(?:mcp__metaform__|metaform[_ ])(?P<module>[a-z][a-z0-9]*)[_ ](?P<verb>[a-z][a-z0-9_-]*)')
-def call_line(call: dict[str, Any]) -> str:
-    """One tool call as one line, its title and its input, as the intake's call timing reads it."""
-    raw = call.get('rawInput')
-    return f'{call.get("title") or call.get("kind") or "tool"} {json.dumps(raw, ensure_ascii=False)[:400] if raw else ""}'.strip()
 
 
 CALLED_MOST = 64_000  # characters of a Metaform call's input and of each block of its result kept in its thread
@@ -1104,18 +1107,6 @@ def tools_named(line: str) -> list[tuple[str, str]]:
     return [(found['module'].lower(), found['verb'].lower().rstrip('_')) for found in METAFORM_TOOL.finditer(line)]
 
 
-def withheld_named(line: str, entries: Sequence[str], effects: dict[tuple[str, str], str]) -> list[str]:
-    """The Metaform tools a call line reaches for that the session's withheld entries name, `<module>_<verb>`:
-    `<module>`, `<module>:read` with the verb's effect read, or the tool itself."""
-    found: list[str] = []
-    for module, verb in tools_named(line):
-        tool = f'{module}_{verb}'
-        if (module in entries or tool in entries
-                or (f'{module}:read' in entries and effects.get((module, verb)) == 'read')):
-            found.append(tool)
-    return found
-
-
 def listed(asked: dict[str, Any], key: str) -> list[str]:
     """A control request's list of ticket ids, each as text; empty when it names none."""
     given = asked.get(key)
@@ -1124,12 +1115,9 @@ def listed(asked: dict[str, Any], key: str) -> list[str]:
 
 @dataclass
 class ActiveTurn:
-    """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it. `word` is the
-    person's own message that started the prompt, or was steered into it, when the session is their system agent: kept
-    here, in the runner's memory, where the agent cannot write it, and read by op `word`."""
+    """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it."""
     sent: bool = False
     cancel_requested: bool = False
-    word: dict[str, Any] | None = None
 
 
 class Session:
@@ -1148,8 +1136,9 @@ class Session:
         # for is put to the person on the page only, as a choice among its options.
         self.work_id = record.id if record is not None else str(work_id)
         self.node = Node.of(record.node_kind, record.node_id) if record is not None else None
-        # Who the agent is, told to it and to its MCP server, BASE-052: its role, the id this runner gives its session
-        # when it starts, its ticket and where the ticket is, an element's address or a join's two ends.
+        # Who the agent is, told to it and to its MCP server, BASE-052: the id this runner gives its session when it
+        # starts, its ticket and where the ticket is, an element's address or a join's two ends, and the name of its
+        # task when it runs one, `task_name`; `role` is this runner's own word for how it launches the session.
         self.role = role(ctx.nouns, self.work_id)
         self.at = (record.address or '|'.join(end for end in (record.receiver_address, record.provider_address) if end)
                    if record is not None else '')
@@ -1182,22 +1171,21 @@ class Session:
                                     'protocol_version': acp.PROTOCOL_VERSION, 'compactions': {},
                                     'touched': [], 'resumed': None, 'before_resume': [],
                                     'spent': None, 'auth': None, 'auth_methods': [],
-                                    # the files it read and wrote through the runner, P019, the latest first, and an
-                                    # intake agent's first call and record, M04
-                                    'files': [], 'intake': None, 'ticket_git': None, 'tool_windows': {},
+                                    # the files it read and wrote through the runner, P019, the latest first
+                                    'files': [], 'ticket_git': None, 'tool_windows': {},
                                     # how the person chose this session's permission requests are answered, one of
                                     # dispatch_prompts' choices over the launch's and the project's, `answering`
                                     'prompts': None,
                                     # what a conversation is about, so the person's next Call or Chat on it resumes it,
-                                    # and what its agent is, so the person's system agent is told from an intake or a
-                                    # sentinel whatever its work id hangs on, PROJ-026
+                                    # and what its agent is, so the person's system agent is told from an intake
+                                    # whatever its work id hangs on, PROJ-026
                                     # an intake agent is about the intake, never the system: it is not the
                                     # person's own agent (UX review round 2, 2026-10-17, combined F3)
                                     'about': str(ctx.nouns.get('talk') or 'system')
                                     if system and self.role != 'intake' else None,
                                     'role': self.role,
-                                    # its own name, an adjective and a noun chosen for its ticket, names.py, kept
-                                    # when it is resumed, so the person calls the same context back by it
+                                    # its own name, two words worked out from its session id, names.py, kept on
+                                    # its state line, so the person calls the same context back by it
                                     'name': None,
                                     # the prompt versions the system agent's conversation was last sent its prompt
                                     # in, by name, so an edit saved while it runs reaches its next turn, `reopened`
@@ -1207,7 +1195,6 @@ class Session:
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
         self.sources: dict[str, list[dict[str, str]]] | None = None  # the sources layer's paths, read when needed
         self.link_asked = False  # work_link, the request to link entry-point files, has gone with a prompt
-        self.naming: asyncio.Future[Ranking] | None = None  # the pairs its name is picked from, `ranking`
         # ACP's compaction signal said the agent's context was compacted, so its next turn opens with `compacted`, the
         # line that says what it works on and that what Metaform gave it once comes again, CTX-045 and CTX-046.
         self.recompacted = False
@@ -1264,15 +1251,8 @@ class Session:
         # beside each, the ACP blocks of the person's recording and the frame they sent, the ones its agent takes
         self.voiced: deque[list[Any]] = deque()
         self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
-        # beside each, the person's own message it is, when it is one to the person's system agent, `ActiveTurn.word`
-        self.worded: deque[dict[str, Any] | None] = deque()
-        # beside each, whether this is an explicit message, sent verbatim with no context before it;
-        # human authority and priority are tracked separately by worded and priority_count
+        # beside each, whether this is an explicit message, sent verbatim with no context before it
         self.typed: deque[bool] = deque()
-        # The work the person's word started, by the word's id: `{'word', 'tickets', 'stopped'}`, the tickets started,
-        # released, ordered or added on it, with those that wait on them and the open tickets they wait on, and those
-        # of them the person stopped, `covering`; kept in the project's store too, `keep_cover`, which only this writes
-        self.covers: dict[str, dict[str, Any]] = {}
         # What the board needs, `board`: a read under way, and a change heard during it
         self.awaiting: dict[str, dict[str, Any]] = {}  # this session's questions waiting for replies, by note id
         self.timers: dict[str, dict[str, Any]] = {}  # the agent's own timers, `dispatch timer`, by id
@@ -1343,16 +1323,6 @@ class Session:
         self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
         self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
         self.interrupted = False  # the last turn ended by the person's interrupt, so no recording turn follows it
-        # An intake agent's first Metaform call and first record, M04: when its first turn began, the seconds each
-        # took, and whether it was steered; and its clock, which steers it once when no call has come in time.
-        self.intake: dict[str, Any] | None = {'phase': 'starting'} if self.role == 'intake' else None
-        self.intake_began = 0.0
-        self.intake_timer: asyncio.TimerHandle | None = None
-        self.withheld: list[str] = []  # what the intake agent's server leaves out, dispatch_intake_withheld
-        self.effects: dict[tuple[str, str], str] | None = None  # each Metaform tool's effect, read when needed
-        self.paused_runs: set[str] = set()  # the workflow runs this worker's ticket paused on the person, H03
-        self.workflow_reading = False
-        self.workflow_again = False  # a change to its runs came while they were read: read once more after
         self.checking = False  # a check runs; a change for it meanwhile asks for one more, `checks`
         self.check_again = False
         self.spinning = False  # spinning-time is raised, until the ticket next advances
@@ -1455,7 +1425,6 @@ class Session:
         for number, text in enumerate(self.pending):
             self.handed_on.append({'text': text, 'by': None, 'first': number < self.priority_count,
                 'typed': self.typed[number] if number < len(self.typed) else False,
-                'word': self.worded[number] if number < len(self.worded) else None,
                 'components': self.prompt_contexts[number] if number < len(self.prompt_contexts) else [],
                 'peers': self.peered[number] if number < len(self.peered) else [],
                 'media': self.voiced[number] if number < len(self.voiced) else []})
@@ -1661,9 +1630,6 @@ class Session:
                             paths += [str(one['path']) for one in detail['locations']]
                         await self.changed_files(paths)
                         known['commit_recorded'] = True
-                line = call_line({**known, 'title': title})
-                if self.intake is not None and (fresh or known.get('status') in ('completed', 'failed')):
-                    await self.intake_call(line, known.get('status') == 'completed', ident)
                 if fresh and not self.prep and not self.ending:
                     self.progress_calls += 1
                     if self.progress_calls >= self.ctx.setting('dispatch_spin_calls'):
@@ -1824,15 +1790,6 @@ class Session:
         except StoreError as error:  # a catalog that cannot be written never keeps a session from starting
             sys.stderr.write(f'Could not keep what {self.name} offered: {error}\n')
 
-    def jev_chosen(self) -> dict[str, str]:
-        """The model and effort Jev chose when autostart started this session, by ACP category; none otherwise."""
-        try:
-            found: Any = json.loads(str(self.ctx.nouns.get('chosen') or '{}'))
-        except ValueError:
-            return {}
-        given = cast(dict[str, Any], found) if isinstance(found, dict) else {}
-        return {key: str(value) for key, value in given.items() if key in ('model', 'thought_level') and value}
-
     async def apply_options(self) -> list[dict[str, Any]]:
         """Give the session the settings chosen for it, P199 and P015: its agent's dispatch_<agent>_<option> settings,
         then its ticket's own model, Fast and effort, each matched to the agent's settings by ACP category or by id and set through
@@ -1843,10 +1800,13 @@ class Session:
             return []
         wanted = await asyncio.to_thread(wanted_options, self.ctx, self.store, self.agent,
                                          None if self.node is None else self.work_id)
-        wanted = {**self.jev_chosen(), **wanted}  # Jev's choice, H23, under every choice of the person's
         if self.launched:  # the mode its start gave this launch, over dispatch_<agent>_<option>
             found = await asyncio.to_thread(launch_options, self.store, self.work_id)
             wanted = {**wanted, **({'mode': found['mode']} if 'mode' in found else {})}
+        # an assigned task's own model and thinking level, the person's per-slot settings of a pair, over the agent's
+        own = cast(dict[str, Any], cast(dict[str, Any], self.acp.get('task') or {}).get('options') or {})
+        wanted = {**wanted, **{key: str(value) for key, value in own.items()
+                               if key in ('model', 'thought_level', 'mode') and value}}
         rank = {key: at for at, key in enumerate(APPLY_ORDER)}
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):
@@ -2014,7 +1974,7 @@ class Session:
         then what the agent works on, that what Metaform gave it once comes again at its next use, and its name."""
         who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
             if self.at and self.role in ('worker', 'prep') else ''
-        opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
+        opening = agent_opening(Path(self.folder), self.task_name())
         called = prompt('named', called=str(self.acp['name'])) if self.acp.get('name') else ''  # it signs with its name
         return '\n\n'.join(part for part in (opening, prompt('compacted', who=who), called)
                              if part)
@@ -2652,7 +2612,8 @@ class Session:
         else:
             capacity.unlink(missing_ok=True)
         identity = {one.name: one.value for server in self.servers for one in server.env
-                    if one.name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_TASK')}
+                    if one.name in ('METAFORM_TASK', 'METAFORM_TASK_NAME', 'METAFORM_SESSION', 'METAFORM_WORK',
+                                    'METAFORM_NODE')}
         return {'fork': child, 'from': self.session_id, 'identity': identity}
 
     async def fork_message(self, child: str, text: str) -> dict[str, Any]:
@@ -2706,74 +2667,6 @@ class Session:
         async with self.lock:
             await self.child_note(child, None, 'turn', f'The turn ended: {reason}.')
         await self.child_line(child)
-
-    # ------------------------------------------------------------------ the intake's guards, M04
-
-    def intake_clock(self) -> None:
-        """Start the intake's first-record clock with its first turn: past dispatch_intake_first_record seconds with
-        no Metaform call, it is steered once."""
-        if self.intake is None or self.intake_began:
-            return
-        self.intake_began = time.monotonic()
-        self.intake.update(phase='waiting for first record', began=stamp())
-        self.acp['intake'] = dict(self.intake)
-        seconds = float(self.option('dispatch_intake_first_record', 0) or 0)
-        if seconds > 0:
-            self.intake_timer = asyncio.get_running_loop().call_later(
-                seconds, lambda: self.spawn(self.first_record_due(seconds)))
-
-    async def first_record_due(self, seconds: float) -> None:
-        """No Metaform call in time: the intake_first_record line, into the turn in flight when the agent offers
-        steering, otherwise its next turn; once."""
-        self.intake_timer = None
-        if self.intake is None or self.ending or 'first_call_s' in self.intake or self.intake.get('steered'):
-            return
-        text = prompt('intake_first_record', seconds=str(int(seconds)))
-        if not text:
-            return
-        self.intake['steered'] = stamp()
-        self.acp['intake'] = dict(self.intake)
-        steered = await self.steer(text) if self.turns and self.active_turn is not None and self.active_turn.sent \
-            else False
-        async with self.lock:
-            await self.note(None, 'steered' if steered else 'notice',
-                            f'No Metaform call in {int(seconds)} s: {"steered" if steered else "sent next"}: {text}')
-            await self.save_state()
-        if not steered:
-            self.turn(text)
-
-    async def intake_call(self, line: str, completed: bool, ident: str = '') -> None:
-        """An intake agent's tool call, under the session's lock: its first Metaform call and its first record timed
-        from its first turn. It raises no light: the 'reading conclusions' pill, one per report, review, log or notes
-        file the intake opened, judged from the file's name alone, filled the intake's bar with noise and judged
-        nothing (the person, 2026-10-20)."""
-        if self.intake is None or self.probe:
-            return
-        if self.effects is None:
-            found = await asyncio.to_thread(surface, Path(self.root))
-            self.effects = {(module.id, verb.name.replace('-', '_')): verb.effect for module in found
-                            for verb in module.verbs}
-            self.effects.update({(module, verb.replace('_', '-')): effect
-                                 for (module, verb), effect in list(self.effects.items())})
-        reached = withheld_named(line, self.withheld, self.effects)
-        if not tools_named(line) or reached or not self.intake_began:  # a withheld tool is not served: no call made
-            return
-        took = round(time.monotonic() - self.intake_began, 1)
-        changed = False
-        if 'first_call_s' not in self.intake:
-            self.intake['first_call_s'] = took
-            changed = True
-            if self.intake_timer is not None:
-                self.intake_timer.cancel()
-                self.intake_timer = None
-        writes = [tool for tool in tools_named(line) if (self.effects or {}).get(tool, 'write') != 'read']
-        if completed and writes and 'first_record_s' not in self.intake:
-            self.intake.update(first_record_s=took, phase='recording')
-            changed = True
-        if changed:  # under the session's lock already, as every update is
-            self.acp['intake'] = dict(self.intake)
-            await self.save_state()
-            await self.changed(tables='dispatch', kinds=['session'])
 
     # ------------------------------------------------------------------ Jev's drift check, H23
 
@@ -3023,7 +2916,7 @@ class Session:
         scope = {'session_id': getattr(mode, 'session_id', None), 'tool_call_id': getattr(mode, 'tool_call_id', None)}
         deadline = next((float(mark['autoResolutionMs']) / 1000 for mark in meta_records(kwargs)
                          if isinstance(mark.get('autoResolutionMs'), (int, float))), None)
-        if not self.system:  # only the sentinel and the head agent ask the person, VIEW-045
+        if not self.system:  # only the head agent asks the person, VIEW-045
             self.incoming.pop(rpc, None)
             return decided(fields)
         how = await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
@@ -3057,204 +2950,6 @@ class Session:
             return AcceptElicitationResponse(action='accept', content=content if url is None else None)
         return DeclineElicitationResponse(action='decline') if action == 'decline' else \
             CancelElicitationResponse(action='cancel')
-
-    def word_now(self) -> dict[str, Any] | None:
-        """The person's own message that started the turn in flight of their system agent, or was steered into it:
-        None for a turn a timer, a peer's note, a notice, a workflow's answer or the agent's own continuation started,
-        for a session that is not the person's system agent, and between turns."""
-        current = self.active_turn
-        if self.role != 'system' or self.ending or current is None or not current.sent or current.cancel_requested:
-            return None
-        return dict(current.word) if current.word is not None else None
-
-    def work_open(self, tickets: Sequence[str]) -> bool:
-        """Whether any named ticket is still open for the recorded user instruction."""
-        for work_id in tickets:
-            try:
-                if not ticket(self.store, work_id).done:
-                    return True
-            except (Stop, StoreError):
-                continue
-        return False
-
-    async def covering(self, tickets: Sequence[str]) -> dict[str, Any] | None:
-        """The person's word whose work holds every one of `tickets`, in any turn in flight of their system agent: the
-        work the person started on it goes on in the turns a timer, a note or a signal starts, with no second ask. A
-        cover whose tickets are all done, or gone, is that work done, and ends here. None outside a turn, for a session
-        that is not the person's system agent, or when a ticket is in no one work the person's word started."""
-        current = self.active_turn
-        if self.role != 'system' or self.ending or current is None or not current.sent or current.cancel_requested \
-                or not tickets:
-            return None
-        wanted = set(tickets)
-        for key, cover in list(self.covers.items()):
-            held = cast(set[str], cover['tickets'])
-            if not held or not wanted <= held:
-                continue
-            if not await asyncio.to_thread(self.work_open, sorted(held)):
-                held.clear()  # that work is done: the person's word for it is spent
-                if not cover['stopped']:
-                    self.covers.pop(key, None)
-                await asyncio.to_thread(self.keep_cover, key)
-                continue
-            return {**cast(dict[str, Any], cover['word']), 'covered': True}
-        return None
-
-    async def joined(self, word: str, tickets: Sequence[str], plan: Sequence[str]) -> dict[str, Any] | None:
-        """`tickets`, set to wait on `plan`, join the work the person's word `word` covers, in any turn in flight of
-        their system agent, when every one of `plan` (the open tickets they wait on) is held by that cover: the next
-        wave the agent planned of that work. Kept in the project's store. None, and nothing joins, when `plan` is
-        empty or any of it is outside that cover, or stopped."""
-        cover = self.covers.get(word)
-        if cover is None or not plan:
-            return None
-        held = cast(set[str], cover['tickets'])
-        if not set(plan) <= held or await self.covering(plan) is None:
-            return None  # covering also ends a cover whose work is done
-        held.update(tickets)
-        cast(set[str], cover['stopped']).difference_update(tickets)
-        await asyncio.to_thread(self.keep_cover, word)
-        return {**cast(dict[str, Any], cover['word']), 'covered': True}
-
-    def stopped_work(self, tickets: Sequence[str]) -> bool:
-        """Whether the person stopped the work every one of `tickets` was in, so a refusal says that and not that no
-        word of theirs started it."""
-        stopped = set[str]().union(*(cast(set[str], cover['stopped']) for cover in self.covers.values()))
-        return bool(tickets) and set(tickets) <= stopped
-
-
-    async def uncover(self, tickets: Sequence[str] | None) -> int:
-        """The person stopped work: each cover holding one of `tickets` lets go of those tickets and the tickets of it
-        that wait on them, in turn, so their word starts nothing more of that part, and a later refusal says the
-        person stopped it; the rest of the work that word started goes on. With None (Stop all) every cover ends."""
-        ended = 0
-        for key, cover in list(self.covers.items()):
-            held, stopped = cast(set[str], cover['tickets']), cast(set[str], cover['stopped'])
-            if tickets is not None and not held & set(tickets):
-                continue
-            if tickets is None:
-                let_go = set(held)
-            else:
-                let_go = held & set(tickets)
-                let_go |= await asyncio.to_thread(waiting_in, self.store, let_go, held - let_go)
-            held -= let_go
-            stopped |= let_go
-            ended += not held
-            await asyncio.to_thread(self.keep_cover, key)
-        return ended
-
-    def keep_cover(self, key: str) -> None:
-        """Write one cover of the person's word to the project's store, `word_covers`, as it stands in memory, or take
-        it out once it holds nothing, so a runner restarted or the session resumed carries that work on without asking
-        the person again. Only this runner writes it; written without an announcement, since no reader shows it. One
-        that cannot be written is said in the runner's log, and the cover in memory holds for this runner's life."""
-        if self.session_id is None:
-            return
-        cover = self.covers.get(key)
-        where = {'session_id': self.session_id, 'word_id': key}
-        try:
-            with self.store.tables() as tx:
-                if cover is None:
-                    tx.delete('word_covers', where)
-                    return
-                row = {'word': cover['word'], 'tickets': sorted(cast(set[str], cover['tickets'])),
-                       'stopped': sorted(cast(set[str], cover['stopped'])), 'seq': time.time_ns() // 1_000_000}
-                if tx.update('word_covers', where, row) is None:
-                    tx.insert('word_covers', {**where, **row})
-        except Exception as error:  # noqa: BLE001  the cover in memory holds; only a restart would forget it
-            sys.stderr.write(f'The person\'s word {key} of session {self.session_id} was not kept: {error}\n')
-
-    def covers_kept(self) -> None:
-        """The covers of the person's word this session's runner kept before it restarted, read once when the session
-        is resumed, so the work that word started goes on without a second ask."""
-        if self.role != 'system' or self.session_id is None:
-            return
-        try:
-            with self.store.tables(write=False) as tx:
-                rows = tx.rows('word_covers', {'session_id': self.session_id}, limit=0).results
-        except Exception as error:  # noqa: BLE001  none read: the person is asked again, never the reverse
-            sys.stderr.write(f'The person\'s word of session {self.session_id} was not read: {error}\n')
-            return
-        for row in rows:
-            word: Any = row['word']
-            if isinstance(word, dict):
-                self.covers[str(row['word_id'])] = {
-                    'word': cast(dict[str, Any], word), 'tickets': set(listed(dict(row), 'tickets')),
-                    'stopped': set(listed(dict(row), 'stopped'))}
-
-    def covers_dropped(self) -> None:
-        """The person stopped this session: no word of theirs it kept goes on, in a resume or after it."""
-        if self.role != 'system' or self.session_id is None:
-            return
-        # a row left over names a session no runner resumes on the person's word
-        with contextlib.suppress(Exception), self.store.tables() as tx:
-            tx.delete('word_covers', {'session_id': self.session_id})
-
-
-    async def acted(self, word: str, said: str, tickets: Sequence[str] = (), plan: Sequence[str] = (),
-                    widen: bool = False) -> bool:
-        """Write in the chat what the person's system agent did on their word, beside the message that authorized it,
-        so the person sees what it did and why; only for the word the turn in flight carries, or the word whose work
-        holds every one of `tickets`, so no other turn's call writes a record of a word it never had. On the word the
-        turn carries, with `widen` (a start, a release, an order, a ticket added to wait on others), `tickets` and
-        `plan`, the tickets that wait on them and the open tickets they wait on, become the work it covers in later
-        turns, kept in the project's store. In a later turn, a ticket set to wait only on tickets of one work the word
-        covers, `plan` (the open tickets it waits on), joins that work, `joined`: the next wave the agent planned."""
-        current = self.word_now()
-        if current is not None and current.get('id') == word and said.strip():
-            if tickets and widen:
-                cover = self.covers.setdefault(word, {'word': current, 'tickets': set(), 'stopped': set()})
-                cast(set[str], cover['tickets']).update([*tickets, *plan])
-                cast(set[str], cover['stopped']).difference_update([*tickets, *plan])
-                await asyncio.to_thread(self.keep_cover, word)
-        else:
-            current = await self.covering(tickets)
-            if current is None and widen and tickets and said.strip():
-                current = await self.joined(word, tickets, plan)
-            if current is None or current.get('id') != word or not said.strip():
-                return False
-        quoted = ' '.join(str(current.get('text') or '').split())
-        quoted = quoted if len(quoted) <= 160 else quoted[:157] + '...'
-        async with self.lock:
-            await self.flush()
-            await self.note(None, 'notice', f'On your word, "{quoted}" ({current.get("at")}): {said.strip()}.')
-        await self.changed(tables='dispatch', kinds=['session'])
-        return True
-
-    async def consent_asked(self, asked: dict[str, Any], reader: asyncio.StreamReader) -> dict[str, Any]:
-        """A call of this session's agent that is the person's decision, put to the person as a consent card in its
-        chat on the page by the agent's own MCP server, op `consent` (UX review, person-consent F5): the call's
-        caution, the tool and the command it stands for, with Allow and Decline. The server's request waits for the
-        answer: accept, decline, or cancel when the wait's deadline passes, the turn or the session ends, or the
-        server goes, which closes the card. Only the system agent and the sentinel ask the person, as with any
-        question, VIEW-045, and dispatch_elicitation decline declines it at once. The card is single use: one answer
-        closes it, and nothing but the person's answer on the page reaches it, never the map's node."""
-        if not self.system:
-            return {'action': 'decline', 'error': 'A worker does not ask the person; its ticket\'s note says what it '
-                                                  'needs, and the person\'s own agent asks them.'}
-        how = await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
-        if how == 'decline' or self.ending:
-            return {'action': 'decline', 'error': 'The person declines agents\' questions here: dispatch_elicitation '
-                                                  'is decline.' if how == 'decline' else 'The session is ending.'}
-        wait = min(float(asked.get('wait') or 0) or CONSENT_WAIT, CONSENT_WAIT)
-        consent = {'tool': str(asked.get('tool') or ''), 'command': str(asked.get('command') or ''),
-                   'caution': str(asked.get('caution') or '')}
-        waiting: asyncio.Future[tuple[str, dict[str, Any]]] = asyncio.get_running_loop().create_future()
-        async with self.lock:
-            await self.flush()
-            request = await self.elicit(waiting, str(asked.get('message') or consent['caution']), [], None, None,
-                                        deadline=wait, consent=consent)
-        gone = asyncio.ensure_future(reader.read())  # the asking server's end closes: its call is over
-        try:
-            done, _ = await asyncio.wait({waiting, gone}, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            gone.cancel()
-        if not waiting.done():
-            async with self.lock:
-                await self.elicit_closed(request, 'withdrawn' if gone in done else 'expired', ('cancel', {}))
-        action = waiting.result()[0] if waiting.done() else 'cancel'
-        await self.changed(tables='dispatch', kinds=['session'])
-        return {'request': request, 'action': action}
 
     async def complete_elicitation(self, elicitation_id: str, **kwargs: Any) -> None:
         """ACP's elicitation/complete: the agent says the page it asked the person to open is done with, as when an
@@ -3351,19 +3046,17 @@ class Session:
 
     async def elicit(self, waiting: asyncio.Future[tuple[str, dict[str, Any]]], message: str,
                      fields: list[dict[str, Any]], url: str | None, elicitation_id: str | None,
-                     before: str = '', *, scope: dict[str, Any] | None = None, deadline: float | None = None,
-                     consent: dict[str, Any] | None = None) -> str:
+                     before: str = '', *, scope: dict[str, Any] | None = None, deadline: float | None = None) -> str:
         """Put the agent's question to the person, and return its request: at the ticket's node when it has one, with
         a one-question form's choices as suggestions, unless a field is secret, which is never written where agents
         read; on the page always, as a line of the thread and the question-waiting signal. A subagent's question
-        says so, and its own thread notes it was asked. A consent card, `consent`, is asked on the page alone: an answer
-        at the node, where agents write, would let an agent give itself the person's consent."""
+        says so, and its own thread notes it was asked."""
         scope = scope or {}
         text = before + elicit_question(self.name, message, fields, url, deadline)
         suggestions = elicit_suggestions(fields, url)
         secret = any(field['secret'] for field in fields)
         message_id: str | None = None
-        if self.node is not None and not secret and consent is None:
+        if self.node is not None and not secret:
             asked = await self.write(self.store.ask, self.node, text, suggestions=suggestions, by=self.by,
                                      work=self.work_id)
             request = message_id = asked.id
@@ -3381,7 +3074,7 @@ class Session:
                            for field in fields],
                 'suggestions': suggestions, 'state': 'waiting', 'asked': stamp(), 'said': before.strip() or None,
                 'session_id': scope.get('session_id'), 'tool_call_id': scope.get('tool_call_id'),
-                'subagent': child['name'] if child else None, 'secret': secret, 'consent': consent,
+                'subagent': child['name'] if child else None, 'secret': secret,
                 'deadline': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + deadline))
                 if deadline else None}
         self.elicitations[f'elicitation:{request}'] = line
@@ -3578,8 +3271,6 @@ class Session:
         if self.task_id and not self.resume:
             self.acp['task'] = json.loads(await asyncio.to_thread(self.asked_for))
             self.at = str(self.acp['task'].get('node') or '')
-            if self.acp['task'].get('agent_name'):
-                self.acp['name'] = str(self.acp['task']['agent_name'])
             from .task_sessions import assigned
             task_record = await asyncio.to_thread(assigned, self.ctx, self.task_id)
             if task_record and task_record.get('cancel_requested'):
@@ -3593,9 +3284,8 @@ class Session:
                 self.acp['brief'] = self.request
         if self.resume:  # the thread goes on where it ended: its lines keep their names and their order
             await asyncio.to_thread(self.continue_thread)
-            await asyncio.to_thread(self.covers_kept)  # and the work the person's word started goes on
-        if not self.resume and not self.probe:  # its name's ranking, worked out while the agent starts
-            self.naming = asyncio.ensure_future(asyncio.to_thread(self.ranking))
+            if self.task_id:  # the assigned task goes on with its session: its context called back
+                await asyncio.to_thread(self.continue_task)
         if self.role == 'worker' and not self.prep and self.folder == self.root and self.acp['ticket_git'] is None:
             self.acp['ticket_git'] = {'started': time.time_ns(),
                                       'peers': await asyncio.to_thread(self.commit_peers),
@@ -3607,7 +3297,7 @@ class Session:
         self.runner = self.runner or secrets.token_hex(8)
         identity = {'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
                     **({'METAFORM_TASK': self.task_id} if self.task_id else {}),
-                    **({'METAFORM_ROLE': self.role} if self.role else {}),
+                    **({'METAFORM_TASK_NAME': name} if (name := self.task_name()) else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
         self.ctx = replace(self.ctx, session=self.runner, identity=identity)
         await self.open_agent(identity)
@@ -3618,13 +3308,8 @@ class Session:
         # place of a server of that name the agent's own config holds rather than beside it: one set of Metaform
         # tools, each call carrying this session's identity. Its environment names the METAFORM_* variables, the home
         # and the identity, since codex-acp gives an MCP server only a short list of its own variables, ticket 80cafcd9.
-        # An intake agent's server leaves out the tools that read earlier conclusions, M04 and P019: named in its
-        # environment beside its identity, so only this session's server withholds them.
-        if self.intake is not None:
-            self.withheld = [str(one) for one in cast(list[Any], self.option('dispatch_intake_withheld', []) or [])]
-        withheld = {WITHHELD: ','.join(self.withheld)} if self.withheld else {}
         servers = [McpServerStdio(name='metaform', command=sys.executable, args=['-m', *server],
-                                  env=server_environment(**identity, **withheld))] if server else []
+                                  env=server_environment(**identity))] if server else []
         self.servers = servers
         try:
             if self.resume:
@@ -3663,7 +3348,6 @@ class Session:
         pinned = await asyncio.to_thread(self.store.bound_base)
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
                    origin=origin(), base=pinned.id if pinned is not None else None, ended='')
-        ranking = await self.naming if self.naming is not None else None
         stated: list[tuple[str, int]] = []
         def take() -> None:
             # A worker takes its ticket and records its session together. A conversation takes nothing of the map,
@@ -3701,10 +3385,10 @@ class Session:
                             resuming_path(str(self.session_id)).unlink()
                     else:
                         tx.insert('agent_sessions', row)
-                    if ranking is not None and not self.acp.get('name'):
-                        # its name, the best pair no other running session holds, kept on its state line in the write
-                        # that records it, so a session starting beside it reads the name and takes the next pair
-                        self.acp['name'] = free(tx, ranking, str(self.session_id))
+                    if not self.resume and not self.probe:
+                        # its name, worked out from its session id, kept on its state line in the write that records
+                        # the session; a resumed session already holds it, `continue_thread`
+                        self.acp['name'] = session_name(str(self.session_id))
                         stated.append(add_line(tx, str(self.session_id), self.work_id, 'state', 'state', json.dumps(
                             {**self.acp, 'settings': self.settings()}, ensure_ascii=False), self.lines))
                 if not self.prep:
@@ -3745,11 +3429,6 @@ class Session:
             text = await asyncio.to_thread(intake_prompt, self.ctx, self.request)
         elif self.role == 'helper':  # the brief the system agent wrote, under the helper's own instructions
             text = prompt('helper', brief=self.request)
-        elif self.system and self.ctx.nouns.get('sentinel'):  # the person raised an issue: the sentinel skill, VIEW-045
-            address = str(self.ctx.nouns['sentinel'])
-            record = await asyncio.to_thread(ticket, self.store, self.work_id)
-            given = f'node: {address}\nticket: {self.work_id}\nreport:\n{record.note or ""}'
-            text = await asyncio.to_thread(workflow_skill, self.ctx, 'sentinel', given)
         elif self.system and self.ctx.nouns.get('talk'):  # the person clicked something to talk about: no ticket work
             about, read = await asyncio.to_thread(subject, self.store, self.work_id, str(self.ctx.nouns['talk']))
             text = prompt('talk', about=about, read=read, eyes=await asyncio.to_thread(eyes_line, Path(self.root)))
@@ -3766,9 +3445,6 @@ class Session:
                 task['component'] = {**component, **rendered, 'source': component.get('source')}
                 task['instructions'] = rendered['text']
             text = str(task['instructions'])
-            if task.get('persistent'):
-                task['lifetime'] = prompt_files.resolve('prompt.tasks:worker_lifetime.txt')
-                text += '\n\n' + str(task['lifetime']['text'])
             if task.get('input'):
                 text += '\n\n' + str(task['input'])
             for skill in task.get('skills', []):
@@ -3840,11 +3516,14 @@ class Session:
                       items=', '.join(named) + (f' and {rest} more' if rest else '')).strip()
 
     def system_prompt(self) -> str:
-        """The person's system agent's prompt as the prompt store serves it now, its mascot's line filled in, with the
-        versions it carries kept as the conversation's `opening`."""
+        """The person's system agent's prompt, the tasks module's user agent prompt as the prompt store serves it now,
+        with the version it carries kept as the conversation's `opening`, so `reopened` sees an edit saved later."""
         from importlib import resources
-        return prompt_files.served(resources.files('metaform.modules.tasks'), 'user_agent.txt',
-                                   **{'{project}': self.store.project_id})
+        text = prompt_files.served(resources.files('metaform.modules.tasks'), 'user_agent.txt',
+                                  **{'{project}': self.store.project_id})
+        self.acp['opening'] = {one.name: one.version_id for one in self.sent
+                               if one.name in REOPENED and one.version_id is not None}
+        return text
 
     def reopened(self) -> str | None:
         """The system prompt again, as the turn after an edit of it was saved carries it ahead of what the turn says,
@@ -3885,11 +3564,10 @@ class Session:
             text, by = str(one.get('text') or ''), str(one.get('by') or '')
             if one.get('by') is not None:
                 async with self.lock:
-                    await self.note(None, 'message' if by else 'person', f'From the {by} agent: {text}' if by else text)
+                    await self.note(None, 'message' if by else 'person', from_agent(by, text) if by else text)
             if text:
                 media = cast(list[Any], one.get('media') or [])
                 self.turn(text, *(media[:2]), first=bool(one.get('first')), typed=bool(one.get('typed')),
-                          word=one.get('word'),
                           peers=one.get('peers'), components=one.get('components'))
 
     async def troubles(self) -> None:
@@ -4004,20 +3682,23 @@ class Session:
                                f'Metaform speaks version {acp.PROTOCOL_VERSION}')
         return init
 
-    def ranking(self) -> Ranking:
-        """The pairs this session's name is picked from, best first for its ticket's title and task: a helper's
-        brief, the intake's request, else the ticket its work id names, the ticket a conversation is about included;
-        the role's own word when none can be read, since a session is never kept from starting for want of a name."""
-        try:
-            title, task = '', str(self.acp.get('brief') or self.request or '')
-            if not task and not intake_id(self.work_id) and not helper_id(self.work_id):
-                record = held_ticket(self.store, self.work_id)
-                if record is not None:
-                    numbered = self.store.numbers_of('work', [record.id]).get(record.id)
-                    title, task = str(numbered[1] or '') if numbered else '', record.task or record.note or ''
-            return ranked(Path(self.ctx.folder), title, task or self.role, self.work_id)
-        except Exception:  # noqa: BLE001
-            return ranked(None, '', self.role, self.work_id)
+    def continue_task(self) -> None:
+        """The assigned task goes on with its resumed session: its record, the inputs it has had and its turns, kept
+        in the ended session's state, with its outcome open again, since its context is called back."""
+        held = session_state(self.store, cast(str, self.session_id)) or {}
+        self.acp['task'] = dict(cast(dict[str, Any], held.get('task') or {}))
+        self.acp['task_inputs'] = list(cast(list[Any], held.get('task_inputs') or []))
+        self.acp['task_turns'] = int(held.get('task_turns') or 0)
+        self.acp['task_outcome'], self.acp['task_failure'] = None, None
+        if not self.at:
+            self.at = str(self.acp['task'].get('node') or '')
+
+    def task_name(self) -> str | None:
+        """The name of the assigned task this session runs, `user_agent`, `composer` and the rest, from the task its
+        runner was started on, `begin`; None for a session no task names."""
+        if not self.task_id:
+            return None
+        return str(cast(dict[str, Any], self.acp['task']).get('name') or '') or None
 
     def asked_for(self) -> str:
         """What the person asked the intake for, from the row its launch holds its slot in, so their words never go in
@@ -4508,13 +4189,12 @@ class Session:
         self.spawn(asyncio.to_thread(events.quietly, events.publish, 'prompt.sent', payload, self.ctx))
 
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None,
-             word: dict[str, Any] | None = None, components: list[dict[str, Any]] | None = None,
-             first: bool = False, typed: bool = False) -> None:
+             components: list[dict[str, Any]] | None = None, first: bool = False, typed: bool = False) -> None:
         """Queue one prompt; `first`, the person's own message, goes ahead of every prompt waiting, agents' notes
         among them, so it is never answered after a backlog (2026-10-18: the person's stop waited behind 136 notes).
         `typed` preserves an explicit message verbatim; it confers no human authority or queue priority."""
         if self.handing:  # the runner taking the session over sends it
-            self.handed_on.append({'text': text, 'by': None, 'first': first, 'typed': typed, 'word': word,
+            self.handed_on.append({'text': text, 'by': None, 'first': first, 'typed': typed,
                                   'components': components, 'peers': peers,
                                   'media': [block for block in (audio, image) if block is not None]})
             return
@@ -4523,13 +4203,12 @@ class Session:
         # a note a turn carries is queued once: one a runner on older code handed over, `taken_over`, is not queued
         # again by `replay_peers` or by the same note sent again
         self.queued_peer_ids.update(str(note_id) for note_id, _ in peers or [])
-        if peers and not first and not typed and word is None and audio is None and image is None:
+        if peers and not first and not typed and audio is None and image is None:
             # Agents' notes that arrive while one waits for its turn join it: a burst is one turn, not one each
             # (2026-10-18: notes reached the system agent hours late, one per turn behind the person's messages).
             # The person's word and a relayed decision, `first`, never join a note's turn.
             waiting = next((place for place in range(self.priority_count, len(self.pending))
-                            if self.peered[place] and not self.voiced[place] and self.worded[place] is None
-                            and not self.typed[place]), None)
+                            if self.peered[place] and not self.voiced[place] and not self.typed[place]), None)
             if waiting is not None:
                 self.pending[waiting] = f'{self.pending[waiting]}\n\n{text}'
                 self.peered[waiting].extend(peers)
@@ -4543,9 +4222,8 @@ class Session:
         self.replaying = False  # what comes from here on is the session's own, never a replay
         voiced = [block for block in (audio, image) if block is not None]
         peered = list(peers or [])  # the peer notes the turn carries, marked as it is sent and read
-        # the person's word, for their system agent's turn their own message starts
         for queue, item in ((self.prompt_contexts, list(components or [])), (self.pending, text),
-                            (self.voiced, voiced), (self.peered, peered), (self.worded, word), (self.typed, typed)):
+                            (self.voiced, voiced), (self.peered, peered), (self.typed, typed)):
             cast(deque[Any], queue).insert(position, item)
         if first:
             self.priority_count += 1
@@ -4609,10 +4287,9 @@ class Session:
                     supplied = self.prompt_contexts.popleft() if self.prompt_contexts else []
                     beside = self.voiced.popleft() if self.voiced else []
                     marks = self.peered.popleft() if self.peered else []
-                    current.word = self.worded.popleft() if self.worded else None
                     if self.typed:
                         self.typed.popleft()
-                    if marks and current.word is None and not beside:
+                    if marks and not beside:
                         from .peering import line as delivered_line
                         valid = [(mark, await asyncio.to_thread(self.pending_peer, mark[0])) for mark in marks]
                         marks = [mark for mark, held in valid if held is not None]
@@ -4693,7 +4370,6 @@ class Session:
                         self.inflight_peers = marks
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
-                        self.intake_clock()  # an intake's first-record clock starts with its first turn, M04
                         began_ns = time.time_ns()
                         blocks: list[Any] = [acp.text_block(text), *beside]
                         blocks += [acp.resource_link_block(one['name'], one['uri'], title=one.get('title'))
@@ -5125,9 +4801,8 @@ class Session:
         concern this session: one naming its ticket or its session, as the person's answer to its permission request
         or a step on its ticket, is checked; one naming only other tickets and sessions, such as another agent's thread
         lines and steps, does nothing here. A change that does not say what it concerns is checked only when it wrote
-        tickets, questions or workflow runs, or did not say what it wrote. A change to its ticket's workflow runs reads
-        those runs. A change to the map itself may move the refs that place a file on it, so they are read again when
-        next needed. This process's own writes never come back here."""
+        tickets or questions, or did not say what it wrote. A change to the map itself may move the refs that place a
+        file on it, so they are read again when next needed. This process's own writes never come back here."""
         if payload.get('project') != self.store.project_id or self.ending:
             return
         given: Any = payload.get('tables')
@@ -5137,59 +4812,10 @@ class Session:
             self.sources = None
         if concerns(payload, self.work_id, self.session_id, tables):
             self.checks()
-            if tables is None or any(table.startswith('workflow.') for table in tables):
-                self.spawn(self.workflow_answers())
         raised: Any = payload.get('signal')
         if isinstance(raised, dict) and cast(dict[str, Any], raised).get('signal') == 'setup-not-working' \
                 and cast(dict[str, Any], raised).get('active') and self.session_id is not None:
             self.spawn(self.troubles())  # a feature the person set up is not working: the system agent says so
-
-    async def workflow_answers(self) -> None:
-        """A workflow run this worker's ticket paused on the person, MAP-050, that the person has answered since: the
-        agent is told to resume it, the workflow_answered prompt as its next turn, so the person's answer reaches it
-        without a message of their own, H03. Read on a change to its ticket's runs only, and then only the runs paused
-        on the person, and the running ones once one it knew paused is no longer paused; through workflow's own runs
-        verb, never its tables. A change that comes during a read is read once more after it."""
-        if self.node is None or self.system or self.prep or self.probe or self.ending:
-            return
-        if self.workflow_reading:
-            self.workflow_again = True
-            return
-        self.workflow_reading = True
-        try:
-            while True:
-                self.workflow_again = False
-                await self.workflow_read()
-                if not self.workflow_again or self.ending:
-                    return
-        finally:
-            self.workflow_reading = False
-
-    async def workflow_read(self) -> None:
-        def runs(state: str) -> list[dict[str, Any]]:
-            found = module_read(Path(self.root), self.store.project_id, 'workflow', 'runs', state=state, limit=0)
-            listed: Any = cast(dict[str, Any], found).get('runs') if isinstance(found, dict) else None
-            return [run for run in cast(list[dict[str, Any]], listed or []) if run.get('ticket') == self.work_id]
-        try:
-            paused = {str(run.get('run')) for run in await asyncio.to_thread(runs, 'input_required')}
-            left = self.paused_runs - paused
-            running: set[str] = {str(run.get('run')) for run in await asyncio.to_thread(runs, 'running')} \
-                if left else set()
-        except Exception as error:  # noqa: BLE001  a read that fails delivers nothing; the ticket's note still says it
-            sys.stderr.write(f'Could not read the workflow runs: {error}\n')
-            return
-        self.paused_runs = (self.paused_runs | paused) - left  # one no longer paused is answered, or ended
-        for word in sorted(left & running):
-            text = prompt('workflow_answered', run=word)
-            if text and not self.ending:
-                current = self.active_turn  # into the turn in flight where the agent steers, else its next turn
-                steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                           and current.sent and not current.cancel_requested else False)
-                async with self.lock:
-                    await self.note(None, 'notice', f'Workflow run {word} was answered; its agent is told to '
-                                                    'resume it.')
-                if not steered:
-                    self.turn(text)
 
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One request on the control port, with this session's token: `status`, `message`, `interrupt`, `stop`,
@@ -5217,8 +4843,6 @@ class Session:
                                           'waiting_on': 'question' if self.elicited else 'permission' if self.asked
                                           else None,
                                           'interrupting': bool(self.active_turn and self.active_turn.cancel_requested),
-                                          # an intake waiting for its first record, M04, said as the page reads it
-                                          **({'phase': self.intake.get('phase')} if live and self.intake else {}),
                                           'how': None if live else self.how or 'the agent is no longer running'})
             elif op == 'message' and 'fork' in asked:
                 child = asked.get('fork')
@@ -5243,27 +4867,19 @@ class Session:
                         await self.flush()
                         # an agent's message is never shown as the person's, BASE-052
                         await self.note(f'broadcast:{sent}' if sent else None, 'message' if by else 'person',
-                                        f'From the {by} agent: {text}' if by else text)
+                                        from_agent(by, text) if by else text)
                 if self.handing:  # its line could not be written: the runner taking the session over writes and sends it
-                    word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
-                        if asked.get('word') is True and not by and self.role == 'system' else None
-                    self.handed_on.append({'text': text, 'by': by, 'first': not by, 'typed': True, 'word': word,
+                    self.handed_on.append({'text': text, 'by': by, 'first': not by, 'typed': True,
                         'components': [], 'peers': [], 'media': [one for one in (audio, image) if one is not None]})
                     await self.reply(writer, {**said, 'sent': True, 'steered': False, 'handed': True})
                     return
                 # Into the turn in flight when the agent offers steering and nothing waits before it, P016; otherwise
                 # it waits its turn, in order.
-                # The person's own message to their system agent, through the page with its key or at their own
-                # terminal, `dispatch message`: the turn it starts carries their word, `ActiveTurn.word`
-                word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
-                    if asked.get('word') is True and not by and self.role == 'system' else None
                 current = self.active_turn
                 steered = (await self.steer(text) if self.turns and self.priority_count == 0
                            and (not self.pending or not by) and not (not by and self.role == 'system')
                            and current is not None and current.sent and not current.cancel_requested
                            and audio is None and image is None and not self.opening else False)
-                if steered and word is not None and current is not None and current is self.active_turn:
-                    current.word = word  # taken into the turn in flight: from here on it acts on the person's word
                 if steered is not False:
                     async with self.lock:
                         await self.note(None, 'steered', 'Delivered into the running turn.' if steered else
@@ -5272,25 +4888,11 @@ class Session:
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
                 preempt = not by and self.role == 'system' and current is not None
-                self.turn(text, audio, image, word=word, first=not by, typed=True)
+                self.turn(text, audio, image, first=not by, typed=True)
                 await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
                                           'image': image is not None})
                 if preempt and current is not None:
                     self.spawn(self.yield_to_person(current))
-            elif op == 'word':  # the person's word the turn in flight carries, or the word whose work holds the
-                # tickets named, `metaform.module.persons_word`
-                word = self.word_now() or await self.covering(listed(asked, 'tickets'))
-                stopped = word is None and self.stopped_work(listed(asked, 'tickets'))
-                await self.reply(writer, {**said, 'word': word, **({'stopped': True} if stopped else {})})
-            elif op == 'acted':  # what the system agent did on that word, written in its chat with the word
-                recorded = await self.acted(str(asked.get('word') or ''), str(asked.get('said') or ''),
-                                            listed(asked, 'tickets'), listed(asked, 'plan'),
-                                            asked.get('widen') is True)
-                await self.reply(writer, {**said, 'recorded': recorded})
-            elif op == 'uncover':  # the person stopped work, so their word for it starts nothing more
-                given = asked.get('tickets')
-                await self.reply(writer, {**said, 'ended': await self.uncover(
-                    None if given is None else listed(asked, 'tickets'))})
             elif op == 'timer':  # the agent's own timers, `dispatch timer`
                 await self.reply(writer, {**said, **self.timer(asked)})
             elif op == 'note':  # a peer note, `dispatch note`: kept in the thread, and the receiver's next turn
@@ -5319,7 +4921,7 @@ class Session:
                         dropped = {note_id for note_id, _ in note_id_marks}
                         self.queued_peer_ids.difference_update(dropped)
                     for queue in (self.pending, self.prompt_versions, self.prompt_contexts, self.voiced, self.peered,
-                                  self.worded, self.typed):
+                                  self.typed):
                         while len(queue) > keep:
                             cast(deque[Any], queue).pop()
                     direction = cast(dict[str, Any] | None, asked.get('direction'))
@@ -5331,8 +4933,6 @@ class Session:
             elif op == 'permit':
                 await self.reply(writer, {**said, **await self.permit(str(asked.get('request', '')),
                                                                       str(asked.get('option', '')))})
-            elif op == 'consent':  # the agent's own MCP server asks the person through a card in this chat
-                await self.reply(writer, {**said, **await self.consent_asked(asked, reader)})
             elif op == 'task_end' and self.task_id:
                 self.acp['task_outcome'] = 'completed'
                 await self.save_state()
@@ -5390,7 +4990,6 @@ class Session:
             elif op in ('stop', 'cancel'):  # session/cancel for a turn in flight, then the session ends, P232
                 if self.task_id:
                     self.acp['task_outcome'] = 'cancelled'
-                await asyncio.to_thread(self.covers_dropped)  # the stop ends the person's word it kept
                 by = asked.get('by')  # an agent's stop names the agent, so the board never blames the person
                 await self.end((f'stopped by {by}' if isinstance(by, str) and by else 'stopped by the person')
                                if op == 'stop' else 'cancelled by the person', release=False)
@@ -5430,9 +5029,7 @@ class Session:
         self.priority_count = 0
         self.voiced.clear()
         self.peered.clear()
-        self.worded.clear()
         self.typed.clear()
-        self.covers.clear()  # what the project's store keeps of it goes on when this session is resumed
         for held in self.timers.values():  # a timer never outlives the session it wakes
             held['handle'].cancel()
         self.timers.clear()
@@ -5473,9 +5070,6 @@ class Session:
                     if record.outcome not in ('cancelled', 'failed'):
                         await asyncio.to_thread(checkpoint, self.folder, self.work_id,
                                                 f'The session of ticket {self.work_id} ended: {how}')
-            if self.intake_timer is not None:
-                self.intake_timer.cancel()
-                self.intake_timer = None
             if process is not None:
                 await asyncio.to_thread(end_group, process.pid)  # what it started ends with it
                 with contextlib.suppress(asyncio.TimeoutError):

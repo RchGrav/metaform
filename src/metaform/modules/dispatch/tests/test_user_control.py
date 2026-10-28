@@ -4,47 +4,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from metaform import caller
-from metaform.module import PersonsDecision, context
 from metaform.modules import dispatch
 from metaform.modules.dispatch.runner import Session
 
 pytestmark = pytest.mark.kind('fixture')
 
 
-def test_verified_page_identity_overrides_inherited_agent_ancestry(home, monkeypatch):
-    monkeypatch.setenv('METAFORM_SESSION', 'server-parent')
-    monkeypatch.setattr(caller, 'vouched', lambda: True)
-    ctx = context('dispatch', home, surface='cli')
-    assert caller.agent() is None
-    assert dispatch.sender(ctx) is None
-    assert dispatch.person_asks(ctx)
-    dispatch.may_stop(ctx, {'work_id': 'someone-elses-work'})
-    monkeypatch.setattr(caller, 'vouched', lambda: False)
-    assert caller.agent() is not None
-    assert not dispatch.person_asks(ctx)
-    with pytest.raises(PersonsDecision):
-        dispatch.may_stop(ctx, {'work_id': 'someone-elses-work'})
-
-
-def test_worker_can_stop_itself_but_cannot_manufacture_user_authority(home, monkeypatch):
-    monkeypatch.setenv('METAFORM_SESSION', 'worker-one')
-    ctx = context('dispatch', home, surface='mcp')
-    dispatch.may_stop(ctx, {'work_id': 'one', 'runner': 'worker-one'})
-    with pytest.raises(PersonsDecision):
-        dispatch.may_stop(ctx, {'work_id': 'two', 'runner': 'worker-two'})
-
-
 def test_human_messages_keep_fifo_ahead_of_background_work():
-    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'worded', 'typed')
+    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'typed')
     held = SimpleNamespace(**{name: deque() for name in queues}, sent=[], priority_count=0,
                            handing=False, ending=False, replaying=False, turns=1, queued_peer_ids=set())
     Session.turn(held, 'background one')
-    Session.turn(held, 'human one', first=True, word={'id': 'one'})
+    Session.turn(held, 'human one', first=True)
     Session.turn(held, 'background two')
-    Session.turn(held, 'human two', first=True, word={'id': 'two'})
+    Session.turn(held, 'human two', first=True)
     assert list(held.pending) == ['human one', 'human two', 'background one', 'background two']
-    assert list(held.worded) == [{'id': 'one'}, {'id': 'two'}, None, None]
     assert {len(getattr(held, name)) for name in queues} == {4}
 
 
@@ -53,7 +27,7 @@ def test_typed_turn_is_bare_once_the_conversation_has_its_duty():
     send's leftover context is never recorded as delivered by a typed turn, and stays due for the next turn."""
     import asyncio
 
-    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'worded', 'typed')
+    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'typed')
     held = SimpleNamespace(**{name: deque() for name in queues}, sent=[], priority_count=0, handing=False,
                            ending=False, replaying=False, turns=1, prep=True, role='system', opening=True,
                            probe=True, resume=None, link_asked=True, recompacted=False, spoken=False,
@@ -76,7 +50,7 @@ def test_typed_turn_is_bare_once_the_conversation_has_its_duty():
 
     held.guidance, held.conn = guidance, SimpleNamespace(prompt=prompt)
     held.changed = held.flush = held.note = held.save_state = held.peer_marked = held.spend = nothing
-    held.arm = held.intake_clock = held.hush = held.trace = lambda *args, **kwargs: None
+    held.arm = held.hush = held.trace = lambda *args, **kwargs: None
     held.context_delivered = lambda: Session.context_delivered(held)
 
     async def turns():

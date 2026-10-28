@@ -443,7 +443,7 @@ header .btn.quiet{padding:0 var(--s2)}
 .hfield.proj select{max-width:170px}
 .hfield.base{margin-right:var(--s2)}
 .pick{position:relative;flex:none}
-.autostart{margin:0 var(--s2)}
+.fullauto{margin:0 var(--s2)}
 #moreBtn{display:none}
 /* Text size and Reset: A down and A up step the page's text, and Reset puts every size and zoom back. */
 .textsize{display:flex;gap:1px;flex:none}
@@ -576,7 +576,6 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 #task .chart svg{position:absolute;inset:0;width:100%;height:100%}
 #task .chart g[data-address]{cursor:pointer}
 #task .chart g.chosen rect,#task .chart g.chosen polygon{stroke:var(--signal)!important;stroke-width:2.5px!important}
-#task .workflow-call{width:100%;font-family:var(--mono)}
 #task .text{flex:none;min-height:120px;max-height:30vh;overflow:auto;background:var(--ground);color:var(--text);border:1px solid var(--control);border-radius:var(--r);
   padding:var(--s2) var(--s3);font:var(--t-base)/1.55 var(--sans);white-space:pre-wrap;outline:none}
 #task .text:focus{border-color:var(--signal);box-shadow:0 0 0 var(--ring) color-mix(in srgb,var(--signal) 35%,transparent)}
@@ -1021,7 +1020,6 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #helpdesk .agentrow .srcdot::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c)}
 #helpdesk .agentrow[data-source="intake"] .srcdot{--c:var(--add)}
 #helpdesk .agentrow[data-source="system"] .srcdot,#helpdesk .agentrow[data-source="conversation"] .srcdot{--c:var(--muted)}
-#helpdesk .agentrow[data-source="sentinel"] .srcdot{--c:var(--question)}
 #helpdesk .agentrow .agentname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 #helpdesk .agentrow .statechip{justify-self:end}
 #helpdesk .agentrow .agenttask,#helpdesk .agentrow .agentsteps{grid-column:2 / span 2;min-width:0;color:var(--muted);font-size:var(--t-xs)}
@@ -1038,16 +1036,6 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
   background:transparent;color:var(--muted);cursor:pointer;font:inherit;line-height:1}
 #helpdesk .tabx:hover{color:var(--text)}
 #helpdesk .tabpair.on .tabx{background:var(--signal);color:var(--ground);border-color:var(--signal)}
-#helpdesk .proposals{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s2) var(--s3);max-height:45%;overflow-y:auto;border-bottom:1px solid var(--line)}
-#helpdesk .proposals[hidden]{display:none}
-#helpdesk .proposal{border:1px solid var(--line-2);border-radius:var(--r);padding:var(--s2) var(--s3);font-size:var(--t-md)}
-#helpdesk .proposal p{margin:var(--s1) 0}
-#helpdesk .proposal small{color:var(--muted);margin-right:var(--s1)}
-#helpdesk .proposal .acts{display:flex;gap:var(--s2);align-items:center;justify-content:flex-end;margin-top:6px}
-#helpdesk .proposal .acts button{height:var(--ctl-sm);padding:0 var(--s2);border:1px solid var(--control);border-radius:var(--r);background:var(--panel-2);color:var(--text);font:500 var(--t-sm) var(--sans);cursor:pointer}
-#helpdesk .proposal .acts button.choose{background:var(--signal);border-color:var(--signal);color:var(--ground);font-weight:600}
-#helpdesk .proposal .acts button:disabled{background:transparent;color:var(--faint);border-style:dashed;cursor:not-allowed}
-#helpdesk .proposal .reach.on{border-color:var(--in-use)}
 #helpdesk .log{flex:1;overflow:auto;padding:var(--s3);display:flex;flex-direction:column;gap:var(--s2);background:var(--panel-2)}
 #helpdesk .system{align-self:center;max-width:90%;color:var(--muted);font-size:var(--t-sm);text-align:center;white-space:pre-wrap}
 #helpdesk .bubble{max-width:82%;padding:var(--s2) var(--s3);border-radius:14px;white-space:pre-wrap;line-height:1.45}
@@ -1179,6 +1167,14 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #agentbox .default-agent{flex-wrap:wrap;padding:var(--s1) var(--s3)}
 #agentbox .default-agent #defaultAgentPick{flex:1 1 180px}
 #agentbox .menu-hint{margin:0 var(--s3) var(--s2);font:var(--t-xs)/1.45 var(--sans);color:var(--faint);max-width:300px}
+/* The pair tasks start, in the Agents menu: each agent, then its model and effort, a label beside each select. */
+#agentbox .pair-agents{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:var(--s1) var(--s2);
+  padding:var(--s1) var(--s3) var(--s2);max-width:340px}
+#agentbox .pair-agents[hidden]{display:none}
+#agentbox .pair-agents label{display:contents}
+#agentbox .pair-agents label > span{font:var(--t-sm)/1.3 var(--sans);color:var(--muted)}
+#agentbox .pair-agents label.pair-agent > span{font-weight:600;color:var(--text)}
+#agentbox .pair-agents select{height:var(--ctl-sm);min-height:0;min-width:0}
 /* Agent prompts in the Agents menu: its label, the choice in force as a select under it, and what the choice risks or
  * why a save was refused. */
 #agentbox .agent-prompts{flex-wrap:wrap;padding:var(--s1) var(--s3)}
@@ -1227,13 +1223,11 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
   background:color-mix(in srgb,var(--c) 12%,transparent);color:var(--text);font:600 var(--t-xs)/1 var(--sans);letter-spacing:.03em;white-space:nowrap}
 #helpdesk [data-source="intake"]{--c:var(--add)}
 #helpdesk [data-source="system"],#helpdesk [data-source="conversation"]{--c:var(--muted)}
-#helpdesk [data-source="sentinel"]{--c:var(--question)}
 #helpdesk [data-source="merge"]{--c:var(--in-use)}
 #helpdesk .tab{display:inline-flex;align-items:center;gap:6px}
 #helpdesk .tab .srcdot{--c:var(--signal);flex:none;width:7px;height:7px;border-radius:50%;background:var(--c)}
 #helpdesk .tab[data-source="intake"] .srcdot{--c:var(--add)}
 #helpdesk .tab[data-source="system"] .srcdot,#helpdesk .tab[data-source="conversation"] .srcdot{--c:var(--muted)}
-#helpdesk .tab[data-source="sentinel"] .srcdot{--c:var(--question)}
 #helpdesk .tab.on .srcdot{box-shadow:0 0 0 1.5px var(--ground)}
 /* The agent's thinking: a few quiet lines in the thread, all of it on a click. */
 #helpdesk .thought{align-self:stretch;padding:2px var(--s2);border-left:2px solid var(--line-2);color:var(--muted);font:italic var(--t-sm)/1.45 var(--sans);
@@ -1536,7 +1530,7 @@ header.compact .searchbtn .lbl,header.compact .searchbtn kbd{display:none}
 /* Then the spacing tightens. */
 header.tight{gap:var(--s1);padding:var(--s2) var(--s3)}
 header.tight .brand{font-size:calc(16px * var(--ui))}
-header.tight .autostart{margin:0 var(--s1)}
+header.tight .fullauto{margin:0 var(--s1)}
 header.tight .hfield select{max-width:200px}
 header.tight .hfield.proj select{max-width:130px}
 header.tight #messages{width:104px}
@@ -1547,7 +1541,7 @@ header.tighter .hfield.base .btn{width:var(--ctl-sm);padding:0}
 header.tighter .btn.quiet{padding:0 6px}
 header.tighter .btn .i-chev{margin-left:-4px}
 header.tighter{padding:var(--s2)}
-header.tighter .autostart{margin:0}
+header.tighter .fullauto{margin:0}
 header.tighter #layersBtn{padding:0 var(--s2)}
 /* The Settings button's "more" dots. */
 .i-kebab{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='3' r='1.5'/%3E%3Ccircle cx='8' cy='8' r='1.5'/%3E%3Ccircle cx='8' cy='13' r='1.5'/%3E%3C/svg%3E")}
@@ -1588,7 +1582,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   .searchbtn .lbl,.searchbtn kbd{display:none}
   .hfield label{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .brand{font-size:calc(16px * var(--ui))}
-  .autostart{margin:0 var(--s1)}
+  .fullauto{margin:0 var(--s1)}
   header .btn.quiet{padding:0 6px}
   header .btn .i-chev{margin-left:-4px}
   #moreBtn{display:inline-flex;order:4}

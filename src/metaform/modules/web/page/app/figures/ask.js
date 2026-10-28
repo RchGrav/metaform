@@ -174,7 +174,7 @@ export function figureAt(x, y) {
 }
 /* A click on any agent's figure, on either map, opens a chat with that agent with a box to write in: its session in
  * any live state, working, waiting or idle, never the project's updates, which are read-only; with none yet, a
- * specialist owner's or a ticket reserved and not started, the chat on its ticket, where a message is kept and read
+ * ticket with an owner and no session or one reserved and not started, the chat on its ticket, where a message is kept and read
  * when its session starts, `holdQueued` in dock/send.js; a done ticket's figure walking home, its last session. */
 export function openFigure(workId) {
   const child = ROAM.figures.get(workId)?.child;

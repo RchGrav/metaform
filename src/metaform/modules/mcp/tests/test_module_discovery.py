@@ -14,11 +14,11 @@ def text(result):
     return '\n'.join(one.text for one in result.contents)
 
 
-def test_startup_only_lists_discovery_for_every_role_and_stateless_client(mapped, monkeypatch):
-    for role in ('worker', 'system', 'intake', 'talk', 'sentinel', ''):
-        monkeypatch.setenv('METAFORM_ROLE', role)
+def test_startup_only_lists_discovery_for_every_task_and_stateless_client(mapped, monkeypatch):
+    for task in ('project_agent', 'user_agent', 'intake', 'composer', ''):
+        monkeypatch.setenv('METAFORM_TASK_NAME', task)
         assert server.listed_names(mapped, None) == ('metaform_catalog',)
-        assert server.listed_names(mapped, f'session-{role}') == ('metaform_catalog',)
+        assert server.listed_names(mapped, f'session-{task}') == ('metaform_catalog',)
         opening = server.connect_instructions(mapped)
         assert 'metaform://modules' in opening and 'metaform://tools' not in opening
     schema = server.catalog_schema(mapped)

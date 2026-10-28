@@ -1,0 +1,16 @@
+{
+  "confirmed_events": 55,
+  "three_project_events": 49,
+  "three_project_occurrences": 71,
+  "earlier_direct_events": 36,
+  "earlier_direct_occurrences": 45,
+  "earlier_all_submissions": 47,
+  "earlier_all_occurrences": 67,
+  "main_file_occurrences": 2076,
+  "main_matching_files": 617,
+  "report_source_links": "all valid",
+  "main_report_max_authored_sentence_words": 16,
+  "independent_count_review": "passed",
+  "all_saved_artifacts_hashed": true,
+  "source_data_writes": false
+}

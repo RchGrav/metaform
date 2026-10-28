@@ -50,6 +50,21 @@ If writing or interfacing with high-performance Python nodes:
 2. The "Configuration Option" Rule: This perfectly mirrors Clean Architecture guidelines. When an architectural decision creates a fork that fundamentally alters system behavior, converting it i>
 3. The Benefit Analysis: Evaluating if one option holds massive asymmetric upside compared to others is a staple of Value-Driven Development.
 
+## No gates
+**No gates, no mechanisms around agents.** An agent is a harness session running a task with the skills at its node. Its behaviour is text in the task; Metaform gives it tools and data. Never add a timer, a reminder, a nag, a guard, a withheld tool, a type or role label, or a check of who may call what. A refusal is only for a missing argument, a value that cannot be stored, or two writes that would corrupt one record. The harness runs the loop: tool calls, permissions, compaction, pacing. Enforcement is by prompt.
+
+When an agent causes damage, fix the prompt, the tool's description or the cause. When the person asks that agents know a risk, say the risk in the tool's description.
+
+Attribute to the person only what the person decided.
+
+The intake procedure and the metaform schema (`modules/intake/resources/metaform.axiom`) are the person's text. Serve them as written. A change of their format or wording, field names and placeholders included, needs the person's request.
+## Communication & Clarity
+1. Use the active voice. Always say who does the action.
+2. Keep sentences to 20 words or fewer.
+3. Put one idea in each sentence.
+4. Use the same word for the same thing every time.
+5. Do not use idioms or jargon.
+
 
 ## Bring your own judgment deeply grounded in project understanding.
 

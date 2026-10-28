@@ -491,28 +491,6 @@ def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tu
         return (found, False) if found is not None else (_open(ctx, store, notices, named), True)
 
 
-NEW_MAP = ('This starts a separate intake in a new base beside the map in use. The map in use is not changed; its '
-           'knowledge layers stay with it, and memories at addresses the new map lacks are orphaned until rekeyed. A '
-           'new feature, a correction or a check never needs it: metaform map refine changes the map in use, and '
-           'intake start with no name opens a verification pass on it.')
-
-
-def new_map_decision(ctx: Context) -> str | None:
-    """`intake start name=` on a project that has a map is the person's decision: a new map beside the one in use,
-    never an agent's way to record an update, which refines the map in use. Not when the person chose a new map at
-    the agent's launch, nor when an intake is being recorded, which start resumes."""
-    name = str(ctx.nouns.get('name') or '').strip()
-    if not name:
-        return None
-    store = ctx.require_store()
-    if _building(store) is not None or not store.intake_bases():
-        return None
-    launch = _own_launch(store)
-    if launch is not None and launch.get('map') in ('new', 'extend'):  # the person chose; start follows that choice
-        return None
-    return NEW_MAP
-
-
 def start(ctx: Context) -> Any:
     """Open the intake layer the records go into, or resume the one already being recorded."""
     store = ctx.require_store()
@@ -1097,7 +1075,7 @@ def _mapped_elsewhere(store: Store) -> str | None:
 
 def status(ctx: Context) -> Status:
     here = resources.files(__name__)
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+    if os.environ.get('METAFORM_SESSION'):
         # An agent a dispatch runner started has its work, given as its first turn: the intake's onboarding, which
         # asks an agent to handle it first, is for the person's own agent, never for one dispatched, BASE-052.
         if ctx.store is None:
@@ -1194,7 +1172,6 @@ MODULE = Module(
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False)),
-             person_decides=new_map_decision,
              person_details='A web GUI that runs follows the intake live.'),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
                                  'fields given.',
@@ -1241,8 +1218,7 @@ MODULE = Module(
         Verb('discard', discard, 'Discard the intake left unfinished: its layer and the parts it recorded are removed, '
                                  'and a base opened for it alone goes too, a copy kept.',
              caution='Discarding the unfinished intake removes every part it recorded; it is not undone.',
-             surfaces=('cli',), effect='remove', listed=recording, person_says=True, cautioned=_discard_caution,
-             page="the intake's Discard"),
+             surfaces=('cli',), effect='remove', listed=recording, cautioned=_discard_caution),
     ),
     status=status,
     provides=(Provides('intake.first_run', first_run), Provides('agent.tool.instructions', tool_instructions)),

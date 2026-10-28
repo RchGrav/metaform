@@ -181,20 +181,30 @@ def _here(verb: Verb) -> bool:
     return 'cli' in verb.surfaces and on_this_system(verb)
 
 
+SECTIONS = {
+    'Help': ('help', 'instructions', 'feedback', 'report', 'read'),
+    'Start': ('start', 'demo', 'install', 'provision', 'uninstall', 'build', 'return'),
+    'Projects': ('add', 'list', 'activate', 'remove', 'clear', 'restore', 'export', 'import', 'query', 'extract'),
+    'Settings': ('set', 'unset', 'config', 'enable', 'disable', 'alias'),
+    'Prompts': ('prompts', 'prompt'),
+}
+
+
 def commands_index(visible: Callable[[str], bool], aliases: dict[str, list[str]] | None = None) -> str:
-    """Every command shown here by owner, then each alias as one line naming its modules, CLI-039."""
+    """The chassis commands by section, one line each, then each module as one line, then each alias, CLI-039."""
     from . import loader
-    found = [(record.name, record.summary) for record in COMMANDS.values()
-             if visible('chassis') or record.name in ALWAYS]
-    lines = ['Commands', *rows(found), '']
-    for module in sorted(loader.enabled(), key=lambda item: item.id):
-        if not visible(module.id):
-            continue
-        verbs = [(f'{module.id} {verb.name}', verb.summary) for verb in module.verbs if _here(verb)]
-        lines += [f'{module.id}: {module.summary}', *rows(verbs), '']
+    shown_here = [name for name in COMMANDS if visible('chassis') or name in ALWAYS]
+    placed = {name for names in SECTIONS.values() for name in names}
+    sections = {**SECTIONS, 'Other': tuple(name for name in shown_here if name not in placed)}
+    found = [(title, ', '.join(name for name in names if name in shown_here)) for title, names in sections.items()]
+    lines = ['Commands', *rows((title, names) for title, names in found if names), '']
+    held = [(module.id, module.summary) for module in sorted(loader.enabled(), key=lambda item: item.id)
+            if visible(module.id)]
+    if held:
+        lines += ['Modules', *rows(held), '']
     if aliases:
         lines += ['Aliases', *rows((name, ', '.join(modules)) for name, modules in aliases.items()), '']
-    lines.append("Use 'metaform help <command>' or 'metaform help <module> <verb>' for details.")
+    lines.append("Use 'metaform help <command>' for a command, 'metaform help <module>' for a module's commands.")
     return '\n'.join(lines) + '\n'
 
 

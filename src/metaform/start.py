@@ -351,7 +351,7 @@ def ask(found: Read, project: str, say: Say) -> None:
 
 
 def _interactive() -> bool:
-    return sys.stdin.isatty() and os.environ.get('METAFORM_ROLE') in (None, '', 'none')
+    return sys.stdin.isatty() and not os.environ.get('METAFORM_SESSION')
 
 
 def brief(folder: Path, project: str, found: Read) -> str:
@@ -458,7 +458,7 @@ def intake(folder: Path, project: str, found: Read | None, mapped: bool, recordi
 def open_browser(address: str) -> bool:
     """Open the page once, in a browser window of the person's desktop. Nothing opens without a desktop, in an
     agent's run, under WSL, or where the only browser found would take over this terminal."""
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+    if os.environ.get('METAFORM_SESSION'):  # an agent's run, which a runner started
         return False
     if wsl():
         return False  # a WSLg window, not the person's Windows browser; interop may be off, so print the address

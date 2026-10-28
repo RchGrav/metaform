@@ -19,44 +19,15 @@ def skill_server(project_folder):
     return SimpleNamespace(folder=project_folder, server=server, extension=skill_extension)
 
 
-def test_standard_skill_discovery_survives_disabled_workflow(skill_server, run):
-    run('disable', 'workflow', cwd=skill_server.folder)
-    assert 'metaform_skills' not in skill_server.server.listing(skill_server.folder)
-    entries = skill_server.extension.entries(skill_server.folder)
-    names = {entry['frontmatter']['name'] for entry in entries}
-    assert 'write-workflow' in names and 'sentinel' not in names
-    uri = 'skill://metaform/sentinel/SKILL.md'
-    entry = skill_server.extension.get(skill_server.folder, uri)
-    assert entry['uri'] == uri and entry['frontmatter']['name'] == 'sentinel'
-    assert skill_server.extension.read(skill_server.folder, uri)[0]
-
-
-def test_native_deployment_does_not_change_standard_mcp_skill_availability(skill_server, tmp_path, monkeypatch):
-    from metaform import install
-    user = tmp_path / 'user'
-    user.mkdir()
-    monkeypatch.setenv('HOME', str(user))
-    monkeypatch.setenv('USERPROFILE', str(user))
-    before = skill_server.extension.entries(skill_server.folder)
-    tool = install.tools()['claude']
-    plan = install._skill_plan(tool)
-    assert plan is not None and plan.files
-    install._deploy_skills(tool, plan, tmp_path / 'backups')
-    assert all(path.read_bytes() == raw for path, raw in plan.files.items())
-    assert install.skills_deployed('claude-code')
-    assert skill_server.extension.entries(skill_server.folder) == before
-    assert 'metaform_skills' not in skill_server.server.listing(skill_server.folder, 'claude-code')
-
-
 @pytest.mark.req('MCP-029')
 def test_connect_message_contains_links_without_a_custom_skill_index(skill_server):
     from metaform import prompt_files
     sent = skill_server.server.connect_instructions(skill_server.folder)
     assert len(sent) <= 512
     assert sent.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
-    role = skill_server.server.role_text(skill_server.folder, 'unknown-host')
-    assert 'metaform_skills' not in sent + role
-    assert 'Skills:' not in sent + role
+    task = skill_server.server.task_text(skill_server.folder, 'unknown-host')
+    assert 'metaform_skills' not in sent + task
+    assert 'Skills:' not in sent + task
 
 
 @pytest.mark.req('MCP-028')

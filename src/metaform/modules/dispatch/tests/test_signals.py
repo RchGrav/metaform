@@ -202,15 +202,14 @@ def test_idle_chat_time_and_prep_failures_do_not_flag_ticket_progress(dispatch, 
 
 
 def test_other_prompt_producers_are_persisted_without_rewriting_them(dispatch, run):
-    run('enable', 'workflow', cwd=dispatch.folder)
-    sent = {'signal': 'incomplete-prompt', 'module': 'workflow', 'call': 'Inspect',
+    sent = {'signal': 'incomplete-prompt', 'module': 'memory', 'call': 'Inspect',
             'notices': [{'message': 'The prompt has no @VERIFY.'}]}
-    ctx = context('workflow', dispatch.folder, project='proj')
+    ctx = context('memory', dispatch.folder, project='proj')
     deliveries = ctx.publish('signal.raised', sent)
     assert all(row['status'] == 'completed' for row in deliveries)
     ctx.publish('signal.raised', sent)
     [raised] = json.loads(run('dispatch', 'signals', '--json', cwd=dispatch.folder).stdout)['signals']
-    assert raised['signal'] == sent['signal'] and raised['producer'] == 'workflow'
+    assert raised['signal'] == sent['signal'] and raised['producer'] == 'memory'
     assert raised['notices'] == sent['notices']
 
 

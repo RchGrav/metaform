@@ -536,7 +536,7 @@ def test_failed_checks_save_completed_work_and_retry_saves_later_edits_once(disp
     folder = worktree_for(repo, dispatch.id)
     (folder / 'feature.txt').write_text('ticket feature\n')
     run('set', '--dispatch-test-command=false', cwd=repo)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     shared_head = git(repo, 'rev-parse', 'HEAD')
     record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver accepted behavior.')
     assert record.done
@@ -553,9 +553,9 @@ def test_failed_checks_save_completed_work_and_retry_saves_later_edits_once(disp
     assert finished(ctx, dispatch.store, record, folder)['state'] == 'failed'
     assert git(folder, 'rev-parse', 'HEAD') == head
     (folder / 'README.md').write_text('later edit\n')
-    monkeypatch.delenv('METAFORM_ROLE')
+    monkeypatch.delenv('METAFORM_TASK_NAME')
     run('set', '--dispatch-test-command=true', cwd=repo)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     saved = finished(ctx, dispatch.store, record, folder)
     assert saved['state'] == 'committed'
     assert saved['evidence']['verification']['passed'] is True

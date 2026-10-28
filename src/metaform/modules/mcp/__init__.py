@@ -42,14 +42,14 @@ settings.number('mcp_port', 7434, min=1, max=65535, scope='global', switches=('-
                 label='MCP HTTP port', help='The port the HTTP MCP server listens on at 127.0.0.1.',
                 details='Read by metaform mcp serve --http, and by metaform install when mcp_transport is http, '
                         'which registers http://127.0.0.1:<port>/mcp.')
-# A server reached beyond this machine, the Metaform Node, oauth.py: who may reach it is the person's to decide, so
-# these are person_only; any bind but loopback, or a public URL, starts only with the Node's authorization server.
-settings.text('mcp_bind', '127.0.0.1', scope='global', person_only=True, label='MCP HTTP bind address',
+# A server reached beyond this machine, the Metaform Node, oauth.py: any bind but loopback, or a public URL, starts
+# only with the Node's authorization server.
+settings.text('mcp_bind', '127.0.0.1', scope='global', label='MCP HTTP bind address',
               help='The address metaform mcp serve --http listens on; anything but loopback needs mcp_public_url and '
                    'the Node\'s authorization server.',
               details='Loopback serves this machine only, as before. Any other address is refused unless the server is '
                       'a Metaform Node with its authorization server running, so nothing is served anonymously.')
-settings.text('mcp_public_url', '', scope='global', person_only=True, label='MCP public URL',
+settings.text('mcp_public_url', '', scope='global', label='MCP public URL',
               help='The https origin the server is reached at from outside, such as https://metaform.example.com; '
                    'empty serves this machine only.',
               details='Set, every request to <it>/mcp needs a token the Node\'s authorization server issued for '
@@ -61,14 +61,6 @@ settings.choice('mcp_transport', ['stdio', 'http'], 'stdio', scope='global', lab
                 details='stdio is the default: a host starts metaform mcp serve in the folder it opens, so each '
                         'folder is served as itself. http registers http://127.0.0.1:<mcp_port>/mcp, which serves '
                         'the folder metaform mcp serve --http was started in, for every AI tool that connects.')
-settings.choice('mcp_consent', ['ask', 'confirm'], 'ask', person_only=True, label='Consent over MCP',
-                help='How a call that needs your say is confirmed: ask shows you a form in your AI tool where it can '
-                     'show one; confirm takes the agent\'s confirm=true.',
-                details='Covers a tool with a caution, such as metaform_clear_project, and an agent asking to change a '
-                        'setting only you set. With ask, an AI tool that shows forms (MCP elicitation) asks you '
-                        'directly and the agent cannot answer for you; a tool that cannot, and every dispatched agent, '
-                        'falls back to confirm=true for a caution and a refusal for your settings. With confirm, the '
-                        'agent passes confirm=true after asking you itself, as before.')
 settings.boolean('mcp_apps', True, label='Map views in AI tools',
                  help='Offer the map, node, agent trace and glossary views to AI tools that show MCP Apps, such as '
                       'Claude Desktop.',
@@ -100,9 +92,8 @@ settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgr
                         'tool call made after the package code on disk changed from that code. Manual returns the '
                         'schema error and serves the code it started with. Unchanged package code never starts a '
                         'replacement.')
-# A2A, P004 and P005: other agents send work to Metaform as tickets. Who may reach it and where it may call out to are
-# the person's to decide, CLI-011, so both are person_only; how long a send waits only paces the caller, so it is not.
-settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve A2A',
+# A2A, P004 and P005: other agents send work to Metaform as tickets.
+settings.boolean('mcp_a2a', True, scope='global', label='Serve A2A',
                  help='Serve A2A beside MCP on metaform mcp serve --http, so other agents can send this home tickets.',
                  details='The public Agent Card is at http://127.0.0.1:<mcp_port>/.well-known/agent-card.json and names '
                          'no project. Every other A2A request needs the bearer token in <home>/run/a2a-token, made on '
@@ -110,7 +101,7 @@ settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve
                          'Address its contextId names, in To do for an agent to select. Off, '
                          'the HTTP server serves MCP alone.',
                  category='integrations', heading='A2A')
-settings.items('mcp_a2a_webhooks', (), scope='global', person_only=True, label='A2A push webhooks',
+settings.items('mcp_a2a_webhooks', (), scope='global', label='A2A push webhooks',
                help='The webhook URLs A2A push notifications may be sent to, each a URL prefix such as '
                     'https://agent.example/hooks/; none turns push notifications off.',
                details='A2A clients ask to be told of a task\'s changes at a URL of theirs. Metaform calls only a URL '
@@ -223,11 +214,12 @@ def exchange_open(folder: Path) -> bool:
     return project is not None and bool(a2a_records.exchanges(project, open_only=True))
 
 
-def agent_opening(folder: Path, role: str | None, withheld: str = '') -> str:
-    """The directive and links that open an agent's session and its first turn after a compaction, `server.opening`,
-    offered as `agent.opening` so a runner reaches it through the chassis; imported here only when asked."""
-    from .server import opening
-    return opening(folder, role, withheld)
+def agent_opening(folder: Path, task: str | None) -> str:
+    """The directive and links that open a dispatched agent's session and its first turn after a compaction, for an
+    agent on the task named `task` or on none, `server.opening`, offered as `agent.opening` so a runner reaches it
+    through the chassis; imported here only when asked."""
+    from .server import dispatched_agent, opening
+    return opening(dispatched_agent(folder, task))
 
 
 MODULE = Module(

@@ -48,42 +48,8 @@ def free_port() -> int:
             return port
 
 
-PAGE_KEYS: dict[tuple[str, int], str] = {}  # the page cookie each server gave this test process, by its address
-
-
-def page_cookie(port, address='127.0.0.1', host=None, *, again=False, token=None):
-    """The cookie with the key the server gives a page it serves, as a browser keeps it from loading the page: a write
-    that is the person's alone is taken only with it, CLI-011 (UX review, person-consent F1). `token`: the one a
-    server on another bind asks of the page's load."""
-    if again or (address, port) not in PAGE_KEYS:
-        connection = http.client.HTTPConnection(address, port, timeout=10)
-        try:
-            connection.putrequest('GET', '/', skip_host=True, skip_accept_encoding=True)
-            connection.putheader('Host', host or f'{address}:{port}')
-            if token:
-                connection.putheader('X-Metaform-Token', token)
-            connection.endheaders()
-            response = connection.getresponse()
-            response.read()
-            given = [one.split(';', 1)[0] for one in response.msg.get_all('Set-Cookie') or []
-                     if one.startswith('metaform_page_')]
-        finally:
-            connection.close()
-        PAGE_KEYS[(address, port)] = '; '.join(given)
-    return PAGE_KEYS[(address, port)]
-
-
 def request(port, path='/', *, address='127.0.0.1', host=None, method='GET', body=None, headers=None):
-    """One request; a POST carrying an Origin, as the page's writes do, carries the page's cookie too, unless it names
-    a Cookie of its own, as a browser that loaded the page sends it."""
-    if method == 'POST' and 'Origin' in (headers or {}) and 'Cookie' not in (headers or {}):
-        token = (headers or {}).get('X-Metaform-Token')
-        sent = _request(port, path, address=address, host=host, method=method, body=body,
-                        headers={**(headers or {}), 'Cookie': page_cookie(port, address, host, token=token)})
-        if sent[0] == 403 and 'carries no key this server gave' in sent[1]:  # a key the server has since let go
-            sent = _request(port, path, address=address, host=host, method=method, body=body, headers={
-                **(headers or {}), 'Cookie': page_cookie(port, address, host, again=True, token=token)})
-        return sent
+    """One request."""
     return _request(port, path, address=address, host=host, method=method, body=body, headers=headers)
 
 
@@ -161,7 +127,7 @@ def intake_agent(run, folder, log, dispatch_runners, *nouns):
             return next((dict(row) for row in tx.rows('agent_sessions', limit=0).results
                          if row['work_id'] == launched['work_id'] and row['state'] == 'running'), None)
     row = eventually(running)
-    return {'METAFORM_ROLE': 'intake', 'METAFORM_WORK': str(row['work_id']), 'METAFORM_SESSION': str(row['runner']),
+    return {'METAFORM_TASK_NAME': 'intake', 'METAFORM_WORK': str(row['work_id']), 'METAFORM_SESSION': str(row['runner']),
             'METAFORM_BASE': str(row['base'] or ''), **fake}
 
 
@@ -3959,40 +3925,6 @@ def test_prompts_are_read_and_an_edit_is_saved_as_a_new_version_only_from_the_gu
 
 
 @pytest.mark.req('VIEW-013')
-@pytest.mark.req('STORE-044')
-def test_every_prompt_an_agent_is_sent_opens_by_role_and_saves_as_plain_text_before_it_was_ever_sent(run, web,
-                                                                                                    mapped):
-    """UX review round 2, prompt-authoring F2, F3 and F7: the Prompt tab lists each role's prompts on a fresh home,
-    the system agent's among them; one never sent opens as its shipped text, version 0, written as plain text; a save
-    from it goes through the gate, so what is saved is what is sent, and says what it keeps as written."""
-    from metaform import prompt_files
-    from metaform.data import prompts
-    run('enable', 'dispatch')
-    started(run)
-    catalog = api(web, '/api/prompt-catalog?project=proj')[1]
-    system = next(one for one in catalog['roles'] if one['role'] == 'system')
-    assert system['prompts'][0] == 'dispatch:system' and catalog['stored'] == []
-    read = api(web, '/api/prompt-versions?name=dispatch:system')[1]
-    [shipped] = read['versions']
-    assert (shipped['number'], read['written'], read['problem']) == (0, 'plain', None)
-    assert '1. Language & Vocabulary' in shipped['plain'] and '<mascot />' in shipped['plain']
-    own = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
-    body = json.dumps({'name': 'dispatch:system', 'text': 'Plans & tickets, as <address>: <task>. <mascot/>',
-                       'parent': 0})
-    status, saved = api(web, '/api/save-prompt', method='POST', body=body, headers=own)
-    assert status == 200 and saved['plain'] == 'Plans & tickets, as <address>: <task>. <mascot />'
-    assert saved['said'] == []
-    from importlib import resources
-    assert prompt_files.served(resources.files('metaform.modules.dispatch'), 'system', project='proj',
-                               mascot='M') == 'Plans & tickets, as <address>: <task>. M'
-    assert [one.origin for one in prompts.prompt_versions('dispatch:system')] == ['edited', 'shipped']
-    edited_intake = '# Revised intake\nUse {prompt} literally. <unclosed> & keep this text.\n'
-    edit = json.dumps({'name': 'intake:intake.xml', 'text': edited_intake, 'parent': 0})
-    status, saved_intake = api(web, '/api/save-prompt', method='POST', body=edit, headers=own)
-    assert status == 200 and saved_intake['plain'] == edited_intake
-
-
-@pytest.mark.req('VIEW-013')
 @pytest.mark.req('VIEW-012')
 def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_next_version(run, web, mapped,
                                                                                             browser):
@@ -4029,32 +3961,6 @@ def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_ne
     saved = prompts.prompt_version('practices')
     assert (saved.number, saved.text, saved.parent_id) == (4, '<practices>\n  <four/>\n</practices>\n', third.version_id)
     assert prompts.use_of('proj', notes.base_id, notes.id).number == 3
-    assert problems == [] and remote == []
-
-
-@pytest.mark.req('VIEW-013')
-def test_the_system_agents_prompt_opens_on_a_fresh_home_and_saves_as_plain_text_from_the_page(run, web, mapped,
-                                                                                              browser):
-    """UX review round 2, prompt-authoring F7: before any system agent has run, the Prompt tab opens on the system
-    agent's prompt, shown as the agent reads it, and the person's edit, a bare & and < included, is saved and sent."""
-    from importlib import resources
-
-    from metaform import prompt_files
-    run('enable', 'dispatch')
-    started(run)
-    page, problems, remote = opened(browser, web)
-    page.click('#t-prompt')
-    page.wait_for_function('() => window.metaform.editor() && '
-                           'window.metaform.editor().getValue().includes("Engineering Orchestrator")')
-    assert page.evaluate('document.querySelector("#promptSel").value') == 'dispatch:system'
-    assert page.evaluate('document.querySelector("#promptSel option:checked").parentElement.label') == 'system agent'
-    assert '1. Language & Vocabulary' in page.evaluate('window.metaform.editor().getValue()')
-    assert 'shipped text' in page.text_content('#promptNote')
-    page.evaluate('window.metaform.editor().setValue("Plans & tickets for a < b. <mascot/>")')
-    page.click('#saveBtn')
-    page.wait_for_function('() => document.querySelector("#verSel").value === "2"')
-    assert prompt_files.served(resources.files('metaform.modules.dispatch'), 'system', project='proj',
-                               mascot='M') == 'Plans & tickets for a < b. M'
     assert problems == [] and remote == []
 
 
@@ -4132,8 +4038,9 @@ def events_on(port):
             answer = stream.getresponse()
             ready.set()
             for line in answer:
-                if line.startswith(b'data:'):
-                    heard.append(json.loads(line[5:]))
+                event = json.loads(line[5:]) if line.startswith(b'data:') else None
+                if event is not None and event['topic'] != 'hello':  # hello is the stream's own opener
+                    heard.append(event)
                     first.set()
         except OSError:
             pass
@@ -5324,7 +5231,7 @@ def test_a_right_click_on_a_node_opens_its_menu_and_its_messages_are_read_in_a_f
     GIVE = (['memories', 'Memories 0', True],                           # the first of the further acts, VIEW-031
             ['notes', 'Notes 0', False], ['history', 'Work history 0', True],  # VIEW-034, VIEW-036
             ['chat', 'Chat about this', False],                         # talk about any node, VIEW-042
-            ['raise', 'Raise an issue', False],                         # a sentinel on it, VIEW-045
+            ['raise', 'Raise an issue', False],                         # an agent takes it up, VIEW-045
             ['task', 'Add Task', False],                                # from the same menu, VIEW-032
             ['element', 'Add Element', False],                          # and VIEW-033
             ['agent', 'Start agent 0', True])                           # no open ticket waits here, VIEW-039
@@ -5493,7 +5400,6 @@ def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_f
 VALIDATE = ('Orient yourself only enough to validate the coherence of this element, approve addition or if element '
             'needs additional coherence submit questions w/ recommendations.')
 
-WORKFLOW_ADDRESS = 'prompt.workflow.quality.code'
 WORKFLOW_SCRIPT = '''@STATE_INIT:
  {target} := PARAM
 @CONSTRAINT:
@@ -5507,111 +5413,6 @@ WORKFLOW_SCRIPT = '''@STATE_INIT:
 @VERIFY:
  [V1] Was the target returned? NO -> RECURSE Review.
 '''
-
-
-@pytest.mark.req('BASE-051')
-@pytest.mark.req('VIEW-032')
-@pytest.mark.req('VIEW-039')
-def test_a_stored_workflow_runs_from_the_task_editor_through_acp(run, web, mapped, browser, tmp_path,
-                                                               watch_dispatch):
-    from metaform.data import Store
-    from metaform.modules.dispatch.tests.test_dispatch import eventually
-    ADDRESS, SCRIPT = WORKFLOW_ADDRESS, WORKFLOW_SCRIPT
-
-    run('enable', 'workflow')
-    run('enable', 'dispatch')
-    run('workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality', cwd=mapped)
-    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
-    run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
-    log = tmp_path / 'fake.jsonl'
-    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'workflow'})
-    page, problems, _ = opened(browser, web)
-    watch_dispatch(page)
-    store = Store('proj')
-    alarm = store.element('code.alarm.audible').id
-    page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.task("{alarm}")')
-    page.wait_for_selector(f'#task .workflow option[value="{ADDRESS}.review"]', state='attached')
-    page.select_option('#task .workflow', f'{ADDRESS}.review')
-    call = f'({{ok}}, {{address}}) := {ADDRESS}.review(target=this)'
-    page.fill('#task .workflow-call', call)
-    page.select_option('#task .condition', 'unbuilt')
-    page.check('#task .start-agent')
-    choose_agent(page, '#task', 'codex')
-    page.click('#task .put')
-    page.wait_for_selector('#task', state='hidden')
-    ticket = next(record for record in store.work(limit=0).results if 'Workflow input: ' in (record.task or ''))
-    assert ticket.address == 'code.alarm.audible'
-    launch = json.loads(ticket.task.split('Workflow input: ', 1)[1].splitlines()[0])
-    assert launch == {'call': call, 'element': 'code.alarm.audible'}
-    eventually(lambda: store.ticket(ticket.id).work.done)
-    assert json.loads(store.ticket(ticket.id).work.resolution) == [True, 'code.alarm.audible']
-    assert problems == []
-
-
-@pytest.mark.req('BASE-051')
-@pytest.mark.req('VIEW-032')
-@pytest.mark.req('VIEW-039')
-@pytest.mark.parametrize('start_now', [False, True])
-def test_a_workflow_ticket_keeps_its_call_when_queued_or_acp_cannot_start(run, web, mapped, browser, start_now):
-    import sys
-
-    from metaform.data import Store
-    ADDRESS, SCRIPT = WORKFLOW_ADDRESS, WORKFLOW_SCRIPT
-
-    run('enable', 'workflow')
-    run('enable', 'dispatch')
-    run('workflow', 'submit', ADDRESS, 'procedures', cwd=mapped)
-    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
-    run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)  # found when the page reads the agents
-    started(run)
-    store = Store('proj')
-    page, problems, _ = opened(browser, web)
-    page.wait_for_function('() => window.metaform.loaded()')
-    page.evaluate(f'window.metaform.task("{store.element("code.alarm.audible").id}")')
-    page.wait_for_selector(f'#task .workflow option[value="{ADDRESS}.review"]', state='attached')
-    page.select_option('#task .workflow', f'{ADDRESS}.review')
-    page.fill('#task .workflow-call', f'{ADDRESS}.review(target=this)')
-    page.fill('#task .text', 'Return the reviewed address.')
-    page.select_option('#task .condition', 'unbuilt')
-    choose_agent(page, '#task', 'codex')
-    run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)  # and gone by the time it starts
-    page.set_checked('#task .start-agent', start_now)
-    if start_now:
-        with page.expect_response(lambda response: '/api/dispatch-start' in response.url) as failed:
-            page.click('#task .put')
-        assert failed.value.status == 400 and 'not found' in failed.value.json()['error']
-    else:
-        page.click('#task .put')
-    page.wait_for_selector('#task', state='hidden')
-    ticket = next(record for record in store.work(limit=0).results if 'Workflow input: ' in (record.task or ''))
-    assert ticket.task.startswith('Return the reviewed address.\n\n')
-    assert f'{ADDRESS}.review(target=this)' in ticket.task
-    assert ticket.taken is None and ticket.done is None
-    assert problems == (['Failed to load resource: the server responded with a status of 400 (Bad Request)']
-                        if start_now else [])
-
-
-@pytest.mark.req('BASE-051')
-def test_workflow_picker_follows_the_enabled_module_and_launches_no_nonce_on_a_read(run, web, mapped):
-    from metaform.data import Store
-    ADDRESS, SCRIPT = WORKFLOW_ADDRESS, WORKFLOW_SCRIPT
-
-    run('enable', 'workflow')
-    run('workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality', cwd=mapped)
-    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
-    started(run)
-    status, listed = api(web, '/api/workflows?project=proj')
-    assert status == 200 and listed == {'enabled': True, 'workflows': []}
-    run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
-    status, listed = api(web, '/api/workflows?project=proj')
-    assert status == 200 and listed['enabled'] is True
-    assert any(item['address'] == ADDRESS and item['prompt'] == ['review'] for item in listed['workflows'])
-    with Store('proj', module='workflow').tables(write=False) as tx:  # a read of the picker starts no workflow run
-        assert list(tx.rows('runs', limit=0).results) == []
-    run('disable', 'workflow')
-    assert api(web, '/api/workflows?project=proj') == (200, {'enabled': False, 'workflows': []})
 
 
 @pytest.fixture
@@ -7366,7 +7167,7 @@ def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_i
             const {ROAM} = await import('/page/app/figures/agents.js');
             window.peerBodyBefore = ROAM.figures.get(work).mesh;
         }''', peer.id)
-    own = {'METAFORM_WORK': work, 'METAFORM_ROLE': 'system'}
+    own = {'METAFORM_WORK': work, 'METAFORM_TASK_NAME': 'user_agent'}
     taken = json.loads(run('web', 'embody', 'owl', '--json', cwd=mapped, env=own).stdout)
     assert (taken['figure'], taken['mascot']) == (True, False), taken
     drawn = f'window.metaform.figures().find(one => one.work_id === "{work}")'
@@ -7971,9 +7772,8 @@ def test_dispatch_from_the_page_runs_on_the_base_it_shows_and_an_intake_on_the_a
     server.cli_result({'project': 'proj', 'base': other}, 'dispatch', 'start', ['w1', 'claude'])
     server.cli_result({'project': 'proj', 'base': other}, 'dispatch', 'intake', [])
     server.cli_result({'project': 'proj', 'base': active}, 'dispatch', 'stop', ['w1'])
-    server.cli_result({'project': 'proj', 'base': other}, 'workflow', 'cancel', ['run=r1'])
     server.run_dispatch('proj', 'sessions', ['id=w1'], server.chosen_base({'project': 'proj', 'base': other}))
-    assert bound == [other, None, None, None, other]
+    assert bound == [other, None, None, other]
 
 
 @pytest.mark.req('VIEW-039')
@@ -9059,7 +8859,7 @@ def test_the_chat_dock_stays_with_its_session_when_a_newer_session_of_the_ticket
 
 @pytest.mark.req('VIEW-045')
 def test_each_open_chat_is_a_tab_in_the_dock_and_closing_keeps_the_threads(run, web, mapped, browser):
-    """Several agents can be talked with at once, sentinels among them; the dock keeps each conversation as a tab,
+    """Several agents can be talked with at once; the dock keeps each conversation as a tab,
     switching shows that one's thread, and closing preserves every thread and session."""
     from metaform import relay
     from metaform.data import Node, Store
@@ -9252,40 +9052,6 @@ def test_the_box_beside_an_agent_shows_the_part_its_work_is_using_in_white_and_u
     page.locator('#agents .agent-row input.inuse').check()
     page.wait_for_function('() => document.querySelectorAll(".map2d .node.inuse").length === 2'
                            ' && !document.querySelector(".map2d .node.reserved")')
-    assert problems == []
-
-
-@pytest.mark.req('VIEW-045')
-@pytest.mark.req('LAYER-029')
-def test_a_sentinels_proposal_shows_what_it_reserves_and_shows_its_reach_on_the_map_in_white(run, web, mapped, browser):
-    """A proposal is more than a button: in the sentinel's chat it shows its grounds, benefit and trade-off, how much
-    of the map it reserves, and Show on the map paints its reach white."""
-    import time as clock
-
-    from metaform import relay
-    from metaform.data import Node, Store
-    store = Store('proj')
-    run('enable', 'dispatch')
-    issue = store.add_work(Node('element', 'code.alarm.audible'), None, task='Issue raised by the person: too loud')
-    live_session(issue.id)
-    proposal = {'title': 'Lower the gain', 'grounds': 'alarm.c:12 sets 0 dB', 'disruption': 'the alarm and the timer',
-                'reach': ['code.alarm.audible', 'code.timer.kitchen'], 'benefit': 'quieter at once',
-                'tradeoff': 'the timer is held while it is built'}
-    with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('proposals', {'issue': issue.id, 'text': json.dumps([proposal]), 'seq': clock.time_ns()})
-    started(run)
-    page, problems, _ = opened(browser, web)
-    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    relay.deliver('map.changed', {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'})
-    page.wait_for_selector('#agents:not([hidden]) .agent-row button.chat', timeout=10000)
-    page.click('#agents .agent-row button.chat')
-    page.wait_for_selector('#helpdesk .proposals:not([hidden]) .proposal', timeout=10000)
-    card = page.locator('#helpdesk .proposal').inner_text()
-    total = len(store.graph(limit=0).elements)
-    assert 'Lower the gain' in card and f'Reserves 2 of {total} parts' in card and 'quieter at once' in card
-    page.click('#helpdesk .proposal button.reach')
-    page.wait_for_function('() => document.querySelectorAll(".map2d .node.inuse").length === 2')
-    assert page.locator('#helpdesk .proposal button.reach').text_content() == 'Hide from the map'
     assert problems == []
 
 
@@ -10692,13 +10458,14 @@ def test_a_task_carries_its_kind_and_its_stage_goes_on_the_parts_state_record(ru
 
 
 @pytest.mark.req('MAP-050')
-def test_role_never_binds_the_page(run, web, mapped):
-    """The page is the person's: a server started by a worker's command carries no role, and the page's writes are
-    never refused by one, so the person adds a ticket and holds it there."""
+def test_an_agent_s_identity_never_binds_the_page(run, web, mapped):
+    """The page is the person's: a server started by an agent's command carries none of the agent's identity, and the
+    page's writes are never refused by one, so the person adds a ticket and holds it there."""
     from metaform.data import Store
-    json.loads(run('web', '--json', cwd=mapped, env={'METAFORM_ROLE': 'worker', 'METAFORM_WORK': 'w1'}).stdout)
+    json.loads(run('web', '--json', cwd=mapped, env={'METAFORM_SESSION': 'r1', 'METAFORM_WORK': 'w1'}).stdout)
     status, body = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
-        'project': 'proj', 'task': 'The person\'s work.', 'nodes': ['element:code.timer.kitchen'], 'hold': True}))
+        'project': 'proj', 'task': 'The person\'s work.', 'nodes': ['element:code.timer.kitchen'], 'hold': True,
+        'hold_reason': 'The person holds it.'}))
     assert status == 200, body
     assert 'The person\'s work.' in [record.task for record in Store('proj').work(open=True, limit=0).results]
 
@@ -11206,8 +10973,8 @@ def test_permission_requests_off_screen_pop_up_stacked_and_allow_all_answers_the
 def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, web, mapped, browser, tmp_path,
                                                                           watch_dispatch):
     """ACP's elicitation on the page: the head agent's AskUserQuestion, a choice and its "Other" box, shows as a card
-    with the choices as buttons beside Decline; the person presses one and the agent gets that choice. Only the sentinel
-    and the head agent ask the person, VIEW-045. The agent's session notice is a line of its own."""
+    with the choices as buttons beside Decline; the person presses one and the agent gets that choice. Only the head
+    agent asks the person, VIEW-045. The agent's session notice is a line of its own."""
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold', 'FAKE_ACP_ELICIT': 'ask',
@@ -11229,55 +10996,6 @@ def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, 
     assert logged_by(log, lambda entry: 'elicited' in entry)['elicited'] \
         == {'action': 'accept', 'content': {'question_0': 'Blue'}}
     page.wait_for_selector('#helpdesk .elicitation.answered', timeout=30000)
-    run('dispatch', 'stop', work, cwd=mapped)
-    assert problems == []
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('VIEW-045')
-def test_a_consent_card_shows_what_runs_and_the_persons_allow_answers_the_waiting_call(run, web, mapped, browser,
-                                                                                     tmp_path, watch_dispatch):
-    """UX review round 2, person-consent F5: the system agent's call that is the person's decision waits on a card in
-    its chat that says who asks, the caution and the command it runs; Allow once answers the waiting call, and the
-    card then says it was allowed once."""
-    import threading
-
-    from metaform.data import Store
-    from metaform.modules.dispatch import ask_consent
-    log = tmp_path / 'fake.jsonl'
-    run('enable', 'dispatch')
-    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
-    page, problems, _ = opened(browser, web)
-    watch_dispatch(page)
-    page.wait_for_function('() => window.metaform.loaded()')
-    work = page.evaluate("""fetch('/api/system-chat', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({project: 'proj', agent: 'codex'})}).then(r => r.json())""")['work_id']
-    deadline = time.monotonic() + 60
-    while True:  # the session's runner, once it holds its session
-        rows = json.loads(run('dispatch', 'sessions', f'id={work}', '--json', cwd=mapped).stdout)['sessions']
-        runner = next((row['runner'] for row in rows if row.get('state') == 'running' and row.get('runner')), None)
-        if runner or time.monotonic() > deadline:
-            break
-        time.sleep(0.1)
-    assert runner, rows
-    answers: list[dict] = []
-    asking = threading.Thread(target=lambda: answers.append(ask_consent(
-        Store('proj'), 'Switching to fresh takes main out of view.', tool='map_add-base',
-        command='metaform map add-base name=fresh --confirm', caution='Switching to fresh takes main out of view.',
-        wait=60, work=work, runner=runner)))
-    asking.start()
-    page.evaluate(f'window.metaform.agent("{work}")')
-    card = '#helpdesk .elicitation.waiting'
-    page.wait_for_selector(f'{card} .answers button', timeout=30000)
-    shown = page.inner_text(card)
-    assert 'asks for your consent' in shown and 'Switching to fresh takes main out of view.' in shown
-    assert 'metaform map add-base name=fresh --confirm' in shown
-    assert page.eval_on_selector_all(f'{card} .answers button', 'found => found.map(one => one.textContent)') \
-        == ['Allow once', 'Decline']
-    page.click(f'{card} .answers button:text-is("Allow once")')
-    asking.join(timeout=30)
-    assert answers and answers[0]['action'] == 'accept', answers
-    page.wait_for_selector('#helpdesk .elicitation.answered:has-text("Allowed once")', timeout=30000)
     run('dispatch', 'stop', work, cwd=mapped)
     assert problems == []
 
@@ -11588,59 +11306,13 @@ print('\\n'.join(answer.msg.get_all('Set-Cookie') or []))
 
 
 def under_claude(home, *args, **extra):
-    """`args` run by a parent that runs as `claude` in the same home, with METAFORM_ROLE cleared. It is named by a
+    """`args` run by a parent that runs as `claude` in the same home, with METAFORM_SESSION cleared. It is named by a
     path beside the base interpreter, so a Python before 3.14, which finds its library from that name, finds it there
     rather than looking up `claude` on the PATH."""
-    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '', 'METAFORM_HOLD': '',
+    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_SESSION': '', 'METAFORM_HOLD': '',
            'AGENT_PYTHON': sys.executable, 'AGENT_NAME': os.path.join(sys.base_prefix, 'bin', 'claude'), **extra}
     return subprocess.Popen(['bash', '-c', 'exec -a "$AGENT_NAME" "$0" -c "$1" "${@:2}"', sys.executable, UNDER_CLAUDE,
                              *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('VIEW-011')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the process behind a connection is read on Linux')
-def test_a_persons_write_from_an_agents_process_is_refused_whatever_origin_it_sends(run, mapped, home):
-    """UX review round 1, settings-govern-behavior F2: a write of the person's alone sent with the page's own Origin
-    by an agent's process is refused, whether METAFORM_ROLE is set or cleared, since the server reads the process at
-    the other end of the connection; the person's own write runs even when the server itself was started by an agent,
-    since the command it runs carries the server's vouch."""
-    from metaform import settings
-    port = free_port()
-    server = under_claude(home, '-m', 'metaform.modules.web.server', '--bind', '127.0.0.1', '--port', str(port),
-                          '--nonce', 'test')
-    assert server.stdout is not None
-    ready = json.loads(server.stdout.readline())
-    try:
-        assert ready['port'] == port
-        for extra in ({'METAFORM_ROLE': 'worker'}, {}):
-            if extra:
-                sent = subprocess.run([sys.executable, '-c', FORGED, str(port)], capture_output=True, text=True,
-                                      timeout=60, env={**os.environ, 'METAFORM_HOME': str(home), **extra}, check=False)
-                said = sent.stdout
-            else:
-                sender = under_claude(home, '-c', FORGED, str(port))
-                said = sender.communicate(timeout=60)[0]
-            assert said.startswith('403 ') and "is the person's to do on the page" in said, said
-            assert settings.state('jev', mapped) == 'default', 'the forged write changed nothing'
-        # person-consent F1: the same write re-parented to init passed every guard; the page's key now stops it
-        out = home.parent / 'reparented.out'
-        under_claude(home, '-c', REPARENTED, str(port), str(out), FORGED).communicate(timeout=60)
-        deadline = time.monotonic() + 60
-        while not out.read_text().strip():  # the re-parented sender, which nothing can wait on
-            assert time.monotonic() < deadline, 'the re-parented sender did not answer'
-            time.sleep(0.05)
-        assert out.read_text().startswith('403 ') and 'carries no key' in out.read_text(), out.read_text()
-        assert settings.state('jev', mapped) == 'default', 'the re-parented write changed nothing'
-        given = under_claude(home, '-c', FETCHED, str(port)).communicate(timeout=60)[0]
-        assert 'metaform_page_' not in given, given  # an agent's process is served the page without a key
-        status, saved = setting_write(port, '/api/settings', key='jev', value=False)  # the person, from this process
-        assert status == 200, saved
-        assert settings.value('jev', mapped) is False
-    finally:
-        os.kill(int(ready['pid']), 15)  # the stop signal, as metaform web stop sends it; its parent then ends
-        server.communicate(timeout=30)
-    assert not list((home / 'run' / 'vouch').iterdir())  # its vouch went with it
 
 
 def test_the_phone_checks_problem_is_never_a_notice_on_the_page(run, web, mapped, home, monkeypatch):
@@ -11670,7 +11342,6 @@ def test_the_settings_screen_reads_every_setting_and_saves_resets_and_narrows_as
     rows = {row['key']: row for row in found['settings']}
     assert status == 200 and found['folder'] == str(mapped), found
     assert rows['debug']['kind'] == 'bool' and rows['debug']['state'] == 'default'
-    assert rows['agents_may_set_control']['person_only'] is True and rows['agents_may_set_control']['label']
     assert {'chassis', 'map', 'web'} <= set(rows['modules']['choices']) and 'modules' in found['all_when_empty']
     assert {'id': 'web', 'enabled': True} == {key: one[key] for one in found['modules'] if one['id'] == 'web'
                                               for key in ('id', 'enabled')}
@@ -12570,7 +12241,7 @@ def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_
     status, body = api(web, '/api/agent-view?project=proj&address=code.timer.kitchen')
     assert status == 200, body
     assert body['connect']['text'] == mcp.connect_instructions(mapped)  # the person's own session's directive and links
-    assert 'metaform://role/person' in body['connect']['text']
+    assert 'metaform://task/person' in body['connect']['text']
     assert body['connect']['chars'] == len(body['connect']['text']) and body['host_limit'] == 2048
     assert body['glossary']['text'] == mcp.glossary(mapped)
     assert body['glossary']['index']['text'] == mcp.modules_text(mapped)
@@ -12947,9 +12618,6 @@ def test_the_developer_panes_and_prompts_exist_only_with_the_developer_level_on(
     debug.answer(handler, '/api/debug/prompts', {})
     status, found = handler.answers[-1]
     assert status == 200 and found['editable'] is False
-    resume = next(one for one in found['prompts'] if (one['owner'], one['name']) == ('web', 'resume_run'))
-    assert resume['text'] == 'Run <run/> is answered; resume it with metaform workflow resume run=<run/>'
-    assert set(resume['fills']) == {'run'} and 'Runs pane' in resume['when'] and resume['bytes'] == len(resume['text'])
     connect = next(one for one in found['prompts'] if (one['owner'], one['name']) == ('web', 'connect'))
     assert connect['budget']['limit'] == 2048 and connect['budget']['unit'] == 'characters'
 
@@ -13004,38 +12672,6 @@ def test_what_the_mascot_sees_is_asked_of_the_open_page_and_its_answer_returned_
     listening.join(10)
     assert status == 200 and json.loads(body) == {'in_view': ['code.alarm.audible']}
     assert heard[-1]['act'] == 'see' and heard[-1]['id'] and {one['act'] for one in heard} == {'say', 'see'}
-
-
-@pytest.mark.req('VIEW-042')
-def test_a_run_paused_on_the_person_is_listed_with_its_reason_answered_and_cancelled_from_the_page(run, web, mapped):
-    """H03's page side: the Runs pane reads the open runs with what stopped a paused one, takes the person's answer
-    through the person's own command line, and cancels a run, asked first on the page; with workflow off it says so."""
-    from metaform.data import Store
-    from metaform.modules.workflow import executor, runs
-    from metaform.modules.workflow.tests.test_executor import begin
-    started(run)
-    assert api(web, '/api/workflow-runs?project=proj') == (200, {'enabled': False, 'runs': []})
-    run('enable', 'workflow')
-    store = Store('proj', module='workflow')
-    word = begin(store)
-    executor.pause(store, word, 'The target code.timer.kitchen is gone and the logic names no other.')
-    status, found = api(web, '/api/workflow-runs?project=proj')
-    assert status == 200 and found['enabled'] is True
-    paused = next(one for one in found['runs'] if one['run'] == word)
-    assert paused['state'] == 'input_required' and 'is gone' in paused['message']
-    own = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
-    status, body, _ = request(web, '/api/workflow-answer', method='POST', headers=own,
-                              body=json.dumps({'project': 'proj', 'run': word, 'answer': 'use the alarm', 'resume': True}))
-    assert status == 200, body
-    assert executor.view(store, word)['answer']['answer'] == 'use the alarm'
-    assert 'resumed' not in json.loads(body)                       # no ticket's agent paused it, so none is told
-    status, body, _ = request(web, '/api/workflow-cancel', method='POST', headers=own,
-                              body=json.dumps({'project': 'proj', 'run': word, 'reason': 'not needed'}))
-    assert status == 200, body
-    assert runs.read(store, word).state == 'cancelled'
-    stranger = {**own, 'Origin': 'http://elsewhere.example'}
-    assert request(web, '/api/workflow-cancel', method='POST', headers=stranger,
-                   body=json.dumps({'project': 'proj', 'run': word}))[0] == 403
 
 
 @pytest.mark.req('MCP-037')

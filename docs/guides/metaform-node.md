@@ -88,7 +88,7 @@ capability; `dispatch` (starting and steering agents) needs a Node at `dispatch`
 page's toolbar, layout and saved workspaces, modules, prompts, bases, backups, removing or clearing a project, builds,
 MCP Apps tool calls) is the owner's only. A toolbar tool that runs a verb is classed by that verb, as an MCP tool call
 is scoped: a read is `read`, a write `write`, a dispatch verb or one that reaches past the map `dispatch`, and a verb
-with a caution or a person-only setting `admin`. Caddy drops any client-sent copies of those
+with a caution `admin`. Caddy drops any client-sent copies of those
 headers and adds the per-deploy secret in `gate.env`; the page server refuses a request without it, and a route
 whose class the account was not given.
 
@@ -203,7 +203,7 @@ side is the cloud module (`src/metaform/modules/cloud/`).
                                                     authorization server, passkeys, device sign-in, key set
                                                     broker: /mcp*, /cloud/tunnel
  person's machine: metaform cloud connect ──WSS, DPoP (aud = https://metaform.ing/cloud/tunnel)──┘
-                   └─ the MCP server's app run in-process (no listening socket), audit log, person-only rules
+                   └─ the MCP server's app run in-process (no listening socket), audit log
 ```
 
 ### For the person
@@ -303,7 +303,7 @@ The broker never forwards the host's token (the MCP security guidance forbids to
 signs an assertion for that one request: the account, the client, the scopes (the host's, capped by what the machine
 allows), the instance's resource URL, the body's SHA-256, valid 60 seconds. The machine checks it against the key set
 it saved at login, its own resource URL, the account it signed in as and the body, spends it once, and only then
-hands the request to the MCP app, whose bearer check, scope gate and person-only refusals are the ones every exposed
+hands the request to the MCP app, whose bearer check and scope gate are the ones every exposed
 Metaform uses. A misrouted request is refused by the receiver, not run. The machine writes one line per request to
 `<home>/cloud/audit.jsonl`: account, client, method, tool or resource, project, outcome, duration, the assertion's id.
 
@@ -334,7 +334,7 @@ charged to that grant (1 a second after a burst of 10), and one naming nothing v
 source flooding junk therefore spends only its own allowance, never the refreshes of every account.
 
 **Scopes** are capped twice: at the broker by the Node's capability and the account's role (only the owner may be
-granted `mcp:dispatch`, unless `node_member_dispatch`), and on the machine by `cloud_capability` (person-only, `write`
+granted `mcp:dispatch`, unless `node_member_dispatch`), and on the machine by `cloud_capability` (`write`
 by default). A tool beyond the machine's ceiling is answered 403 `insufficient_scope` saying the owner caps it there.
 
 **ChatGPT.** ChatGPT's connectors and deep research call two tools by exactly these names, so the mcp module serves

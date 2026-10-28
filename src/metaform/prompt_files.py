@@ -265,7 +265,7 @@ def merge_selected_updates(name: str, *, retry: bool = False) -> dict[str, Any] 
 
     def transform(version: PromptVersion) -> tuple[str, list[str]]:
         # Older prompt review saved whole skill files with format=xml, though their consumers read them literally.
-        # Follow that actual source contract instead of parsing Axiom or legacy library sections as XML.
+        # Follow that actual source contract instead of parsing legacy library sections as XML.
         xml = version.format == 'xml' and not name.startswith('prompt.skill.') and not update.get('source_component')
         if xml:
             try:

@@ -4,11 +4,11 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 
 ## Concept and mesh
 
-- 09-23 16:28. The metaform is a non-manifold tripartite triangle mesh, multi-dimensional, not a single C(T); it turns blockers into flow. MAP-005, added. The mesh structure itself follows the 09-24 20:34 to 20:48 discussion, MAP-002, MAP-003, MAP-030; the 09-23 wording is kept only where it adds to it.
+- 09-23 16:28. The metaform is a non-manifold tripartite triangle mesh, multi-dimensional, not a single functional identity; it turns blockers into flow. MAP-005, added. The mesh structure itself follows the 09-24 20:34 to 20:48 discussion, MAP-002, MAP-003, MAP-030; the 09-23 wording is kept only where it adds to it.
 - 09-23 16:35. Mechanism: inference-heavy operations such as a frozen core, a gate or orientation become structure read through type and function understanding, which is primordial and needs no reasoning; the project understanding patrols the basins of the types. MAP-005, added.
 - 09-24 01:57. Ontological linguistic typology; meta-prompting surface; the cost saved is the orientation inference every agent pays, not compute or tokens. MAP-005, added; MAP-001, covered.
-- 09-24 02:50. A basin is the stable semantic definition C(T) of a subsystem; mutation stays inside it. MAP-005, added. The vector-embedding patrol mechanism in the same text is not built; the basin is the C(T) read.
-- 09-24 02:51. C(T) is exact, not a gate; mutation keeps it, transformation changes it. MAP-001, covered. The same pasted text says a Type has one Encounter Function at the represented resolution; that bears on D9 and was not placed, because the text is marked as not the owner's writing. Settled by the 09-25 decision below: C(T) is theory, and no Type record holds a single encounter function, MAP-001.
+- 09-24 02:50. A basin is the stable functional identity of a subsystem; mutation stays inside it. MAP-005, added. The vector-embedding patrol mechanism in the same text is not built; the basin describes the represented functional relationships.
+- 09-24 02:51. Functional identity is exact, not a gate; mutation keeps it, transformation changes it. MAP-001, covered. The same pasted text says a Type has one Encounter Function at the represented resolution; that bears on D9 and was not placed, because the text is marked as not the owner's writing. Settled by the 09-25 decision below: the preprint formula is theory, and no Type record holds a single encounter function, MAP-001.
 - 09-24 02:52. No mechanical gating on inference; the shape enforces itself. MAP-002, covered.
 - 09-24 05:54. A rejecting check loops agents; one cost 456 minutes and $750. MAP-002, MAP-013, covered.
 - 09-24 20:26. The namespace is a tree; the layered structure is not. MAP-010, MAP-004, covered.
@@ -123,7 +123,7 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 ## Not placed
 
 - 09-24 05:52 to 06:05. Jev: optional, never a requirement; low confidence bounces back to the entering agent, never to a stronger model; candidate checks that an address reverses for full and short names, narrows, has its reversed short name as a child of its parent, and that the join describes something the element would do. Parked with the Jev work; such checks would be a grading layer under MAP-013, never a gate. Still not placed, step 63: parked by the conversation itself; it is module work, a grading layer, D44, and its bouncing back to the entering agent would need squaring with BASE-044 before it is specified.
-- 09-24 02:51. One Encounter Function per Type at the represented resolution, from a pasted text not written. Relevant to D9. Settled by 09-25: C(T) is theory, and no Type record holds a single encounter function, MAP-001, D9.
+- 09-24 02:51. One Encounter Function per Type at the represented resolution, from a pasted text not written. Relevant to D9. Settled by 09-25: the preprint formula is theory, and no Type record holds a single encounter function, MAP-001, D9.
 
 ## Added 09-25, later
 
@@ -164,7 +164,7 @@ Every Metaform design point from the conversation of 2026-09-23 and 2026-09-24, 
 - 09-25. Modules are the only thing enabled or disabled, because every module adds commands and many would clutter help and menus. BASE-017.
 - 09-25. The root Types are those of the current Canonical Intake: code, document, media, data and stakeholder. Exterior is gone, and asset and entity are not roots. MAP-014, confirmed.
 - 09-25. A subtype never has a purpose of its own. A part that holds its own purpose does not share the join, so it is its own element. There are no receiver-end subtypes, and the subtype table has no end or purpose field. MAP-030, STORE-011, BASE-038 and BASE-039, corrected. This supersedes the 09-24 20:44 line about subtypes at either end.
-- 09-25. C(T) is the theory behind how a metaform works. It describes no mechanism: nothing stores, computes or checks it, and no Type record holds a single encounter function. MAP-001, corrected; MAP-005, MAP-016 and STORE-025 wording, corrected.
+- 09-25. The preprint formula explains the theory behind a metaform. It describes no mechanism: nothing stores, computes or checks it, and no Type record holds a single encounter function. MAP-001, corrected; MAP-005, MAP-016 and STORE-025 wording, corrected.
 - 09-25. A wheel run directly keeps its data in its own subfolder of ~/.metaform, one per wheel name and version. Once the wheel is installed, its data can be pulled into the main folder. Each metaform arrives as its own metaform and nothing is merged, so work done while running the wheel directly is not lost. BASE-023, BASE-025 and STORE-030, corrected. Superseded 10-03: a directly run wheel uses the normal data folder.
 - 09-25. Technical recommendations count as the correct answer. Finishing a layer marks it ready without making it immutable, and all knowledge-layer writes go through the one tool with an operation noun. LAYER-018 and STORE-032, confirmed.
 - 09-25. An origin records the commit hash as its base, and diffs go off that commit. Diffs are intermediary checkpoints between real commits, only for worktrees and agent work. Collection either makes the diff and removes the worktree, or makes the diff and leaves it in place. Diffs are made with git diff, even when the source is not a repository. PROJ-012, PROJ-015, PROJ-016, PROJ-017. Supersedes the Python difflib diff and the folder always left untouched.

@@ -51,7 +51,6 @@ def test_agents_keep_configured_default_through_unrelated_refresh(project_folder
             served.shutdown()
             worker.join(5)
             served.server_close()
-            served.vouch.close()
     assert refreshed
     assert body['default'] == 'codex'
     assert [row['agent'] for row in body['agents'] if row['default']] == ['codex']
@@ -114,5 +113,4 @@ def test_merges_keeps_its_package_through_unrelated_refresh(store, project_folde
             served.shutdown()
             worker.join(5)
             served.server_close()
-            served.vouch.close()
     assert refreshed

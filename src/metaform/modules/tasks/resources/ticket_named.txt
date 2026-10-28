@@ -1,0 +1,1 @@
+Ticket {ticket} ({summary}) names you with {others}: the first named claims it and registers the partner; the other accepts.

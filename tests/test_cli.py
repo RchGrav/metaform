@@ -172,63 +172,6 @@ def test_confirm_is_never_a_setting(run):
     assert refused.stderr.splitlines() == ['Error: --confirm is not a setting.', 'Next: metaform help --confirm']
 
 
-@pytest.mark.req('CLI-011')
-@pytest.mark.parametrize('switches,key,default', [
-    (('--jev',), 'jev', True),
-    (('--agents-may-set-control',), 'agents_may_set_control', False),
-    (('--dispatch-prompts', 'approve-all', '--confirm'), 'dispatch_prompts', 'ask_all'),
-])
-def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switches, key, default):
-    run('enable', 'dispatch')
-    refused = run('set', *switches, env={'METAFORM_ROLE': 'worker'}, ok=False)
-    assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert f'{key} is set only by the person, never by an agent.' in refused.stderr
-    assert 'Next:' in refused.stderr
-    assert shown(run)[key]['value'] == default
-
-
-@pytest.mark.req('CLI-011')
-def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(run, project):
-    run('enable', 'dispatch')
-    call = ('dispatch', 'autostart', '--dispatch-autostart', '--dispatch-agents', '12')  # within the cap of 17
-    refused = run(*call, cwd=project, env={'METAFORM_ROLE': 'system'}, ok=False)
-    assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert 'dispatch_agents is set only by the person, never by an agent.' in refused.stderr
-    assert 'dispatch_autostart is set by the person, or by their own system agent only in a turn' in refused.stderr
-    assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person, person-consent F2
-    assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': ''}).stdout
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.parametrize('switches', [('--jev', '--unglue'), ('all', '--unglue')])
-def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run, switches):
-    run('set', '--jev', '--glue', '--modules', 'chassis,map,dispatch,mcp,web')
-    before = shown(run)
-    for args in (('unset', *switches), ('set', '--modules', 'chassis', '--jev')):
-        refused = run(*args, env={'METAFORM_ROLE': 'system'}, ok=False)
-        assert refused.returncode == 2
-        assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person
-        assert shown(run) == before
-
-
-@pytest.mark.req('CLI-011')
-def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available(run):
-    run('enable', 'dispatch')
-    default_jev = shown(run)['jev']['value']
-    run('set', '--modules', 'chassis,map,dispatch,mcp,web', env={'METAFORM_ROLE': 'worker'})
-    run('set', '--jev', env={'METAFORM_ROLE': ''})
-    run('unset', '--jev')
-    run('set', '--agents-may-set-control')
-    agent = {'METAFORM_ROLE': 'worker'}
-    run('set', '--jev', '--dispatch-prompts', 'approve-all', '--confirm', env=agent)
-    assert shown(run)['jev']['value'] is True
-    assert shown(run)['dispatch_prompts']['value'] == 'approve-all'
-    run('unset', '--jev', env=agent)
-    run('unset', 'all', '--unglue', env=agent)
-    assert (shown(run)['jev']['value'], shown(run)['jev']['state']) == (default_jev, 'default')
-    assert shown(run)['agents_may_set_control']['value'] is False
-
-
 @pytest.mark.req('CLI-023')
 def test_a_default_is_never_written_and_unknown_stored_keys_survive(run, toggles, home):
     run('config', '--show')
@@ -314,8 +257,9 @@ def test_narrowing_the_surface_hides_and_blocks_and_names_the_way_back(run, togg
                    'To restore them: metaform unset --modules']
     refused = run('list', 'projects', ok=False)
     assert refused.returncode == 2 and refused.stderr.splitlines()[-1] == 'Next: metaform unset --modules'
-    rows = {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
-    assert 'list' not in rows and {'help', 'set', 'unset', 'config'} <= rows and 'toggles' in rows
+    index = run('help', 'commands').stdout
+    assert 'list' not in index and {'help', 'set', 'unset', 'config'} <= set(re.findall(r'\w+', index))
+    assert re.search(r'^  toggles +', index, re.MULTILINE)
     run('unset', '--modules')
     run('list', 'projects')
 
@@ -550,8 +494,8 @@ def test_a_verb_page_has_its_sections_in_order(run, user_module):
 def test_the_indexes_group_commands_by_owner(run, toggles):
     out = run('help', 'commands').stdout
     assert out.startswith('Commands\n')
-    assert 'toggles: Toggles.\n  toggles show' in out
-    assert not any(line.startswith('show') for line in out.splitlines())
+    assert 'Modules\n' in out and re.search(r'^  toggles +Toggles\.$', out, re.MULTILINE)
+    assert 'toggles show' not in out and len(out) < 4000
     switches = {line.split()[0] for line in lines(run('help', 'switches')) if line.startswith('  ')}
     assert {'--tmux', '--panes', '--project', '--modules', '--layers', '--glue', '--json'} <= switches
     assert all(row['owner'] for row in shown(run).values())
@@ -773,7 +717,7 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     noted(run, project, 'Counts down again.')
     listed = lines(run('list', 'bases', cwd=project))
     assert [line.split()[0] for line in listed] == ['main'] and listed[0].endswith('(active)')
-    assert 'clear' in {line.split()[0] for line in lines(run('help', 'commands')) if line.startswith('  ')}
+    assert 'clear' in re.findall(r'\w+', run('help', 'commands').stdout)
 
 
 @pytest.mark.req('PROJ-031')
@@ -869,75 +813,12 @@ sys.exit(subprocess.run([os.environ['AGENT_PYTHON'], '-m', 'metaform', *sys.argv
 
 def as_agent(project, home, *args):
     """A metaform command run by a process an AI tool started, as an agent's shell runs it: its parent runs as
-    `claude`, in the same home, and the command clears METAFORM_ROLE, as an agent can in its own shell."""
-    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '', 'AGENT_PYTHON': sys.executable,
+    `claude`, in the same home, and the command clears METAFORM_SESSION, as an agent can in its own shell."""
+    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_SESSION': '', 'AGENT_PYTHON': sys.executable,
            'AGENT_NAME': os.path.join(sys.base_prefix, 'bin', 'claude')}
     return subprocess.run(['bash', '-c', 'exec -a "$AGENT_NAME" "$0" -c "$1" "${@:2}"', sys.executable, AGENT_PARENT,
                            *args],
                           cwd=project, env=env, capture_output=True, text=True, timeout=120, check=False)
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('PROJ-025')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
-def test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_persons_controls(run, project, home):
-    """UX review round 1, settings F2 and F5, fresh-start-intake F1 and F4: a command an AI tool's process started is
-    an agent's whatever its environment says. Its --confirm clears nothing and switches nothing, it is told the
-    command the person runs, and a person-only setting is refused; the caution names the open ticket that would go.
-    The same commands from the person's own shell still run."""
-    run('enable', 'dispatch')
-    run('set', '--no-jev', cwd=project)
-    noted(run, project, 'Counts down.')
-    run('map', 'work', 'op=add', 'address=code.timer', 'task=Ring louder', 'title=Ring louder', cwd=project)
-    for args in (('clear', 'project', 'proj', '--confirm'), ('add', 'base', 'fresh'), ('activate', 'base', 'main'),
-                 ('map', 'add-base', 'fresh', '--confirm'), ('set', '--dispatch-agents', '40'),
-                 ('set', '--jev')):
-        refused = as_agent(project, home, *args)
-        assert refused.returncode == 2, (args, refused.stdout, refused.stderr)
-        said = refused.stderr
-        # the agent is told to ask the person in chat; the person, how to do it themselves, never a ticket's note
-        assert 'Ask the person in your chat' in said and 'Next: ask the person in chat' in said, said
-        assert 'paste into their own terminal window' in said and '<your work id>' not in said, said
-        if args[0] == 'set':
-            assert 'set only by the person' in said and 'settings screen on the page' in said, said
-        else:
-            assert "This is the person's decision, not an agent's" in said, said
-    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
-    assert shown(run, cwd=project)['jev']['value'] is False
-    asked = as_agent(project, home, 'clear', 'project', 'proj').stderr
-    assert 'main holds one open ticket and one knowledge layer' in asked and 'A backup is made first' in asked
-    run('add', 'base', 'fresh', cwd=project)  # the person's own shell
-    assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
-def test_no_command_without_the_persons_terminal_carries_their_consent_however_it_was_started(run, project, home,
-                                                                                            tmp_path):
-    """UX review round 2, person-consent F1: consent is not judged from the processes above a command, which an agent
-    changes with one shell line. A command an agent's shell re-parents to init with `( cmd & )`, and one started with
-    no terminal and no agent above it, switch nothing and set nothing; at a terminal of its own, the person's, the
-    same command runs."""
-    run('set', '--no-jev', cwd=project)
-    noted(run, project, 'Counts down.')
-    out = tmp_path / 'out'
-    line = f'( "$0" -m metaform map add-base evil --confirm > {out} 2>&1 & )'  # the verifier's idiom, word for word
-    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '',
-           'AGENT_NAME': os.path.join(sys.base_prefix, 'bin', 'claude')}
-    subprocess.run(['bash', '-c', 'exec -a "$AGENT_NAME" bash -c "$1" "$0"', sys.executable, line], cwd=project,
-                   env=env, timeout=60, check=True)
-    deadline = time.monotonic() + 60
-    while not any(word in (out.read_text() if out.exists() else '') for word in ("person's decision", 'evil')):
-        assert time.monotonic() < deadline, 'the re-parented command did not finish'  # nothing can wait on it
-        time.sleep(0.05)
-    assert "This is the person's decision, not an agent's" in out.read_text(), out.read_text()
-    detached = subprocess.run([sys.executable, '-m', 'metaform', 'set', '--jev'], cwd=project, env=env,
-                              capture_output=True, text=True, timeout=60, start_new_session=True, check=False)
-    assert detached.returncode == 2 and 'set only by the person' in detached.stderr, detached.stderr
-    assert [one.split()[0] for one in lines(run('list', 'bases', cwd=project))] == ['main']
-    assert shown(run, cwd=project)['jev']['value'] is False
-    run('set', '--jev', cwd=project, isolated=True)  # its own process, at a terminal of its own: the person's
-    assert shown(run, cwd=project)['jev']['value'] is True
 
 
 @pytest.mark.req('STORE-027')
@@ -1338,11 +1219,11 @@ def test_a_per_call_switch_is_given_on_its_verb_and_never_stored(run, tmp_path):
 def test_the_demo_runs_in_a_home_of_its_own_without_an_agents_identity_and_puts_both_back(home, monkeypatch):
     from metaform import demo
     from metaform import home as metaform_home
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'composer')
     with demo.own_home() as root:
         assert root == home / 'demo' and metaform_home.home() == root
-        assert 'METAFORM_ROLE' not in os.environ
-    assert metaform_home.home() == home and os.environ['METAFORM_ROLE'] == 'worker'
+        assert 'METAFORM_TASK_NAME' not in os.environ
+    assert metaform_home.home() == home and os.environ['METAFORM_TASK_NAME'] == 'composer'
 
 
 @pytest.mark.req('CLI-042')
@@ -1530,7 +1411,7 @@ def test_open_browser_under_wsl_opens_nothing(monkeypatch):
     """Under WSL (WSLg sets DISPLAY) no browser opens, neither one inside WSL nor a Windows one; the caller prints
     the address."""
     from metaform import start
-    monkeypatch.delenv('METAFORM_ROLE', raising=False)
+    monkeypatch.delenv('METAFORM_SESSION', raising=False)
     monkeypatch.setenv('DISPLAY', ':0')
     monkeypatch.setattr(start, 'wsl', lambda: True)
     monkeypatch.setattr(start.webbrowser, 'get', lambda: pytest.fail('a WSL browser was looked up'))

@@ -251,8 +251,7 @@ function namesTable(named, test) {
   return false;
 }
 /* The workspace's panes read again only for a change to their own tables. */
-const PANE_TABLES = [['messages', table => table === 'messages' || table === 'map.question_work'],
-  ['runs', table => table.startsWith('workflow')]];
+const PANE_TABLES = [['messages', table => table === 'messages' || table === 'map.question_work']];
 /* Whether a change named tables, every one of them passing the test. */
 const allTables = (named, test) => Array.isArray(named) && named.length && named.every(table => test(String(table)));
 /* Whether a change to this metaform's ops says nothing past what is drawn: the sequence it reached is one the page
@@ -273,7 +272,7 @@ export async function changed(event) {
     return;
   }
   // the workspace's panes that read the map read again, but for an agent's thread lines alone, which no pane shows;
-  // its messages and its workflow runs only when the change names their tables, or names none
+  // its messages only when the change names their table, or names none
   if (WS.on && !threadOnly(event.payload)) {
     WS.refresh();
     for (let at = 0; at < PANE_TABLES.length; at++) {

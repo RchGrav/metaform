@@ -27,8 +27,8 @@ changing code. Use this index to locate ownership, semantics and verification.
 - Prompts, examples and instruction files are product text. When one is wrong or
   incomplete, refine it as you refine code, or route the fix to an agent that
   can make it; never leave a fault standing because a person wrote the text.
-  The one fixed text is the Canonical Intake (`prompt.intake:intake.axiom`,
-  `prompt_files.FIXED`): its semantics work like a formula and are not edited.
+  The one fixed text is the Canonical Intake (`prompt.intake:intake.xml`): its
+  semantics work like a formula and are not edited.
 - Use the Metaform map as the memory index. Read applicable unread knowledge at
   the assigned functionality. Link implementation entry points there. Keep
   progress in work records and maintained project knowledge in memory.
@@ -64,8 +64,6 @@ Paths below are relative to the repository root.
   Memory belongs to `src/metaform/modules/memory/`.
   Agent roles and context delivery belong to `src/metaform/modules/agents/`.
   Agent processes belong to `src/metaform/modules/dispatch/`.
-  Assignment orchestration belongs to `src/metaform/modules/orchestration/`.
-  Workflows belong to `src/metaform/modules/workflow/`.
 - `src/metaform/modules/mcp/server.py` serves MCP. Its module declarations
   determine tools and resources. `src/metaform/modules/mcp/resources/prompts.xml`
   holds MCP guidance and glossary text.

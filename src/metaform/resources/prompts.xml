@@ -94,30 +94,16 @@ Your task:
      only when the person turns on the setting jev; it answers typed questions about a state and never writes text.
      Each child of <jev> is one decision point other modules call, named as in the setting jev_decisions; turn one off
      there rather than deleting it here. In each: <title> and <why> are what the decision is kept under at its Address,
-     read by agents and the person at metaform://<address>#<n>, when the code keeps it (choose_agent always, at the
-     ticket's Address; intake_coverage when a part is missing; rank_items,
-     triage and start_order never); <ask> is the question Jev reads, sent exactly as written; <true> and <false> say
+     read by agents and the person at metaform://<address>#<n>, when the code keeps it (intake_coverage when a part
+     is missing; rank_items and triage never); <ask> is the question Jev reads, sent exactly as written; <true> and
+     <false> say
      what a yes and a no mean, and Jev reads them literally, so boundary cases belong there. Every question is about
      one thing, never a share of many, since Jev does not count: the code asks it once per thing and adds up the
      answers. A word in backticks, such as `task`, names a part of the state the code sends with the question. The
-     places the code fills in: <ticket/> a ticket's id; <address/> a node's Address; <session/> an agent session's id;
-     <item/> the state path of the one thing a question is about; <agent/> an agent's name. Must be present: the code
-     requires each element it reads. -->
+     places the code fills in: <address/> a node's Address; <item/> the state path of the one thing a question is
+     about. No decision point chooses a ticket's agent, model or thinking level: the person sets those through their
+     own settings. Must be present: the code requires each element it reads. -->
 <jev>
-<choose_agent>
-<title>Agent, model and thinking level for ticket <ticket/></title>
-<why>Agents and models differ in what they do well and what they cost, so the choice is made once per ticket and kept where the person can see it.</why>
-<ask>Which agent in `agents` should work the ticket `<item/>`, judged by what each agent's description says it does well?</ask>
-<model>If the agent <agent/> works the ticket `<item/>`, which of its models in `options.<agent/>.model` should it run? Prefer the lighter model when the ticket is small and well defined, and the stronger one when it needs design, wide reading or care with risk.</model>
-<thought_level>If the agent <agent/> works the ticket `<item/>`, which thinking level in `options.<agent/>.thought_level` should it use? Prefer the lower level when the ticket is small and well defined, and the higher one when it needs design, wide reading or care with risk.</thought_level>
-</choose_agent>
-<start_order>
-<title>Tickets ordered for starting</title>
-<why>Agents start the tickets the person has not placed on the board in this order; the ones the person placed keep their place.</why>
-<ask>Should the ticket `<item/>` be started before the other tickets in `tickets`?</ask>
-<true>It unblocks other tickets in `tickets`, fixes a fault other work waits on, or is small, clear and ready to start.</true>
-<false>It builds on other tickets in `tickets`, waits on an answer from the person, or can wait without holding other work up.</false>
-</start_order>
 <rank_items>
 <title>Items ranked for the brief of <address/></title>
 <why>A node's brief holds about 2 KB, so the items an agent at the node needs most are named first.</why>

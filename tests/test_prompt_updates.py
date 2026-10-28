@@ -1,13 +1,12 @@
 """Requested prompt changes merge against selected versions, preserving author register and immutable history."""
 from __future__ import annotations
 
-import dataclasses
 import re
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from metaform import prompt_files, prompt_review, skills
+from metaform import prompt_files
 from metaform.data import prompts
 
 pytestmark = pytest.mark.kind('fixture')
@@ -15,13 +14,6 @@ pytestmark = pytest.mark.kind('fixture')
 
 def authored_source(name):
     owner, component = prompt_files.split_address(name)
-    colon = bool(owner)
-    if not colon:
-        source = prompt_files.shipped('skills', name)
-        assert source is not None
-        return prompt_files.rendered(source), 'text'
-    if owner == 'skill':
-        return skills.procedure(component), 'text'
     source = prompt_files.shipped(owner, component)
     assert source is not None
     return prompt_files.plain(source), 'xml'
@@ -89,19 +81,17 @@ def test_every_requested_source_merge_uses_selected_parent_and_preserves_registe
 
 
 def test_new_context_fill_places_remain_operational_after_selected_merge(home):
-    name = 'prompt.mcp:role_worker'
+    name = 'prompt.dispatch:work'
     current, format = source_of(name)
     seed_selected(name, before_of(name, current), format)
-    selected = prompt_files.resolve(name, assignment='assignment actual-7', authored_role='metaform://role/planner',
-                                     categories='Actual enabled tools')
-    assert 'assignment actual-7' in selected['text']
-    assert 'metaform://role/planner' in selected['text']
-    assert 'Actual enabled tools' in selected['text']
-    assert '<assignment' not in selected['text']
+    selected = prompt_files.resolve(name, work_id='actual-7', record='Record what you did.')
+    assert 'actual-7' in selected['text']
+    assert 'Record what you did.' in selected['text']
+    assert '<work_id' not in selected['text'] and '<record' not in selected['text']
 
 
 def test_ambiguous_or_unmatched_custom_selection_is_reported_and_not_changed(home):
-    name = 'prompt.skills:lib_quality'
+    name = 'prompt.dispatch:work'
     current, format = source_of(name)
     old = before_of(name, current)
     _, selected = seed_selected(name, old + '\n' + old, format)
@@ -113,7 +103,7 @@ def test_ambiguous_or_unmatched_custom_selection_is_reported_and_not_changed(hom
 
 
 def test_concurrent_resolvers_append_only_one_migration_version(home):
-    name = 'prompt.skills:workflow-prompt'
+    name = 'prompt.dispatch:work'
     current, format = source_of(name)
     seed_selected(name, before_of(name, current), format)
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -123,7 +113,7 @@ def test_concurrent_resolvers_append_only_one_migration_version(home):
     assert len(prompts.prompt_merges(name)) == 1
 
 
-@pytest.mark.parametrize('name', ['prompt.mcp:role_worker', 'prompt.skill.workflow-builder', 'prompt.skills:workflow-prompt', 'prompt.skills:metaform-tools'])
+@pytest.mark.parametrize('name', ['prompt.mcp:connect_rules', 'prompt.dispatch:work'])
 def test_explicit_user_edit_before_first_serving_stays_newer_than_shipped_migration(home, name):
     current, format = source_of(name)
     intentional = before_of(name, current) + '\nThis is an explicit newer instruction.'
@@ -132,67 +122,6 @@ def test_explicit_user_edit_before_first_serving_stays_newer_than_shipped_migrat
     assert actual['actual_version_id'] == selected.version_id
     assert 'This is an explicit newer instruction.' in actual['text']
     assert len(prompts.prompt_versions(name)) == 2
-
-
-@pytest.mark.parametrize(('name', 'library'), [('prompt.skills:workflow-prompt', 'lib_workflow'), ('prompt.skills:metaform-tools', 'lib_metaform')])
-def test_legacy_selected_skill_section_reaches_the_actual_library_and_deployment(home, name, library):
-    current, format = source_of(name)
-    _, selected = seed_selected(name, before_of(name, current), format)
-    actual = skills.library(library)
-    integrated = prompts.prompt_version(name)
-    assert current in actual and 'User-authored register stays exact.' in actual
-    assert integrated.parent_id == selected.version_id and integrated.prompt_id == selected.prompt_id
-    files = skills.deployment_files(skills.get('workflow-builder'))
-    assert 'User-authored register stays exact.' in files[f'references/{library}.md'].decode('utf-8')
-
-
-@pytest.mark.parametrize('name', ['prompt.skills:workflow-prompt', 'prompt.skill.workflow-builder'])
-def test_prompt_review_explicit_edit_uses_the_same_selected_version_gate(home, tmp_path, name):
-    current, format = source_of(name)
-    seed_selected(name, before_of(name, current), format)
-    entries = prompt_review.catalog()
-    found = next(one for one in entries if one.key == name or one.key == f'store:{name}')
-    copy = tmp_path / ('procedure.axiom' if name.startswith('prompt.skill.') else 'prompts.xml')
-    copy.write_text(current if name.startswith('prompt.skill.') else found.source.read_text('utf-8'),
-                    encoding='utf-8')
-    found = dataclasses.replace(found, source=copy)
-    intentional = prompt_files.readable(prompts.prompt_version(name)) + '\nNewer explicit review direction.'
-    prompt_review.save_edit(found, intentional)
-    latest = prompts.prompt_version(name)
-    actual = (prompt_files.served_text(name, current) if name.startswith('prompt.skill.')
-              else prompt_files.resolve(name)['text'])
-    assert actual == intentional
-    assert latest.number == 4 and latest.parent_id == prompts.prompt_version(name, 3).version_id
-    assert prompts.prompt_version(name).version_id == latest.version_id
-
-
-@pytest.mark.parametrize('historical_format', ['text', 'xml'])
-def test_selected_skill_procedure_is_the_file_deployed_and_read_by_the_harness(home, historical_format):
-    name = 'prompt.skill.workflow-builder'
-    current, _ = source_of(name)
-    old = before_of(name, current)
-    prompts.shipped(name, 'text', old)
-    selected = prompts.save_prompt(name, old + '\n\nAuthor register with literal <value> & context.',
-                                   format=historical_format)
-    sent = prompt_files.collect()
-    try:
-        loaded = skills.load('workflow-builder')
-        files = skills.deployment_files(skills.get('workflow-builder'))
-        read = skills.read('workflow-builder', 'references/procedure.axiom').strip()
-    finally:
-        prompt_files.release(sent)
-    expected = current + '\n\nAuthor register with literal <value> & context.'
-    assert loaded['procedure'] == files['references/procedure.axiom'].decode('utf-8').strip() == read == expected
-    assert not sent  # artifact preparation has not claimed an agent received this duty
-    integrated = prompts.prompt_version(name)
-    assert integrated.prompt_id == selected.prompt_id and integrated.parent_id == selected.version_id
-    sent = prompt_files.collect()
-    try:
-        assert expected in skills.served('workflow-builder')
-    finally:
-        prompt_files.release(sent)
-    actual = next(one for one in sent if one.name == name)
-    assert actual.version_id == integrated.version_id and actual.rendered_text == expected
 
 
 @pytest.mark.parametrize('own_metadata', [False, True])

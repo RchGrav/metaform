@@ -1,0 +1,28 @@
+{
+  "jsonrpc": "2.0",
+  "id": "sub-front",
+  "method": "subscriptions/listen",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "metaform-context-host",
+        "version": "1.0.0"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {
+        "extensions": {
+          "io.modelcontextprotocol/skills": {}
+        }
+      }
+    },
+    "notifications": {
+      "toolsListChanged": true,
+      "resourcesListChanged": true,
+      "resourceSubscriptions": [
+        "resource://spatial/tof/matrix_8x8",
+        "resource://metaform/events",
+        "resource://metaform/skills/catalog"
+      ]
+    }
+  }
+}

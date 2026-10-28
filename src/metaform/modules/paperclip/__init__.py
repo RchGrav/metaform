@@ -96,26 +96,25 @@ PROMPTS = resources.files(__name__)
 OPENER: Opener | None = None  # what opens each request to Paperclip; urlopen when None, an in-memory server in tests
 STREAM: Stream | None = None  # what opens Paperclip's live events; a WebSocket when None, a fake in tests
 
-# Where Metaform calls out to and which agents it hands work to are the person's to decide, never an agent's over MCP,
-# CLI-011, so every setting here is person_only; the token itself is never a setting.
-settings.text('paperclip_url', 'http://localhost:3100', person_only=True, label='Paperclip URL',
+# Where Metaform calls out to and which agents it hands work to; the token itself is never a setting.
+settings.text('paperclip_url', 'http://localhost:3100', label='Paperclip URL',
               help='The Paperclip server this project works with, its origin as Paperclip writes PAPERCLIP_API_URL.',
               details='During a Paperclip heartbeat the PAPERCLIP_API_URL Paperclip injects is used instead, since '
                       'the run token works only with the server that issued it.')
-settings.text('paperclip_token_env', 'PAPERCLIP_API_KEY', person_only=True, label='Paperclip token variable',
+settings.text('paperclip_token_env', 'PAPERCLIP_API_KEY', label='Paperclip token variable',
               help='The environment variable holding the bearer token for Paperclip: an agent key, a board key, or '
                    'the run token Paperclip injects during a heartbeat.',
               details='The token is read from the environment on each call and never stored by Metaform. A server '
                       'in local_trusted mode needs none.')
-settings.text('paperclip_company', '', person_only=True, label='Paperclip company',
+settings.text('paperclip_company', '', label='Paperclip company',
               help='The Paperclip company id issues are sent to and read from. Empty uses PAPERCLIP_COMPANY_ID.')
-settings.text('paperclip_assignee', '', person_only=True, label='Paperclip assignee',
+settings.text('paperclip_assignee', '', label='Paperclip assignee',
               help='The Paperclip agent send assigns a ticket to, by id or by the short name Paperclip shows in its '
-                   'URL. Empty lets Jev choose among the company\'s agents when Jev is on, else sends it unassigned.')
-settings.text('paperclip_project', '', person_only=True, label='Paperclip project',
+                   'URL. Empty sends the issue to Paperclip\'s backlog unassigned.')
+settings.text('paperclip_project', '', label='Paperclip project',
               help='The Paperclip project id send files issues under, whose workspace sets the folder its agents '
                    'work in. Empty files them under none.')
-settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True, label='Paperclip check minutes',
+settings.number('paperclip_check_minutes', 10, min=1, max=1440, label='Paperclip check minutes',
                 help='How often Paperclip wakes the Metaform agent to check an issue a Metaform agent is working.',
                 details='Each issue heartbeat takes carries an issue monitor of kind external_service, so Paperclip '
                         'reads it as held by an outside service rather than as a stuck run, and wakes the agent this '
@@ -125,12 +124,6 @@ settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True
 # Jev's choice of an Address for an issue that names none is the decision point paperclip.route, named in the chassis's
 # jev_decisions like every other: settings cleanup 2026-10-15 folded the separate switch paperclip_jev_route into it.
 ROUTE_DECISION = 'paperclip.route'
-settings.boolean('paperclip_agents_may_send', False, person_only=True, label='Agents may send to Paperclip',
-                 help='Let an agent send a ticket to Paperclip over MCP, as the person can from the command line.',
-                 details='Off, the default: only the person hands work to Paperclip, whose agents spend from its '
-                         'budgets. On: a Metaform agent may delegate a ticket to a Paperclip agent with '
-                         'paperclip_send.')
-
 TABLES = Tables(version=2, compatible_from=1, tables=(
     # One row per Paperclip issue tied to a ticket. In the metaform beside the work records, so a clear of the
     # metaform drops the links with the tickets they tie, STORE-045. `comments_seen` is the last comment read from the
@@ -420,35 +413,17 @@ def brief(ctx: Context) -> str:
     return found if found.endswith('\n') else found + '\n'
 
 
-def _chosen_assignee(ctx: Context, client: Client, company: str, record: WorkRecord, address: str,
-                     title: str) -> tuple[str | None, str | None]:
-    """The Paperclip agent a ticket is sent to, and the Jev decision that chose it: the one named, else the setting,
-    else Jev's sure choice among the company's agents when Jev is on (choose_agent, kept at the ticket's Address),
-    else none, which sends the issue to Paperclip's backlog."""
+def _named_assignee(ctx: Context, client: Client, company: str) -> str | None:
+    """The Paperclip agent a ticket is sent to: the one the `assignee` noun names, else the setting
+    `paperclip_assignee`, else none, which sends the issue to Paperclip's backlog unassigned. Nothing chooses an
+    assignee for the person."""
     named = str(ctx.nouns.get('assignee') or ctx.setting('paperclip_assignee') or '')
-    if named:
-        return _agent(client, company, named), None
-    try:
-        agents = _objects(client.agents(company))
-    except PaperclipError:
-        return None, None
-    offered = {str(one['id']): ', '.join(str(one[key]) for key in ('name', 'title', 'role', 'adapterType',
-                                                                    'capabilities') if one.get(key))
-               for one in agents if one.get('id') and one.get('status') not in ('terminated', 'pending_approval')}
-    decision = jev.choose_agent(ctx.folder, {'id': record.id, 'title': title, 'task': record.task or '',
-                                             'address': address}, offered)
-    if decision is None or not decision.sure:
-        return None, None
-    chosen = str(cast(Mapping[str, Any], decision.answer).get('agent') or '')
-    return (chosen, decision.item) if chosen in offered else (None, None)
+    return _agent(client, company, named) if named else None
 
 
 def send(ctx: Context) -> dict[str, Any]:
     """Send an open ticket to Paperclip as an issue for its agents to work; the ticket follows the issue."""
     store = ctx.require_store()
-    if ctx.surface == 'mcp' and not ctx.setting('paperclip_agents_may_send'):
-        raise Stop('Only the person sends tickets to Paperclip here: paperclip_agents_may_send is off.',
-                   'ask the person to run metaform paperclip send, or metaform set --paperclip-agents-may-send true')
     work_id = str(ctx.nouns['id'])
     held = _link_of_work(store, work_id)
     if held is not None:
@@ -464,7 +439,7 @@ def send(ctx: Context) -> dict[str, Any]:
         or f'Ticket {work_id}'
     client = _client(ctx)
     company = _company(ctx)
-    assignee, chose = _chosen_assignee(ctx, client, company, record, address, title)
+    assignee = _named_assignee(ctx, client, company)
     fields: dict[str, Any] = {
         'title': title[:240],
         'description': '\n\n'.join(part for part in (record.task, record.note) if part),
@@ -493,8 +468,6 @@ def send(ctx: Context) -> dict[str, Any]:
         raise
     _write_document(client, row['issue_id'], address, work_id)
     shown = _shown(row)
-    if chose:
-        shown['assignee_chosen'] = chose
     shown['next'] = _follows(ctx, _ensure_watcher(store, ctx.folder))
     return shown
 
@@ -1391,7 +1364,6 @@ MODULE = Module(
                     Noun('assignee', 'The Paperclip agent, by id or short name; paperclip_assignee when omitted, '
                                      'else Jev\'s choice when Jev is on.', required=False)),
              switches=('paperclip_assignee', 'paperclip_project'),
-             details='Over MCP only when the person has turned on paperclip_agents_may_send.',
              open_world=True),
         Verb('sync', sync, 'Bring linked issues and tickets together: ends, comments, questions and answers.',
              surfaces=('cli',), open_world=True),

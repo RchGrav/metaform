@@ -1039,7 +1039,7 @@ def test_stopping_an_agent_still_starting_ends_its_agent_group_too(dispatch, run
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='waiting on a subprocess pipe with select')
-def test_fresh_brief_joins_an_early_person_message_without_losing_its_word(dispatch, run, tmp_path):
+def test_fresh_brief_joins_an_early_person_message(dispatch, run, tmp_path):
     """A real client may speak after session publication while the initial duty is still being assembled."""
     import select
     import subprocess
@@ -1079,7 +1079,7 @@ asyncio.run(dispatch(ctx))
         row = next(one.extra for one in dispatch.items('session') if one.extra['state'] == 'running')
         status = tell(row, 'status')
         assert status['activity'] == 'working', 'Published startup must not appear idle before its brief is ready.'
-        assert tell(row, 'message', text=human, word=True)['sent'] is True
+        assert tell(row, 'message', text=human)['sent'] is True
         assert not dispatch.received('session/prompt'), 'The initial duty must precede any executing message.'
         dispatch.process.stdin.write(b'continue\n')
         dispatch.process.stdin.flush()
@@ -1090,8 +1090,6 @@ asyncio.run(dispatch(ctx))
         from metaform.modules.tasks import PACKAGE
         canonical = (PACKAGE / 'resources' / 'user_agent.txt').read_text(encoding='utf-8').replace('{project}', 'proj')
         assert canonical in text and text.endswith(human)
-        word = tell(row, 'word', what='Starting the requested work')['word']
-        assert word is not None and word['text'] == human
         assert len(dispatch.received('session/prompt')) == 1, 'No separate startup prompt may displace the person.'
     finally:
         if not released and dispatch.process.stdin and dispatch.process.poll() is None:

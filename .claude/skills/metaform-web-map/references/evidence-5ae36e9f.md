@@ -1,0 +1,1 @@
+A read-only probe of the live page, with task_name added to /api/dispatch-sessions from states[*].task.name, made mascotGlyph() return 'seahorse', and the figure showed on both maps with 0 page errors. Screenshot: /tmp/uk-probe/m-patched.png. Probe script: /tmp/uk-probe/mascot.py.

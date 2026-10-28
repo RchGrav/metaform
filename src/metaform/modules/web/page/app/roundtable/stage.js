@@ -95,7 +95,7 @@ UI.comment = h('textarea', {class: 'rt-comment', 'aria-label': 'Plan comments', 
 UI.sendComment = h('button', {class: 'btn sm rt-send-comment', type: 'button',
   onclick: () => decidePipeline('comment')}, 'Save comment');
 UI.revise = h('button', {class: 'btn sm rt-revise', type: 'button', onclick: () => decidePipeline('revise')},
-  'Send back to Planner');
+  'Send back for planning');
 UI.pipelineText = h('div', {class: 'rt-pipeline-text', hidden: true, style: {'white-space': 'pre-wrap'}});
 UI.pipelineQuestion = h('p', {class: 'rt-pipeline-question'});
 UI.pipeline = h('section', {class: 'rt-pipeline', hidden: true}, h('h3', {}, 'Follow-through'), UI.pipelineState,

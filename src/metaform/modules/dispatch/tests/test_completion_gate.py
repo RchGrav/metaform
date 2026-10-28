@@ -25,7 +25,7 @@ def receipt(dispatch, *, state='committed', reason='', head='1234567890abcdef', 
 
 @pytest.mark.parametrize('operation', ['finish', 'move'])
 def test_worker_closes_resolved_work_without_delivery_record(dispatch, monkeypatch, operation):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     record = (dispatch.store.finish_work(dispatch.id, 'Fixed.', 'Verified behavior.') if operation == 'finish'
               else dispatch.store.move_work(dispatch.id, 'done'))
     assert record.done and work_over(dispatch.store, record)
@@ -43,7 +43,7 @@ def test_worker_closes_resolved_work_without_delivery_record(dispatch, monkeypat
     {'state': 'merged', 'reason': 'Runtime restart failed.'},
 ])
 def test_delivery_failures_and_stale_evidence_do_not_gate_resolution(dispatch, monkeypatch, fields):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     receipt(dispatch, **fields)
     closed = dispatch.store.finish_work(dispatch.id, 'Fixed.', 'Resolved behavior.')
     assert closed.done and closed.resolution == 'Fixed.'
@@ -65,7 +65,7 @@ def test_retained_sessions_never_add_completion_requirements(dispatch, role):
 
 
 def test_resolved_fault_disappears_without_delivery_or_manual_fault_clearing(dispatch, monkeypatch):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     dispatch.store.edit_work(dispatch.id, {'condition': 'broken', 'kind': 'broken'})
     dispatch.store.prove_work(dispatch.id)  # Legacy proof metadata does not add a gate.
     assert any(work.id == dispatch.id for work in dispatch.store.where('code.engine').work)
@@ -76,7 +76,7 @@ def test_resolved_fault_disappears_without_delivery_or_manual_fault_clearing(dis
 
 @pytest.mark.parametrize('outcome', ['cancelled', 'failed'])
 def test_cancelled_or_failed_worker_keeps_its_actual_outcome(dispatch, monkeypatch, outcome):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     ended = dispatch.store.finish_work(dispatch.id, 'Stopped.', outcome=outcome)
     assert ended.done and ended.outcome == outcome
     repeated = dispatch.store.finish_work(dispatch.id, 'Another result.')
@@ -84,7 +84,7 @@ def test_cancelled_or_failed_worker_keeps_its_actual_outcome(dispatch, monkeypat
 
 
 def test_recurrence_reopens_resolved_work_and_new_resolution_closes_directly(dispatch, monkeypatch):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     first = dispatch.store.finish_work(dispatch.id, 'First fix.')
     assert first.done
     assert dispatch.store.move_work(dispatch.id, 'todo').done is None
@@ -96,7 +96,7 @@ def test_recurrence_reopens_resolved_work_and_new_resolution_closes_directly(dis
 
 
 def test_legacy_staged_result_closes_without_delivery_proof(dispatch, monkeypatch):
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     dispatch.store.take_work(dispatch.id, by='worker')
     with Store('proj', module='map')._write() as tx:
         tx.execute('UPDATE work SET resolution=? WHERE work_id=?', ('Legacy resolved result.', dispatch.id))
@@ -150,7 +150,7 @@ def test_reset_closes_dead_legacy_result_and_preserves_unfinished_stop_semantics
 def test_delivery_failure_does_not_keep_resolved_worker_session_open(dispatch, monkeypatch):
     from metaform.modules.dispatch import board
 
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     dispatch.store.finish_work(dispatch.id, 'Fixed.')
     receipt(dispatch, state='failed', passed=False, reason='Verification failed.')
     made = session_for(dispatch)

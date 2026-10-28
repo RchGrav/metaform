@@ -166,7 +166,7 @@ HELP = ('SETUP KEYS\n\n'
         'of choices is picked from it; one typed outside it is refused.\n'
         'G glues/unglues values; glued values survive reset.\n\n'
         'ROW MARKS\n\n'
-        '~ staged, not saved yet    * glued    P only the person changes it\n'
+        '~ staged, not saved yet    * glued\n'
         '! a risky choice: agents act without asking\n'
         '(set) set here    (inherited from <folder>)    no mark: the default\n'
         'A value too long for the panel ends in …; the details show it whole.\n'
@@ -425,13 +425,13 @@ class ChassisTUI:
         return self.risked[setting.key, str(value)]
 
     def _row(self, setting: settings.Setting, width: int) -> str:
-        """One setting's row, cut to the panel's width: person-only P and risky !, then staged ~ or glued *, its name
+        """One setting's row, cut to the panel's width: risky !, then staged ~ or glued *, its name
         and value, the value ending in … when cut, and where the value comes from. From the glue mark on, a row reads
         as `config --show` prints it, CLI-026 and CLI-014; an inherited value names its folder by its last part."""
         from .cli import show
         value = self._value(setting.owner, setting)
         state, source = self._state(setting)
-        marks = ('P' if setting.person_only else ' ') + ('!' if self._risk(setting, value) else ' ') + \
+        marks = ' ' + ('!' if self._risk(setting, value) else ' ') + \
             ('~' if state == 'staged' else '*' if self._glued((setting.owner, setting.key)) else ' ')
         note = {'set': '  (set)', 'glued': '  (glued)', 'staged': '  (staged)',
                 'inherited': f'  (inherited from {Path(source or "").name or source})'}.get(state, '')
@@ -511,7 +511,6 @@ class ChassisTUI:
         return '\n'.join(line for line in (
             f'{setting.owner}.{setting.key}  |  {setting.kind}  |  '
             f'{"global" if setting.scope == "global" else "this folder and below"}'
-            + ('  |  only the person changes it' if setting.person_only else ''),
             f'Value: {show(setting.key, value)}  ({where})' + (f': {about}' if about else ''),
             f'Risky: {risked}' if risked else '',
             f'Default: {show(setting.key, default)}',

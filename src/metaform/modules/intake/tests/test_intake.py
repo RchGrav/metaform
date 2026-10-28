@@ -158,7 +158,7 @@ def test_arbitrary_utf8_intake_files_are_opaque_and_requests_follow_them(run, pr
     asked = 'fix A & B in <main> "now"\n{prompt}\n'
     own = tmp_path / name
     own.write_text(stored, encoding='utf-8')
-    run('set', f'--intake-file={own}', cwd=project, env={'METAFORM_ROLE': 'worker', 'METAFORM_WORK': 'opaque-task'})
+    run('set', f'--intake-file={own}', cwd=project, env={'METAFORM_WORK': 'opaque-task'})
     effective = stored.replace('{project}', 'timer')
     expected = effective + f'\n\n## Intake request\n\n{asked}\n'
     assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == expected
@@ -356,16 +356,11 @@ def test_a_new_intake_is_named_for_what_it_is_for(run, project, tmp_path, home):
 
 
 @pytest.mark.req('LAYER-025')
-def test_an_agent_never_starts_a_new_map_on_a_mapped_project_and_its_update_refines_the_map_in_use(
-        run, project, tmp_path):
-    """Refinement first (2026-10-17): on a project with a map, intake start name= is the person's decision, so an
-    agent's is refused with the refine call; with no name its update is a verification pass on the map in use, which
-    grows it under the same rules as map refine, each version carrying its reason and author."""
+def test_an_agents_intake_update_refines_the_map_in_use(run, project, tmp_path):
+    """Refinement first (2026-10-17): on a project with a map, intake start with no name is a verification pass on
+    the map in use, which grows it under the same rules as map refine, each version carrying its reason and author."""
     submit(run, project, FIXTURE, tmp_path)
-    agent = {'METAFORM_ROLE': 'worker', 'METAFORM_WORK': 'w9'}
-    refused = run('intake', 'start', 'name=feature-x', cwd=project, env=agent, ok=False)
-    assert refused.returncode != 0 and 'map refine' in refused.stdout + refused.stderr
-    assert [base.name for base in metaform_home.bases('timer')] == ['main']
+    agent = {'METAFORM_WORK': 'w9'}
     run('intake', 'start', cwd=project, env=agent)
     run('intake', 'element', 'code.alarm.snooze', 'role=SE', 'name=snooze', 'name_length=2', cwd=project, env=agent)
     snooze = Store('timer').element('code.alarm.snooze')
@@ -565,7 +560,7 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
 def test_a_dispatched_agent_is_never_given_the_first_run_onboarding(run, project, monkeypatch):
     """An agent a dispatch runner started has its work as its first turn: the onboarding, which asks an agent to
     handle the intake first, is not in what it reads, BASE-052."""
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_SESSION', 'r1')
     assert onboarding() not in run('help', 'agents', cwd=project).stdout
 
 

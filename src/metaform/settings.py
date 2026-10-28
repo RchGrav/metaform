@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 from . import home
-from .errors import PersonsDecision
 
 KINDS = ('str', 'int', 'bool', 'list', 'select')
 
@@ -30,7 +29,7 @@ CATEGORIES: tuple[tuple[str, str, str], ...] = (
     ('general', 'General', 'The project these settings are kept for, and where they apply.'),
     ('agents', 'Agents', ("Which agent works, when agents start, how many at once, what they may do unasked, and each "
                           "agent's own mode, model and thinking level.")),
-    ('automation', 'Full Auto', 'Project automation policy, worker capacity, recovery and repair gates.'),
+    ('automation', 'Full Auto', 'Project automation policy, agent capacity, recovery and repair gates.'),
     ('budgets', 'Budgets', 'How many tokens and how much money agents may spend, and what happens at the limit.'),
     ('map', 'Map and display', 'What the map shows and how the page draws it.'),
     ('voice', 'Voice and speech', 'Talking to Metaform, and the voice its agent answers with.'),
@@ -71,13 +70,6 @@ class Setting:
     default_from: Callable[[Path], Any] | None = field(default=None, compare=False)
     check: Callable[[Any, Path], list[str] | None] | None = field(default=None, compare=False)
     boundary: Callable[[Path], Path | None] | None = field(default=None, compare=False)
-    # A setting that decides what agents may do or how they are started and overseen. MCP and a dispatched agent's
-    # CLI refuse it unless the person has allowed agents to set control, so an agent cannot widen its own control.
-    person_only: bool = False
-    # A person_only setting that is part of the ordinary, reversible work of orchestration, such as Autostart agents:
-    # the person's own system agent changes it without a consent card in a turn the person's own message in its chat
-    # started (`metaform.module.persons_word`), and in no other turn, nor any other agent.
-    on_persons_word: bool = False
     # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
     # name: two are refused, and a picker that checks one unchecks the others of its name.
     exclusive: str | None = None
@@ -174,53 +166,6 @@ class Setting:
 
 
 SCHEMA: dict[str, Setting] = {}
-
-
-TERMINAL = 'their own terminal window (an AI tool runs commands without the consent a terminal carries)'
-
-
-def asking(folder: Path | None = None) -> tuple[str, str]:
-    """How an agent requests the person's decision and explains the required next step."""
-    return ('Ask the person in your chat with them: say what you propose and why, then wait for their answer.',
-            'ask the person in chat; to do it they ')
-
-
-def on_persons_word(keys: Iterable[str]) -> bool:
-    """Whether every person-only setting among `keys` is one the person's own system agent may change on the person's
-    word in its chat (`Setting.on_persons_word`), and at least one is named."""
-    held = [SCHEMA[key] for key in keys if key in SCHEMA and SCHEMA[key].person_only]
-    return bool(held) and all(setting.on_persons_word for setting in held)
-
-
-def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command: str | None = None) -> None:
-    """Refuse person-only settings to a call without the person's consent, unless the person lets agents set control.
-    The refusal tells the agent how to ask the person, `asking`, and the person how to set it: the page's settings
-    screen, or `command`, pasted into their own terminal (UX review, person-consent F2)."""
-    if value('agents_may_set_control', folder or Path.cwd()):
-        return
-    held = sorted(key for key in keys if (setting := SCHEMA.get(key)) is not None and setting.person_only)
-    if held:
-        switches = ' '.join(f'{SCHEMA[key].switch} <value>' for key in held)
-        said, step = asking(folder)
-        only = [key for key in held if not SCHEMA[key].on_persons_word]
-        worded = [key for key in held if SCHEMA[key].on_persons_word]
-        told = [f'{", ".join(only)} {"is" if len(only) == 1 else "are"} set only by the person, never by an agent.'
-                if only else '',
-                f'{", ".join(worded)} {"is" if len(worded) == 1 else "are"} set by the person, or by their own system '
-                f'agent {WORD_TURN}; this call is made in no such turn.' if worded else '']
-        raise PersonsDecision(
-            f'{" ".join(one for one in told if one)} {said}',
-            f'{step}use the settings screen on the page, or paste into {TERMINAL}: '
-            f'{command or "metaform set " + switches}')
-
-
-# What lets the person's own system agent act on the person's word, said in each refusal of such an action
-# (`metaform.module.on_persons_word`), so the agent, and the person, know what would allow it.
-WORD_TURN = 'only in a turn the person\'s own message in its chat started (sent on the page, or at their terminal)'
-WORD_COVERS = (f'Their own system agent acts on it {WORD_TURN}, and, in any later turn, on a ticket of the work it '
-               'started, released, ordered or added to wait on others on that message, with the tickets that wait on '
-               'it and the open tickets it waits on, or added later to wait only on tickets of that work, until that '
-               'work is done or the person stops it.')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,
@@ -698,7 +643,7 @@ def describe(folder: Path, *, choices: bool = True) -> list[dict[str, Any]]:
                      'scope': setting.scope, 'value': value(key, folder), 'default': default(setting, folder),
                      'state': state(key, folder), 'help': setting.help, 'label': setting.label,
                      'category': category_of(setting), 'heading': setting.heading, 'essential': setting.essential,
-                     'unit': setting.unit, 'person_only': setting.person_only}
+                     'unit': setting.unit}
             if entry['state'] == 'inherited':
                 entry['from'] = inherited_from(key, folder)
             if choices and setting.kind in ('select', 'list') and setting.choices is not None:
@@ -831,31 +776,13 @@ connect_instructions = choice('connect_instructions', ['compact', 'full'], 'comp
                                       'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.',
                               label='Instructions at connect')
 
-agents_may_set_control = boolean(
-    'agents_may_set_control', False, person_only=True,
-    help='Let agents change the settings that control agents, such as the permission policy, over MCP.',
-    details='Off, the default: over MCP an agent is refused the settings marked as the person\'s, and says what it '
-            'needs in its ticket. On: an agent may set them, through the person\'s own permission policy like any '
-            'other call. Only the person turns this on or off, on the command line or the page; it is a permission '
-            'the person holds and can change, never a rule the person cannot get past, CLI-011.',
-                                 label='Agents may change agent control', category='automation', heading='Permissions')
-
-agents_ask_first = boolean(
-    'agents_ask_first', False, person_only=True,
-    help='Ask me before an agent starts, stops, releases or orders work.',
-    details='Off, the default: agents start, release and order tickets within their assigned authority without '
-            'asking. An agent may stop itself or agents it started; stopping another agent requires your actual '
-            'direction. Your own Stop remains available. On: each such act waits on the '
-            'person\'s word in the chat or their answer on its card. Acts that cannot be undone, such as clearing or '
-            'deleting, ask either way.',
-    label='Ask me before agents act', category='automation', heading='Permissions')
-
 # Jev via OpenRouter, the decision model, CHANGE-ORDER-2026-10-07 item 6 (P185): on by default since 2026-10-20, the
-# person's decision, because it costs pennies and chooses the agent, model and thinking level for each ticket; the code
-# decides whether to ask it at all from its own checks, the key in the environment and OpenRouter credit left, so with
-# neither nothing is sent. The decision points `metaform.jev` offers other modules, each named in jev_decisions; a
-# module's own decision point is named `<module>.<point>`.
-JEV_DECISIONS = ('choose_agent', 'start_order', 'rank_items', 'triage', 'intake_coverage')
+# person's decision, because it costs pennies; the code decides whether to ask it at all from its own checks, the key in
+# the environment and OpenRouter credit left, so with neither nothing is sent. Jev never chooses a ticket's agent, model
+# or thinking level: the person sets those through their own settings (the owner's decision, 2026-10-25). The decision
+# points `metaform.jev` offers other modules, each named in jev_decisions; a module's own decision point is named
+# `<module>.<point>`.
+JEV_DECISIONS = ('rank_items', 'triage', 'intake_coverage')
 MODULE_DECISION = re.compile(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*')
 
 
@@ -868,9 +795,9 @@ def _check_jev_decisions(names: Any, folder: Path) -> list[str] | None:
 
 
 jev = boolean(
-    'jev', True, person_only=True,
-    help='Ask Jev via OpenRouter, a decision model that costs pennies, for typed decisions: which agent, model and '
-         'thinking level work a ticket, and the other decision points.',
+    'jev', True,
+    help='Ask Jev via OpenRouter, a decision model that costs pennies, for typed decisions: which items an agent at a '
+         'node needs first, which messages need you, and whether the intake covered every part.',
     details='On, the default: the decision points named in jev_decisions send the text they decide about to the '
             'endpoint jev_endpoint names, OpenRouter or TypeSafe, and act on the answer only when it is sure enough, '
             'jev_confidence. Jev is asked only while its key is in the environment, OPENROUTER_API_KEY or '
@@ -880,13 +807,13 @@ jev = boolean(
             'from the person. Off: nothing is asked.',
               label='Ask Jev via OpenRouter for decisions', category='integrations', heading='Jev via OpenRouter')
 
-jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter', person_only=True,
+jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter',
                       help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.',
                       label='Jev endpoint', category='integrations', heading='Jev via OpenRouter')
 
 # The model, the decision points and the confidence decide which agent runs a ticket, how agents are watched and what
-# reaches the person first, and what project text is sent, so only the person sets them, CLI-011.
-jev_model = text('jev_model', '', person_only=True,
+# reaches the person first, and what project text is sent.
+jev_model = text('jev_model', '',
                  help="The Jev model asked. Empty means the endpoint's default: typesafe/jev-1.13-20260917 on OpenRouter, "
                       'jev-1.13.0 on TypeSafe.',
                  details='An answer is cached under the model asked and the model that answered; when a name such as '
@@ -895,12 +822,11 @@ jev_model = text('jev_model', '', person_only=True,
                  label='Jev model', category='integrations', heading='Jev via OpenRouter')
 
 jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), beyond_choices=True, check=_check_jev_decisions,
-                      person_only=True,
                       help='Narrows which decision points ask Jev. Empty means every one.',
                       details="A module's own decision point is named <module>.<point>, as the module's README says.",
                       label='Decisions asked of Jev', category='integrations', heading='Jev')
 
-jev_confidence = number('jev_confidence', 50, min=0, max=100, person_only=True,
+jev_confidence = number('jev_confidence', 50, min=0, max=100,
                         help='The confidence, in percent, below which a Jev answer is not acted on.',
                         details="A choice's confidence is Jev's own; a yes or no is as confident as its probability "
                                 'is far from even, so 50 leaves out answers between 0.25 and 0.75. Below it the '

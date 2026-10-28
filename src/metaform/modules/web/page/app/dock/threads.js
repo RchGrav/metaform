@@ -1,4 +1,4 @@
-/* The chat's threads: their sources and tabs, proposals, the thread bar, subagents, spend, and a ticket's status,
+/* The chat's threads: their sources and tabs, the thread bar, subagents, spend, and a ticket's status,
  * cancel and interrupt. */
 import '/page/app/dock/embody.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
@@ -64,41 +64,6 @@ function focusThread(chat) {
   const ticket = chat.source === 'system' || isIntake(chat.target) ? null : ticketOf(chat.target);
   const key = ticket ? ticketNode(ticket) : null;
   if (key && (S.elements.has(key) || joinOf(key))) select(key, true);
-}
-/* A sentinel's proposals in its chat, VIEW-045: each with its grounds, its disruption and how much of the map its
- * reach reserves, its benefit and trade-off, a link to its own explanation when it made one, Show on the map, which
- * paints its reach white, and Choose, which tells the sentinel. */
-export function drawProposals() {
-  const box = $('#helpdesk .proposals'), given = (D.proposals || {})[DOCK.target] || [];
-  box.hidden = !given.length;
-  const total = S.elements.size;
-  fill(box, given.map((one, index) => proposalRow(one, index, total)));
-}
-function proposalRow(one, index, total) {
-  const reach = idsAt(one.reach), on = reach.length && reach.every(id => INUSE.preview.has(id));
-  const link = /^https?:\/\//.test(one.view || '')
-    ? h('a', {href: one.view, target: '_blank', rel: 'noopener noreferrer'}, 'Its explanation') : null;
-  const showReach = () => {
-    INUSE.preview = new Set(on ? [] : reach);
-    paintInUse(); drawProposals();
-  };
-  const choose = async () => {
-    const text = `I choose proposal ${index + 1}: ${one.title}.`;
-    if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text})) {
-      INUSE.preview = new Set(); paintInUse(); drawHelpdesk();
-    }
-  };
-  return h('div', {class: 'proposal'},
-    h('b', {}, `${index + 1}. ${one.title}`),
-    one.grounds ? h('p', {}, h('small', {}, 'Grounds '), one.grounds) : null,
-    h('p', {class: 'disruption'}, h('small', {}, 'Disruption '), `Reserves ${reach.length} of ${total} parts`,
-      one.disruption ? ` · ${one.disruption}` : ''),
-    one.benefit ? h('p', {}, h('small', {}, 'Benefit '), one.benefit) : null,
-    one.tradeoff ? h('p', {}, h('small', {}, 'Trade-off '), one.tradeoff) : null,
-    h('div', {class: 'acts'}, link,
-      h('button', {type: 'button', class: on ? 'reach on' : 'reach', disabled: !reach.length, onclick: showReach},
-        on ? 'Hide from the map' : 'Show on the map'),
-      h('button', {type: 'button', class: 'choose', onclick: choose}, 'Choose')));
 }
 /* The tabs: My agent first and pinned, the person's own system agent, then each other agent's thread with its close ×.
  * The strip shows whenever another agent's thread is open, so there is always a way back to My agent. */

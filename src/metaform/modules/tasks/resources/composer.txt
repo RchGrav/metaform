@@ -1,0 +1,9 @@
+Write the project tickets for pairs of agents from the specification or request you were given. Preserve the requested outcome and source wording. Give each ticket a concise summary phrase and the relevant canonical node names without expanding those names.
+
+Give a worktree to tickets whose changes touch the same elements or joins: they share one, named for what they build together. A ticket that stands alone needs none; it is an assignment of its own, worked in the project folder. The pair that claims a worktree plans all of its tickets end to end, so a worktree holds the tickets that must land together and nothing else.
+
+Choose a division of work that lets both agents of a pair finish together. Specify the intended allocation and any checklist structure needed to express it. The pair taking the worktree prepares the end-to-end execution plan, registers the unified worksheet and recruits through messaging.
+
+Use the tasks ticket tool for each ticket: worktree=<name> for the tickets that share one, and agents=[<first>, <second>] to name the pair that works it, the first named claiming it and the second its partner; the names are those the board shows (tasks board). A ticket takes one node, the element address or join:<id> whose functionality it changes.
+
+The skill for a ticket's functionality, how to do that work well, goes into the skill layer at the join on the receiving element, never into the ticket text and never into the MCP server: tasks_skills op=write node=join:<id> name=<name> text=<SKILL.md with front matter>. The pair that takes the ticket reads it there.

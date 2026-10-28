@@ -12,7 +12,7 @@ protocol onto what already exists:
   names one and the ticket opens there. A contextId that is neither is refused, as A2A requires.
 - Inbound tickets stay available for agents to select. Receiving a ticket starts no agent.
 - A2A sees only what A2A made: the tickets its messages opened and the questions it asked. Any other id, the
-  person's own tickets and workflow runs among them, is not found, as A2A asks of a task its client cannot reach.
+  person's own tickets among them, is not found, as A2A asks of a task its client cannot reach.
 - A task's state is the one status vocabulary of work, `metaform.data.status`, converted by its own `a2a`, read fresh
   from the ticket's work record and its dispatch record. A wait on Metaform's person, whom the client cannot reach,
   is working with `waitingOn` in the extension's metadata; input-required is only the question the client answers.
@@ -420,7 +420,7 @@ def _stamp(text: str | None) -> datetime | None:
 def _verb(folder: Path, project: str, module_id: str, name: str, arguments: dict[str, Any]) -> Any:
     """Run a module's declared verb on the project folder's surface as a tool call runs it, its arguments checked as
     the command line checks them, on the surface `a2a`. A2A calls only `map work op=add` with what `_meta` lets
-    through, dispatch's `cancel`, and workflow's `cancel`: none of them lets the sender choose an
+    through, and dispatch's `cancel`: neither lets the sender choose an
     agent or answer for the person."""
     found = next((one for one in surface(folder) if one.id == module_id), None)
     verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
@@ -594,7 +594,7 @@ def _offered(candidates: list[dict[str, str]]) -> str:
 
 def read(project: str, folder: Path, task_id: str, history_length: int | None = None) -> Read | None:
     """A task A2A made, by its id: a question Metaform asked, read as its ticket once one opened, or a ticket a
-    message opened. None for any other id, so the person's own tickets and workflow runs stay out of A2A's reach,
+    message opened. None for any other id, so the person's own tickets stay out of A2A's reach,
     A2A 1.0 section 3.3.2."""
     asked = records.asked(project, task_id)
     if asked is not None:
@@ -864,7 +864,7 @@ class Pushes:
 
 
 class Tickets(RequestHandler):
-    """The A2A request handler: every operation of the specification's section 3.1 on tickets and workflow runs."""
+    """The A2A request handler: every operation of the specification's section 3.1 on tickets."""
 
     def __init__(self, folder: Path, port: int, pushes: Pushes, exposed: Exposure | None = None) -> None:
         self.exposed = exposed

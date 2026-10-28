@@ -325,7 +325,9 @@ export function drawSession(box, {work, session, state}) {
   const usage = state?.usage || null;
   const caps = state?.capabilities || {};
   const ended = session && session.state !== 'running';
-  const resumable = ended && (caps.load || caps.resume);
+  /* Every ended session can be called back: resumed in place where its agent offers load or resume, else as a new
+   * context of the same agent reading its thread; the answer says which. */
+  const resumable = ended, inPlace = Boolean(caps.load || caps.resume);
   const text = JSON.stringify([work, session?.session_id, session?.state, settings, usage, resumable,
     state?.tokens || null]);
   if (box.dataset.drawn === text + (session ? '' : summonAgent()) || (box.contains(document.activeElement)
@@ -336,7 +338,7 @@ export function drawSession(box, {work, session, state}) {
   const controls = ended ? [] : settings.map(setting => setting.type === 'boolean'
     ? switchSetting(setting, work) : selectSetting(setting, work, agent));
   const used = usage && usage.used !== null && usage.used !== undefined ? usageLine(usage) : null;
-  const resume = resumable ? resumeButton(work, session, agent) : null;
+  const resume = resumable ? resumeButton(work, session, agent, inPlace) : null;
   if (!session && !ended) { preCallSettings(box); return; }  // before Call: the agent's known options, chosen first
   sessionSummary(box, {agent, settings, usage, controls, used, resume});
 }
@@ -386,17 +388,18 @@ function usageLine(usage) {
   return h('span', {class: 'usage', title: 'The context the session has used of its model\'s window'},
     usage.size ? `${countOf(usage.used)} / ${countOf(usage.size)} tokens` : `${countOf(usage.used)} tokens`, cost);
 }
-function resumeButton(work, session, agent) {
+function resumeButton(work, session, agent, inPlace) {
   async function resume(event) {
     const button = event.currentTarget;  // read before the await, after which the event has no currentTarget
     button.disabled = true;
     const done = await wrote('/api/dispatch-resume', {work_id: work, session: session.session_id});
     if (!done) { button.disabled = false; return; }
     toast(done.state === 'running' ? `${agent} is running already; talk to it here.`
-      : `${agent} is resuming its session; it waits for your next message.`);
+      : done.notice || `${agent} is resuming its session; it waits for your next message.`);
     await renderAgents();
   }
   return h('button', {class: 'btn sm resume', type: 'button',
-    title: `${agent} offers to resume its sessions: it goes on where it ended, with its own memory of the work`,
+    title: inPlace ? `${agent} offers to resume its sessions: it goes on where it ended, with its own memory of the work`
+      : `${agent} cannot resume this session: a new context of the same agent starts and reads its thread`,
     onclick: resume}, h('i', {class: 'i i-play', 'aria-hidden': 'true'}), 'Resume');
 }

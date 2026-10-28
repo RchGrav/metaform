@@ -1,5 +1,5 @@
 /* Ticket inspection is pinned to its project/base, including every save after another tab or project opens. The
- * ticket's words are written on the left; beside them the node it is at, the specialist working it, whose prompt opens
+ * ticket's words are written on the left; beside them the node it is at, the agent working it, whose prompt opens
  * on a click, and the node's joins, drawn as a small graph that opens whole on a click. */
 import {h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';

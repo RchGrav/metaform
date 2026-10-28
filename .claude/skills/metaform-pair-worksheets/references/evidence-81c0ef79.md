@@ -1,0 +1,1 @@
+this worksheet first named `SleekArmor` and `UntamedGiant`; the partner's row showed `complete: null`. Re-registered with task IDs.

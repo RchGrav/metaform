@@ -216,26 +216,43 @@ function startFigure(ticket, data, home, target) {
  * ticket, so a resumed conversation comes back in the same body; the person's choice stands over the agent's, and no
  * two figures at work share a character. */
 const SYSTEM_TALK = 'Conversation with the system agent';  // the system agent's ticket, dispatch's SYSTEM_TASK
-// Current system conversations live in dispatch, outside the board. This view record only gives their bodies the
-// existing figure lifecycle; it never enters S.tickets or creates a work ticket.
-const SYSTEM_CONVERSATION = {id: 'conversation-system', node_kind: 'element', node_id: null,
-  held: true, done: null, task: SYSTEM_TALK};
-export function conversationOf(work) {
-  if (work !== SYSTEM_CONVERSATION.id) return ticketOf(work);
-  for (let i = 0; i < D.sessions.length; i++) {
-    const session = D.sessions[i];
-    if (session.work_id === work && session.state === 'running') return SYSTEM_CONVERSATION;
+// Current system conversations live in dispatch, outside the board: the system conversation, `conversation-system`,
+// and each user agent task, dispatch's user_agent, whose work id is its task's and whose session names it,
+// `task_name`. A view record per conversation only gives their bodies the existing figure lifecycle; it never enters
+// S.tickets or creates a work ticket.
+const SYSTEM_WORK = 'conversation-system';
+const SYSTEM_CONVERSATIONS = new Map();
+function systemConversation(work) {
+  if (!SYSTEM_CONVERSATIONS.has(work)) {
+    SYSTEM_CONVERSATIONS.set(work,
+      {id: work, node_kind: 'element', node_id: null, held: true, done: null, task: SYSTEM_TALK});
   }
-  return null;
+  return SYSTEM_CONVERSATIONS.get(work);
 }
-export const systemTalk = () => conversationOf(SYSTEM_CONVERSATION.id) || (S.tickets || []).find(isSystemTalk);
+/* Whether a work id is a conversation with the person's system agent: the system conversation, or a user agent
+ * task's. */
+const systemWork = work => work === SYSTEM_WORK
+  || D.sessions.some(one => one.work_id === work && one.task_name === 'user_agent');
+/* The sessions of the system conversations running now, the newest last. */
+const systemSessions = () => D.sessions.filter(one => one.state === 'running' && systemWork(one.work_id));
+export function conversationOf(work) {
+  if (!systemWork(work)) return ticketOf(work);
+  return D.sessions.some(one => one.work_id === work && one.state === 'running') ? systemConversation(work) : null;
+}
+/* The conversation the mascot speaks for: the newest system conversation running, else a ticket held for one. */
+export const systemTalk = () => {
+  const live = systemSessions().at(-1);
+  return live ? systemConversation(live.work_id) : (S.tickets || []).find(isSystemTalk);
+};
 function figureTickets(tickets) {
-  const system = conversationOf(SYSTEM_CONVERSATION.id);
-  if (!system || tickets.some(ticket => ticket.id === system.id)) return tickets;
+  const systems = [...new Set(systemSessions().map(one => one.work_id))]
+    .filter(work => !tickets.some(ticket => ticket.id === work)).map(systemConversation);
+  if (!systems.length) return tickets;
   // The primary element is the conversation's home on either map, even after switching bases.
-  system.node_id = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id
+  const home = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id
     || S.elements.keys().next().value || null;
-  return [...tickets, system];
+  for (const system of systems) system.node_id = home;
+  return [...tickets, ...systems];
 }
 function keptBodies() {
   try { return JSON.parse(localStorage.getItem('metaform.bodies') || '{}'); } catch { return {}; }
@@ -268,7 +285,7 @@ export function bodyOf(work) {
 }
 const talking = ticket => D.sessions.some(one => one.work_id === ticket.id && one.state === 'running');
 /* A conversation's ticket: one held for it, or a done one a session began on after it was done, since dispatch ends a
- * worker's session when its ticket is done and only a conversation about the ticket starts on it after. */
+ * ticket agent's session when its ticket is done and only a conversation about the ticket starts on it after. */
 export const conversing = ticket => Boolean(ticket?.held || ticket?.done && D.sessions.some(one =>
   one.work_id === ticket.id && one.state === 'running' && Date.parse(one.started) > Date.parse(ticket.done)));
 /* Whether a ticket's agent is drawn as a figure now. */

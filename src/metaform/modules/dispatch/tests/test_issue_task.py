@@ -1,4 +1,4 @@
-"""Issue reports use durable assigned tasks without held tickets or sentinel scheduling."""
+"""Issue reports use durable assigned tasks without held tickets."""
 from __future__ import annotations
 
 import hashlib

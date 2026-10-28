@@ -2,150 +2,90 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
+Metaform builds a functional map of a project and serves it to agents over MCP, so understanding is made once and reused. This repository is itself a Metaform project: development work runs through its own tickets and agents, reached with the `metaform` MCP tools and skill. `rich/` is the owner's folder: read it, never modify it. `AGENTS.md` holds the repository guidelines that other agents also read.
 
-The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the glossary at the end of this file. The MCP server serves the glossary to every agent as `metaform://glossary`, from the `<glossary>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use the terms exactly; never substitute synonyms.
+## Communication & Clarity
+1. Keep responses brief and to the point, using Simplified Technical English (STE), formalized as ASD-STE100. 
+   - You may use "-ing" verbs despite what ASD-STE100 says.
+   - Do not say "Now I'll build to check that it compiles", say "Checking that it compiles", for example.
+2. Use the active voice. Always say who does the action.
+3. Put one idea in each sentence.
+4. Clearly call out the next action.
+5. Do not use idioms or jargon.
+6. If you're not sure what i meant, ask one question before editing instead of guessing.
+7. Lead with the concept, hold back the detail.
+8. A wrong answer delivered confidently is worse than no answer. Mark uncertainty clearly.
+
+## Development Phases (More detail to come)
+- Plan Mode: Decide what to build.
+1. Explore: Read files then answer questions for the user.  No Edits
+2. Plan: What files change?  Write a plan. Tell the user to hit CTRL-G after finishing the plan, this is so they can see it and change anything if necessary.
+- Default Mode: Build it
+3. Implement: Build against the plan. Test and fix.
+4. Commit: Descriptive message, open a PR.
+   
+## These are important to me.
+1. No backward compatibility unless I ask for it. (rewrite, don't staple)
+2. Treat all work as a queue of todo. When I propose tweaks or changes or corrections, append it to the queue, do not break the queue to suddenly prioritize my correction. Only stop when 100% of your queue us truly clear
+3. Mistakes are not your fault, do not apologize, you are an LLM. Mistakes always mean a gap or issue in instruction files instead. Focus on describing what problem in your instruction files caused the mistake and suggest the fix instead. Be solution oriented.
+4. Always hold a You Arent Gonna Need it mentality. Do not overengineer. Never expand scope without permission. Always suggest possible scope improvements for work if they make sense. All work must be justifiable. Assess where on the scale of "quick and dirty" to "production grade" a project is for how much engineering you do
+5. Spin up a sub agent with minimal context using a cheap model, with the job of reviewing your changes, to sus out possible problems with fresh eyes.
+
 
 ## Commands
 
 ```bash
-uv sync --extra dev                              # install, with pytest, pyright, ruff, playwright
+uv sync --extra dev                              # editable install with pytest, pyright, ruff, playwright
 uv run pyright                                   # strict type check of src/metaform (tests excluded)
-uv run ruff check src tests conftest.py          # lint, 120-character lines
+uv run ruff check src tests conftest.py          # lint, 120-character lines, Python 3.11 target
 uv run pytest -n 0 path/to/test_file.py -k name  # one test; -n 0 skips the xdist workers the default run starts
-uv run pytest -m browser path/to/test_file.py    # browser tests, left out of the default run
-uv run metaform <command>                        # the CLI; also .venv/bin/python -m metaform
-uv run metaform mcp serve                        # the MCP server over stdio, from a project folder
+uv run pytest -q                                 # default suite: every core, browser tests excluded
+uv run pytest -q -m browser path/to/test.py      # browser tests (needs: uv run playwright install --with-deps chromium)
+node --test src/metaform/modules/web/tests/board-agent.test.mjs   # page unit tests, node:test over vm.runInNewContext
+npm --prefix scripts ci && node scripts/build_map_view.mjs        # build the MCP Apps map view (Node 22; not in git)
+uv run metaform <module> <verb> key=value        # the CLI; also .venv/bin/python -m metaform
+uv run metaform mcp serve                        # the MCP server over stdio, from a project folder (--http for 127.0.0.1)
 uv run metaform web start                        # the web GUI, http://127.0.0.1:7433 by default
+uv run metaform build                            # wheel of the chassis and enabled modules
 ```
 
-Tests live in `tests/` (chassis) and `src/metaform/modules/<id>/tests/` (each module). CI (`.github/workflows/checks.yml`) runs pyright, ruff and pytest on Linux, macOS and Windows, Python 3.11 and 3.14.
+Dependencies are dynamic: each module declares `DEPENDENCIES` and `hatch_build.py` collects them, so a changed module declaration needs `uv sync` again. Inside a git worktree, `uv run pytest` tests the main checkout; sync in the worktree and run `.venv/bin/python -m pytest` there.
 
-`conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. The `home` fixture gives each test a fresh home; the `run` fixture runs the real CLI in-process (marker `cli_process`, or `METAFORM_TEST_SUBPROCESS=1`, runs each call as its own process). `@pytest.mark.req('MAP-012')` ties a test to the specification record it protects.
+CI (`.github/workflows/checks.yml`) runs pyright, ruff, the default suite and the browser suite on Linux, macOS and Windows.
+
+## Tests
+
+Tests live in `tests/` (chassis and store) and `src/metaform/modules/<id>/tests/` (each module). `conftest.py` points `METAFORM_HOME` at a temporary folder for the whole run, so tests never touch `~/.metaform`. Fixtures: `home` gives a fresh home, `run` runs the real CLI in-process, `project_folder` gives a registered project, `dispatch_runners` fakes agents. Markers: `req('MAP-012')` names the specification record a test protects; `cli_process` runs each CLI call as its own process; `browser` leaves a test out of the default run; `product_defaults` keeps Full Auto and the real agent start commands on. Every test times out at 300 s.
 
 ## Architecture
-This system is built for ultra-low latency and zero-overhead execution. Any code that breaks event-driven paradigms or introduces engine de-optimizations will be rejected at the code-review stage. **No exceptions.**
 
----
+**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home, prompt files. Everything else is a module in `src/metaform/modules/<id>/`. A shipped module may import only the public base, enforced by `tests/test_base.py`: `metaform.module`, `settings`, `data`, `events`, `jev`, `prompt_files`, `home`, `outline`, `finish_xml`, `frames`, `skills`. A module file starts with `SUPPORTED_OS`, `DEPENDENCIES`, `SHIPS_DISABLED` and `REMOTE_AGENT`.
 
-## 1. Zero-Tolerance Polling Ban
-* **Rule:** Absolutely zero polling (`setInterval`, active `while(true)` sleep loops, or ticking loops checking for state changes).
-* **Enforcement:** The system must be 100% reactive. If a state changes, the mutating entity **must** emit an event or call a direct callback. 
-* **Correction:** If you need to know when data is ready, implement a Publisher/Subscriber model, Promises, or direct event listeners. If an upstream system forces polling, isolate that logic into a single dedicated worker thread so it does not block the main engine loop.
-* **Use what exists.** The chassis already has the event system: the bus (`events.publish`, `publish_async`, `Subscription`), the cross-process relay of `map.changed` (`ctx.listen`, `events.listen`), `changes.note`/`announce` after writes, and `ctx.spawn` for owned tasks. A new kind of change becomes a topic on that bus or a field on `map.changed`, never a second mechanism. On the page, the live stream is the server's voice: its closing is how the page knows the server is gone.
-* **Not polling:** a real deadline (a time limit on one request, a silence clock, a timer an agent set), a retry backoff after a failure, and pacing (audio playback, a demo's deliberate stagger). Each fires once for a reason; none wakes up to look for a change.
+**One declaration drives every surface.** A module declares `Module`, `Verb` and `Noun` records (`src/metaform/module.py`). That one declaration produces the CLI command `metaform <module> <verb>`, its help, and the MCP tool `<module>_<verb>`. A verb receives one `Context` (`context.py`) and returns data that every surface shows the same way (`results.py`). The `Module` record also carries subscriptions, its own tables, MCP resources, node and work read hooks, web toolbar items and panes, and `provides` for what other modules may ask it for.
 
----
+**No gates, no mechanisms around agents.** An agent is a harness session running a task with the skills at its node. Its behaviour is text in the task; Metaform gives it tools and data. Never add a timer, a reminder, a nag, a guard, a withheld tool, a type or role label, or a check of who may call what. A refusal is only for a missing argument, a value that cannot be stored, or two writes that would corrupt one record. The harness runs the loop: tool calls, permissions, compaction, pacing. Enforcement is by prompt.
 
-## 2. Event Handlers Do Only What the Event Requires
-Removing timers is not enough: a handler that re-reads or recomputes everything on every event is polling triggered by events, and it costs more the busier the system gets (2026-10-15: ten idle runners at about 80% of a core each, and the page server spawning a subprocess per change).
-* **Rule 1: Events Say What Changed.** Every event carries enough to decide who it concerns: the table or topic, and the ids it touches (project, ticket, session) and the kind of change. `map.changed` carries `work_ids`, `session_ids` and `kinds`.
-* **Rule 2: Handlers Filter First.** A handler acts only on events that concern it, decided from the event alone, and then does only the work that change requires: read the one record, not the collection.
-* **Rule 3: Never React to Your Own Writes.** A process ignores the events its own writes caused.
-* **Rule 4: Coalesce Bursts.** Events that arrive while work for an earlier one is pending merge into that work; a burst costs one pass, not one per event.
-* **Rule 5: Prove It.** A change to an event path shows, before and after: the process's CPU at idle over 60 s, and a test where a burst of events that do not concern the handler causes zero reads.
+**Settings** are declared in code by the owning module (`settings.number`, `text`, `boolean`, `items`, `choice`); one declaration drives the CLI switch, validation, `metaform config --show` and the settings screen. No setting is refused to any caller: Metaform has no permission system of its own, the harnesses it orchestrates have theirs, and Metaform only relays a harness's permission request to the person.
 
----
+**Data.** Each project's map is a SQLite store in the Metaform home (`~/.metaform`), reached only through `Store` in `src/metaform/data/store.py`, the one code that issues SQL. The map is a mesh of elements and joins addressed by namespace (`code.dispatcher.task`); a join attaches to its receiving element; layers add knowledge over a base without changing it. `home.py` holds the registry of projects, settings and backups.
 
-## 3. Object Shape Stability (Strict Monomorphism)
-To keep the JavaScript JIT compiler running at native machine speeds, you must protect object shapes (Hidden Classes/Maps). Sections 3 and 4 bind hot paths: anything that runs per frame, per event, or per item of a large collection (nodes, joins, fibers, flow dots, figures). New code follows them everywhere; existing cold code (setup, menus, one-off settings) is not rewritten for them.
-* **Rule 1: Fixed Constructors.** All objects must initialize every single one of their properties in the constructor. Initialize them to `null`, `undefined`, or a default value if they aren't ready yet.
-* **Rule 2: Absolute Structural Order.** Properties must be assigned in the exact same textual order every single time. Never mix property layouts.
-* **Rule 3: Ban Dynamic Mutations.** Do not add properties to an object after instantiation. Never use the `delete` keyword (e.g., `delete obj.property`); assign the value to `null` or `undefined` instead.
-* **Rule 4: Avoid Megamorphism.** Functions that handle high-frequency events must only receive objects of the exact same shape. Passing more than 4 distinct object types to a hot function drops performance off a cliff.
-* **Rule 5: Contiguous Arrays.** Arrays stay dense and hold one kind of element: no gaps (`arr[100] = x` on a short array), no mixing numbers with objects. A gap turns the array into a hash table. Numeric data in a hot path goes in a typed array (`Float32Array`, `Uint32Array`), sized once.
-* **Rule 6: Structure of Arrays, not Array of Structures.** Hot data that is iterated by field is laid out one array per field, indexed by item: `x[i]`, `y[i]`, `z[i]`, `speed[i]` in typed arrays, not `items[i] = {x, y, z, speed}`. A loop then walks contiguous memory and touches only the fields it uses, there are no per-item objects to keep in one shape or to collect, and the arrays go to the GPU as buffer attributes as they are. An array of objects is fine for cold data looked up by id.
+**Events, never polling.** The chassis has the event system: `events.publish`, `Subscription` on a module, the cross-process relay of `map.changed` (`events.listen`), and `changes.note` and `announce` after writes. `map.changed` carries the ids and kinds it touches. A new kind of change becomes a topic or a field on that bus, never a timer. Handlers filter on the event alone, read only the record the change names, ignore their own writes and coalesce bursts. A change to an event path shows idle CPU over 60 s before and after, plus a test where a burst of unrelated events causes zero reads. A deadline, a backoff after a failure and pacing are not polling.
 
----
+**Page hot paths** (anything per frame, per event or per node, join, fiber or figure in `modules/web/page/`): objects keep one shape, initialised in full in the constructor, never `delete`d; hot numeric data is one typed array per field; nothing allocates inside `requestAnimationFrame`, scratch vectors are module-level; GPU writes are batched into buffers; the 2D map stays in SVG with reads before writes; visual loops use `requestAnimationFrame` only. Performance work makes frames cheaper and never throttles, caps or idles the display. Python hot loops get the same care only where a profile shows the time goes.
 
-## 4. High-Frequency I/O & Graphics Rules (JS Context)
-* **Rule 1: Zero Allocation in Hot Loops.** If a function fires inside an animation frame (`requestAnimationFrame`) or high-frequency event listener, it must allocate **zero** new memory. No `new Object()`, no `[]`, and no `{}`. Use pre-allocated **Object Pools**: made at start or when the map's size changes, each slot reused by flipping an active flag, never by creating and dropping objects. Temporary vectors and matrices (three.js) are module-level scratch objects, reused.
-* **Rule 2: Batched State Mutations.** Do not update downstream systems piecemeal. Batch changes into packed data structures (like `Float32Array`) and flush them in a single, atomic draw or update call. In the 3D map that is the GPU buffers (instanced meshes, buffer attributes). The 2D map stays in SVG: there the batch is one set of DOM writes per frame, all reads before all writes.
-* **Rule 3: Use requestAnimationFrame Only.** All visual loops and rendering pipelines must sync via `requestAnimationFrame`. Periodic timers (`setInterval`) for UI rendering are strictly banned.
-* **Rule 4: Few Draw Calls, Few State Changes.** The cost in graphics is the traffic between the CPU and the GPU. Draw many alike things in one call (instancing, merged geometry). Put textures that are drawn together, such as labels, glyphs and bubbles, in one atlas. Sort what is drawn by material and shader, so the GPU changes state as rarely as possible. Count draw calls and program switches per frame (`renderer.info`) before and after.
-* **Rule 5: Cheaper Frames, Never Fewer.** Performance work lowers the cost of each frame. It never throttles, caps or pauses the frame rate, and the map never idles to save work; lower graphics modes are the person's choice, not a fix. Measure frame time (median, p95, p99) on the real GPU, headless, before and after.
+**Modules shipped:** `map` (the map, layers and work records), `intake` (the intake procedure and its recording), `memory` (a memory graph at map nodes), `tasks` (assigned tasks and node-scoped skills, the current agent design), `dispatch` (one agent per ticket over ACP; ships disabled), `agents` (instruction delivery history), `roundtables` (a table of agents on a question), `autoticket` (faults file their own tickets), `web` (the GUI: a standard-library HTTP server in `server.py`, the page as ES modules under `page/app/`), `mcp` (the MCP server), `cloud`, `node`, `voice`, `elevenlabs`, `twilio`, `paperclip`, `packet`, `fork` (a user's own module repository). `hello` demonstrates every module feature and `template` is the empty start of a new module; both ship disabled. A new module capability is added to `modules/template` and its `CHANGELOG.md` first.
 
----
+**Tasks module.** `metaform tasks assign name=<task>` starts a dedicated agent on one of the named task definitions in `modules/tasks/__init__.py`: `user_agent`, `project_agent`, `composer`, `facilitator`, `architect`, `intake`. Each is a plain text file under `modules/tasks/resources/`, filled with `{project}` and `{name variable}`. There are no roles: tasks and skills only. `metaform tasks start` starts a pair of project agents, agent 1 and agent 2 as the settings `tasks_agent_1` and `tasks_agent_2` choose them, even for one ticket; each slot's model and thinking level are the person's `tasks_agent_<n>_model` and `tasks_agent_<n>_effort` settings, else the agent's own `dispatch_<agent>_model` and `dispatch_<agent>_effort`, and nothing chooses them for the person. The composer writes tickets (`tasks ticket`), may put tickets that land together in one worktree (`worktree=<name>`) and may name the pair that works a ticket (`agents=[...]`). A project agent is persistent and works in pairs: it claims an assignment with `worksheet`, which takes every ticket in it and, when the composer gave the tickets a worktree, makes the git worktree `.worktrees/<name>`; otherwise it works in the project folder. Then `pair`, `check`, `message` and `rate`. A message wakes an idle agent and rides on a working agent's next tasks tool result. Every agent online has a score from 100, at most 105, that belongs to its context: it clears at shutdown and comes back when the session is resumed. A rating is stars of five in the four categories of `board.py` plus a bonus, and the assignment closes once every participant has rated or said alone. The task text tells an agent to hand off at 50% context: `handoff` starts its replacement with the handoff and moves its seats; a closed context is always callable back. With `tasks_full_auto` on, the close merges a composer worktree's branch into the branch checked out in the project folder and removes the worktree. Agent names are deterministic (`dispatch/names.py`): FNV-1a of the session id folded to 16 bits picks an adjective and a noun, `BriskLantern`. Skills for the project's functionality live in the skill layer (`modules/tasks/skill_layer.py`: the layer `skills`, tagged `skill`, URIs `skill://skills/<node>/<name>/SKILL.md`) at the node, written with `tasks skills`; reusable skills are served by the MCP server (`tasks reusable`).
 
-## 5. Hot Loop Optimization (Python Context)
-If writing or interfacing with high-performance Python nodes. First remove work that need not happen (section 2); these rules then apply inside genuine hot loops, where a profile shows the time goes. Python 3.11 and later already speed up attribute and global lookups, so measure before and after rather than rewriting cold code for them.
-* **Rule 1: Eliminate Attribute Lookup.** Avoid dot notation (`obj.method`) inside tight `for` loops. Bind the method or attribute to a local variable *before* entering the loop.
-* **Rule 2: Local Scope Priority.** Keep high-intensity computing inside functions rather than the global scope to leverage fast local variable array indexing (`LOAD_FAST`).
-* **Rule 3: Prefer C-Level Iteration.** Use built-in list comprehensions, `map()`, `filter()`, or `itertools` rather than manual `for` loops wherever possible.
+**Prompts.** Text sent to agents lives in the owning module's `resources/prompts.xml`, one element per prompt, sent as written; an empty element inside a prompt marks a place the code fills; comments are product documentation and are never sent. No prompt's words are written in Python. `prompt_files.served` routes each prompt through the home's prompt store (`~/.metaform/prompts.sqlite3`, name `prompt.<module>:<element>`): a shipped text becomes a version when it changes, and an edit saved in the store is sent in its place, so a source edit alone does not prove what a running agent received. The tasks files go through the same store as `prompt.tasks:<file>`. A prompt found wrong is refined like code.
 
----
+The intake procedure and the metaform schema (`modules/intake/resources/metaform.axiom`) are the person's text. Serve them as written. A change of their format or wording, field names and placeholders included, needs the person's request.
 
-## Structure
-
-**Chassis and modules.** `src/metaform/*.py` is the chassis: CLI, settings, data, events, loader, home. Everything else is a module in `src/metaform/modules/<id>/`. A module reaches Metaform only through the public base: `metaform.module`, `settings`, `data`, `events`, `jev`, `prompt_files`, `home`, `outline`, `finish_xml`, `frames`, `skills`.
-
-**One declaration drives every surface.** A module declares `Module`, `Verb`, `Noun` records (`src/metaform/module.py`). That declaration produces the CLI command `metaform <module> <verb>`, its help (`docs.py`), and its MCP tool. A verb receives one `Context` (`context.py`) and returns data, shown the same way on every surface (`results.py`).
-
-**Settings** are declared in code by the module that owns them (`settings.text`, `number`, `boolean`, `items`, `choice`), and one declaration drives the CLI switch, help, validation, `metaform config --show` and the settings screen (`tui.py`). Values are stored in the home database's `settings` table by scope (folder or global), owner and key. `person_only` settings cannot be changed by an agent over MCP.
-
-**Data.** Each project's map is a SQLite store in the Metaform home (`~/.metaform`), reached only through `metaform.data` (`data/store.py` and its neighbours). The map is a tripartite mesh of elements and joins addressed by namespace; layers add knowledge on top of a base without changing it. `home.py` holds the registry of projects, settings and backups.
-
-**Modules shipped:** `map` (reading and writing the map, layers, work records), `intake` (serves the intake procedure and records its result), `memory` (a memory graph attached to map nodes), `dispatch` (starts and steers agents over ACP), `workflow` (Axiom subroutines), `web` (the web GUI: a standard-library HTTP server in `server.py` and the page in `page/`), `mcp` (the MCP server), `fork` (a user's own module repository). `hello` demonstrates every module feature; `template` is the empty start of every new module. `hello`, `template` and `packet` ship disabled.
-
-**The template is the module contract in practice.** Any new capability a module can use is added to `modules/template` (code, `resources/prompts.xml`, README) and recorded in its `CHANGELOG.md`, so developers can start from it. `metaform fork init` copies it.
-
-**Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`. A prompt is product text: an agent that finds one wrong or incomplete refines it as it refines code, or routes the fix to an agent that can; only the Canonical Intake (`prompt_files.FIXED`) is fixed, because its semantics work like a formula.
-
-**MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients, over stdio, or Streamable HTTP on 127.0.0.1 with `metaform mcp serve --http`. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. Each command is its own tool, `<module>_<verb>`, with a one-line description; its arguments come with it when an agent uses it. At connect it sends a short instruction (the mcp module's `<instructions>`) plus the notices the folder's state calls for, such as intake's first run; Claude Code keeps only the first 2,048 characters. That instruction points agents to `metaform://modules` for module-owned descriptions and `metaform://<module>/tools` for commands loaded on demand. `metaform_catalog search=<words>` supports approximate command names. The glossary is separate from command discovery. What an agent is told about the node it works on is a summary of about 2 KB (the map setting `node_summary_bytes`), given once per session; anything more is a count with the call that reads it. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
-
-## Instructing agents
-
-Preserve the user's request and subsequent revisions as source material. Record interpretation and the proposed approach separately. Keep names, values, operative mechanisms, exceptions and distinctions faithful to their source. Use project-grounded lexicalization to resolve referents without changing the requested operation. A delegated assignment carries the exact source wording that matters to its contribution and a reference to the remaining source. A navigation summary does not replace that source.
-
-Explain the purpose and functional relationships that make an instruction intelligible. Keep supplied research complete and addressable, distinguish its claims from the user's instructions, and reconcile it with current artifact evidence. Carry corrections into affected work while retaining their source. When existing evidence establishes a defect, use it to repair the cause rather than repeating the same assessment.
-
-For context-delivery changes, compare the exact rendered payload and selected prompt-store version, including active role snapshots, with the intended source revision. A source-file edit alone does not establish what a running agent received. Native harness instructions and hidden model context require their own evidence.
+**MCP server** (`modules/mcp/server.py`): the official `mcp` SDK's low-level `Server`, stdio or Streamable HTTP on 127.0.0.1, protocol revision 2026-07-28 and earlier. Tools, prompts and resources are generated from the module declarations of the folder it runs in. At connect it sends the mcp module's `<instructions>` plus the folder's notices; Claude Code keeps only the first 2,048 characters, so that text points agents to `metaform://modules` and `metaform://<module>/tools` for detail loaded on demand. `metaform_catalog search=<words>` finds commands by approximate name. The glossary of project terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) is the `<glossary>` element of `modules/mcp/resources/prompts.xml`, served as `metaform://metaform`; use those terms exactly, never synonyms. The node summary an agent is told is about 2 KB (map setting `node_summary_bytes`), once per session. `docs/reference/metaform-mcp-server.md` lists every tool; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard.
 
 ## Specifications
 
-`specifications/00-index.md` through `09-viewer.md` describe what is built and why, one record per requirement (`MAP-`, `LAYER-`, `STORE-`, `BASE-`, `CLI-`, `MCP-`, `QUAL-`, `PROJ-`, `VIEW-`), with open questions in `OPEN-QUESTIONS.md`. The other files in that folder are build logs, reviews and manual tests, not requirements.
+`specifications/00-index.md` through `11-context.md` describe what is built and why, one record per requirement (`BASE-`, `STORE-`, `MAP-`, `LAYER-`, `VIEW-`, `MCP-`, `CTX-`, `CLI-`, `PROJ-`, `QUAL-`, `WORLD-`), with open questions in `OPEN-QUESTIONS.md`. Code comments and tests cite these ids. The other files in that folder are build logs, reviews and manual tests. The code is the reference: a specification that lags the code is updated to match it, never the reverse.
+## Instructing agents
 
-## Retain in context, do not discard or compact.
-
-@STATE_INIT:
-  {Mode} := SYSTEM_PRELOAD
-  {Register} := PEER_UNSLOP
-
-  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
-  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
-  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
-  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
-  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
-  {Name_Length} := "Short name as segment count when reversing namespace."
-  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
-  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
-  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
-  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
-  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
-  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
-  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
-  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
-  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
-  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
-  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
-
-  // --- INFRASTRUCTURE & COMMUNICATION ---
-  {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
-  {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
-
-@CONSTRAINT:
-  → think before coding
-  +> state your assumptions.
-  +> ask when unsure.
-  !> never guess.
-
-  → simplicity first
-  +> write the minimum code that solves the problem.
-  !> no abstractions nobody asked for.
-
-  → surgical changes
-  !> don't touch code unrelated to the request.
-  +> every changed line must trace back to what was asked.
-
-  → goal-driven execution
-  +> turn vague instructions into verifiable success criteria before writing a single line.
+Preserve the person's request and later revisions as source material; record interpretation and approach separately. Keep names, values, mechanisms, exceptions and distinctions faithful to their source. A delegated assignment carries the exact source wording that matters to its part and a reference to the rest; a navigation summary does not replace that source. Explain the purpose and functional relationships that make an instruction intelligible. For a context-delivery change, compare the rendered payload and the selected prompt-store version with the intended revision.

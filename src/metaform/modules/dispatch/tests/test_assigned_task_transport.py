@@ -31,17 +31,21 @@ def transport(monkeypatch, tmp_path):
     monkeypatch.setattr(task_sessions, 'context', Mock(return_value=ctx))
     task = {'task_id': 'assigned-task', 'work_id': 'task:assigned-task', 'name': 'Investigate',
             'cwd': str(tmp_path / 'target with spaces'), 'payload': {'instructions': 'Exact\nwords.  '}}
-    return task_sessions.TaskSessions(), ctx, task
+    service = task_sessions.TaskSessions()
+    monkeypatch.setattr(service, '_session', lambda *args: None)
+    return service, ctx, task
 
 
 def test_start_persists_exact_payload_and_spawns_ticketless_session(monkeypatch, transport):
     service, ctx, task = transport
+    task['payload']['options'] = {'requested_at': 123}
     transaction = MagicMock()
     stored = MagicMock()
     stored.tables.return_value.__enter__.return_value = transaction
     monkeypatch.setattr(task_sessions, 'Store', Mock(return_value=stored))
     monkeypatch.setattr(dispatch, 'agent_named', lambda value: value)
     monkeypatch.setattr(dispatch, 'runnable', Mock())
+    transaction.get.return_value = None
     spawn = Mock(return_value={'pid': 123})
     monkeypatch.setattr(dispatch, 'spawn', spawn)
 
@@ -51,7 +55,7 @@ def test_start_persists_exact_payload_and_spawns_ticketless_session(monkeypatch,
     assert args[1:3] == (task['work_id'], 'codex')
     assert args[3] == ['prep=true', 'task=assigned-task', f'cwd={task["cwd"]}']
     assert args[4] == 'task'
-    assert kwargs == {'ctx': ctx, 'kept': False}
+    assert kwargs == {'ctx': ctx, 'kept': False, 'subject': 'task:assigned-task', 'asked': 123}
     table, row = transaction.insert.call_args.args
     assert table == 'raised' and row['node'] == ''
     assert json.loads(row['asked']) == {**task['payload'], 'task_id': task['task_id'],
@@ -64,6 +68,42 @@ def test_inspect_before_native_session_is_working(monkeypatch, transport):
     service, ctx, task = transport
     monkeypatch.setattr(service, '_session', lambda *args: None)
     assert service.inspect(ctx, task) == {'state': 'working', 'message': 'Starting the assigned agent.'}
+
+
+@pytest.mark.parametrize('state', ['running', 'ended'])
+def test_start_replay_recovers_native_session_without_replacing_context(monkeypatch, transport, state):
+    service, ctx, task = transport
+    row = {'work_id': task['work_id'], 'agent': 'codex', 'session_id': 'existing-context', 'state': state}
+    monkeypatch.setattr(service, '_session', lambda *_args: row)
+    spawn = Mock(side_effect=AssertionError('A recorded session must never be replaced.'))
+    monkeypatch.setattr(dispatch, 'spawn', spawn)
+    assert service.start(ctx, task) == {
+        'work_id': task['work_id'], 'agent': 'codex', 'session_id': 'existing-context'}
+    spawn.assert_not_called()
+
+
+def test_replay_before_session_reuses_canonical_task_launch_subject(monkeypatch, transport):
+    service, ctx, task = transport
+    transaction = MagicMock()
+    transaction.get.return_value = {'work_id': task['work_id']}
+    stored = MagicMock()
+    stored.tables.return_value.__enter__.return_value = transaction
+    monkeypatch.setattr(task_sessions, 'Store', Mock(return_value=stored))
+    monkeypatch.setattr(dispatch, 'agent_named', lambda value: value)
+    monkeypatch.setattr(dispatch, 'runnable', Mock())
+    admitted = {}
+
+    def spawn(_store, work, _agent, _words, _name, **kwargs):
+        key = (work, kwargs['subject'])
+        if key not in admitted:
+            admitted[key] = {'pid': 123, 'reused': False}
+        return {**admitted[key], 'reused': True}
+
+    monkeypatch.setattr(dispatch, 'spawn', spawn)
+    assert service.start(ctx, task)['pid'] == 123
+    assert service.start(ctx, task)['pid'] == 123
+    assert list(admitted) == [(task['work_id'], 'task:assigned-task')]
+    transaction.insert.assert_not_called()
 
 
 @pytest.mark.parametrize('activity', ['working', 'idle', 'waiting'])
@@ -305,7 +345,7 @@ def test_system_runs_canonical_user_task_and_deduplicates_input(run, project_fol
         created, = [message for message in messages if message.get('method') == 'session/new']
         assert created['params']['cwd'] == str(project_folder)
         env = {item['name']: item['value'] for server in created['params']['mcpServers'] for item in server['env']}
-        assert env['METAFORM_TASK'] == task_id and not env.get('METAFORM_ROLE')
+        assert env['METAFORM_TASK'] == task_id and env['METAFORM_TASK_NAME'] == 'user_agent'
         prompts = [message for message in messages if message.get('method') == 'session/prompt']
         assert len(prompts) == 2
         first_text = '\n'.join(block['text'] for block in prompts[0]['params']['prompt'] if block['type'] == 'text')

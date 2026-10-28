@@ -1,0 +1,296 @@
+{
+  "period": {
+    "start": "2026-04-25T04:00:00+00:00",
+    "end": "2026-10-26T01:03:14+00:00"
+  },
+  "storage_root": "/home/rich/.metaform",
+  "mode": "SQLite mode=ro plus PRAGMA query_only, no application imports",
+  "database_inventory": {
+    "dbs": 575,
+    "errors": [
+      {
+        "source_db": "/home/rich/.metaform/backups/incident-2026-10-05/main.metaform.sqlite3",
+        "error": "database disk image is malformed"
+      }
+    ],
+    "total_bytes": 13941186560,
+    "schema_file": "/tmp/gates-user-metaform-schema.json"
+  },
+  "coverage": {
+    "inbox_message_tables_scanned": 373,
+    "dispatch_line_tables_scanned": 340,
+    "roundtable_tables_scanned": 4,
+    "task_assignment_tables_scanned": 4,
+    "excluded_forwarded_agent_records": 97
+  },
+  "raw_candidate_rows": 130,
+  "canonical_records": 9,
+  "confirmed_actual_user_writes": 8,
+  "confirmed_user_gate_occurrences": 13,
+  "confirmed_exact_timestamps": 8,
+  "confirmed_bounded_timestamps": 0,
+  "classifications": {
+    "uncertain": 1,
+    "confirmed_user_write": 8
+  },
+  "gaps": [
+    "No Metaform storage before its registered projects/snapshots is evidence of conversations outside this host. Native clients must be searched separately.",
+    "Some person lines have no exact timestamp. Session lifetime bounds are retained where entirely inside the requested period; others remain uncertain.",
+    "Task assignment input and inbox answers do not reliably retain the original actor, so they are not counted without stronger evidence.",
+    "Native-child/fork message paths can also write person labels. Only ordinary recorded agent sessions, canonical broadcasts, or explicit person opener provenance are treated as confirmed here.",
+    "Copied audit/report material inside a genuine user message is retained verbatim, not attributed as independently authored user prose. Injected click prefixes are separated."
+  ],
+  "outputs": {
+    "evidence": "/tmp/gates-user-metaform.jsonl",
+    "raw": "/tmp/gates-user-metaform-raw.jsonl",
+    "forwarded_exclusions": "/tmp/gates-user-metaform-forwarded.jsonl"
+  },
+  "direct_user_statement_events": 5,
+  "directly_authored_user_gate_occurrences": 5,
+  "human_supplied_pasted_material_events": 3,
+  "deduplication_note": "These are cross-source aliases, not eight additional messages to add to native counts. Merge by native_aliases IDs and canonical broadcast/source IDs.",
+  "forwarded_agent_events_with_structured_provenance": 52,
+  "confirmed_event_index": [
+    {
+      "evidence_id": "metaform:c25cb700f402e0cc5633835c",
+      "timestamp": "2026-10-19T18:17:24.568Z",
+      "raw_text_sha256": "cbedcf18aed2ef9874679b0902d755ffa88b585ac9023b60fc492e9fc9e470b4",
+      "user_text_sha256": "cbedcf18aed2ef9874679b0902d755ffa88b585ac9023b60fc492e9fc9e470b4",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "claude",
+          "session_id": "f9f108ee-6be4-4f62-8526-be5ad54c8f0f",
+          "message_id": "8ed22fe6-613b-4240-b17e-281719bfc745",
+          "parent_uuid": "14f316fd-76d9-44c2-a120-9c5c5fa9dc2f",
+          "timestamp": "2026-10-19T18:17:24.568Z",
+          "source_file": "/home/rich/.claude/projects/-home-rich-metaform/f9f108ee-6be4-4f62-8526-be5ad54c8f0f.jsonl",
+          "line": 1351
+        }
+      ],
+      "content_origin": {
+        "category": "user_supplied_pasted_audit",
+        "reason": "The user introduced a pasted audit with read this; gates occurs inside that supplied report.",
+        "directly_authored_user_gate_occurrences": 0
+      }
+    },
+    {
+      "evidence_id": "metaform:54d7a67dcbb94967f2bde998",
+      "timestamp": "2026-10-21T16:06:21.753000Z",
+      "raw_text_sha256": "90bf9864b53ea2729f49cb16b8eb7742ee3d9726c4599faf722c8ebeef9e3eae",
+      "user_text_sha256": "90bf9864b53ea2729f49cb16b8eb7742ee3d9726c4599faf722c8ebeef9e3eae",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+          "turn_id": "01a15f36-aedd-71e3-b321-27312f888c2b",
+          "message_id": "01a15f36-af37-78e1-9c59-424608fbf5f8",
+          "timestamp_ms": 1792598781753,
+          "cwd": "/home/rich/metaform",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        }
+      ],
+      "content_origin": {
+        "category": "direct_user_statement",
+        "reason": "Plain direct complaint or instruction, independently stored as a Metaform person message or canonical person broadcast.",
+        "directly_authored_user_gate_occurrences": 1
+      }
+    },
+    {
+      "evidence_id": "metaform:e3820b5aba509c4307118da0",
+      "timestamp": "2026-10-21T16:46:44.041000Z",
+      "raw_text_sha256": "a8660774e9880c5f7fc7bf05dbe7bcfb3a4f7a8fe68972a8a21ffcf091f670fa",
+      "user_text_sha256": "b7203ca02cf1d03c72af4a7d16325b6873a352c037485192f2d28688b4db688d",
+      "occurrences": 5,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+          "turn_id": "01a15f5b-a4da-7713-bb8d-c8473f1f85cf",
+          "message_id": "01a15f5b-a546-7b22-913d-d818798cc98f",
+          "timestamp_ms": 1792601204041,
+          "cwd": "/home/rich/metaform",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        }
+      ],
+      "content_origin": {
+        "category": "user_question_with_pasted_agent_notes",
+        "reason": "Five gates occurrences are inside pasted agent message bodies, after the user question.",
+        "directly_authored_user_gate_occurrences": 0
+      }
+    },
+    {
+      "evidence_id": "metaform:broadcast:578263516620062c",
+      "timestamp": "2026-10-21T17:30:14Z",
+      "raw_text_sha256": "8cc53c76f67285f928175a1236156f8f58600d04db02e031804218697ded004f",
+      "user_text_sha256": "8cc53c76f67285f928175a1236156f8f58600d04db02e031804218697ded004f",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a15eba-3789-73d1-a6f2-cb40f8b8589a",
+          "turn_id": "01a15f80-b89e-7cf2-a7e1-e7c742e6a868",
+          "message_id": "01a15f83-ce1f-73d1-bcd6-137df19bbdf6",
+          "timestamp_ms": 1792603835937,
+          "cwd": "/home/rich/metaform/.worktrees/9935f4a81749",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T09-50-24-01a15eba-3789-73d1-a6f2-cb40f8b8589a.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        },
+        {
+          "provider": "codex",
+          "session_id": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+          "turn_id": "01a15f83-7bc3-73e0-a33a-e0d51456defd",
+          "message_id": "01a15f83-7c61-7d70-bc84-0d2991cfffe3",
+          "timestamp_ms": 1792603815012,
+          "cwd": "/home/rich/metaform",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        },
+        {
+          "provider": "codex",
+          "session_id": "01a15f5a-24d4-74f2-8f51-c694d2f37048",
+          "turn_id": "01a15f5a-32db-7132-9d9e-726b9690ba07",
+          "message_id": "01a15f83-857a-7630-a00a-0cf8f1f3610d",
+          "timestamp_ms": 1792603817341,
+          "cwd": "/home/rich/metaform/.worktrees/ee44f3f0ca75",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T12-45-05-01a15f5a-24d4-74f2-8f51-c694d2f37048.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        },
+        {
+          "provider": "codex",
+          "session_id": "01a15f63-3c8e-7f80-a6a3-54c2ce51c33b",
+          "turn_id": "01a15f7a-89fc-7041-a9aa-f6c32bed082a",
+          "message_id": "01a15f83-c88b-75b1-aa31-7a8a3c556190",
+          "timestamp_ms": 1792603834510,
+          "cwd": "/home/rich/metaform/.worktrees/6b8b6107d96a",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T12-55-01-01a15f63-3c8e-7f80-a6a3-54c2ce51c33b.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        },
+        {
+          "provider": "codex",
+          "session_id": "01a15f7d-0069-71b3-b0de-84859ee9c0d0",
+          "turn_id": "01a15f7d-10fa-7873-8b42-f8f5a90df703",
+          "message_id": "01a15f83-855d-7f30-9a90-2c0a646f000b",
+          "timestamp_ms": 1792603817312,
+          "cwd": "/home/rich/metaform/.worktrees/a673f395d3c7",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T13-23-10-01a15f7d-0069-71b3-b0de-84859ee9c0d0.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        },
+        {
+          "provider": "claude",
+          "session_id": "ff30c0b5-60ed-455c-8b88-ef9de78d7a60",
+          "message_id": "3f279cee-b7d7-47e5-88d2-5d11284726d6",
+          "parent_uuid": "c8491f6b-0283-4935-8dfe-02092d158d8a",
+          "timestamp": "2026-10-21T17:30:14.679Z",
+          "source_file": "/home/rich/.claude/projects/-home-rich-metaform--worktrees-98c9bc72090b/ff30c0b5-60ed-455c-8b88-ef9de78d7a60.jsonl",
+          "line": 999,
+          "original_record_session_id": "ff30c0b5-60ed-455c-8b88-ef9de78d7a60",
+          "isSidechain": false
+        }
+      ],
+      "content_origin": {
+        "category": "direct_user_statement",
+        "reason": "Plain direct complaint or instruction, independently stored as a Metaform person message or canonical person broadcast.",
+        "directly_authored_user_gate_occurrences": 1
+      }
+    },
+    {
+      "evidence_id": "metaform:42c733c82c9a9d3b199ecfdb",
+      "timestamp": "2026-10-21T17:59:16.484000Z",
+      "raw_text_sha256": "ffd80ad96142205f132fc6bd980198bc1e3771540f81558dffe24c5c3f2951d5",
+      "user_text_sha256": "ffd80ad96142205f132fc6bd980198bc1e3771540f81558dffe24c5c3f2951d5",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a15f79-433f-7882-88af-e48e292e0b4e",
+          "turn_id": "01a15f9e-0ebe-7250-a140-5616aa417b90",
+          "message_id": "01a15f9e-0f01-7a62-b19d-4d552a148b6e",
+          "timestamp_ms": 1792605556484,
+          "cwd": "/home/rich/metaform/.worktrees/a67d39d14a8f",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T13-19-05-01a15f79-433f-7882-88af-e48e292e0b4e.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        }
+      ],
+      "content_origin": {
+        "category": "direct_user_statement",
+        "reason": "Plain direct complaint or instruction, independently stored as a Metaform person message or canonical person broadcast.",
+        "directly_authored_user_gate_occurrences": 1
+      }
+    },
+    {
+      "evidence_id": "metaform:3c0f4b95643de008eb4ed58b",
+      "timestamp": "2026-10-22T02:35:53.592000Z",
+      "raw_text_sha256": "7449a2aab6c73d188ec4353440611523a116b4c93de46bbc0357958bfa74fa17",
+      "user_text_sha256": "7449a2aab6c73d188ec4353440611523a116b4c93de46bbc0357958bfa74fa17",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a1613f-e6c9-75e2-aae8-8777daf38ea5",
+          "turn_id": "01a16177-0928-7f83-90f5-5c34efc37c48",
+          "message_id": "01a16177-0975-7570-b3ba-9a36ba6c1b83",
+          "timestamp_ms": 1792636553592,
+          "cwd": "/home/rich/metaform",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T21-35-40-01a1613f-e6c9-75e2-aae8-8777daf38ea5.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        }
+      ],
+      "content_origin": {
+        "category": "direct_user_statement",
+        "reason": "Plain direct complaint or instruction, independently stored as a Metaform person message or canonical person broadcast.",
+        "directly_authored_user_gate_occurrences": 1
+      }
+    },
+    {
+      "evidence_id": "metaform:154eab47aa4aedf8b15e84fe",
+      "timestamp": "2026-10-22T03:30:35.410000Z",
+      "raw_text_sha256": "54fd1923076c14f1e2ad4e9fcdaa605e38387bde941f9efabe19f05724a5fadb",
+      "user_text_sha256": "54fd1923076c14f1e2ad4e9fcdaa605e38387bde941f9efabe19f05724a5fadb",
+      "occurrences": 1,
+      "native_aliases": [
+        {
+          "provider": "codex",
+          "session_id": "01a161a1-9ef8-7841-9fba-ab0122aba1f6",
+          "turn_id": "01a161a9-1cce-7d33-b444-f859a53776d2",
+          "message_id": "01a161a9-1d10-7b52-909b-73d2e20e7b50",
+          "timestamp_ms": 1792639835410,
+          "cwd": "/home/rich/metaform",
+          "session_source": "vscode",
+          "rollout_path": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T23-22-24-01a161a1-9ef8-7841-9fba-ab0122aba1f6.jsonl",
+          "source_db": "/home/rich/.codex/thread_history_1.sqlite"
+        }
+      ],
+      "content_origin": {
+        "category": "direct_user_statement",
+        "reason": "Plain direct complaint or instruction, independently stored as a Metaform person message or canonical person broadcast.",
+        "directly_authored_user_gate_occurrences": 1
+      }
+    },
+    {
+      "evidence_id": "metaform:bc11641185123204a832bfd7",
+      "timestamp": "2026-10-23T01:43:56Z",
+      "raw_text_sha256": "7962796c649c62eb2bbe2e35b84c07a63d98bffc08f32c8f4cc8b9132d1e74d0",
+      "user_text_sha256": "7962796c649c62eb2bbe2e35b84c07a63d98bffc08f32c8f4cc8b9132d1e74d0",
+      "occurrences": 2,
+      "native_aliases": [],
+      "content_origin": {
+        "category": "user_supplied_previous_discussion_summary",
+        "reason": "The topic explicitly introduces a summary from the last discussion; original prose authorship of the two gates occurrences is not established.",
+        "directly_authored_user_gate_occurrences": 0
+      }
+    }
+  ]
+}

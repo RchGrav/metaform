@@ -32,7 +32,7 @@ from typing import Any, cast
 
 from metaform import home, settings
 from metaform.data import BASE_VARIABLE
-from metaform.module import Context, Module, Noun, Pane, Stop, Subscription, ToolbarItem, Verb, child_environment
+from metaform.module import Context, Module, Noun, Pane, Stop, Subscription, Verb, child_environment
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -58,7 +58,7 @@ settings.number('web_port', 7433, min=1, max=65535, scope='global',
                 help='The port the web GUI listens on.',
                 details='One server per Metaform home listens here, so the address stays the same across restarts.',
                 label='Page port', category='advanced')
-settings.text('web_bind', '127.0.0.1', scope='global', person_only=True,  # who reaches the page that permits agents
+settings.text('web_bind', '127.0.0.1', scope='global',  # who reaches the page that permits agents
               help='The address the web GUI binds to. Any address but loopback also needs the token.',
               details='At 127.0.0.1 only this machine can reach the web GUI. Another address opens it to that '
                       'network, and then every request needs the token that metaform web prints.',
@@ -356,7 +356,8 @@ def takes_the_page(ctx: Context) -> bool:
     """Whether a start of the page from this call may take the open pages to its project: the person's own, from
     their terminal or their AI tool in the folder, or an intake agent's, which onboarding has start the page. An agent
     Metaform dispatched to other work in another project never moves the person's page."""
-    return ctx.surface != 'mcp' or os.environ.get('METAFORM_ROLE') in (None, '', 'none', 'intake')
+    return (ctx.surface != 'mcp' or not os.environ.get('METAFORM_SESSION')
+            or os.environ.get('METAFORM_TASK_NAME') == 'intake')
 
 
 def debug_file() -> Path:
@@ -853,10 +854,10 @@ def ask_page(ctx: Context, act: str, **given: Any) -> dict[str, Any]:
         raise Stop('The web GUI is not running, so no page shows the map.', 'metaform web start, then open the page')
     address, port = reach(str(record.get('bind', ''))), int(record.get('port') or 0)
     host = host_port(address, port)
-    # the agent asking: its ticket, and its role, the person's system agent being the mascot
-    work, role = os.environ.get('METAFORM_WORK') or None, os.environ.get('METAFORM_ROLE') or None
+    # the agent asking: its ticket, and the name of its task, the person's own agent, user_agent, being the mascot
+    work, task = os.environ.get('METAFORM_WORK') or None, os.environ.get('METAFORM_TASK_NAME') or None
     body = json.dumps({'project': ctx.project, 'act': act, **({'work': work} if work else {}),
-                       **({'role': role} if role else {}), **given}).encode('utf-8')
+                       **({'task': task} if task else {}), **given}).encode('utf-8')
     connection = http.client.HTTPConnection(address, port, timeout=15)
     try:
         connection.request('POST', '/api/mascot', body=body, headers={
@@ -1226,13 +1227,6 @@ MODULE = Module(
     ),
     # The page's two views of the map. The default layout keeps the maps on the left and in the main area, and
     # everything a person reads or types into on the right, where the reading starts.
-    # The workflow runs of the project, read and answered by the person: a run paused on the person shows what stopped
-    # it, takes the answer and can tell its agent to resume, without the command line. Declared here, the page's own
-    # view, beside the chat where answers are typed.
-    toolbar=(
-        ToolbarItem('runs', 'Workflow runs', 'See the workflow runs at work, answer one waiting on you and resume it, '
-                    'or cancel one.', icon='play', pane='runs', placement='extra', order=310),
-    ),
     panes=(
         # The Default workspace is the page as written: the 2D map in the large area, where its names are read, and
         # the 3D map above the node's tabs on the right, keeping the whole in view beside it. Which of the two takes
@@ -1241,8 +1235,6 @@ MODULE = Module(
              page='map2d', area='main', group='stage', visible=True, order=5, min_width=280, min_height=200),
         Pane('map3d', '3D map', 'See the map in depth, with the agents at work on it.', icon='cube', page='map3d',
              area='right', group='overview', visible=True, order=5, min_width=320, min_height=200),
-        Pane('runs', 'Workflow runs', 'See the workflow runs at work, answer one waiting on you and resume it, or '
-             'cancel one.', icon='play', page='runs', area='right', group='chat', order=130, min_width=320),
     ),
     settings_category='map',
 )

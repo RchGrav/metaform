@@ -2,7 +2,6 @@
 
 Targets may name a session, work item, map region, file, topic or reply. Each exchange is retained in sender and
 recipient threads with factual sender identity and delivery receipts. Ordinary messages request a recipient turn.
-A relayed user decision carries the actual originating user message separately from the peer's own words.
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ from metaform import events, home
 from metaform.data import Store, StoreError, WorkRecord, parse_reference
 from metaform.module import Context, Stop, context, work_reads
 
-from . import base_store, held_ticket, persons_word, prompt, session_status, sessions, system_sessions, tell
+from . import base_store, held_ticket, prompt, session_status, sessions, system_sessions, tell
 from .signals import add_line, mark_peer, own_store
 
 WAIT_MOST = 120  # seconds a question waits for its replies
@@ -216,7 +215,6 @@ def destination(ctx: Context, project: str | None = None, base: str | None = Non
         raise Stop(f'No registered project {project}.', 'metaform projects')
     target = context('dispatch', Path(found.path), project=project, surface=ctx.surface,
                      session=ctx.session, identity=ctx.identity, nouns=dict(ctx.nouns))
-    target.consented = ctx.consented
     if base:
         target = replace(target, store=Store(project, module='dispatch', base=base))
     return target
@@ -360,16 +358,6 @@ def wait_seconds(ctx: Context) -> float:
     return seconds
 
 
-def relayed(store: Store, mine: dict[str, Any]) -> dict[str, Any]:
-    """Authenticate the original user message carried by a relayed decision."""
-    word = persons_word(store, 'relay the person\'s decision', work=str(mine['work_id']), runner=mine.get('runner'))
-    if not word or word.get('covered') or not word.get('id'):
-        raise Stop('A relayed decision needs the original user message from this turn. '
-                   'Send your own words as a plain note, or ask the person to send their decision directly.',
-                   'metaform dispatch note to=<work id or address#n> -- "<note>"')
-    return {key: word.get(key) for key in ('id', 'text', 'at')}
-
-
 def kept_waiting(ctx: Context, entry: dict[str, Any], line: dict[str, Any]) -> dict[str, Any]:
     """A note to a system agent no session runs for, `system_agent`: kept in its last conversation's thread as the
     runner keeps a note it is given, marked `waiting`, and announced to that project's processes as any change is. The
@@ -391,7 +379,7 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     giving it to each receiver's runner; a receiver whose runner does not take it is marked failed."""
     record, mine = caller(store)
     work_id = str(mine['work_id'])
-    decision = relayed(store, mine) if ctx.nouns.get('decision') is True else None
+    decision = ctx.nouns.get('decision') is True
     named, kind, found, answered = chosen(ctx, store, work_id, str(mine['session_id']))
     now = time.time()
     note_id = secrets.token_hex(8)
@@ -404,8 +392,7 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
         'to': [{key: value for key, value in entry.items() if not key.startswith('_')
                 and key not in ('files', 'said', 'activity')} for entry in found],
         'states': {entry['work_id']: 'queued' for entry in found},
-        'session_states': {entry['session_id']: 'queued' for entry in found},
-        **({'decision': decision} if decision else {})}
+        'session_states': {entry['session_id']: 'queued' for entry in found}}
     kept = told(mine, 'note', line=line, awaiting=wait)
     if not kept.get('noted'):
         raise Stop(f'Your own session did not keep the note: {kept.get("error") or "no answer"}. Nothing was sent.',

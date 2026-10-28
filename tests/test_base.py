@@ -896,17 +896,19 @@ def _fake_jev(monkeypatch, project_folder):
 
 @pytest.mark.req('BASE-004')
 def test_jev_is_on_by_default_and_off_sends_nothing_with_every_decision_none(home, project_folder, monkeypatch):
-    """Jev via OpenRouter is on by default (the person's decision, 2026-10-20: it costs pennies and chooses the agent,
-    model and thinking level); the code asks it only with a key and credit. Turned off, nothing is sent."""
+    """Jev via OpenRouter is on by default (the person's decision, 2026-10-20: it costs pennies); the code asks it only
+    with a key and credit. Turned off, nothing is sent. No decision point chooses a ticket's agent, model or thinking
+    level: the person sets those (the owner's decision, 2026-10-25)."""
     from metaform import jev, settings
 
     def refuse(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
         raise AssertionError('nothing is sent while jev is off')
     assert settings.value('jev', project_folder) is True
+    assert not hasattr(jev, 'choose_agent') and 'choose_agent' not in settings.JEV_DECISIONS
     settings.put('jev', False, project_folder)
     monkeypatch.setenv('OPENROUTER_API_KEY', 'test-key')
     monkeypatch.setattr(jev, 'post', refuse)
-    assert jev.choose_agent(project_folder, {'id': 't1', 'task': 'x'}, {'claude': 'best'}) is None
+    assert jev.triage(project_folder, {'m1': 'may I spend $40?'}) is None
     assert jev.rank_items(project_folder, 'code.a', {'code.a#1': 'yes'}, {'address': 'code.a'}) is None
 
 
@@ -952,28 +954,6 @@ def test_jev_choice_that_flips_with_the_order_stays_unsure_from_the_cache_and_is
     assert again.answer == 'claude' and not again.sure and again.item == 'code.a#1'
     kept = item_read(project_folder, 'code.a', 1)
     assert kept is not None and kept['module'] == 'jev' and kept['sure'] is False and kept['why']
-
-
-@pytest.mark.req('BASE-004')
-def test_jev_chooses_agent_model_and_effort_for_many_tickets_and_their_start_order_in_one_request(
-        home, project_folder, monkeypatch):
-    from metaform import jev
-    from metaform.module import item_read
-    sent = _fake_jev(monkeypatch, project_folder)
-    tickets = {'t1': {'task': 'Fix a typo.', 'address': 'code.a'}, 't2': {'task': 'yes: unblocks t3'},
-               't3': {'task': 'Build on t2.'}}
-    options = {'claude': {'model': {'opus': 'deep work', 'haiku': 'best for small edits'},
-                          'thought_level': {'high': 'best for most', 'low': 'quick'}}}
-    got = jev.choose_agents(project_folder, tickets, {'claude': 'best at design', 'codex': 'fast edits'}, options,
-                            unplaced={'t2', 't3'})
-    assert got is not None and len(sent) == 1  # one paid state, every question on it
-    assert set(sent[0]['state']['tickets']) == {'t1', 't2', 't3'}
-    assert all(decided.answer == {'agent': 'claude', 'model': 'haiku', 'thought_level': 'high'} and decided.sure
-               for decided in got.decisions.values())
-    assert {name.split('__', 1)[1] for name in sent[0]['questions']} >= {
-        'agent', 'agent__r', 'claude__model', 'claude__model__r', 'claude__thought_level', 'first'}
-    assert got.order is not None and got.order.answer == ['t2', 't3'] and got.order.item is None  # placed t1 stays out
-    assert got.decisions['t1'].item == 'code.a#1' and item_read(project_folder, 'code.a', 1) is not None
 
 
 @pytest.mark.req('BASE-004')

@@ -10,7 +10,7 @@ Change the page surgically, and reproduce the person's view before you say what 
 
 ## Triage: looks broken, blank or wrong
 1. Settle the open tab first. A page loaded before a fix keeps what it drew; ask for a reload and say so in your reply.
-2. List what changed: sibling tickets' logs (`map_work`), `git diff` on `src/metaform/modules/web/page`, and any page file newer than the running server. A running server keeps its old code until restarted.
+2. List what changed: sibling tickets' logs (`map_work`), `git diff` on `src/metaform/modules/web/page`, and any page file newer than the running server. A running server keeps its old code until restarted. When a page element is missing and the page tests pass, read one live row from the endpoint the element uses (for example `/api/dispatch-sessions`): if the field the page reads (such as `task_name`) is absent, the server predates the commit that added it, whatever the tests say. Compare the server's start line in `~/.metaform/run/web.log` with that commit's time. Ask the person's yes before a restart; the restart takes the current checkout, and dispatch runners keep running through it.
 3. Reproduce on a scratch copy at the person's settings (depth, layers, lens), once on the working tree and once on HEAD, headless, on the real GPU. `scripts/depth-probe.py OUT_DIR URL TAG KEY...` prints node and edge counts and page errors after each key.
 4. A difference between tree and HEAD is the regression. Identical counts mean the code is not the cause; say so with the numbers.
 5. Report counts, not impressions, and list what you did not check. Page-error floods such as `scale(Infinity)` are code defects: fix them at the source, never hide the symptom.
@@ -66,6 +66,9 @@ The hover label is one reused `#agenttip` element, set by `agentTip` in `map3d/r
 
 ## Verify on a scratch instance, never the person's server
 Run a page change on a scratch home with its own port, a fake agent, headless software GL and reduced motion. Then stop the scratch server and runners by finding every process whose `/proc/PID/environ` holds that home's `METAFORM_HOME`, and only then delete the temp folders. Port 7433 runs the main tree, so a scratch run on a worktree does not show the person's page: say that in the report.
+
+## Read-only probe of the live page
+To check the person's live page without changing its data, open a headless browser on 127.0.0.1:7433, abort every request whose method is not GET, read `/api/dispatch-sessions` and the page's state from the same run, and save a screenshot under `/tmp`. Never open a visible window. Report the probe's numbers and the page-error count, and say that the change needs the web GUI restarted before the person sees it. To confirm a fix before that restart, answer the one endpoint inside the same probe with the missing field added (for example `task_name` from `states[*].task.name` on `/api/dispatch-sessions`), then read the glyph function's result and the drawn figure on both maps in that run. Such a probe proves the fix only for the patched response: say so, and name the restart still needed.
 
 ## Ticket board and Archive
 - The board shows open tickets only. A ticket that is done moves to the Archive at once, and nothing is deleted. Keep the board to open work: hundreds of done cards hang the browser.

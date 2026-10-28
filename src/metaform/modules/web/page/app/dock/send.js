@@ -99,7 +99,7 @@ export async function deliverQueued(session) {
   } finally { DOCK.delivering = false; }
   drawHelpdesk();
 }
-/* A ticket's agent with no session yet, a specialist owner's or a ticket reserved and not started: each message
+/* A ticket's agent with no session yet, a ticket with an owner and no session or one reserved and not started: each message
  * waiting goes to its ticket at once, which keeps it and gives it to the session when it starts as the person's own
  * message, dispatch's `_kept_for_start`; in the thread it is marked as kept until the agent has it. */
 async function holdQueued() {

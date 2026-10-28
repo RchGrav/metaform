@@ -1,0 +1,14 @@
+{
+  "uri": "skill://metaform/v1/inspect-proximity/SKILL.md",
+  "frontmatter": {
+    "name": "inspect-proximity",
+    "description": "Interpret the local ToF observation and the motion outcome."
+  },
+  "resources": [
+    {
+      "uri": "skill://metaform/v1/inspect-proximity/SKILL.md",
+      "digest": "sha256:edaaff61359ed4accbc3f0c2ac7f3a58210267f4815bacd319650b88a88799f1",
+      "size": 212
+    }
+  ]
+}

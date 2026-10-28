@@ -41,7 +41,7 @@ from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, agent_caller, context, node_items, provided
+from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, node_items, provided
 
 from . import engine, follow, pipeline
 
@@ -55,20 +55,20 @@ PACKAGE = resources.files(__name__)
 OPEN_LIMIT = engine.CALL_LIMIT + 30  # seconds `open` waits for its follower's first line: a deadline on one request
 CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner')
 
-settings.number('roundtables_spend', 2, min=0, max=100, person_only=True, label='Most a table spends (US dollars)',
+settings.number('roundtables_spend', 2, min=0, max=100, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
                 help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.',
                 details='OPENROUTER_API_KEY is required for judging or OpenRouter seats. ACP-only unjudged tables '
                         'use their agent logins.')
 
-settings.boolean('roundtables_judging', True, person_only=True, label='Judge discussion novelty with Jev',
+settings.boolean('roundtables_judging', True, label='Judge discussion novelty with Jev',
                  category='integrations', heading='Roundtables',
                  help='Optional novelty filtering. Off keeps every substantive reply and needs no Jev credential '
                       'for ACP-only tables. Discussion completion always requires unanimous PASS or End discussion.')
-settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000, person_only=True,
+settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000,
                 label='Seat context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
                 help='Compact before seat context fills. The smallest active seat or judging budget wins.')
-settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000, person_only=True,
+settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000,
                 label='Jev context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
                 help='State plus judging criteria. Conservative headroom under the unconfirmed OpenRouter limits.')
 
@@ -91,7 +91,7 @@ def _check_seats(seats: Any, folder: Path) -> list[str] | None:
     return notices or None
 
 
-settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 'claude/fable'), person_only=True,
+settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 'claude/fable'),
                label='Seats a table opens with', category='integrations', heading='Roundtables', check=_check_seats,
                help='The seats, in speaking order, of a table opened without any named, as the page\'s roundtable '
                     'opens one: claude/<model>, codex/<model>, antigravity/<model> or OpenRouter model ids. A model is a '
@@ -100,7 +100,8 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone. The engine's synthesis and saved mechanical report supply the result.
-TABLES = Tables(version=5, compatible_from=5, upgrade=pipeline.upgrade, tables=(
+# Version 6 adds only pending stage launches, so session events recover refused work without scanning task history.
+TABLES = Tables(version=6, compatible_from=5, upgrade=pipeline.upgrade, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
         Column('opening', required=True), Column('seats', 'json', required=True), Column('host'),
@@ -123,6 +124,9 @@ TABLES = Tables(version=5, compatible_from=5, upgrade=pipeline.upgrade, tables=(
         Column('created', required=True))),
     Table('intake_links', place='project', key=('origin', 'table_id'), columns=(
         Column('origin', required=True), Column('table_id', required=True))),
+    Table('pending_stages', place='project', key=('origin', 'table_id'), columns=(
+        Column('origin', required=True), Column('table_id', required=True),
+        Column('stage', required=True), Column('work_id'))),
 ))
 
 
@@ -282,7 +286,7 @@ def open_table(ctx: Context) -> dict[str, Any]:
                              'followed': {'reply_limit': reply_limit, 'judging': judging,
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
                                           'opener': 'person' if ctx.surface == 'web' or (
-                                 ctx.surface == 'cli' and agent_caller() is None) else 'agent'}})
+                                              ctx.surface == 'cli' and not os.environ.get('METAFORM_SESSION')) else 'agent'}})
     answer = started(ctx, table_id)
     if 'refused' in answer:
         raise Stop(str(answer['refused']), str(answer.get('next') or 'metaform dispatch sessions'))
@@ -457,10 +461,6 @@ def follow_through(ctx: Context) -> dict[str, Any]:
     return pipeline.prepare(ctx, str(ctx.nouns['table']))
 
 
-ADOPT_CAUTION = ('Adopting an idea files a ticket that Full Auto starts like any other, so it spends agent time: the '
-                 'person decides which ideas become work.')
-
-
 TABLE = Noun('table', 'The table, by the id open returned; metaform roundtables tables lists them.')
 
 MODULE = Module(
@@ -526,8 +526,7 @@ MODULE = Module(
                                schema={'enum': ['yes', 'no', 'comment', 'revise', 'approve']}),
                     Noun('digest', 'SHA-256 of the output the person reviewed.'),
                     Noun('revision', 'The reviewed stage revision.', kind='int'),
-                    Noun('comment', 'The person\'s comments for Planner.', required=False)),
-             person_decides=lambda ctx: 'Only the person decides whether the next stage starts.'),
+                    Noun('comment', 'The person\'s comments on the plan, sent back for planning again.', required=False))),
         Verb('events', table_events, 'A table\'s events after a cursor, as its follower told them.',
              nouns=(TABLE, Noun('after', 'The seq of the last event read; 0 for all.', kind='int', required=False)),
              effect='read'),
@@ -540,11 +539,11 @@ MODULE = Module(
                                     'table\'s own when left out. On a table with no part: the ticket goes there when '
                                     'the map holds it, else at the project\'s top element with this Address in its '
                                     'note.', required=False),
-                    Noun('title', 'The ticket\'s title; the idea\'s name when left out.', required=False)),
-             person_decides=lambda ctx: ADOPT_CAUTION),
+                    Noun('title', 'The ticket\'s title; the idea\'s name when left out.', required=False))),
         Verb('run', run, 'Follow one table in this process until it ends. open and follow run it detached.',
              nouns=(TABLE,), surfaces=('cli',), open_world=True),
     ),
     tables=TABLES,
-    subscriptions=(Subscription('intake.completed', pipeline.intake_finished),),
+    subscriptions=(Subscription('intake.completed', pipeline.intake_finished),
+                   Subscription('map.changed', pipeline.tasks_changed)),
 )

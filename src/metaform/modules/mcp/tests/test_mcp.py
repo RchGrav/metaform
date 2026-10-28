@@ -58,36 +58,6 @@ def session(home, folder, fn, heard=None, env=None):
     return asyncio.run(go())
 
 
-@pytest.mark.req('MCP-034')
-@pytest.mark.req('MCP-032')
-def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mapped):
-    run('enable', 'workflow')
-    from metaform.modules.workflow import SKILLS
-    names = tuple(name for name in SKILLS if name not in ('sentinel', 'workflow_evaluator'))
-
-    async def check(client, init):
-        assert 'workflow_skill' in await listed(client)
-        declared = {one.name for one in (await client.list_prompts()).prompts}
-        assert set(names) <= declared
-        assert not {'sentinel', 'workflow_evaluator'} & declared
-        results = {}
-        for name in names:
-            tool = await called(client, 'workflow_skill', {'name': name})
-            assert not tool.is_error
-            skill = text(tool)[-1].strip()
-            prompt = await client.get_prompt(name, {})
-            results[name] = (skill, prompt.messages[0].content.text)
-        return results
-
-    from metaform import prompt_files
-    from metaform.modules.workflow import PACKAGE
-    declared = {name: (before, after) for name, _, before, after, _ in prompt_files.commands(PACKAGE)}
-    for name, (skill, prompt) in session(home, mapped, check).items():
-        before, after = declared[name]
-        assert prompt == (before + skill + after).strip()
-        assert skill == run('workflow', 'skill', name, cwd=mapped).stdout.strip()
-
-
 # Explicit pre-use guidance is checked in its own tests. Ignore any guidance headings and the provisioning notice
 # when reading an operation's substantive result, MCP-028.
 GUIDED = re.compile(r"^(How to use \S+:|The \S+ module's rules[, :])|^Results are trimmed to the "
@@ -800,63 +770,33 @@ def test_save_prompt_rejects_invalid_arguments_without_adding_versions(run, home
     assert [prompt.name for prompt in prompts.prompts()] == ['personal']
 
 
-def consenting(home, folder, fn, answers=('accept',), env=None):
-    """A real MCP client on the 2025 handshake that shows forms: each form the server asks is answered with the next
-    of `answers`, as the person answers it in their AI tool."""
-    from mcp import types
-    given = iter(answers)
-
-    async def elicit(context, params):
-        action = next(given)
-        return types.ElicitResult(action=action, content={'go': True} if action == 'accept' else None)
-    params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=str(folder),
-                                   env={**os.environ, 'METAFORM_HOME': str(home), **(env or {})})
-
-    async def go():
-        async with stdio_client(params) as (read, write), ClientSession(read, write,
-                                                                        elicitation_callback=elicit) as client:
-            await client.initialize()
-            return await fn(client)
-    return asyncio.run(go())
-
-
 @pytest.mark.req('PROJ-025')
 @pytest.mark.req('MCP-006')
-@pytest.mark.req('CLI-011')
 def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run, home, mapped):
-    """metaform_clear_project is declared as every other tool: its description says what it removes, that a backup is
-    made first and that restore brings it back, and it is destructive. It is the person's decision: an agent's
-    confirm never clears, its refusal names what goes, the backup and the command the person runs; only the person's
-    yes to the form clears it, and the result names the backup in the restore command, UX review round 1."""
+    """metaform_clear_project is declared as every other caution tool: its description says what it removes, that a
+    backup is made first and that restore brings it back, and it is destructive. Called without confirm it explains
+    what the clear would take and changes nothing; with confirm true it clears, and the result names the backup in the
+    restore command. Restore asks the same way."""
     run('feedback', 'A note.', cwd=mapped)
     run('map', 'work', 'op=add', 'address=code.timer.kitchen', 'task=Ring louder', 'title=Ring louder', cwd=mapped)
 
     async def check(client, init):
         tools = await listed(client)
-        refused = await called(client, 'metaform_clear_project', {})
+        asked = await called(client, 'metaform_clear_project', {})
         still = await called(client, 'map_where', {'address': 'code.timer.kitchen'})
-        confirmed = await called(client, 'metaform_clear_project', {'confirm': True})
-        return tools, refused, still, confirmed
-    tools, refused, still, confirmed = session(home, mapped, check)
+        cleared = await called(client, 'metaform_clear_project', {'confirm': True})
+        return tools, asked, still, cleared
+    tools, asked, still, cleared = session(home, mapped, check)
     declared = tools['metaform_clear_project']
-    assert declared.input_schema['properties'].keys() == {'project'}  # no confirm an agent could give
+    assert {'project', 'confirm'} <= declared.input_schema['properties'].keys()
     assert declared.annotations.destructive_hint is True
-    assert not any(GUIDED.match(block.text) for block in refused.content)
-    assert refused.is_error is True
-    said = '\n'.join(text(refused))
+    assert asked.is_error is True
+    said = '\n'.join(text(asked))
     assert 'Clearing proj removes' in said and 'main holds one open ticket' in said
-    assert 'A backup is made first' in said and "This is the person's decision" in said
-    assert 'Next: ask the person in chat; to do it they use Clear project on the page, or paste into their own ' \
-        'terminal window' in said and said.endswith(': metaform clear project proj --confirm')
-    assert 'with confirm true' not in said
+    assert 'A backup is made first' in said
+    assert said.endswith('Next: If you are sure: call metaform_clear_project with confirm true')
     assert still.is_error is False  # the caution alone changed nothing
-    assert confirmed.is_error is True and "the person's decision" in '\n'.join(text(confirmed))
-    assert run('list', 'bases', cwd=mapped).stdout.split()[:1] == ['main']  # an agent's confirm cleared nothing
-
-    async def clear(client):
-        return await called(client, 'metaform_clear_project', {})
-    cleared = consenting(home, mapped, clear)
-    assert cleared.is_error is False
+    assert cleared.is_error is False, text(cleared)
     told = json.loads(text(cleared)[-1])
     backup = told.pop('backup')
     assert backup and told.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030, by its name
@@ -864,173 +804,15 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
 
-    # person-consent F2: the undo is on the same surface, the person's too; an agent alone is told what it brings back
-    async def restore(client):
-        return await called(client, 'metaform_restore_project', {'backup': backup})
-    asked = session(home, mapped, lambda client, init: restore(client))  # no form to show: the agent is refused
+    async def restore(client, init):
+        asked = await called(client, 'metaform_restore_project', {'backup': backup})
+        restored = await called(client, 'metaform_restore_project', {'backup': backup, 'confirm': True})
+        return asked, restored
+    asked, restored = session(home, mapped, restore)
     assert asked.is_error is True and f'Restoring proj from backup {backup} brings back one base' in text(asked)[-1]
-    assert run('list', 'bases', cwd=mapped).stdout == ''
-    restored = consenting(home, mapped, restore)
     assert restored.is_error is False, text(restored)
     assert json.loads(text(restored)[-1])['backup'] == backup
     assert run('list', 'bases', cwd=mapped).stdout.split()[:1] == ['main']
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('MCP-006')
-@pytest.mark.parametrize('tool, arguments', [('metaform_clear_project', {'confirm': True}),
-                                             ('map_add-base', {'name': 'fresh', 'confirm': True})])
-def test_a_dispatched_agent_gets_the_persons_decision_never_its_own_confirm(run, home, mapped, tool, arguments):
-    """UX review round 1, fresh-start-intake F1, settings F5, web F1: a dispatched agent, the system agent among them,
-    whose client shows forms, cannot clear the project or switch the map with its own confirm; it is told the decision
-    is the person's and given the command the person runs, never a call for itself, and the tools are marked
-    destructive."""
-    async def check(client):
-        return await listed(client), await called(client, tool, arguments)
-    tools, refused = consenting(home, mapped, check, answers=(), env={'METAFORM_ROLE': 'system', 'METAFORM_WORK': 'x'})
-    said = '\n'.join(text(refused))
-    assert refused.is_error is True, said
-    assert "This is the person's decision, not an agent's" in said and '\nNext: ask the person in chat; ' in said
-    assert 'paste into their own terminal window' in said and ': metaform ' in said
-    assert 'with confirm true' not in said and 'call ' not in said.split('\nNext: ')[1]
-    assert tools[tool].annotations.destructive_hint is True
-    assert Store('proj').active_base().name == 'main' and len(Store('proj').bases().results) == 1
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('MCP-006')
-def test_a_dispatched_system_agents_switch_runs_once_on_the_persons_allow_in_its_chat(run, home, mapped, tmp_path):
-    """UX review round 2, person-consent F5: the person's own system agent, dispatched, asks for a switch of the map
-    and its call waits on a consent card in its chat; the person's Allow runs it once, their Decline runs nothing, and
-    the map changes exactly once. Every agent the runner could start is the fake agent."""
-    import threading
-
-    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
-    made = Dispatch(run, home, mapped, tmp_path)
-    try:
-        made.start('hold', 'system=true')
-        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
-                                          if row.get('state') == 'running' and row.get('runner')), None))
-        cards: list[dict] = []
-
-        def person():  # on the page: Allow the first card, Decline the second
-            for choice in ('accept', 'decline'):
-                card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
-                                                if one['kind'] == 'elicitation' and one['data'].get('consent')
-                                                and one['data']['state'] == 'waiting'), None), limit=60)
-                run('dispatch', 'permit', made.id, card['request'], '--', choice, cwd=mapped, isolated=True)
-                cards.append(card)
-        answering = threading.Thread(target=person)
-        answering.start()
-
-        async def check(client):
-            return (await called(client, 'map_add-base', {'name': 'fresh'}),
-                    await called(client, 'map_add-base', {'name': 'other'}))
-        allowed, declined = consenting(home, mapped, check, answers=(), env={
-            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner})
-        answering.join(timeout=60)
-        assert allowed.is_error is False, text(allowed)
-        assert declined.is_error is True, text(declined)
-        assert [card['consent']['command'] for card in cards] == ['metaform map add-base name=fresh --confirm',
-                                                                  'metaform map add-base name=other --confirm']
-        assert [one.name for one in Store('proj').bases().results] == ['main', 'fresh']
-    finally:
-        made.stop()
-        made.close()
-
-
-@pytest.mark.req('MAP-060')
-@pytest.mark.req('MCP-006')
-def test_a_dispatched_system_agent_unholds_from_reason_review_without_person_consent(
-        run, home, mapped, tmp_path):
-    """A real dispatched caller can release either flag under ask-first without a consent card or person's word."""
-    run('set', '--agents-ask-first', cwd=mapped)
-    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
-    made = Dispatch(run, home, mapped, tmp_path)
-    store = Store('proj')
-    first, second = (store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task=f'Proposal {n}',
-                                    title=f'Proposal {n}', held=True,
-                                    hold_reason='Wait for prerequisite review').id for n in (1, 2))
-    third = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Proposal 3', title='Proposal 3').id
-    run('map', 'work', 'op=edit', f'id={third}', 'hold=true', 'hold_reason=Wait for prerequisite review', cwd=mapped)
-    try:
-        made.start('hold', 'system=true')
-        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
-                                          if row.get('state') == 'running' and row.get('runner')), None))
-
-        async def check(client):
-            async with asyncio.timeout(15):
-                return (await called(client, 'map_work', {'op': 'move', 'id': first, 'column': 'todo'}),
-                        await called(client, 'map_work', {'op': 'edit', 'id': second, 'held': False}),
-                        await called(client, 'map_work', {'op': 'edit', 'id': third, 'hold': False}))
-        results = consenting(home, mapped, check, answers=(), env={
-            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner})
-        assert all(result.is_error is False for result in results), [text(result) for result in results]
-        assert not store.ticket(first).work.held and not store.ticket(second).work.held
-        shown = json.loads(run('map', 'work', f'id={third}', '--json', cwd=mapped).stdout)
-        assert shown['map']['hold'] is False
-        assert not any(one['kind'] == 'elicitation' and one['data'].get('consent')
-                       for one in read(run, made)['lines'])
-    finally:
-        made.stop()
-        made.close()
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('MCP-006')
-def test_on_the_persons_word_their_system_agent_starts_work_with_no_card_and_a_switch_still_asks(run, home, mapped,
-                                                                                                 tmp_path):
-    """UX review round 2, person-consent: in the turn the person's own message started, their system agent's MCP call
-    to start an agent, or to turn Autostart agents off, runs with no card; a switch of the map cannot be undone, so the
-    same turn still puts it on a card, and the person's Decline runs nothing. Every agent is the fake agent."""
-    run('set', '--agents-ask-first', cwd=mapped)  # these check asking, off by default since 2026-10-18
-    import threading
-
-    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
-    made = Dispatch(run, home, mapped, tmp_path)
-    gates = tmp_path / 'turns'
-    gates.mkdir()
-    (gates / '1').touch()
-    other = made.store.add_work(made.node, 'unbuilt', task='Write other.txt').id
-    try:
-        made.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
-        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
-                                          if row.get('state') == 'running' and row.get('runner')), None))
-        eventually(lambda: read(run, made)['sessions'][-1].get('activity') == 'idle')
-        run('dispatch', 'message', made.id, '--', 'Start the other ticket and switch to a fresh map', cwd=mapped)
-        eventually(lambda: read(run, made)['sessions'][-1].get('activity') == 'working')
-        cards: list[dict] = []
-
-        def person():  # on the page: Decline the one card
-            card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
-                                            if one['kind'] == 'elicitation' and one['data'].get('consent')
-                                            and one['data']['state'] == 'waiting'), None), limit=60)
-            run('dispatch', 'permit', made.id, card['request'], '--', 'decline', cwd=mapped, isolated=True)
-            cards.append(card)
-        answering = threading.Thread(target=person)
-        answering.start()
-
-        async def check(client):
-            return (await called(client, 'dispatch_start', {'id': other, 'agent': 'claude'}),
-                    await called(client, 'metaform_set', {'dispatch_autostart': False}),
-                    await called(client, 'map_add-base', {'name': 'fresh'}))
-        started, unset, switched = consenting(home, mapped, check, answers=(), env={
-            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner,
-            'FAKE_ACP_LOG': str(made.log), 'FAKE_ACP_MODE': 'plain'})
-        answering.join(timeout=60)
-        assert started.is_error is False, text(started)
-        assert unset.is_error is False and 'On the person\'s word, "Start the other ticket' in text(unset)[-1], \
-            text(unset)
-        assert switched.is_error is True, text(switched)
-        assert [card['consent']['command'] for card in cards] == ['metaform map add-base name=fresh --confirm']
-        assert [one.name for one in Store('proj').bases().results] == ['main']
-        notes = [line['text'] for line in read(run, made)['lines'] if line['kind'] == 'notice'
-                 and line['text'].startswith('On your word')]
-        assert len(notes) == 2 and f'started Claude Code on ticket {other}' in notes[0], notes
-    finally:
-        run('dispatch', 'stop', other, cwd=mapped, ok=False)
-        made.stop()
-        made.close()
 
 
 @pytest.mark.req('MCP-006')
@@ -1055,27 +837,27 @@ def test_switching_the_active_base_asks_for_confirm(run, home, mapped):
 def test_the_persons_own_agent_is_told_once_when_the_map_it_reads_changes(run, home, mapped, monkeypatch):
     """UX review round 2, 2026-10-17 (project-scope F1): the person's own agent follows the active base, and was never
     told when it changed. Its next call after a switch says which map it reads now, once; a pinned agent, or any
-    other role, is told nothing (decision pending Rich's confirmation, wording his to give)."""
+    other agent, is told nothing (decision pending Rich's confirmation, wording his to give)."""
     from metaform import home as metaform_home
     from metaform.modules.mcp.server import _READ_ON, map_moved
     monkeypatch.setitem(_READ_ON, 'proj', '')
     _READ_ON.pop('proj')
     monkeypatch.delenv('METAFORM_BASE', raising=False)
 
-    def moved(role: str) -> str | None:  # the agent's MCP server, as its runner's environment names it
-        monkeypatch.setenv('METAFORM_ROLE', role)
+    def moved(task: str) -> str | None:  # the agent's MCP server, as its runner's environment names its task
+        monkeypatch.setenv('METAFORM_TASK_NAME', task)
         try:
             return map_moved('proj')
         finally:
-            monkeypatch.delenv('METAFORM_ROLE')
-    assert moved('system') is None, 'a first call is told nothing'
+            monkeypatch.delenv('METAFORM_TASK_NAME')
+    assert moved('user_agent') is None, 'a first call is told nothing'
     run('map', 'add-base', 'fresh', '--confirm', cwd=mapped)
     assert metaform_home.active_base('proj').name == 'fresh'
-    assert moved('system') == ('The person made fresh the active map: your map tools read fresh from here; main '
-                               'is kept as it was.')
-    assert moved('system') is None, 'once per change'
+    assert moved('user_agent') == ('The person made fresh the active map: your map tools read fresh from here; main '
+                                   'is kept as it was.')
+    assert moved('user_agent') is None, 'once per change'
     run('activate', 'base', 'main', cwd=mapped)
-    assert moved('worker') is None, 'a worker stays on its own base and is told nothing here'
+    assert moved('project_agent') is None, 'a project agent stays on its own base and is told nothing here'
 
 
 @pytest.mark.req('PROJ-025')
@@ -1084,10 +866,10 @@ def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_e
     run('feedback', 'A note.', cwd=mapped)
     (stuck,) = (own('proj') / 'reports').iterdir()
 
-    async def check(client):
-        return await called(client, 'metaform_clear_project', {})
+    async def check(client, init):
+        return await called(client, 'metaform_clear_project', {'confirm': True})
     with unremovable(stuck):
-        cleared = consenting(home, mapped, check)  # the person's yes, UX review round 1
+        cleared = session(home, mapped, check)
         assert stuck.is_file()
     assert cleared.is_error is False
     result = json.loads(text(cleared)[-1])
@@ -1425,8 +1207,6 @@ UNSEEN = {
     'web_stop': 'asks the local page server to shut down through its control endpoint',
     'hello_follow': 'waits for the next map change and shows it; it writes nothing',
     'packet_check': 'reads a packet and says whether it is as sealed; it writes nothing',
-    'workflow_resume': 'reads a workflow run by its id; it writes nothing',
-    'workflow_serve': 'reads a skill whole, as dispatch sends it; it writes nothing',
 }
 
 
@@ -1734,31 +1514,6 @@ def test_the_instructions_are_composed_for_each_request_and_read_with_the_instru
     assert first != second  # the guide the instructions command gives is composed again for each request
     run('set', '--modules', 'intake', cwd=mapped)                     # the chassis off the surface
     assert run('instructions', cwd=mapped).stdout == help_agents(run, mapped)
-
-
-@pytest.mark.req('MCP-029')
-@pytest.mark.req('MCP-032')
-def test_a_module_s_full_instructions_come_on_entering_its_tool_and_skills_are_told_apart(run, home, mapped):
-    """The compact connect-time text names each module in one line, so its full instructions come when an agent
-    enters its tool or asks the instructions command for it; the workflow skills all ran one verb and showed one
-    description, so each declares its own."""
-    run('enable', 'workflow')
-    full = run('help', 'agents', 'map', cwd=mapped).stdout.strip()
-
-    async def check(client, init):
-        entered = {'instructions': (await client.read_resource('metaform://instructions/map')).contents[0].text}
-        asked = text(await client.call_tool('metaform_instructions', {'module': 'map'}))
-        wrong = await client.call_tool('metaform_instructions', {'module': 'nope'})
-        prompts = {one.name: one.description for one in (await client.list_prompts()).prompts}
-        return init.instructions, entered, asked, wrong, prompts
-    started, entered, asked, wrong, prompts = session(home, mapped, check)
-    assert full not in started and len(startup_instructions(mapped)) <= 2048
-    assert entered['instructions'].strip() == full and [block.strip() for block in asked] == [full]
-    assert wrong.is_error
-    from metaform.modules.workflow import SKILLS
-    described = [prompts[name] for name in SKILLS if name not in ('sentinel', 'workflow_evaluator')]
-    assert len(set(described)) == len(SKILLS) - 2 and all(described)
-    assert not {'sentinel', 'workflow_evaluator'} & prompts.keys()
 
 
 @pytest.mark.req('MCP-004')
@@ -2166,19 +1921,17 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
             refused = str(error)
         return init.capabilities.resources.list_changed, fixed, templates, texts, refused
     changed, fixed, templates, texts, refused = session(home, mapped, check)
-    assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://role/person',
-                                      'metaform://specialists', 'metaform://map/construction',
+    assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://task/person',
+                                      'metaform://map/construction',
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://modules',
                                       'metaform://runtime/compaction-state',
-                                      'metaform://orchestration/bmad',
                                       'metaform://instructions', 'metaform://intake/procedure',
                                       'metaform://intake/schema'}
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://tools/{tool}/instructions', 'metaform://tools/{tool}/instructions/{op}',
                          'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
-                         'metaform://role/{name}', 'metaform://specialist/{name}',
-                         'metaform://orchestration/assignment/{assignment}',
+                         'metaform://tasks/definitions/{name}',
                          'metaform://{address}', 'metaform://{address}/items/{n}'}
     from metaform import prompt_files
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
@@ -2188,67 +1941,8 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
     assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused
 
 
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('MCP-006')
-@pytest.mark.req('BASE-052')
-def test_an_agent_over_mcp_cannot_set_what_decides_its_own_permissions(run, home, mapped):
-    """dispatch_prompts and every other person_only setting is written by the person, on the command line or the
-    page; `set` over MCP refuses it with one next step and stores nothing of the call, and is not offered it."""
-    run('enable', 'dispatch')
-
-    async def call(client, init):
-        refused = await called(client, 'metaform_set', {'debug': True, 'dispatch_prompts': 'approve-all'})
-        offered = await called(client, 'metaform_set', {})  # the settings it takes, listed when called with none
-        return refused.is_error, text(refused)[0], {one['name'] for one in offered.structured_content['settings']}
-    error, said, offered = session(home, mapped, call)
-    assert error and 'dispatch_prompts is set only by the person' in said
-    assert [line for line in said.splitlines() if line.startswith('Next: ')] == [  # the person's way, person-consent F2
-        ('Next: ask the person in chat; to do it they use the settings screen on the page, or paste into their own '
-        'terminal window (an AI tool runs commands without the consent a terminal carries): '
-        'metaform set --dispatch-prompts approve-all')]
-    assert 'dispatch_prompts' not in offered and 'debug' in offered
-    shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
-    assert shown['dispatch_prompts']['state'] == shown['debug']['state'] == 'default'
-    run('set', '--dispatch-prompts', 'approve-reads', cwd=mapped)    # the person still sets it on the command line
-    shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
-    assert shown['dispatch_prompts']['value'] == 'approve-reads'
-
-
-@pytest.mark.req('CLI-011')
-@pytest.mark.req('MCP-006')
-def test_a_person_only_setting_given_for_one_call_over_mcp_is_refused_before_the_verb_runs(run, home, mapped):
-    """A per-call switch is a write of that call's value: autostart given dispatch_autostart and dispatch_agents over
-    MCP would start agents the person has not allowed, so the call stops before it runs, and they are not offered."""
-    run('enable', 'dispatch')
-
-    async def call(client, init):
-        refused = await called(client, 'dispatch_autostart', {'dispatch_autostart': True, 'dispatch_agents': 9})
-        offered = (await listed(client))['dispatch_autostart'].input_schema
-        return refused.is_error, text(refused)[0], offered['properties']
-    error, said, offered = session(home, mapped, call)
-    assert error and said.startswith('Error: dispatch_agents is set only by the person, never by an agent. '
-                                     'dispatch_autostart is set by the person, or by their own system agent only in')
-    assert not {'dispatch_autostart', 'dispatch_agents', 'dispatch_recovery'} & set(offered)
-
-
-@pytest.mark.req('CLI-011')
-def test_the_person_can_let_agents_set_control_settings_over_mcp(run, home, mapped):
-    """Control is a permission the person holds: with agents_may_set_control on, which only the person sets, an agent
-    over MCP may set dispatch_prompts; off, the default, it is refused, as the test above shows."""
-    run('enable', 'dispatch')
-    run('set', '--agents-may-set-control', cwd=mapped)
-
-    async def call(client, init):
-        said = await called(client, 'metaform_set', {'dispatch_prompts': 'approve-reads'})
-        return said.is_error, text(said)[0]
-    error, said = session(home, mapped, call)
-    assert not error, said
-    shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
-    assert shown['dispatch_prompts']['value'] == 'approve-reads'
-
-
 @pytest.mark.req('MAP-050')
-def test_ticket_authority_lets_a_session_with_no_role_write_a_ticket_over_mcp(run, home, mapped):
+def test_ticket_authority_lets_a_session_with_no_identity_write_a_ticket_over_mcp(run, home, mapped):
     """A session the person runs outside dispatch has no role, and assigns work through Metaform over MCP."""
     async def call(client, init):
         said = await called(client, 'map_work', {'op': 'add', 'node': 'code.timer.kitchen', 'task': 'Wire the alarm.',
@@ -2292,36 +1986,34 @@ def test_the_glossary_is_one_text_by_tool_resource_and_command_line(run, home, m
     assert 'metaform://metaform' in described  # found with the tool by a model that cannot read resources
 
 
-SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web', 'workflow')
+SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web')
 
 
 @pytest.mark.req('MCP-029')
-def test_the_connect_message_is_the_directive_and_its_links_and_the_role_block_says_why_with_a_line_per_category(
-        run, home, mapped):
+def test_the_connect_message_is_the_directive_and_its_links_and_the_task_block_says_why(run, home, mapped):
     """The person's own session connects to the directive line and one link per line, rules, glossary, memory, its
-    role and the project's terms, far within what any host keeps. Its role block says why it does the project's work
-    through Metaform's tools, then one line per tool category it may open with what the category is for, the catalog's
-    line, the compaction line and the project; never the module lines. A module off the folder's surface takes its
-    link and its categories with it."""
+    task block and the project's terms, far within what any host keeps. Its task block says why it does the project's
+    work through Metaform's tools, then the catalog's line, the compaction line and the project; never the module
+    lines. A module off the folder's surface takes its link with it."""
     from metaform import prompt_files
-    from metaform.modules.mcp.server import connect_instructions, role_text
+    from metaform.modules.mcp.server import connect_instructions, task_text
     for module in SHIPPED:
         run('enable', module)
     sent = connect_instructions(mapped)
     assert sent.splitlines() == [prompt_files.module('mcp', 'connect_directive'), 'metaform://rules',
-                                 'metaform://metaform', 'metaform://memory', 'metaform://modules', 'metaform://role/person',
+                                 'metaform://metaform', 'metaform://memory', 'metaform://modules', 'metaform://task/person',
                                  'metaform://proj']
     assert len(sent) <= 512, len(sent)
-    role = role_text(mapped, None, 'process:test-connect')
-    lines = role.splitlines()
+    task = task_text(mapped, None, 'process:test-connect')
+    lines = task.splitlines()
     assert lines[0] == prompt_files.module('mcp', 'connect_use')
     named = [line.split(':')[0][2:] for line in lines[1:] if line.startswith('– ')]
-    assert not named and 'metaform://modules' in role
-    assert 'metaform_catalog' in role and 'compacted=true' in role and 'This folder is the project proj.' in role
-    assert 'You must use Metaform' not in role and '– fork:' not in role and 'web start' not in role
+    assert not named and 'metaform://modules' in task
+    assert 'metaform_catalog' in task and 'compacted=true' in task and 'This folder is the project proj.' in task
+    assert 'You must use Metaform' not in task and '– fork:' not in task and 'web start' not in task
     run('set', '--modules', 'map', cwd=mapped)  # what the folder's surface leaves out says nothing
     assert 'metaform://memory' not in connect_instructions(mapped)
-    narrowed = role_text(mapped, None, 'process:test-narrow')
+    narrowed = task_text(mapped, None, 'process:test-narrow')
     assert 'metaform://modules' in narrowed and '– ' not in narrowed
 
 
@@ -2333,18 +2025,18 @@ def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_h
     from importlib import resources
 
     from metaform import prompt_files
-    from metaform.modules.mcp.server import block_text, connect_instructions, role_text
+    from metaform.modules.mcp.server import block_text, connect_instructions, task_text
     here = resources.files('metaform.modules.intake')
     bare = tmp_path / 'bare'
     bare.mkdir()
     run('add', 'project', 'bare', str(bare))
     assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://metaform',
                                                            'metaform://memory', 'metaform://modules',
-                                                           'metaform://firstrun', 'metaform://role/person',
+                                                           'metaform://firstrun', 'metaform://task/person',
                                                            'metaform://bare']
     first = prompt_files.required(here, 'no_intake')
     assert block_text(bare, 'metaform://firstrun') == first
-    assert first not in role_text(bare, None, 'process:test-firstrun')  # served once, as its own block
+    assert first not in task_text(bare, None, 'process:test-firstrun')  # served once, as its own block
     assert 'metaform://firstrun' not in connect_instructions(mapped)
     assert block_text(mapped, 'metaform://firstrun') is None
     outside = tmp_path / 'outside'
@@ -2352,7 +2044,7 @@ def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_h
     step = '   ' + prompt_files.required(here, 'register_step') + '\n'
     assert 'metaform://firstrun' in connect_instructions(outside)
     assert block_text(outside, 'metaform://firstrun') == prompt_files.required(here, 'no_intake', register=step)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_SESSION', 'r1')  # an agent a runner started
     assert 'metaform://firstrun' not in connect_instructions(bare)
 
 
@@ -2637,197 +2329,6 @@ def test_enabled_modules_rules_close_the_glossary_and_a_rule_without_its_why_sto
     assert 'metaform://memory/tools' not in modules_text(mapped)
 
 
-@pytest.mark.req('MCP-006')
-@pytest.mark.req('CLI-011')
-def test_a_caution_and_a_person_only_change_are_asked_of_the_person_by_form_on_the_july_wire(run, home, mapped):
-    """Where the client shows forms, a caution tool answers input_required with the form; the retry with the
-    person's yes and the sealed state runs it, the same answer again is asked anew, a no refuses with a next step, and
-    other arguments are refused by the state's binding. A person-only setting asked for is set to what the person
-    gave. Without forms, and for a dispatched agent, the plain rules stand."""
-    run('set', '--agents-ask-first', cwd=mapped)  # these check asking, off by default since 2026-10-18
-    run('enable', 'hello')
-    wire = july_wire(home, mapped)
-    try:
-        asked = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}}, FORMS)
-        form = asked['inputRequests']['consent']
-        assert asked['resultType'] == 'input_required' and form['method'] == 'elicitation/create'
-        assert 'hello_forget' in form['params']['message'] and form['params']['requestedSchema']['required'] == ['go']
-        yes = {'consent': {'action': 'accept', 'content': {'go': True}}}
-        ran = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}, 'inputResponses': yes,
-                                             'requestState': asked['requestState']}, FORMS)
-        # The session's first answer with content may open with MCP-028's provisioning notice, as the AI tool above
-        # this test is one the home has not recorded; the tool's own answer follows it.
-        assert ran['isError'] is False and 'deleted' in ' '.join(one['text'] for one in ran['content'])
-        again = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}, 'inputResponses': yes,
-                                               'requestState': asked['requestState']}, FORMS)
-        assert again['resultType'] == 'input_required'  # an answer counts once
-        no = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}, 'requestState': again['requestState'],
-                                            'inputResponses': {'consent': {'action': 'decline'}}}, FORMS)
-        assert no['isError'] is True and 'declined' in no['content'][0]['text']
-        with pytest.raises(RuntimeError, match='-32602'):
-            declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {'confirm': False}, 'inputResponses': yes,
-                                           'requestState': no.get('requestState') or again['requestState']}, FORMS)
-        plain = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}}, {})
-        assert plain['isError'] is True and 'with confirm true' in plain['content'][0]['text']
-        setting = declaring(wire, 'tools/call', {'name': 'metaform_set',
-                                                 'arguments': {'jev_endpoint': 'openrouter'}}, FORMS)
-        field = setting['inputRequests']['consent']['params']['requestedSchema']['properties']['jev_endpoint']
-        assert field['type'] == 'string' and 'typesafe' in field['enum']
-        assert field['default'] == 'openrouter'
-        made = declaring(wire, 'tools/call', {
-            'name': 'metaform_set', 'arguments': {'jev_endpoint': 'openrouter'},
-            'requestState': setting['requestState'],
-            'inputResponses': {'consent': {'action': 'accept',
-                                           'content': {'jev_endpoint': 'typesafe'}}}},
-            FORMS)
-        assert made['structuredContent']['updated'][0]['new'] == 'typesafe'
-    finally:
-        wire.close()
-    dispatched = july_wire(home, mapped, METAFORM_ROLE='worker')
-    try:
-        refused = declaring(dispatched, 'tools/call', {'name': 'hello_forget', 'arguments': {}}, FORMS)
-        assert refused['isError'] is True and 'with confirm true' in refused['content'][0]['text']
-    finally:
-        dispatched.close()
-
-
-@pytest.mark.req('MCP-006')
-def test_on_the_2025_handshake_the_person_answers_the_form_while_the_call_waits(run, home, mapped):
-    """A client that connected with initialize and declares elicitation gets elicitation/create while the call
-    waits; the person's yes runs the caution tool, a no leaves it undone."""
-    run('enable', 'hello')
-    from mcp import types
-    answers = iter(['accept', 'decline'])
-
-    async def elicit(context, params):
-        action = next(answers)
-        return types.ElicitResult(action=action, content={'go': True} if action == 'accept' else None)
-
-    params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'],
-                                   cwd=str(mapped), env={**os.environ, 'METAFORM_HOME': str(home)})
-
-    async def go():
-        async with stdio_client(params) as (read, write), ClientSession(read, write,
-                                                                        elicitation_callback=elicit) as client:
-            await client.initialize()
-            return (await called(client, 'hello_forget', {}), await called(client, 'hello_forget', {}))
-    accepted, declined = asyncio.run(go())
-    assert accepted.is_error is False and 'deleted' in text(accepted)[0]
-    assert declined.is_error is True and 'declined' in text(declined)[0]
-
-
-@pytest.mark.req('BASE-030')
-def test_a_long_verb_and_a_workflow_run_are_tasks_for_a_client_that_declares_the_extension(run, home, mapped,
-                                                                                            user_module):
-    """hello_wait, declared task=True, answers a client that declares the tasks extension with a task at once:
-    tasks/get gives it working, then completed with the tool's result; tasks/cancel stops one, and a verb run in a
-    thread, which cannot be stopped, completes with its result after a cancel. The task is kept in the project, so a
-    server started after the one that ran it still answers for it, failed when its owner stopped. A verb declared
-    task='run' answers with its run as the task; a run paused on the person asks its question under a key of that one
-    pause, answered through tasks/update, and a second pause with the same question asks under a new key.
-    workflow_assign, whose run id the calling agent acts on, is never a task. An unknown task is -32602; a client that
-    does not declare the extension is refused -32021 and gets the result as before."""
-    from metaform.modules.mcp import task_records
-    from metaform.modules.workflow import executor
-    user_module('driven', '''
-        import time
-        from metaform.data import Store
-        from metaform.module import Module, Verb
-        SUPPORTED_OS = ('linux', 'macos', 'windows')
-
-        def follow(ctx):  # stands for a run the server advances by itself, as an agent dispatch steers
-            from metaform.modules.workflow import runs  # loaded by then, as the workflow module
-            store = Store(ctx.require_store().project_id, module='workflow')
-            return {'run': runs.start(store, 'assign', {'assignment': {'skill': 'scan', 'input': None}})}
-
-        def slow(ctx):
-            (ctx.folder / 'slow-entered').touch()
-            time.sleep(2)
-            return {'slept': True}
-
-        MODULE = Module(id='driven', summary='Runs as tasks.', purpose='Shows task=run.', verbs=(
-            Verb('follow', follow, 'Start a run the server advances.', task='run'),
-            Verb('slow', slow, 'Sleep two seconds in a thread.', effect='read', task=True)))
-    ''')
-    run('enable', 'hello')
-    run('enable', 'workflow')
-    run('enable', 'driven')
-    tasks = {'extensions': {'io.modelcontextprotocol/tasks': {}}}
-    wire = july_wire(home, mapped)
-    try:
-        assert 'io.modelcontextprotocol/tasks' in declaring(wire, 'server/discover', {}, {})['capabilities']['extensions']
-        made = declaring(wire, 'tools/call', {'name': 'hello_wait', 'arguments': {'seconds': 1}}, tasks)
-        assert made['resultType'] == 'task' and made['status'] == 'working' and made['pollIntervalMs'] == 1000
-        assert made['ttlMs'] == task_records.TTL_MS
-        assert declaring(wire, 'tasks/get', {'taskId': made['taskId']}, tasks)['status'] == 'working'
-        deadline = time.monotonic() + 20
-        while (done := declaring(wire, 'tasks/get', {'taskId': made['taskId']}, tasks))['status'] == 'working':
-            assert time.monotonic() < deadline
-            time.sleep(0.2)
-        assert done['status'] == 'completed' and done['result']['content'][0]['text'] == 'waited 1 s\n'
-        def settled(task_id):
-            deadline = time.monotonic() + 20
-            while (got := declaring(wire, 'tasks/get', {'taskId': task_id}, tasks))['status'] == 'working':
-                assert time.monotonic() < deadline
-                time.sleep(0.1)
-            return got
-        long = declaring(wire, 'tools/call', {'name': 'hello_wait', 'arguments': {'seconds': 60}}, tasks)
-        assert declaring(wire, 'tasks/cancel', {'taskId': long['taskId']}, tasks)['resultType'] == 'complete'
-        assert settled(long['taskId'])['status'] == 'cancelled'  # an async verb stops at its await
-        slow = declaring(wire, 'tools/call', {'name': 'driven_slow', 'arguments': {}}, tasks)
-        deadline = time.monotonic() + 10
-        while not (mapped / 'slow-entered').exists():
-            assert time.monotonic() < deadline, 'The synchronous task never entered its body.'
-            time.sleep(0.02)
-        declaring(wire, 'tasks/cancel', {'taskId': slow['taskId']}, tasks)
-        finished = settled(slow['taskId'])  # a thread runs to its end: its effect landed, so its result is kept
-        assert finished['status'] == 'completed' and finished['result']['structuredContent'] == {'slept': True}
-        stranded = declaring(wire, 'tools/call', {'name': 'hello_wait', 'arguments': {'seconds': 60}}, tasks)
-
-        assigned = declaring(wire, 'tools/call', {'name': 'driven_follow', 'arguments': {}}, tasks)
-        assert assigned['resultType'] == 'task' and assigned['status'] == 'working' and assigned['ttlMs'] is None
-        word = assigned['taskId']
-        workflow = Store('proj', module='workflow')
-        executor.pause(workflow, word, 'Which folder should the scan read?')
-        asked = declaring(wire, 'tasks/get', {'taskId': word}, tasks)
-        assert asked['status'] == 'input_required'
-        (first,) = asked['inputRequests']
-        assert declaring(wire, 'tasks/update', {'taskId': word, 'inputResponses': {first: {
-            'action': 'accept', 'content': {'answer': 'src/'}}}}, tasks)['resultType'] == 'complete'
-        assert declaring(wire, 'tasks/get', {'taskId': word}, tasks)['status'] == 'working'
-        executor.working(workflow, word)
-        executor.pause(workflow, word, 'Which folder should the scan read?')
-        (second,) = declaring(wire, 'tasks/get', {'taskId': word}, tasks)['inputRequests']
-        assert second != first  # the same question, asked again, under a key of its own
-        declaring(wire, 'tasks/update', {'taskId': word, 'inputResponses': {first: {
-            'action': 'accept', 'content': {'answer': 'stale'}}}}, tasks)  # a spent key is ignored
-        assert declaring(wire, 'tasks/get', {'taskId': word}, tasks)['status'] == 'input_required'
-        declaring(wire, 'tasks/cancel', {'taskId': word}, tasks)
-        cancelled = declaring(wire, 'tasks/get', {'taskId': word}, tasks)
-        assert cancelled['status'] == 'cancelled' and cancelled['statusMessage'] == 'Cancelled through tasks/cancel.'
-        plain_assign = declaring(wire, 'tools/call', {'name': 'workflow_assign', 'arguments': {'skill': 'scan'}}, tasks)
-        assert plain_assign['resultType'] == 'complete' and 'resume run=' in plain_assign['structuredContent']['read']
-
-        with pytest.raises(RuntimeError, match='-32602'):
-            declaring(wire, 'tasks/get', {'taskId': 'no-such-task'}, tasks)
-        with pytest.raises(RuntimeError, match='-32021'):
-            declaring(wire, 'tasks/get', {'taskId': made['taskId']}, {})
-        plain = declaring(wire, 'tools/call', {'name': 'hello_wait', 'arguments': {'seconds': 0}}, {})
-        assert plain['resultType'] == 'complete' and plain['content'][0]['text'] == 'waited 0 s\n'
-    finally:
-        wire.process.kill()  # stopped with no chance to mark what it ran, as a crash or a lost machine stops it
-        wire.close()
-    # The server that ran the stranded call has stopped: a new one finds the task, and, its owner's process gone,
-    # reads it as failed at once rather than leaving the client to wait.
-    wire = july_wire(home, mapped)
-    try:
-        assert declaring(wire, 'tasks/get', {'taskId': made['taskId']}, tasks)['status'] == 'completed'
-        lost = declaring(wire, 'tasks/get', {'taskId': stranded['taskId']}, tasks)
-        assert lost['status'] == 'failed' and lost['error']['message'] == task_records.STOPPED
-    finally:
-        wire.close()
-
-
 # Changes that concern no task, no followed ticket t1 and no exchange of the project 'proj': another project's, an
 # agent's thread lines and signals, another ticket's, its sessions'.
 UNRELATED = (
@@ -3047,7 +2548,7 @@ def test_map_views_are_offered_only_to_a_client_that_renders_mcp_apps(run, home,
     apps = {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}}
     wire = july_wire(home, mapped)
     try:
-        shown = opened(wire, 'orient', apps)
+        shown = opened(wire, 'map', apps)
         assert shown['map_where']['_meta'] == {'ui': {'resourceUri': 'ui://metaform/map'}}
         assert shown['map_item']['_meta'] == {'ui': {'resourceUri': 'ui://metaform/node'}}
         assert shown['metaform_view']['_meta'] == {'ui': {'visibility': ['app']}}
@@ -3238,12 +2739,9 @@ def test_an_a2a_message_naming_no_address_is_asked_for_one_and_a_refused_webhook
 def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_on_the_person_as_working(run, home,
                                                                                                          mapped):
     from metaform.modules.dispatch.signals import record
-    from metaform.modules.workflow import runs
-    run('enable', 'workflow')
     run('enable', 'dispatch')
     run('map', 'work', 'op=add', 'node=code.timer.kitchen', 'task=The person\'s own.', 'title=Mine', cwd=mapped)
     own = next(one.id for one in Store('proj').work(limit=0).results if one.task == "The person's own.")
-    a_run = runs.start(Store('proj'), 'call', {})
     extension = 'https://metaform.ing/a2a/address-context/v1'
 
     async def calls(client, token):
@@ -3274,7 +2772,7 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
         record(Store('proj'), 'login-needed', work_id=waiting, key='login')
         login = (await client.post('/a2a', json=rpc('GetTask', {'id': waiting}), headers=headers)).json()
         theirs = [(await client.post('/a2a', json=rpc(method, {'id': one}), headers=headers)).json()
-                  for method in ('GetTask', 'CancelTask') for one in (own, a_run)]
+                  for method in ('GetTask', 'CancelTask') for one in (own,)]
         # a ticket whose runner died holding it, one the person holds, and one taken with no session yet
         died, held, taken = [(await send(f'Make it {how}', number, contextId='code.alarm.audible'))['result']['task']['id']
                              for number, how in ((4, 'ring'), (5, 'buzz'), (6, 'chime'))]
@@ -3298,13 +2796,13 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
     asked = [json.loads(line[5:])['result'] for line in asking.splitlines() if line.startswith('data:')]
     assert [one['task']['status']['state'] for one in asked] == ['TASK_STATE_INPUT_REQUIRED']  # it closed there
     assert [one['id'] for one in listed['result']['tasks']] == [ended['id']]
-    assert own not in {one['id'] for one in every['result']['tasks']} and a_run not in str(every)
+    assert own not in {one['id'] for one in every['result']['tasks']}
     shown = login['result']
     assert shown['status']['state'] == 'TASK_STATE_WORKING'  # the client cannot log Metaform's agent in
     assert shown['metadata'][extension]['waitingOn'] == 'person' and shown['metadata'][extension]['reason'] == 'login'
     assert 'log it in' in shown['status']['message']['parts'][0]['text']
-    assert [one['error']['code'] for one in theirs] == [-32001] * 4  # TaskNotFoundError: the person's, not A2A's
-    assert Store('proj').ticket(own).work.done is None and runs.read(Store('proj'), a_run).state == 'running'
+    assert [one['error']['code'] for one in theirs] == [-32001] * 2  # TaskNotFoundError: the person's, not A2A's
+    assert Store('proj').ticket(own).work.done is None
     # dispatch's own reason for the ticket, not one worked out again from its last session
     assert died['status']['state'] == 'TASK_STATE_WORKING'
     assert died['metadata'][extension]['reason'] == 'runner died' and died['metadata'][extension]['waitingOn'] == 'person'
@@ -3458,7 +2956,7 @@ def test_each_view_is_linked_from_its_tools_and_reviewed_by_its_meta_and_the_age
     run('set', '--mcp-apps-offer', 'always', cwd=mapped)
     wire = july_wire(home, mapped)
     try:  # a host that shows the views without declaring the extension, as basic-host does
-        plain = {name: tool.get('_meta') for name, tool in opened(wire, 'orient', {}).items()}
+        plain = {name: tool.get('_meta') for name, tool in opened(wire, 'map', {}).items()}
         assert plain['map_where'] == {'ui': {'resourceUri': 'ui://metaform/map'}}
         assert plain['metaform_view'] == {'ui': {'visibility': ['app']}}
     finally:
@@ -3684,9 +3182,6 @@ def test_a2a_peers_are_records_the_person_adds_and_removes_one_at_a_time(run, ho
     assert set(listed()) == {'old', 'other'}, 'adding one keeps the others'
     run('mcp', 'a2a_peer_remove', 'old', cwd=mapped)
     assert set(listed()) == {'other'}
-    refused = run('mcp', 'a2a_peer_add', 'mine', 'http://127.0.0.1:7442/', cwd=mapped, ok=False,
-                  env={'METAFORM_ROLE': 'worker'})
-    assert refused.returncode != 0 and "never run from an agent's session" in refused.stdout + refused.stderr
 
 
 @pytest.mark.req('MCP-041')
@@ -3789,12 +3284,12 @@ NOT_FOR_A_RESTRICTED_WORKER = ('distribute', 'glyph', 'gitignore', 'YIELD', 'upo
 @pytest.mark.req('MCP-003')
 @pytest.mark.req('MCP-039')
 def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(run, home, mapped):
-    """A dispatched worker connects to the rules, its role's line, the catalog's and the order to read the glossaries,
-    without the module lines; it is listed metaform_catalog and the tools of the ticket category, the one its first task
-    uses; opening memory lists that category's tools in place of ticket's, announced, its purpose not said again
-    after the category list said it; once its AI tool is seen to list again, the next opening is one line, and
-    reopening the open one is one line. The role can discover every category and call an available tool by name
-    or through the catalog; the person's configured controls remain the authority."""
+    """A dispatched ticket agent connects to the rules, the glossaries and the modules, with no task block, since its
+    first turn is its instructions; it is listed metaform_catalog and the tools of the ticket category, the one its
+    first task uses; opening memory lists that category's tools in place of ticket's, announced, its purpose not said
+    again after the category list said it; once its AI tool is seen to list again, the next opening is one line, and
+    reopening the open one is one line. The agent can discover every category and call an available tool by name or
+    through the catalog."""
     from metaform import prompt_files
     run('enable', 'memory', cwd=mapped)
     run('enable', 'dispatch', cwd=mapped)
@@ -3810,16 +3305,12 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
         refused = await called(client, 'metaform_set', {})
         through = await called(client, 'metaform_catalog', {'tool': 'metaform_set', 'arguments': {}})
         found = await called(client, 'metaform_catalog', {'search': 'note another agent'})
-        role_said = (await client.read_resource('metaform://role/worker')).contents[0].text
-        return init.instructions, role_said, first, categories, opened, second, orient, again, refused, through, found
-    env = {'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'tight-worker', 'METAFORM_WORK': 'w-1'}
-    said, role_said, first, categories, opened, second, orient, again, refused, through, found = session(
+        return init.instructions, first, categories, opened, second, orient, again, refused, through, found
+    env = {'METAFORM_SESSION': 'tight-worker', 'METAFORM_WORK': 'w-1'}
+    said, first, categories, opened, second, orient, again, refused, through, found = session(
         home, mapped, check, heard, env=env)
-    assert said.splitlines()[0] == prompt_files.module('mcp', 'connect_directive') and 'metaform://role/worker' in said
-    assert role_said.startswith('Your operational session works assignment ')
-    assert 'Read your reusable expertise at' in role_said
-    assert 'metaform_catalog' in role_said and 'metaform://modules' in role_said
-    assert 'You must use Metaform' not in role_said and 'compacted=true' not in role_said
+    assert said.splitlines()[0] == prompt_files.module('mcp', 'connect_directive') and 'metaform://task/' not in said
+    assert 'metaform://modules' in said and 'You must use Metaform' not in said
     assert set(first) == {'metaform_catalog'}
     listing = blocks(categories)[-1]
     assert 'metaform://memory/tools' in listing and 'metaform://dispatch/tools' in listing
@@ -3837,21 +3328,13 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
 
 
 @pytest.mark.req('MCP-003')
-def test_an_assigned_agent_is_listed_check_in_and_assess_and_the_system_agent_its_body(run, home, mapped, monkeypatch):
-    """A GC at work on its ticket is listed orchestration_check-in and orchestration_assess beside the ticket category,
-    so its work returns; the system agent is listed the web body tools its prompt names while the web module is on."""
+def test_the_system_agent_is_listed_its_body_tools_while_the_web_module_is_on(run, home, mapped, monkeypatch):
+    """The system agent is listed the web body tools its prompt names while the web module is on, and none once the
+    module is off."""
     from metaform.modules.mcp.server import listed_names, run_catalog
-    for module in ('dispatch', 'orchestration', 'web'):
+    for module in ('dispatch', 'web'):
         run('enable', module, cwd=mapped)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
-    assert 'orchestration_check-in' not in listed_names(mapped, 'plain-worker')
-    monkeypatch.setenv('METAFORM_AUTHORED_ROLE', 'metaform://role/gc')
-    assert listed_names(mapped, 'gc-session') == ('metaform_catalog',)
-    run_catalog(mapped, {'module': 'orchestration'}, 'gc-session')
-    assert {'orchestration_check-in', 'orchestration_assess'} <= set(listed_names(mapped, 'gc-session'))
-    assert 'map_work' not in listed_names(mapped, 'gc-session')
-    monkeypatch.delenv('METAFORM_AUTHORED_ROLE')
-    monkeypatch.setenv('METAFORM_ROLE', 'system')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'user_agent')
     import os
 
     from metaform.modules.mcp.server import tools
@@ -3866,36 +3349,39 @@ def test_an_assigned_agent_is_listed_check_in_and_assess_and_the_system_agent_it
 
 
 @pytest.mark.req('MCP-007')
-@pytest.mark.parametrize('role', ['none', 'worker', 'talk', 'sentinel', 'prep', 'intake', 'system'])
-def test_every_role_connects_to_the_directive_and_the_links_that_apply_and_each_reads_back_its_block_whole(
-        run, home, mapped, monkeypatch, role):
-    """Every agent, in every role, on stdio and on the July 2026 wire over HTTP: its connect message is the directive
-    line and one link per line to the instruction blocks that apply to it, far within what any host keeps, and each
-    link reads back its block exactly as its prompt holds it: the rules, the glossary, the memory prompt, its role's
-    block as that connection is told it, and the project's terms."""
+@pytest.mark.parametrize('task', [None, 'intake', 'project_agent', 'user_agent'])
+def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each_reads_back_its_block_whole(
+        run, home, mapped, monkeypatch, task):
+    """Every agent, the person's own session and a session on each task, on stdio and on the July 2026 wire over HTTP:
+    its connect message is the directive line and one link per line to the instruction blocks that apply to it, far
+    within what any host keeps, and each link reads back its block exactly as its prompt holds it: the rules, the
+    glossary, the memory prompt, the task block where one applies, the person's own and the intake's, and the project's
+    terms. A task whose text is its first turn gets no task block."""
     import httpx
 
     from metaform import prompt_files
-    from metaform.modules.mcp.server import glossary, memory_text, modules_text, project_glossary_text, role_text
+    from metaform.modules.mcp.server import glossary, memory_text, modules_text, project_glossary_text, task_text
     run('enable', 'memory', cwd=mapped)
-    named = None if role == 'none' else role
+    block = 'metaform://task/person' if task is None else 'metaform://task/intake' if task == 'intake' else None
     links = ['metaform://rules', 'metaform://metaform', 'metaform://memory', 'metaform://modules',
-             f'metaform://role/{named or "person"}', 'metaform://proj']
+             *([block] if block else []), 'metaform://proj']
     directive = prompt_files.module('mcp', 'connect_directive') or ''
     assert directive and 'metaform://' not in directive
-    monkeypatch.setenv('METAFORM_ROLE', role)
+    identity = {} if task is None else {'METAFORM_TASK_NAME': task, 'METAFORM_SESSION': f'links-{task}'}
+    for name, value in identity.items():
+        monkeypatch.setenv(name, value)
 
     def blocks_for(client, session, keyed):
         return {'metaform://rules': prompt_files.module('mcp', 'connect_rules'), 'metaform://metaform': glossary(mapped),
                 'metaform://memory': memory_text(mapped), 'metaform://modules': modules_text(mapped),
-                f'metaform://role/{named or "person"}': role_text(mapped, client, session, keyed),
+                **({block: task_text(mapped, client, session, keyed)} if block else {}),
                 'metaform://proj': project_glossary_text(mapped, client)}
 
     async def over_stdio(client, init):
         return init.instructions, {uri: (await client.read_resource(uri)).contents[0].text for uri in links}
-    connect, read = session(home, mapped, over_stdio, env={'METAFORM_ROLE': role, 'METAFORM_SESSION': f'links-{role}'})
+    connect, read = session(home, mapped, over_stdio, env=identity)
     assert connect.splitlines() == [directive, *links] and len(connect) <= 512, connect
-    assert read == blocks_for('mcp', f'links-{role}', True)
+    assert read == blocks_for('mcp', f'links-{task}' if task else 'process:stdio', True)
 
     served = Served(mapped)
 
@@ -4003,7 +3489,7 @@ def test_a_hand_off_with_memories_at_several_addresses_names_each_and_sends_no_p
     async def check(client, init):
         return [blocks(await called(client, name, arguments))
                 for name, arguments in (('dispatch_handoff', {'id': work}), ('map_work', {'id': work}))]
-    handed, read = session(home, mapped, check, env={'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'several',
+    handed, read = session(home, mapped, check, env={'METAFORM_SESSION': 'several',
                                                      'METAFORM_WORK': work})
     said = '\n'.join([*handed, *read])
     assert '<address>' not in said
@@ -4020,7 +3506,7 @@ def test_a_compaction_inside_a_turn_is_said_with_the_agent_s_next_tool_call_once
 
     async def check(client, init):
         return [blocks(await called(client, 'map_where', {'address': 'code.timer.kitchen'})) for _ in range(2)]
-    first, second = session(home, mapped, check, env={'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'compacted-worker',
+    first, second = session(home, mapped, check, env={'METAFORM_SESSION': 'compacted-worker',
                                                        'METAFORM_WORK': 'w-1'})
     assert first[0].startswith('Your context was compacted. You are working ticket w-1 at here.')
     assert not any('Your context was compacted' in one for one in second)
@@ -4028,19 +3514,23 @@ def test_a_compaction_inside_a_turn_is_said_with_the_agent_s_next_tool_call_once
 
 
 @pytest.mark.req('MCP-003')
-def test_a_talk_starts_with_its_node_s_read_and_reaches_no_tool_outside_its_categories(run, home, mapped):
-    """A talk and a sentinel read the node they were given first, so they are listed map_where beside the catalog and
-    no category open; a talk or a merge preparation, whose role does not change the map, is refused map_knowledge."""
+def test_a_session_no_task_names_gets_no_task_block_and_reaches_every_tool(run, home, mapped):
+    """An agent a runner started on a ticket, a talk or a brief has its instructions as its first turn: no task block
+    is linked to it and the person's block, metaform://task/person, is not served to it; it is listed the catalog alone
+    and reaches map_knowledge like any other caller."""
     async def check(client, init):
         tools = await first_listed(client)
         refused = await called(client, 'map_knowledge', {'op': 'create', 'layer': 'x'})
-        return (await client.read_resource(f'metaform://role/{role}')).contents[0].text, tools, refused
-    for role in ('talk', 'sentinel', 'prep'):
-        said, tools, refused = session(home, mapped, check, env={'METAFORM_ROLE': role,
-                                                                 'METAFORM_SESSION': f'first-{role}'})
-        assert set(tools) == {'metaform_catalog'}, role
-        assert 'metaform://modules' in said
-        assert not any('not among the tools' in line or 'role does not open' in line for line in blocks(refused))
+        try:
+            await client.read_resource('metaform://task/person')
+            served = True
+        except Exception:  # noqa: BLE001
+            served = False
+        return init.instructions, tools, refused, served
+    said, tools, refused, served = session(home, mapped, check, env={'METAFORM_SESSION': 'first-plain'})
+    assert 'metaform://task/' not in said and set(tools) == {'metaform_catalog'}
+    assert not served, "the person's block is the person's"
+    assert not any('not among the tools' in line for line in blocks(refused))
 
 
 
@@ -4088,31 +3578,32 @@ def test_a_lookup_result_is_trimmed_counted_filtered_or_whole_as_the_call_asks(r
 
 @pytest.mark.req('MCP-039')
 def test_each_guide_comes_once_per_session_even_when_context_was_compacted(run, home, mapped):
-    """The person's own session: the connect message says why to use Metaform with a line per category, the catalog's
-    line, the order to read the glossaries before beginning work, the compaction line and the project; a guide comes
+    """A session a runner names: its connect message is the directive and its links; the person's task block, read for
+    a named session, has the catalog's line and the project but no compaction line; a guide comes
     once, with no glossary pointer, since it was told at connect; a second glossary read is one line, and
     compaction makes exact usage bodies due again in the new receiving epoch."""
     from metaform import prompt_files
     from metaform.module import agent_opening
+    from metaform.modules.mcp.server import task_text
 
     async def check(client, init):
-        role_said = (await client.read_resource('metaform://role/person')).contents[0].text
         answers = [blocks(await called(client, 'map_where', {'address': address}))
                    for address in ('code.timer.kitchen', 'code.alarm.audible')]
         glossary = [(await client.read_resource('metaform://metaform')).contents[0].text for _ in range(2)]
         forgot = blocks(await called(client, 'metaform_catalog', {'compacted': True}))
         again = blocks(await called(client, 'map_where', {'address': 'code.timer.kitchen'}))
         state = (await client.read_resource('metaform://runtime/compaction-state')).contents[0].text
-        return init.instructions, role_said, answers, glossary, forgot, again, state, client._instruction_reads
-    said, role_said, answers, glossary, forgot, again, state, reads = session(
+        return init.instructions, answers, glossary, forgot, again, state, client._instruction_reads
+    said, answers, glossary, forgot, again, state, reads = session(
         home, mapped, check, env={'METAFORM_SESSION': 'guide-compaction'})
     opening = agent_opening(mapped, None)
     assert opening.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
     assert said == opening and len(said) <= 512
-    assert role_said.startswith((prompt_files.module('mcp', 'connect_use') or '') + '\n')
-    assert 'metaform_catalog' in role_said
-    assert 'compacted=true' not in role_said, 'Named contexts omit the process-only compaction reminder.'
-    assert 'This folder is the project proj.' in role_said
+    block_said = task_text(mapped, None, 'guide-compaction')
+    assert block_said.startswith((prompt_files.module('mcp', 'connect_use') or '') + '\n')
+    assert 'metaform_catalog' in block_said
+    assert 'compacted=true' not in block_said, 'Named contexts omit the process-only compaction reminder.'
+    assert 'This folder is the project proj.' in block_said
     first, second = ('\n'.join(one) for one in answers)
     assert 'How to use map_where' not in first and 'The words this map is written in' not in first
     usage_reads = ['\n'.join(body) for name, body in reads if name == 'map_where']
@@ -4165,7 +3656,7 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
                     result = await request('tools/call', {'name': name, 'arguments': arguments})
                 return [block['text'] for block in result['content']]
             connect = (await request('server/discover', {}))['instructions']
-            connect += '\n' + (await request('resources/read', {'uri': 'metaform://role/person'}))['contents'][0]['text']
+            connect += '\n' + (await request('resources/read', {'uri': 'metaform://task/person'}))['contents'][0]['text']
             before = [tool['name'] for tool in (await request('tools/list', {}))['tools']]
             first = await call('metaform_catalog', {})
             handle = first[0].split('Your session handle is ', 1)[1].split(':', 1)[0]

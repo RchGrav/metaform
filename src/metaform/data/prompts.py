@@ -80,19 +80,7 @@ FORMATS = ('xml', 'markdown', 'text')
 
 
 def _address(name: str) -> str:
-    """The canonical identity of a legacy module or skill prompt, CTX-082."""
-    if name == 'prompt-lexicalization':
-        return 'prompt.workflow:prompt-lexicalization'
-    if name in ('skills:workflow-logic', 'prompt.skills:workflow-logic'):
-        return 'prompt.skills:workflow-prompt'
-    if name in ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-logic',
-                'workflow-prompt', 'metaform-tools', 'delexicalization-rules',
-                'lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality'):
-        return 'prompt.skills:' + ('workflow-prompt' if name == 'workflow-logic' else name)
-    if name.startswith('skill:'):
-        return 'prompt.skill.' + name[6:]
-    if name.startswith('logic.skill.'):
-        return 'prompt.skill.' + name[len('logic.skill.'):]
+    """The canonical identity of a legacy module prompt, CTX-082."""
     if re.fullmatch(r'[A-Za-z_][\w.-]*:.+', name) and not name.startswith('prompt.'):
         return 'prompt.' + name
     return name
@@ -136,28 +124,10 @@ def _compatibility(db: sqlite3.Connection) -> None:
               JOIN prompt_aliases a ON a.prompt_id=r.prompt_id
         UNION SELECT prompt_id,substr(name,8),format,created FROM prompt_records
               WHERE name LIKE 'prompt.%:%'
-        UNION SELECT prompt_id,'skill:'||substr(name,14),format,created FROM prompt_records
-              WHERE name LIKE 'prompt.skill.%'
-        UNION SELECT prompt_id,'logic.skill.'||substr(name,14),format,created FROM prompt_records
-              WHERE name LIKE 'prompt.skill.%'
-        UNION SELECT prompt_id,substr(name,15),format,created FROM prompt_records
-              WHERE name LIKE 'prompt.skills:%'
-        UNION SELECT prompt_id,'workflow-logic',format,created FROM prompt_records
-              WHERE name='prompt.skills:workflow-prompt'
-        UNION SELECT prompt_id,'skills:workflow-logic',format,created FROM prompt_records
-              WHERE name='prompt.skills:workflow-prompt'
-        UNION SELECT prompt_id,'prompt-lexicalization',format,created FROM prompt_records
-              WHERE name='prompt.workflow:prompt-lexicalization'""")
+""")
     db.execute("""CREATE TRIGGER prompts_insert INSTEAD OF INSERT ON prompts BEGIN
         INSERT INTO prompt_records(prompt_id,name,format,created) VALUES(NEW.prompt_id,
           CASE WHEN NEW.name LIKE 'prompt.%' THEN NEW.name
-               WHEN NEW.name='prompt-lexicalization' THEN 'prompt.workflow:prompt-lexicalization'
-               WHEN NEW.name IN ('workflow-logic','skills:workflow-logic') THEN 'prompt.skills:workflow-prompt'
-               WHEN NEW.name IN ('axiom-language','metaform-system','namespace-rules','workflow-prompt',
-                    'metaform-tools','delexicalization-rules','lib_axiom','lib_metaform','lib_workflow','lib_quality')
-                    THEN 'prompt.skills:'||NEW.name
-               WHEN NEW.name LIKE 'skill:%' THEN 'prompt.skill.'||substr(NEW.name,7)
-               WHEN NEW.name LIKE 'logic.skill.%' THEN 'prompt.skill.'||substr(NEW.name,13)
                WHEN instr(NEW.name,':')>0 THEN 'prompt.'||NEW.name ELSE NEW.name END,
           NEW.format,NEW.created);
         END""")

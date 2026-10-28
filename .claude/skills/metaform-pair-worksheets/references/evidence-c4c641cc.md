@@ -1,0 +1,1 @@
+Live evidence: this ticket has no worktree; the claim returned `folder: /home/rich/metaform`.

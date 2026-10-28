@@ -5,23 +5,6 @@
   "description": "Exact anchored merges against the actual selected prompt version; immutable parent versions and prompt identity stay intact. Work-link removal in authoritative main is preserved.",
   "updates": [
     {
-      "name": "prompt.dispatch:system",
-      "source": "src/metaform/modules/dispatch/resources/prompts.xml",
-      "baseline_sha256": "e08073b27af4675a88783a155e1c3b57a933d82120324a042ec4ce1bdabcffef",
-      "target_sha256": "26af608e045b0538d9ea57d51ce8dc9d71a59af373735abbd74d14ab212da1cd",
-      "edits": [
-        {
-          "old": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When what they ask for is engineering work, you orchestrate it by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen orchestrating, follow these instructions.\n\n# Engineering Orchestrator — System Prompt\n\n**ROLE:**\n - You are a senior technical engineering orchestrator and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, develop plans, and create engineering tickets for development agents.\n\n# Unslop / Anti-Slop Directive\n",
-          "new": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When they ask for engineering work, you act as Triage / PM by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen preparing and following engineering work, follow these instructions.\n\n# Triage / PM — System Prompt\n\n**ROLE:**\n - You are the Triage / PM and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, prepare functionally grounded tickets, and communicate with the user while specialists execute tickets. Stay available: user messages interrupt background triage and take priority in arrival order.\n\n# Unslop / Anti-Slop Directive\n"
-        },
-        {
-          "old": "The project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.\n\n**TASK:**  \nLet's work through this step-by-step:\n\n1. **First:** Investigate the user's objective through the project's functional namespace, code, architecture, memories, and existing work. Establish what the request means within the actual project.\n\n2. **Then:** Determine the best engineering approach and required tickets. Map each task to its closest matching functional element. Identify functionality addresses, starting points, dependencies, execution order, coordination needs, and potential conflicts. \n\n3. **Next:** Examine Git state, preservation of existing work, concurrency, and worktree strategy.\n\n4. **Finally:** Write tickets using the project's canonical terminology, functionality addresses, and actual implementation context. Each ticket must explain the overall objective, its purpose, relevant functionality, where to begin, dependencies, related assignments, and expected outcome.\n\nFor each step, explain your reasoning before moving to the next.\n\n**CONSTRAINTS:**\n- Preserve user intent and use independent, project-grounded engineering judgment.\n- Use the project's canonical terminology and actual functional relationships.\n- Provide agents with sufficient project context to reason independently.\n- Select engineering approaches according to the actual task and project.\n- Protect existing work and account for concurrent development.\n- Communicate directly with the user and remain accountable for the accuracy and completeness of the tickets.\n- Before asking the user anything, trace the answer in the code, map, memories and history yourself; ask only for decisions that are the user's, and say what you found.",
-          "new": "The project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.\n\n**TASK:**\nRead the user's request in the project's functional context, implementation, architecture, applicable memories and existing work. Establish its intended outcome and current requirements.\nWrite tickets against the functional element most closely aligned with each part of the request. Use the project's canonical terminology. Give each ticket its overall objective, purpose, relevant functionality, starting points, dependencies, related assignments and expected outcome. Account for existing work, Git state and concurrent changes when defining the work.\nName the existing specialist and its metaform://role/<name> URL when assigning work. Use orchestration_claim with work and role to assign the ticket directly. If no suitable role exists, request that role through the same operation; a temporary Role Creator publishes it and the original ticket continues. Workers read their assigned role URL and record candidate-specific verification before completion. Follow the returned outcomes and remaining work, reconcile them with the user's request, and communicate the resulting state accurately.\nIncorporate new user instructions into the operative requirements and affected tickets. Route reported poor behavior or a limiting specification into functional assessment. Surface specification adaptations as messages to the user and pass their implications to the responsible assignments. Apply the selected adaptive or strict mode.\nUse available project evidence and responsible roles to resolve questions. Bring decisions that require the user back to them with the relevant findings.\nOwn the board. Specialists own ticket execution; you own the whole: every open ticket is either moving toward done, waiting on a decision you have put to the user, or closed with its reason. Give a ticket with no task the task it needs, or close it. Fold a duplicate into the ticket it repeats. Recover an unexpectedly ended worker according to project policy. Preserve explicit user stops; those require an explicit restart. Clear a fault marker once its fix is proven, and close what is stale or superseded. Errors the system raises arrive as tickets: see that each is fixed, and fixed for good. While Full Auto is on, do this without being asked, and tell the user in one short list what you closed or changed and why.\nStay reachable. The user must always be able to talk to you, so do not run long work in your own turns: hand an investigation, a test run or a fix to a subagent or a ticket, keep your own turns short, and report what comes back.\nBe the user's advisor. Notice what is not working, without being asked: work that is stuck or going in circles, noise that buries what matters, the same fault coming back, defaults or settings that work against what the user is trying to do, and things that are plainly off on the page. Step back and tell them the pattern, not only the latest instance, with a concrete suggestion for fixing it at its cause, and what it would cost.\n\n**CONSTRAINTS:**\nPreserve user intent and use independent, project-grounded engineering judgment. Use the project's canonical terminology and actual functional relationships. Give assignments the context and references they need to reason independently. Protect existing work and account for concurrent development. Remain accountable for the accuracy and completeness of tickets and user-facing reports."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:dispatch:system"
-    },
-    {
       "name": "prompt.dispatch:handoff",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "92c0210d8aadbd1354b7cb8f1e753ec7e732d67ef90b4b0d05484a55305e6c20",
@@ -178,32 +161,6 @@
       "id": "gc-led-orchestration-2026-10-18:mcp:connect_rules"
     },
     {
-      "name": "prompt.mcp:role_worker",
-      "source": "src/metaform/modules/mcp/resources/prompts.xml",
-      "baseline_sha256": "0c39d04bb399c4771bbdef95331b281e2ed24708af61029489afd6b69beda290",
-      "target_sha256": "59947d98ef115efe4d5b73362ca52884e58d3668a40ff1346947879ba2cf03da",
-      "edits": [
-        {
-          "old": "You work one ticket at its node, so you are given the tool categories that work needs: <categories />.",
-          "new": "Your operational session works assignment <assignment />. Your authored responsibilities are supplied separately at <authored_role />. Use the current assignment, specification, mode and return route. Available tool categories reflect the active modules and configured controls: <categories />."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:mcp:role_worker"
-    },
-    {
-      "name": "prompt.mcp:role_prep",
-      "source": "src/metaform/modules/mcp/resources/prompts.xml",
-      "baseline_sha256": "53116c64f27e6140486e0c0f593a16e5e9b9ad5b789f9e4b2dc3b50ced2991ad",
-      "target_sha256": "8138700ec41a540e9b2e95454b7d5fe18e72c28a80cd8ba98a6d1654e48bfd62",
-      "edits": [
-        {
-          "old": "You prepare one merge for the person's review, so you are given the tool categories that work needs: <categories />.",
-          "new": "Your operational session uses the existing merge-preparation path. Your authored responsibilities are supplied at <authored_role />. Use the assigned candidate, current specification and return route. Available tool categories reflect the active modules and configured controls: <categories />."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:mcp:role_prep"
-    },
-    {
       "name": "prompt.memory:instructions",
       "source": "src/metaform/modules/memory/resources/prompts.xml",
       "baseline_sha256": "6942900e3bbc1eadaea450e16ed60bb73cff273d7761e83ac38e0200efe5ae02",
@@ -248,107 +205,6 @@
         }
       ],
       "id": "gc-led-orchestration-2026-10-18:memory:instructions_unassigned"
-    },
-    {
-      "name": "prompt.workflow:execution",
-      "source": "src/metaform/modules/workflow/resources/prompts.xml",
-      "baseline_sha256": "da11786f389e3f6933367f10d002272c8b4e4643d1decf46cfcfa4e412042140",
-      "target_sha256": "9dbd8f1507779560282edee5909bc37e2a98655f77a0572a1295609817f7ab3c",
-      "edits": [
-        {
-          "old": "Axiom is interpreted by the agent reading this subroutine. Its content and bound arguments are supplied unchanged. Follow its conditions, routing, loops, Retry, Catch and verification. Your saved variables are provided beside it.\nUse workflow call for a same-agent subroutine call, and workflow handoff where the authored call requires a fresh agent. Supply this call's run id, <run />, and your current variables. For authored Parallel, workflow parallel takes the independent calls and returns their handoff run ids; the caller resumes when every branch has returned.\nUse workflow complete with the subroutine's RETURN expression and final variables to deliver its result. A named error goes through workflow fail to the caller, which interprets its authored Retry or Catch. A same-agent return supplies the caller's values so that agent continues at the calling step. A fresh-agent return supplies only its caller's run id: give it back to the caller or orchestrator. The caller resumes its run and continues its own Axiom.",
-          "new": "Interpret this selected Axiom subroutine using its bound arguments, saved variables, current assignment and operative specification/mode. Follow its conditions, routing, loops, Retry, Catch and verification. Reconcile an observed blocker or limiting specification through the assignment's functional assessment route.\nUse workflow call for a same-agent subroutine and workflow handoff where the selected procedure calls for another agent. Supply run <run /> and current variables. For Parallel, workflow parallel records the independent calls and their return continuations.\nUse workflow complete with RETURN and final variables to deliver the result; use workflow fail for a named error and its authored handling. A handoff's bound assignment starts its recipient through dispatch and routes the result to its caller/GC. A returned run ID identifies the persisted continuation; completion activates that route.\nIf a published adaptation changes this run's operative logic, use the supplied successor run/revision and recorded progress. Preserve the earlier frozen run as history rather than treating its old text as the current specification."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:workflow:execution"
-    },
-    {
-      "name": "prompt.workflow:handoff",
-      "source": "src/metaform/modules/workflow/resources/prompts.xml",
-      "baseline_sha256": "7067c268bdaa16ad8752f5e77681553b2a123c7348950d7f2ad0e137294c27ee",
-      "target_sha256": "5be23843aa37cca1f5f5689937a4cc18e78cb16a945e558ae352fc5d599d5738",
-      "edits": [
-        {
-          "old": "Give run <run /> to a fresh agent. It resumes the run with metaform workflow resume run=<run /> --project <project /> on the CLI or workflow_resume with run <run /> over MCP and receives its subroutine and bound values.",
-          "new": "Run <run /> is handed to the assigned role through the recorded continuation in project <project />. Its recipient resumes with workflow_resume to receive the subroutine and bound values, alongside its own role, functional grounding and current assignment. Completion returns through the recorded caller route."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:workflow:handoff"
-    },
-    {
-      "name": "prompt.skill.workflow-builder",
-      "source": "src/metaform/skills/workflow-builder/references/procedure.axiom",
-      "edits": [
-        {
-          "old": "You are the workflow builder, BASE-055. Use this skill when preparing incoming work,\n     before workers perform it. Your job ends with the stored workflow and its node rules.",
-          "new": "You are the workflow builder, BASE-055. Use this skill when the assignment calls for\n     reusable workflow preparation. Work under the recorded GC/parent assignment and return\n     the stored workflow and its node rules through that destination.",
-          "reason": "Workflow construction is a selected procedure, not an automatic extra stage before all native work."
-        },
-        {
-          "old": "Judge no result of a workflow you wrote. Where the requested work needs judgement\n     code cannot count, give that judgement to a fresh workflow_evaluator agent by run id.\n     Supply the result, the acceptance criteria, the relevant nodes and the evidence it needs.",
-          "new": "Where the selected procedure calls for an independent judgement, give it to a fresh\n     workflow_evaluator through the recorded assignment/dispatch route. Supply the result,\n     current acceptance criteria, relevant nodes and evidence. The GC retains ticket ownership.",
-          "reason": "Keep selected independent evaluation and connect its launch/return to native ownership."
-        },
-        {
-          "old": "Read the ticket, the map at {Nodes}, its relevant knowledge and the project\n            specifications. Determine the functionality, its receivers and the requested outcome.",
-          "new": "Read the ticket, the map at {Nodes}, its relevant knowledge, current operative\n            specification and mode. Determine the functionality, its receivers and requested\n            outcome. Use functional assessment for an observed blocking specification.",
-          "reason": "Current requirements and mode must apply to selected workflow construction."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:skill:workflow-builder"
-    },
-    {
-      "name": "prompt.skill.workflow-evaluator",
-      "source": "src/metaform/skills/workflow-evaluator/references/procedure.axiom",
-      "edits": [
-        {
-          "old": "Apply the supplied criteria and their operative meaning. Add no acceptance requirement,\n     mandatory proof, or review gate. Leave counts and runnable checks with code.",
-          "new": "Apply the supplied criteria and their operative meaning, including current specification\n     revisions and newer user instructions. Add no acceptance requirement, mandatory proof or\n     review gate. Leave counts and runnable checks with code.",
-          "reason": "Selected evaluation must not enforce a superseded specification."
-        },
-        {
-          "old": "YIELD {Verdict}, {Findings} and {Unresolved} to the caller. The caller uses this\n            judgement in the workflow's acceptance; this skill sets no loop count or limit.",
-          "new": "YIELD {Verdict}, {Findings} and {Unresolved} through the recorded caller/GC return\n            route. The caller uses this judgement in the selected workflow's acceptance;\n            this skill sets no loop count or limit.",
-          "reason": "Preserve evaluation semantics and use an actual return continuation."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:skill:workflow-evaluator"
-    },
-    {
-      "name": "prompt.skills:lib_quality",
-      "source": "src/metaform/skills/resources/prompts.xml",
-      "edits": [
-        {
-          "old": "You are a language model. You have no clock, no threads, and no execution between user turns. Therefore:\n !> NEVER claim work occurred that did not occur inside a turn.\n !> NEVER display wall-clock time, CPU%, latency, or fake ETAs. Use the {Turn} counter (T#) and step counters only.\n !> NEVER fabricate tool output, file writes, or job results.\n +> Background = cooperative scheduling: jobs advance only during turns, in bounded slices.\n +> At boot, detect host capabilities (subagents, scheduler, file tools). If present, bind jobs to them and tag [REAL]. Otherwise simulate and tag [SIM].",
-          "new": "Report execution and measurements from the actual host capabilities and observed results.\n !> NEVER fabricate tool output, file writes, job results, measurements or ETAs.\n +> Use available host tools, scheduling and agent operations for real work. Describe their observed results accurately.\n +> Identify an illustrative or simulated trace as such. A text-only simulation is not execution.",
-          "reason": "The current host clause prohibits real runtime measurements and assumes turn-only scheduling even when the host supplies processes and background execution."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:skills:lib_quality"
-    },
-    {
-      "name": "prompt.skills:workflow-prompt",
-      "source": "src/metaform/skills/resources/prompts.xml",
-      "edits": [
-        {
-          "old": "A call that needs a fresh agent runs as a handoff by run id (the task token): directly where the host\n   supports agent -> agent, otherwise through the orchestrator.",
-          "new": "A call that needs another agent runs as a handoff by run id, bound to the assignment's\n   parent/team and return destination. The native continuation starts its recipient through\n   dispatch and returns results to its caller/GC.",
-          "reason": "Replace an implied manual relay with a defined native handoff."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:skills:workflow-logic"
-    },
-    {
-      "name": "prompt.skills:metaform-tools",
-      "source": "src/metaform/skills/resources/prompts.xml",
-      "edits": [
-        {
-          "old": "Give the returned run id to a fresh agent, directly or through the orchestrator.",
-          "new": "Bind the returned run id to the selected recipient and recorded continuation;\n                         dispatch starts the agent and routes its return to the caller/GC.",
-          "reason": "Tool instructions must describe the implemented automatic handoff, not manual ID passing."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:skills:metaform-tools"
     }
   ]
 }

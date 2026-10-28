@@ -1569,9 +1569,6 @@ def test_wipe_backs_up_every_board_column_and_restores_ids_numbers_and_owned_row
     Each wipe keeps its own backup. Forty-four removed tickets produce one map.changed carrying all their ids."""
     from metaform import changes, events
     from metaform import home as metaform_home
-    from metaform.context import build
-    from metaform.errors import Stop
-    from metaform.modules.map import boards
 
     run('enable', 'dispatch', cwd=mapped)
     store = Store('proj', module='map')
@@ -1609,10 +1606,6 @@ def test_wipe_backs_up_every_board_column_and_restores_ids_numbers_and_owned_row
     assert len(ids) == 44
     addresses = ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible')
     before_map = [store.element(address).id for address in addresses]
-    with pytest.raises(Stop):
-        boards(build('map', mapped, nouns={'op': 'wipe', 'name': 'past effort'}, surface='mcp'))
-    assert {record.id for record in store.work(open=None, limit=0).results} == ids
-
     changes.take()
     published = []
     monkeypatch.setattr(events, 'publish', lambda topic, payload, source: published.append((topic, payload)) or [])
@@ -1647,8 +1640,6 @@ def test_wipe_backs_up_every_board_column_and_restores_ids_numbers_and_owned_row
     listed_backups = run('list', 'backups', 'proj', cwd=mapped).stdout
     assert stamp in listed_backups and 'past effort' in listed_backups and '44' in listed_backups
 
-    with pytest.raises(Stop):
-        boards(build('map', mapped, nouns={'op': 'restore', 'name': 'past effort', 'backup': stamp}, surface='mcp'))
     # An existing id is preserved, even when its current contents differ from its backed-up row.
     duplicate = dict(saved['work'][-1])
     duplicate['task'] = 'Already present. Keep this version.'

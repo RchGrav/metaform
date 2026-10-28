@@ -21,9 +21,9 @@ The typed decisions, `pick_one`, `pick_some`, `rank`, `yes_no` and `label`, chec
 the API's answer shapes, give a reason built from the probabilities and the criterion chosen, and, given an Address,
 keep the decision there as a numbered item with its title and why, MCP-037, read back at `metaform://<address>#<n>`.
 Only a decision a person or an agent acts on is kept: a view such as an order of items is not knowledge, and keeping it
-would fill a node with bookkeeping and push its latest item out of its brief. So `choose_agents` keeps each ticket's
-agent, model and thinking level at the ticket's Address, `intake_coverage` is kept at the trunk only when a part is
-missing, and `rank_items`, `triage` and the start order never.
+would fill a node with bookkeeping and push its latest item out of its brief. So `intake_coverage` is kept at the
+trunk only when a part is missing, and `rank_items` and `triage` never. No decision point chooses a ticket's agent,
+model or thinking level: the person sets those through their own settings, and nothing chooses for them.
 
 As the change order decided: Jev decides and code owns every threshold; an answer that is not sure goes back to the
 caller, which keeps its own behaviour; no answer gates an agent's inference or hides anything from the person.
@@ -36,11 +36,10 @@ data that can argue for its own answer (#adversarial-content), so no decision ev
 nor does it count reliably (#counting), so where a judgement is a share of many things, each thing is its own question
 and code adds up the answers.
 
-The decision points other modules call, `choose_agents` (with `start_order`), `rank_items`, `triage` and
-`intake_coverage`, each turned off one by one with the setting `jev_decisions`, take what Jev is
-asked from `<jev>` in the chassis's `resources/prompts.xml`. A request has a deadline, `within(seconds)` bounds every
-request made inside its block together, and a failed request turns Jev off for the process for a minute, so an outage
-costs one wait, not one per caller.
+The decision points other modules call, `rank_items`, `triage` and `intake_coverage`, each turned off one by one with
+the setting `jev_decisions`, take what Jev is asked from `<jev>` in the chassis's `resources/prompts.xml`. A request
+has a deadline, `within(seconds)` bounds every request made inside its block together, and a failed request turns Jev
+off for the process for a minute, so an outage costs one wait, not one per caller.
 """
 from __future__ import annotations
 
@@ -909,140 +908,6 @@ def items_at(folder: Path, address: str, before: int | None, limit: int, *,
 def _wording(point: str, part: str, **fills: str) -> str:
     """What Jev is asked at a decision point, from `<jev>` in the chassis's prompts.xml."""
     return prompt_files.chassis(f'jev/{point}/{part}', **fills)
-
-
-CATEGORIES = ('model', 'thought_level')  # the ACP session config categories an agent's choices are asked in
-
-
-@dataclass(frozen=True)
-class Assignments:
-    """What `choose_agents` decided: each ticket's Decision by its id, and, when the start order was asked, its own
-    Decision ranking the tickets the person has not placed, most worth starting first."""
-    decisions: Mapping[str, Decision]
-    order: Decision | None = None
-
-
-def choose_agents(folder: Path, tickets: Mapping[str, Mapping[str, Any]], agents: Mapping[str, str],
-                  options: Mapping[str, Mapping[str, Mapping[str, str | None]]] | None = None, *,
-                  unplaced: Collection[str] = (), project: str | None = None) -> Assignments | None:
-    """The agent, model and thinking level for each ticket, and the order to start the ones the person has not placed,
-    from one paid state: `tickets` each ticket's id to it as plain data (title, task, Address); `agents` each eligible
-    agent to what it does well; `options` each agent's choices by ACP category, `model` and `thought_level`, each value
-    to what it means, as dispatch's catalog keeps them; `unplaced` the ids of tickets with no board position.
-
-    Every ticket goes under its own name in `tickets` beside the agents and their options, and every question rides
-    on that one state: per ticket, the agent in both orders, and each agent's model and thinking level in both orders,
-    so the one asked after the agent needs no second request; with the decision point `start_order` on, a noul per
-    unplaced ticket. A pile past MAX_CONTEXT is split into as few requests as fit. Each choice is sure only when
-    both orders agree and both are confident enough; a model or level that is not sure is None.
-
-    Each ticket's Decision answers {'agent', 'model', 'thought_level'} and is kept at its Address, where the person
-    sees why. The order is never kept and orders only the unplaced tickets, so the board order the person set,
-    VIEW-042, stays theirs. Fallback when None, or for a ticket whose decision is not sure: the ticket's own agent, or
-    dispatch's default by its area, and the options the person set, as today."""
-    choosing = config(folder, 'choose_agent') if agents else None
-    ordering = config(folder, 'start_order') if unplaced else None
-    cfg = choosing or ordering
-    if cfg is None or not tickets:
-        return None
-    offered = {agent: {category: dict(values) for category in CATEGORIES
-                       if (values := (options or {}).get(agent, {}).get(category))}
-               for agent in agents}
-    offered = {agent: each for agent, each in offered.items() if each}
-    safe = _safe_keys(list(tickets))
-    by_agent = _safe_keys(list(agents))
-    first = {'true': _wording('start_order', 'true'), 'false': _wording('start_order', 'false')}
-
-    def asking(ticket: str) -> dict[str, Question]:
-        name, path = safe[ticket], f'tickets.{safe[ticket]}'
-        questions: dict[str, Question] = {}
-        if choosing is not None:
-            questions.update(_choice_both(f'{name}__agent', _wording('choose_agent', 'ask', item=path), agents))
-            for agent, each in offered.items():
-                for category, values in each.items():
-                    questions.update(_choice_both(
-                        f'{name}__{by_agent[agent]}__{category}',
-                        _wording('choose_agent', category, agent=agent, item=path), values))
-        if ordering is not None and ticket in unplaced:
-            questions[f'{name}__first'] = Question('noul', _wording('start_order', 'ask', item=path), first)
-        return questions
-
-    shared: dict[str, Any] = {'agents': dict(agents), 'options': offered} if choosing is not None else {}
-    per_ticket = {ticket: asking(ticket) for ticket in tickets}
-    longest = max((tokens(q.payload()) for qs in per_ticket.values() for q in qs.values()), default=0)
-    room = cfg.max_context - tokens({**shared, 'tickets': {}}) - longest
-    answers: dict[str, Answer] = {}
-    for group in _split({ticket: tokens({safe[ticket]: dict(tickets[ticket])}) for ticket in tickets}, room):
-        state = {**shared, 'tickets': {safe[ticket]: dict(tickets[ticket]) for ticket in group}}
-        got = asked(cfg, state, {name: q for ticket in group for name, q in per_ticket[ticket].items()})
-        if got is None:
-            return None
-        answers.update(got)
-    decisions: dict[str, Decision] = {}
-    if choosing is not None:
-        for ticket, record in tickets.items():
-            found = _assigned(choosing, ticket, agents, offered, safe[ticket], by_agent, answers)
-            own = {name: q for name, q in per_ticket[ticket].items() if not name.endswith('__first')}
-            identity = _identity(choosing, {**shared, 'ticket': dict(record)}, own, found.model)
-            decisions[ticket] = keep(folder, (found, identity), record.get('address'), project)
-    return Assignments(decisions, None if ordering is None else _start_order(ordering, unplaced, tickets, safe,
-                                                                             answers, first))
-
-
-def _choice_both(name: str, question: str, options: Mapping[str, str | None]) -> dict[str, Question]:
-    """One choice asked in both orders, `<name>` and `<name>__r`, since Jev leans toward the option that comes first,
-    https://docs.typesafe.ai/model-jaggedness/jev-1.13.md#choice-option-order."""
-    asked_of = {name: Question('choice', question, dict(options))}
-    if len(options) > 1:
-        asked_of[f'{name}__r'] = Question('choice', question, dict(reversed(list(options.items()))))
-    return asked_of
-
-
-def _assigned(cfg: Config, ticket: str, agents: Mapping[str, str],
-              offered: Mapping[str, Mapping[str, Mapping[str, str | None]]], name: str, by_agent: Mapping[str, str],
-              answers: Mapping[str, Answer]) -> Decision:
-    """One ticket's agent, and that agent's model and thinking level, from the answers of `choose_agents`."""
-    first, again = answers[f'{name}__agent'], answers.get(f'{name}__agent__r')
-    agent, confidence, sure = _both(cfg, first, again)
-    answer: dict[str, str | None] = {'agent': agent, 'model': None, 'thought_level': None}
-    reason = [_choice_reason(first, agents) + _order_said(first, again)]
-    used = [first, *([again] if again else [])]
-    for category, values in offered.get(agent, {}).items():
-        key = f'{name}__{by_agent[agent]}__{category}'
-        picked, again_picked = answers[key], answers.get(f'{key}__r')
-        value, _, picked_sure = _both(cfg, picked, again_picked)
-        answer[category] = value if picked_sure else None
-        reason.append(f'{category} {_choice_reason(picked, values)}{_order_said(picked, again_picked)}')
-        used += [picked, *([again_picked] if again_picked else [])]
-    model, cost, cached = _summed({str(n): each for n, each in enumerate(used)})
-    return Decision('pick_one', _wording('choose_agent', 'title', ticket=ticket), _wording('choose_agent', 'why'),
-                    _wording('choose_agent', 'ask', item=f'tickets.{name}'), tuple(agents), answer, confidence, sure,
-                    '\n'.join(reason), model, cost, cached, () if sure else (agent,), first.probabilities)
-
-
-def _start_order(cfg: Config, unplaced: Collection[str], tickets: Mapping[str, Any], safe: Mapping[str, str],
-                 answers: Mapping[str, Answer], meaning: Mapping[str, str]) -> Decision:
-    """The unplaced tickets, most worth starting first; an order is a preference, so it is sure even when some
-    tickets' answers are not, and those are named in `unsure`."""
-    placed = [ticket for ticket in tickets if ticket in unplaced]
-    got = {ticket: answers[f'{safe[ticket]}__first'] for ticket in placed}
-    order = sorted(placed, key=lambda ticket: -float(got[ticket].value))
-    model, cost, cached = _summed(got)
-    return Decision('rank', _wording('start_order', 'title'), _wording('start_order', 'why'),
-                    _wording('start_order', 'ask', item='tickets.<item>'), tuple(placed), order,
-                    min(answer.confidence for answer in got.values()), True,
-                    '\n'.join(_noul_reason(ticket, got[ticket], meaning['true'], meaning['false']) for ticket in order),
-                    model, cost, cached, tuple(ticket for ticket in order if got[ticket].confidence < cfg.floor),
-                    {ticket: float(got[ticket].value) for ticket in order})
-
-
-def choose_agent(folder: Path, ticket: Mapping[str, Any], agents: Mapping[str, str],
-                 options: Mapping[str, Mapping[str, Mapping[str, str | None]]] | None = None, *,
-                 project: str | None = None) -> Decision | None:
-    """`choose_agents` for one ticket, `ticket` holding its id; its Decision, or None."""
-    ticket_id = str(ticket.get('id') or 'ticket')
-    got = choose_agents(folder, {ticket_id: ticket}, agents, options, project=project)
-    return None if got is None else got.decisions.get(ticket_id)
 
 
 def rank_items(folder: Path, address: str, items: Mapping[str, str], node: Any, *,

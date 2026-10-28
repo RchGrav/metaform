@@ -1,4 +1,4 @@
-"""Authored skill bytes and manifests are shared by MCP and receiver-owned expertise."""
+"""Authored skill bytes and manifests are shared by MCP and the receiver-owned skill layer."""
 from __future__ import annotations
 
 import hashlib

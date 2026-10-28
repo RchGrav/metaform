@@ -243,7 +243,7 @@ const BRIEF_TABLES = new Set(['work', 'work_links', 'work_steps', 'messages', 'm
 export function briefTouched(named) {
   if (!Array.isArray(named)) return named !== 'dispatch';
   return named.some(table => BRIEF_TABLES.has(table) || /^(memory|jev)\./.test(table)
-    || !TICKET_TABLES.has(table) && !/^(dispatch|web|workflow)\./.test(table));
+    || !TICKET_TABLES.has(table) && !/^(dispatch|web)\./.test(table));
 }
 export const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.length > 0
   && payload.tables.every(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));

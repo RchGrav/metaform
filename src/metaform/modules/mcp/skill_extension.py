@@ -28,14 +28,9 @@ def _entry(bundle: dict[str, Any]) -> dict[str, Any]:
     return {key: bundle[key] for key in ('uri', 'frontmatter', 'resources')}
 
 
-def _native(one: skills.Skill) -> dict[str, Any]:
-    return skills.native_document(one)
-
-
 def entries(folder: Path) -> list[dict[str, Any]]:
-    """Complete entries, without raw file bodies. Internal packaged skills remain directly addressable."""
-    return sorted([*skills.reusable_catalog(), *(_entry(_native(one)) for one in skills.catalog() if one.discover)],
-                  key=lambda entry: str(entry['uri']))
+    """Complete entries, without raw file bodies."""
+    return sorted(skills.reusable_catalog(), key=lambda entry: str(entry['uri']))
 
 
 def _provided(folder: Path, uri: str) -> dict[str, Any] | None:
@@ -55,9 +50,6 @@ def get(folder: Path, uri: str) -> dict[str, Any] | None:
         return None
     if parsed.query or parsed.fragment or not parsed.path.endswith('/SKILL.md'):
         return None
-    for one in skills.catalog() if uri.startswith(NATIVE) else []:
-        if uri == f'{NATIVE}{one.name}/SKILL.md':
-            return _entry(_native(one))
     try:
         found = skills.reusable(uri)
     except ValueError:
@@ -90,12 +82,6 @@ def read(folder: Path, uri: str) -> tuple[bytes, str] | None:
         authored = None
     if authored is not None:
         bundles.append(authored)
-    if uri.startswith(NATIVE):
-        name = parsed.path.lstrip('/').split('/', 1)[0]
-        for one in skills.catalog():
-            if one.name == name:
-                bundles.append(_native(one))
-                break
     found = _file(bundles, uri)
     if found is not None:
         return found

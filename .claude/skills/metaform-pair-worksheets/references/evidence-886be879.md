@@ -1,0 +1,3 @@
+9:Read the worktree's holder before any claim. `tasks_worksheet` accepts a claim on a worktree another agent already holds, and it replaces that holder and its items without a refusal.
+(Bash, protocol.py worksheet, tool result)         if held and not held['completed'] and holder != str(held['holder']):
+        raise Stop(f'{name} is held by {held[\"holder\"]}: pair with them (tasks pair) or message them; only the holder '

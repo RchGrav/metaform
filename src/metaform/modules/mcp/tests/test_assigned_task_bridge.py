@@ -52,11 +52,8 @@ def bridge(home, tmp_path, monkeypatch):
     monkeypatch.setattr(server, 'surface', lambda *args: [])
     monkeypatch.setattr(server, 'on_surface', lambda *args: False)
     monkeypatch.setattr(server, 'listed_names', lambda *args: [])
-    monkeypatch.setattr(server.consent, 'can_ask', lambda *args: False)
-    monkeypatch.setattr(server.consent, 'dispatched', lambda: False)
     monkeypatch.setattr(server.events, 'announce', lambda *args: [])
     monkeypatch.setattr(tasks, 'owning', lambda *args: None)
-    monkeypatch.setattr(tasks, 'store', lambda *args: None)
     launched = Mock(return_value=(False, [], {'task_id': TASK_ID, 'project_id': 'owner'}))
 
     async def answer(*args, **kwargs):
@@ -175,12 +172,11 @@ def test_operational_labels_do_not_restrict_declared_tools_or_schemas(project_fo
     live = importlib.import_module('metaform.modules.mcp.server')
     assert 'roles_without_authority' not in settings.SCHEMA
     reference = None
-    for label in ('worker', 'intake', 'prep', 'helper', 'system'):
-        monkeypatch.setenv('METAFORM_ROLE', label)
+    for label in ('project_agent', 'intake', 'composer', 'facilitator', 'user_agent'):
+        monkeypatch.setenv('METAFORM_TASK_NAME', label)
         listed = live.listing(project_folder)
         current = {name: value.schema() for name, value in listed.items()
-                   if name.startswith(('map_', 'tasks_', 'dispatch_', 'memory_', 'agents_',
-                                       'orchestration_', 'workflow_'))}
+                   if name.startswith(('map_', 'tasks_', 'dispatch_', 'memory_', 'agents_', 'workflow_'))}
         if reference is None:
             reference = current
         assert current == reference

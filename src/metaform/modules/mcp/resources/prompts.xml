@@ -8,21 +8,23 @@
      reading the connect message is already connected. A phrase here, '– mcp: <what it is for>', would be sent
      to every agent at connect under <instructions> and listed in metaform help agents. -->
 <connect></connect>
-<!-- The connect message, for every agent in every role on every wire: this line, then one link per line, which the
-     server generates, to each instruction block that applies to the agent now, in this order: metaform://rules,
+<!-- The connect message, for every agent on every wire: this line, then one link per line, which the server
+     generates, to each instruction block that applies to the agent now, in this order: metaform://rules,
      metaform://metaform, metaform://memory while the memory module is on, metaform://firstrun while the project has
-     no intake, metaform://role/<role>, and metaform://<project> in a registered project. Each block is a resource read
+     no intake, metaform://task/<name> for the person's own session and for the intake task, and metaform://<project>
+     in a registered project. Each block is a resource read
      whole. metaform_catalog compacted=true and metaform://runtime/compaction-state return the current opening links.
      Dispatched sessions receive startup components through their runner; reported compaction makes relevant
      content eligible when needed rather than replaying every body. Write no link here. Empty sends the links alone. -->
 <connect_directive>
-Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your role is for. Components already delivered unchanged in this context are omitted by the delivery service.
+Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your task is. Components already delivered unchanged in this context are omitted by the delivery service.
 </connect_directive>
 <!-- The shared rules, served at metaform://rules and linked by the external connect message. A dispatched runner
      supplies the selected component with fresh startup guidance. Current delivery receipts omit unchanged bodies;
      a source change or context replacement can make them due again. Empty serves an empty resource. -->
 <connect_rules>
-Understand the goal through the project before acting. Use project evidence and the assigned task and skills to resolve consequential unknowns. Decide engineering questions from the assignment, the specification and C(T). Record decisions when the assignment calls for it. Ask the user about decisions that require their input. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
+Understand the goal through the project before acting. Use project evidence and the assigned task and skills to resolve consequential unknowns. Decide engineering questions from the assignment, the specification and the project's functional map. Record decisions when the assignment calls for it. Ask the user about decisions that require their input. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
+You are expected to follow the specification closely. The designers recognize that a specification can occasionally be short-sighted or ill-conceived. The following mitigation is available for those cases. Do not proceed with a short-sighted specification that introduces aspects which block or hinder the functionality represented by the project's functional map when a better solution is well reasoned and does not introduce issues for other parts of the system. The functionality shown by the project map is the prevailing design. Before adapting the specification, explain what it overlooked or hindered, the affected functional relationships, dependencies and interactions, and how the better solution lets that functionality work properly and perform well without introducing issues elsewhere in the system. In adaptive mode, proceed with the adapted specification only after reasoning from the map and full system design establishes those conditions. Record the adapted specification and surface the change and its reasoning as a message to the user. These messages provide visibility, not approval gates. In strict mode, return the reasoned adaptation as a recommendation without changing the operative specification; do not continue affected work under a specification established to block or hinder the represented functionality. New user instructions revise operative requirements in either mode.
 
 Record intended functionality and its purpose while planning or assigning it, with its source and unresolved details, so later agents can discover that intent. Tool-specific usage instructions are available through each tool's instruction URI.
 
@@ -59,7 +61,6 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
   {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
   {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
   {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
-  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
   {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
 
   // --- INFRASTRUCTURE &amp; COMMUNICATION ---
@@ -75,20 +76,6 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
      current complete body is required before execution; unchanged components are reused in the same context.
      <tool/> is the tool's name. Empty leaves the heading out. -->
 <tool_guide>How to use <tool/>:</tool_guide>
-<!-- The form an AI tool shows the person when an agent calls a tool that carries a caution, such as
-     metaform_clear_project or map_remove-base, and the tool can ask the person directly (MCP elicitation, where the
-     host supports it and mcp_consent is ask). <tool/> is the tool's name and <caution/> what the call would do, from the
-     verb's declaration. Shown to the person, never to the agent. Empty sends the caution alone. -->
-<consent_caution>An agent asks to run <tool/>. <caution/> Allow it?</consent_caution>
-<!-- The label of the one choice in that form: the person ticks it to let the call run. -->
-<consent_go>Go ahead</consent_go>
-<!-- The form an AI tool shows the person when an agent asks to change settings only the person sets (person-only
-     settings, such as roles_without_authority), and the tool can ask the person directly. Each setting follows as a
-     field with its choices, its current value and the agent's requested value filled in, and its help as the reason
-     it is the person's to set. Shown to the person, never to the agent. -->
-<consent_settings>An agent asks to change settings only you set. Each field shows what it asks for; change any value, then accept to apply them, or decline to keep yours.</consent_settings>
-<!-- What an agent is told when the person declined or dismissed that form. The next step follows it. -->
-<consent_declined>The person declined this in their AI tool, so nothing was changed.</consent_declined>
 <!-- The one line the map and node views send to the agent (MCP Apps ui/update-model-context) when the person selects a
      node or an item there, so the agent knows which Address the person is looking at. <address/> is the node's
      Address, or <address>#<n> for an item. Sent for the person's own selections only, replacing the last; the AI tool
@@ -227,42 +214,36 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <!-- The help of session_handle, the argument every tool takes where the listing names no session. -->
 <handle_argument>The returned session handle, so instruction receipts belong to this logical context.</handle_argument>
 
-<!-- Operational context. Assigned exact duty components may already be delivered by dispatch; their URLs remain
-     available for source reads where the components are absent or additional detail is needed. -->
-<role_worker>Your operational session works assignment <assignment/>. Use the exact assigned expertise components supplied for it. Read your reusable expertise at <authored_role/> when those components are absent or their source detail is needed. Use the current assignment, specification, mode and return route. Discover commands when their names or arguments are needed.</role_worker>
-<role_prep>Your operational session prepares an assigned candidate for integration. Use the exact assigned responsibility components supplied for it. Read your role's responsibilities at <authored_role/> when those components are absent or their source detail is needed. Discover commands when their names or arguments are needed.</role_prep>
-<role_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</role_intake>
-<role_sentinel>You take up an issue the person raised on a node. Read metaform://map/tools to inspect that node.</role_sentinel>
-<role_talk>You talk with the person about a selected node. Read metaform://map/tools to inspect that node.</role_talk>
-<role_system>You are the person's agent in this project. Discover capabilities through their owning modules.</role_system>
+<!-- The first line of the task block, metaform://task/<name>, for the intake task, the one task whose session the
+     server opens with a block: it points the agent to the intake commands. The person's own session gets connect_use.
+     Every other task's text is its first turn, so no block repeats it. -->
+<task_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</task_intake>
 <!-- Purpose of the project connection, before the module discovery instructions. -->
 <connect_use>Use Metaform to work with this project's functional map, tickets and shared knowledge.</connect_use>
 
 <connect_catalog>Use the host-advertised handle for Metaform's metaform_catalog gateway; its name may include a host prefix. Invoke a known Metaform command through that handle with tool=&lt;name&gt; arguments={...}. Put the target command, such as map_work, in tool, not the gateway's own handle. When command names or arguments need discovery, metaform_catalog module=&lt;name&gt; loads one module and search=&lt;words&gt; finds commands. metaform://modules and metaform://&lt;module&gt;/tools also provide discovery. Read those indexes when needed; known commands and arguments can be used directly.
 Read applicable usage instructions at metaform://tools/&lt;name&gt;/instructions[/&lt;op&gt;], or invoke metaform_instructions with tool=&lt;name&gt; and optional op. If a call returns instructions_required, the target did not run; read its supplied URI or read_tool route and retry. Current receipts reuse unchanged instructions; discovery alone does not acknowledge their bodies.</connect_catalog>
-<!-- The line of metaform://role/<role> on compaction, only for an agent no runner follows, such as the
+<!-- The line of metaform://task/<name> on compaction, only for an agent no runner follows, such as the
      person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
      context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
      Also given with a session handle, catalog_handle. Empty omits this reminder; instruction prerequisites still
      check the current delivery context. -->
 <connect_compaction>When this context is compacted and no runner reports it, call metaform_catalog with compacted=true. Relevant instructions and node context become eligible again when needed. Catalog discovery can remain available; Metaform cannot establish what you retained.</connect_compaction>
-<!-- The line of metaform://role/<role>, in place of connect_compaction, for a connection whose calls name no session, the
+<!-- The line of metaform://task/<name>, in place of connect_compaction, for a connection whose calls name no session, the
      July 2026 wire over HTTP, which has no session header: how to retain a logical context for receipts.
      <handle/> is the argument that carries it. Empty sends nothing. -->
 <connect_unkeyed>This connection names no session. Keep the session handle returned by discovery or an instruction prerequisite and pass it as <handle/> on subsequent calls so instruction receipts stay in the same logical context.</connect_unkeyed>
 <!-- What metaform_catalog says first when it is called with no session named, on that wire: the handle it made.
      <handle/> is the handle, <argument/> the argument that carries it. connect_compaction follows it. -->
 <catalog_handle>Your session handle is <handle/>: pass <argument/>=<handle/> with subsequent Metaform calls so instruction receipts stay in this logical context.</catalog_handle>
-<!-- The line of metaform://role/person for the person's own AI tool in a registered project's folder:
+<!-- The line of metaform://task/person for the person's own AI tool in a registered project's folder:
      which project the folder is, so the agent knows where it is before it reads anything. <project/> is its id. Empty
      sends nothing. -->
 <connect_here>This folder is the project <project/>.</connect_here>
 
 <!-- What metaform_catalog answers a search no tool fits. -->
 <catalog_none>No command fits those words. Read metaform://modules for the available capabilities, or search with different words.</catalog_none>
-<!-- A restriction explicitly configured by the person, independent of discovery. -->
-<catalog_refused>The person's configured roles_without_authority setting restricts <tool/> for the <role/> execution role.</catalog_refused>
-<catalog_refused_next>call metaform_catalog with nothing for what your role opens; if your task needs this tool, call metaform_feedback and say why, since what each role is given is the person's to change</catalog_refused_next>
+
 <!-- Said once in a session, with the first list a lookup tool gives trimmed (view triage): how to get more. -->
 <triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full supplies full default detail while honoring explicit fields and filters, fields=[...] keeps the paths you name, view=count counts records by the named fields, and must_contain or status_equals filter lists before delivery. Meaningful false, zero and empty values remain evidence; missing and unknown remain distinct.</triage_note>
 <!-- Closes a list given trimmed at its first 25 records, when the call named no filter. <n/> is how many more. -->

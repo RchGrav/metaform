@@ -40,7 +40,7 @@ export async function readIntake(signals = []) {
   INTAKE.agent = session?.agent || null;
   INTAKE.waiting = session ? signals.filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false
     && one.work_id === session.work_id).length : 0;
-  // what the intake's guard and its runner say of it, such as no first record yet
+  // what the intake's runner says of it
   INTAKE.signals = session ? signals.filter(one => one.active !== false && one.work_id === session.work_id
     && !WAITS_ON_PERSON.includes(one.signal)) : [];
   drawIntake();
@@ -49,10 +49,7 @@ export async function readIntake(signals = []) {
 }
 /* The signals an intake's session raises, said in words on its bar: [words, status class, why]. A signal not named here
  * is said by its own name. */
-const NO_RECORD = 'The intake has read for a while and recorded nothing: open its chat to see what it is doing.';
 const INTAKE_SIGNALS = {
-  'no-first-record': ['No record yet', 'input_required', NO_RECORD],
-  'first-record-late': ['No record yet', 'input_required', NO_RECORD],
   silent: ['Silent', 'waiting', 'It has said nothing for a while.'],
   'spinning-calls': ['Repeating calls', 'failed', 'It makes the same calls again and again.'],
   'spinning-time': ['Long turn', 'waiting', 'Its turn has run long.'],
@@ -73,15 +70,11 @@ export function drawIntake() {
   drawLeft();
   if (bar.hidden) return;
   const parts = S.elements.size;
-  // the intake guard's page side: no record yet is said with how long the agent has been at it, from its session's
-  // start, said again at each change the page hears, never by a timer of its own
-  // the runner's own word on it first, its `intake` state, M04: the phase and when it began
-  const guard = (D.states || {})[INTAKE.session?.session_id]?.intake || null;
-  const since = guard?.began || INTAKE.session?.started || null;
-  const waitingFirst = guard ? guard.phase === 'waiting for first record' : INTAKE.session?.activity === 'working';
-  const firstWait = running && !recording && !INTAKE.waiting && since && waitingFirst && !parts
-    ? `Waiting for the first record · ${ago(since) === 'now' ? 'just started' : `${ago(since)} since it started`}`
-      + (guard?.steered ? ' · told to record' : '') : null;
+  // no record yet is said with how long the agent has been at it, from its session's start, said again at each change
+  // the page hears, never by a timer of its own
+  const since = INTAKE.session?.started || null;
+  const firstWait = running && !recording && !INTAKE.waiting && since && INTAKE.session?.activity === 'working' && !parts
+    ? `Waiting for the first record · ${ago(since) === 'now' ? 'just started' : `${ago(since)} since it started`}` : null;
   // a session made and between turns is idle, not starting: its agent stays to talk after a turn, so an intake agent
   // that has stopped working, or was used for something else, would otherwise read Starting for as long as it runs
   const activity = INTAKE.session?.activity;

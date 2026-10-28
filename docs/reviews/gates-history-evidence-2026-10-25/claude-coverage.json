@@ -1,0 +1,207 @@
+{
+  "platform": "Claude",
+  "window": {
+    "start_inclusive_utc": "2026-04-25T04:00:00Z",
+    "end_inclusive_utc": "2026-10-26T01:03:14Z",
+    "timezone": "America/New_York"
+  },
+  "matching_rule": "Case-insensitive exact plural word using Python regex \\bgates\\b. Singular gate, gating and gate IDs are not plural matches. Occurrence counts are whole-word matches, not substring counts.",
+  "confirmed_human_submitted": {
+    "messages": 20,
+    "literal_plural_occurrences": 23
+  },
+  "confirmed_direct_user_wording": {
+    "messages": 15,
+    "literal_plural_occurrences": 18
+  },
+  "confirmed_quoted_imported_or_uncertain_wording": {
+    "messages": 5,
+    "literal_plural_occurrences": 5
+  },
+  "unverified_sdk_forwarded_inputs": {
+    "messages": 2,
+    "literal_plural_occurrences": 2
+  },
+  "output_records": 22,
+  "project_association_confirmed": {
+    "Metaform": {
+      "messages": 3,
+      "literal_plural_occurrences": 3
+    },
+    "Tempo": {
+      "messages": 14,
+      "literal_plural_occurrences": 17
+    },
+    "Vivi": {
+      "messages": 4,
+      "literal_plural_occurrences": 4
+    },
+    "Other/unknown": {
+      "messages": 0,
+      "literal_plural_occurrences": 0
+    }
+  },
+  "three_project_union_confirmed": {
+    "messages": 20,
+    "literal_plural_occurrences": 23
+  },
+  "project_count_warning": "Project labels overlap: promptfix history line4054 is associated with both Tempo execution and a ViviVocab specification. Use union for combined counts.",
+  "deduplication": {
+    "method": "Original transcript message UUID plus session ID. A history event becomes an alias only when its same-session timestamp is within 100ms of the typed transcript event, with text/paste checked. Identical text in separate events is not globally deduplicated.",
+    "history_events_matching_visible_display": 18,
+    "additional_history_events_matching_recovered_paste_only": [
+      2420,
+      6370
+    ],
+    "history_transcript_alias_pairs": 3,
+    "matching_project_transcript_user_role_records_before_provenance_filter": 729,
+    "unique_raw_message_session_pairs": 729
+  },
+  "excluded_matching_project_transcript_records": {
+    "generated_episode_window": 123,
+    "injected_skill_or_worker_instruction": 402,
+    "generated_prior_context_digest": 22,
+    "agent_to_agent_message": 30,
+    "generated_compaction_summary": 4,
+    "sidechain_or_subagent_input": 52,
+    "injected_paperclip_role_prompt": 39,
+    "generated_assignment_snapshot": 49,
+    "sdk_generated_report_aggregation": 1,
+    "tool_or_automated_notification": 2
+  },
+  "excluded_sdk_aggregation": {
+    "source_file": "/home/rich/.claude/projects/-home-rich-metaform/627d03a9-d0b5-42d9-a578-f8697b3a1aa3.jsonl",
+    "line": 9370,
+    "message_id": "c007f240-91b8-4d24-bb0f-ce6cabeddae8",
+    "timestamp": "2026-10-19T06:35:43.955Z",
+    "reason": "241,167-character concatenation of implementation/status reports delivered through SDK; no independent human-input provenance. Excluded from user-input counts."
+  },
+  "sources": {
+    "history": {
+      "path": "/home/rich/.claude/history.jsonl",
+      "valid_records": 7380,
+      "valid_records_in_window": 5493,
+      "first_retained_timestamp": "2026-02-04T02:28:51.624Z",
+      "last_retained_timestamp": "2026-10-25T21:18:18.147Z",
+      "malformed_lines": [
+        {
+          "line": 4517,
+          "bytes": 314,
+          "contains_exact_plural": false
+        },
+        {
+          "line": 4599,
+          "bytes": 351,
+          "contains_exact_plural": false
+        },
+        {
+          "line": 6657,
+          "bytes": 388,
+          "contains_exact_plural": false
+        }
+      ],
+      "first_match_timestamp": "2026-07-06T13:15:00.690Z",
+      "last_match_timestamp": "2026-10-25T09:24:52.958Z"
+    },
+    "project_transcripts": {
+      "root": "/home/rich/.claude/projects",
+      "jsonl_files": 2409,
+      "exact_word_candidate_files": 1457,
+      "matching_user_role_records": 729,
+      "first_matching_user_role_record": "2026-09-23T05:33:25.233Z",
+      "last_matching_user_role_record": "2026-10-26T00:18:43.576Z",
+      "candidate_metadata_path": "/tmp/gates-claude-raw-candidates.json",
+      "search": "rg -l -i gates (substring) over all *.jsonl recursively, then JSON parse and exact plural regex on user text only. Substring prefilter avoids serialized escaped-newline word-boundary errors. Original word-boundary prefilter yielded1,457 files;477 additional substring-only files were parsed and yielded no additional user-text matches. tool_result blocks and assistant/tool turns excluded.",
+      "substring_candidate_files": 1934,
+      "additional_substring_only_files_inspected": 477,
+      "additional_substring_only_exact_user_matches": 0
+    },
+    "pasted_blocks_in_window": {
+      "blocks": 268,
+      "hash_backed": 208,
+      "missing_cache": 144,
+      "inline": 60,
+      "recovered_cache": 64
+    },
+    "job_parent_transcript": {
+      "path": "/home/rich/.claude/jobs/83963048/tmp/parent-transcript.jsonl",
+      "matching_user_text_records": 0
+    },
+    "backup_checks": [
+      {
+        "path": "/home/rich/.claude-extras-backup-20260922",
+        "recursive_files": 11869,
+        "jsonl_files": 5,
+        "result": "Only synthetic plugin fixture and benchmark JSONLs. Configuration original has no chat history; no project/history archive."
+      },
+      {
+        "path": "/home/rich/.claude/backups",
+        "recursive_files": 5,
+        "jsonl_files": 0,
+        "result": "Rolling Claude configuration backups only, no chat history."
+      },
+      {
+        "path": "/home/rich/safety-backups",
+        "recursive_files": 460,
+        "jsonl_files": 0,
+        "result": "No chat histories. Sole archive addons-before.tgz inspected: 9,138 members; one unrelated plugin fixture JSONL, no Claude histories/projects."
+      }
+    ],
+    "older_project_directories": [
+      {
+        "path": "/home/rich/.claude/projects/-home-rich-ViviVocab",
+        "jsonl_files": 0
+      },
+      {
+        "path": "/home/rich/.claude/projects/-home-rich-mindflare",
+        "jsonl_files": 0
+      },
+      {
+        "path": "/home/rich/.claude/projects/-home-rich-tempo",
+        "jsonl_files": 0
+      },
+      {
+        "path": "/home/rich/.claude/projects/-home-rich-tempotest",
+        "jsonl_files": 0
+      },
+      {
+        "path": "/home/rich/.claude/projects/-home-rich-tempotrials",
+        "jsonl_files": 0
+      }
+    ]
+  },
+  "limits": [
+    "This is an inventory of available local Claude records, not a proof that all six months of chats survive. No matching retained input before July6 does not prove the user never used the word earlier.",
+    "144 hash-referenced pasted blocks in the requested window are missing from paste-cache. Additional occurrences may have existed only in those blocks. One matching July6 event contains an unavailable 38-line pasted block.",
+    "Older Tempo/Vivi project directories contain memory files but no original JSONL sessions; assistant context is unavailable for those history-only events. Nearest retained user inputs are supplied instead.",
+    "Two SDK-only inputs look forwarded from a user but are not included in confirmed counts. origin.kind=human and turnOrigin=human alone do not establish human provenance.",
+    "The July6 formal sentence and supplied/quoted prompts/documentation are kept separate from directly authored conversational wording.",
+    "The source scan excludes generated compaction summaries, inherited/subagent prompts, automated assignment messages, peer messages and tool results."
+  ],
+  "project_association_direct_user_wording": {
+    "Metaform": {
+      "messages": 2,
+      "literal_plural_occurrences": 2
+    },
+    "Tempo": {
+      "messages": 11,
+      "literal_plural_occurrences": 14
+    },
+    "Vivi": {
+      "messages": 3,
+      "literal_plural_occurrences": 3
+    },
+    "Other/unknown": {
+      "messages": 0,
+      "literal_plural_occurrences": 0
+    }
+  },
+  "verification": [
+    "All22 output record IDs are unique; all timestamps lie within the requested window.",
+    "Every record occurrence total was recomputed from its full_text using the exact plural regex.",
+    "Every transcript UUID and source-line session ID was reread from the named source line.",
+    "All729 matching project-transcript user-role records have unique (session,UUID) pairs and partition into3 confirmed history aliases,2 unverified SDK inputs,724 excluded generated/agent messages.",
+    "Confirmed totals20messages/23occurrences partition into15direct-wording messages/18occurrences and5quoted/imported/uncertain-wording messages/5occurrences.",
+    "All recoverable history pasted blocks were expanded; missing hash references remain explicitly unexpanded."
+  ]
+}

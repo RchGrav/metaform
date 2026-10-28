@@ -1,4 +1,4 @@
-"""The MCP Tasks extension, `io.modelcontextprotocol/tasks`: long tool calls and workflow runs as tasks, BASE-030.
+"""The MCP Tasks extension, `io.modelcontextprotocol/tasks`: long tool calls as tasks, BASE-030.
 
 Every task speaks the one status vocabulary of work, `metaform.data.status`, whose table gives each state its task
 status. Three kinds of work are served as tasks, each only to a client that declares the extension on its request:
@@ -11,14 +11,6 @@ status. Three kinds of work are served as tasks, each only to a client that decl
   `async` verb does at its next `await`, and completed with its result when the verb finished first, as a verb run in
   a thread always does, so a task never reads cancelled while its effect still lands. A cancel asked of another
   process reaches the owner as the `map.changed` its write announces, heard while the owner runs a task, `Running`.
-- A workflow run, the work of a verb declared `task='run'`, which returns the id of a run the server itself advances
-  to its end: the run is the task, by its run id, which the workflow module makes with a random UUID as the extension
-  asks of a task id. Its record is read for `tasks/get`; `tasks/update` and `tasks/cancel` go through the workflow
-  module's own `answer` and `cancel` verbs, so the run moves as the workflow module moves it. A run paused on the
-  person asks its question as a form, under a key of that one pause. Work that waits on the calling agent to act on
-  the verb's result, such as workflow's `assign`, is never a task: a host gives the model a task's result only once
-  the task ends, so the agent would never learn what to do.
-
 - An assigned agent session, declared `task='session'`, whose durable lifecycle is supplied by enabled modules
   through `task.lifecycle`. The MCP bridge launches the session and reads its persisted handle before responding.
   Its provider owns status, outstanding inputs, results and cancellation, independently of this server process.
@@ -28,8 +20,6 @@ schema/2026-07-28/schema.ts.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -39,14 +29,13 @@ from typing import Any, cast
 import anyio
 
 from metaform import events, home
-from metaform.data import Store, StoreError, plain, status
-from metaform.module import Context, Stop, context, project_for, provided, surface
+from metaform.data import StoreError, status
+from metaform.module import Context, Stop, context, project_for, provided
 
 from . import task_records as records
 
 EXTENSION = 'io.modelcontextprotocol/tasks'
 POLL_MS = 1000  # how often a client is asked to poll, in milliseconds: a long verb's result is not wanted sooner
-ANSWER = 'answer'  # the field of the form a question asks
 STOPPED = records.STOPPED
 CANCELLED = 'Cancelled through tasks/cancel.'
 CANCELLING = 'Cancel asked through tasks/cancel; the task ends cancelled if the tool stops, completed if it finishes.'
@@ -157,16 +146,6 @@ async def run(running: Running, project: str, task_id: str, work: Callable[[], A
         await _unlisten(running)
 
 
-def _key(run_id: str, row: dict[str, Any]) -> str:
-    """The key of the input request one pause of a run asks under: the run, when it paused, what it asked, and the
-    state it paused in, which holds the answers it was given before. A run that asks the same question again, after
-    an answer, asks it under a new key, as the extension requires: a key is never used again once a response for it
-    has been delivered."""
-    held = json.dumps([row.get('frames'), row.get('assignment')], sort_keys=True, default=str)
-    paused = f'{run_id}\0{row.get("updated") or row["created"]}\0{row.get("message") or ""}\0{held}'
-    return 'question-' + hashlib.sha256(paused.encode('utf-8')).hexdigest()[:16]
-
-
 def _base(task_id: str, created: str, updated: str, state: str, message: str | None,
           ttl: int | None) -> dict[str, Any]:
     said = cast(dict[str, str], status.MCP_TASKS).get(state, 'working')
@@ -190,52 +169,6 @@ def owning(folder: Path) -> str | None:
         return project_for(folder)
     except (Stop, StoreError):
         return None
-
-
-def store(folder: Path) -> Store | None:
-    """The workflow module's store for the folder's project, where its runs are, or None when there are none to
-    read: no project, or the workflow module not on the folder's surface."""
-    if not any(module.id == 'workflow' for module in surface(folder)):
-        return None
-    project = project_for(folder)
-    return None if project is None else Store(project, module='workflow')
-
-
-def _row(found: Store, run_id: str) -> dict[str, Any] | None:
-    try:
-        with found.tables(write=False) as tx:
-            row = tx.get('runs', {'run_id': run_id})
-    except (Stop, StoreError):
-        return None
-    return None if row is None else dict(row)
-
-
-def of_run(run_id: str, row: dict[str, Any]) -> dict[str, Any]:
-    """A workflow run as a task: its state through the vocabulary; a run that returned or failed with its authored
-    error is a completed task whose result is the run's, since a run's named error is not a JSON-RPC fault; a run
-    paused on the person asks its question as a form. A run record is kept as long as the project, so its task
-    states no time limit."""
-    state, message = str(row['state']), row.get('message')
-    task = _base(run_id, str(row['created']), str(row.get('updated') or row.get('closed') or row['created']),
-                 state, message, None)
-    if state in ('completed', 'failed'):
-        value = plain(row.get('result'))
-        return {**task, 'status': 'completed', 'result': {
-            'content': [{'type': 'text', 'text': json.dumps(value, ensure_ascii=False, indent=2)}],
-            **({'structuredContent': value} if isinstance(value, dict) else {}), 'isError': state == 'failed'}}
-    if state == 'input_required':
-        question = str(message or '')
-        return {**task, 'inputRequests': {_key(run_id, row): {'method': 'elicitation/create', 'params': {
-            'mode': 'form', 'message': question, 'requestedSchema': {
-                'type': 'object', 'required': [ANSWER],
-                'properties': {ANSWER: {'type': 'string', 'title': 'Answer', 'description': question}}}}}}}
-    return task
-
-
-def seed_run(found: Store, run_id: str) -> dict[str, Any] | None:
-    """The `CreateTaskResult` of a workflow run a verb has just made: its record is written, so `tasks/get` finds it."""
-    row = _row(found, run_id)
-    return None if row is None else {'resultType': 'task', **of_run(run_id, row)}
 
 
 def lifecycle(folder: Path, project: str | None = None) -> list[tuple[Context, Any]]:
@@ -262,15 +195,11 @@ def seed_session(folder: Path, project: str, task_id: str) -> dict[str, Any] | N
     return None
 
 
-def detailed(project: str | None, found: Store | None, task_id: str,
-             folder: Path | None = None) -> dict[str, Any] | None:
-    """The full tool-call, workflow or assigned-session task; None when no source knows its id."""
+def detailed(project: str | None, task_id: str, folder: Path | None = None) -> dict[str, Any] | None:
+    """The full tool-call or assigned-session task; None when no source knows its id."""
     made = None if project is None else records.get(project, task_id)
     if made is not None:
         return _of_call(made)
-    row = None if found is None else _row(found, task_id)
-    if row is not None:
-        return of_run(task_id, row)
     for ctx, service in lifecycle(folder) if folder is not None else []:
         detail = service.get(ctx, task_id)
         if detail is not None:
@@ -278,55 +207,30 @@ def detailed(project: str | None, found: Store | None, task_id: str,
     return None
 
 
-# A module verb run for the person's request through the task: the module, the verb and its nouns.
-Verb = Callable[[str, str, dict[str, Any]], Awaitable[Any]]
-
-
-async def update(project: str | None, found: Store | None, task_id: str, responses: dict[str, Any],
-                 verb: Verb, folder: Path | None = None) -> bool:
-    """The person's answer to the question a paused workflow run asks, given through the workflow module's `answer`
-    verb, which only the person runs: the answer comes from the form their AI tool showed them. Only the key of the
-    pause outstanding now is read; a response to another key, or one declined, is ignored, as the extension asks.
-    False when there is no such task."""
+async def update(project: str | None, task_id: str, responses: dict[str, Any], folder: Path | None = None) -> bool:
+    """An answer to a task's input request, given to the service that owns the task. False when there is no such
+    task."""
     if project is not None and await anyio.to_thread.run_sync(records.get, project, task_id) is not None:
         return True
-    row = None if found is None else await anyio.to_thread.run_sync(_row, found, task_id)
-    if row is None:
-        services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
-        for ctx, service in services:
-            if await anyio.to_thread.run_sync(service.update, ctx, task_id, responses):
-                return True
-        return False
-    if row['state'] != 'input_required':
-        return True
-    response: Any = responses.get(_key(task_id, row))
-    if not isinstance(response, dict):
-        return True
-    answered = cast(dict[str, Any], response)
-    content = cast(dict[str, Any], answered.get('content') or {})
-    if answered.get('action') == 'accept' and isinstance(content.get(ANSWER), str):
-        await verb('workflow', 'answer', {'run': task_id, 'answer': content[ANSWER]})
-    return True
+    services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
+    for ctx, service in services:
+        if await anyio.to_thread.run_sync(service.update, ctx, task_id, responses):
+            return True
+    return False
 
 
-async def cancel(running: Running, project: str | None, found: Store | None, task_id: str, verb: Verb,
-                 folder: Path | None = None) -> bool:
+async def cancel(running: Running, project: str | None, task_id: str, folder: Path | None = None) -> bool:
     """Cancel a task: for a tool call the cancel is recorded and its work stopped, here at once or by the process
-    running it when it hears the change, and `run` ends the task as the work ends; a workflow run is cancelled through the
-    workflow module's `cancel` verb. A task that has ended stays as it ended. False when there is none."""
+    running it when it hears the change, and `run` ends the task as the work ends. A task that has ended stays as it
+    ended. False when there is none."""
     if project is not None and await anyio.to_thread.run_sync(records.get, project, task_id) is not None:
         asked = await anyio.to_thread.run_sync(records.request_cancel, project, task_id, CANCELLING)
         scope = running.scopes.get(task_id)
         if asked and scope is not None:
             scope.cancel()
         return True
-    row = None if found is None else await anyio.to_thread.run_sync(_row, found, task_id)
-    if row is None:
-        services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
-        for ctx, service in services:
-            if await anyio.to_thread.run_sync(service.cancel, ctx, task_id):
-                return True
-        return False
-    if row['state'] in status.OPEN:
-        await verb('workflow', 'cancel', {'run': task_id, 'reason': CANCELLED})
-    return True
+    services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
+    for ctx, service in services:
+        if await anyio.to_thread.run_sync(service.cancel, ctx, task_id):
+            return True
+    return False

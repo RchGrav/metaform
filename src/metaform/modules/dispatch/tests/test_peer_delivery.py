@@ -62,10 +62,8 @@ def peers(project_folder, monkeypatch):
     return ctx, store, made, delivered
 
 
-@pytest.mark.parametrize('role', ['worker', 'prep', 'sentinel'])
-def test_plain_peer_invitation_reaches_exact_worker_with_provenance(peers, monkeypatch, role):
+def test_plain_peer_invitation_reaches_exact_worker_with_provenance(peers, monkeypatch):
     ctx, store, made, delivered = peers
-    monkeypatch.setenv('METAFORM_ROLE', role)
     ctx.nouns['to'] = made['recipient'].session_id
     text = 'Join me to inspect the failing request and discuss the fix.'
     sent = peering.send(ctx, store, text, 0)
@@ -125,7 +123,6 @@ def test_worker_reply_preserves_exact_sender_route_and_receipts(peers, monkeypat
     original = peering.send(ctx, store, 'Please join the investigation.', 0)
     monkeypatch.setenv('METAFORM_WORK', made['recipient'].work_id)
     monkeypatch.setenv('METAFORM_SESSION', made['recipient'].runner)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
     ctx.nouns.clear()
     ctx.nouns['reply'] = original['note']
     reply = peering.send(ctx, store, 'I will inspect the request handling.', 0)

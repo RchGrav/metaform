@@ -135,52 +135,5 @@
             <step n="12" text="PROOF the recorded map; READ it back whole; CHECK it against the artifact and this document; CORRECT it; ANNEAL it; COMPLETE it; THEN FINISH the intake." />
         </steps>
        </method>
-       <schema>
-            <metaform id="[metaform_id] name="[project]" description="[a description of the AT and AUE present]">
-                <elements>
-                    <!-- All namespace records remain elements -->
-                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[CQU|DE|SE|NE]">
-                        <elements>
-                            <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
-                                <joins />
-                            </element>
-                        </elements>
-                        <joins>
-                            <join type="purpose" purpose="[State the objective or standard this element or action fulfills.]" ef="[Encounter Function of the PE within the RE context]" ifd="[send|receive|both]">
-                                <elements>
-                                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
-                                        <elements />
-                                        <joins />
-                                    </element>
-                                </elements>
-                            </join>
-                        </joins>
-                    </element>
-                </elements>
-            </metaform>
-            <!-- Layer Sample -->
-            <layer id="[generated sources id]" name="sources" metaform_id="[metaform id]" >
-               <elements>
-                   <!-- All namespace records remain elements -->
-                   <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[CQU|DE|SE|NE]">
-                        <refs>
-                            <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
-                            <ref key="[key]" value="[value]" />
-                        </refs>
-                        <elements>
-                            <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
-                                <refs />
-                                <joins />
-                            </element>
-                        </elements>
-                        <joins>
-                            <join type="purpose" purpose="[State the objective or standard this element or action fulfills.]" ef="[Encounter Function of the PE within the RE context]" ifd="[send|receive|both]">
-                                <elements />
-                            </join>
-                        </joins>
-                   </element>
-               </elements>
-           </layer>
-       </schema>
    </response_protocol>
 </process>

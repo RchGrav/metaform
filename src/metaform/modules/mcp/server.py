@@ -26,7 +26,6 @@ import inspect
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -58,7 +57,6 @@ from metaform.module import (
     Effect,
     Module,
     Noun,
-    PersonsDecision,
     Stop,
     Verb,
     call,
@@ -67,7 +65,6 @@ from metaform.module import (
     collecting_agent_context,
     command_summary,
     context,
-    decided,
     feedback,
     forget_shown,
     instructions,
@@ -81,9 +78,6 @@ from metaform.module import (
     node_view,
     on_surface,
     on_this_system,
-    persons_decision,
-    persons_word,
-    persons_word_acted,
     prepare_agent_context,
     project_for,
     provided,
@@ -105,12 +99,8 @@ from metaform.module import (
 from metaform.module import (
     noted as with_notices,
 )
-from metaform.module import (
-    withheld as withhold,
-)
-from metaform.settings import refuse_held_control
 
-from . import catalog, consent, shaping, skill_extension
+from . import catalog, shaping, skill_extension
 
 # On each tool that uses them, MCP-025 and CLI-033: `project` on a verb that needs a project, `layers` on a verb that
 # reads the map's layers; said in as few words as hold the meaning, since each is paid once per tool listed.
@@ -175,10 +165,10 @@ def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
             required.append(noun.name)
     for key in verb.switches:
         setting = settings.SCHEMA.get(key)
-        if setting is not None and not setting.person_only:  # an agent is not offered what only the person sets
+        if setting is not None:
             properties[key] = setting_schema(setting, folder)
-    if verb.caution and not verb.person_says:  # the person's decision is asked of them, never confirmed by the agent
-        properties['confirm'] = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
+    if verb.caution:
+        properties['confirm'] = CONFIRM
     if verb.needs_project:
         properties['project'] = PROJECT
     if verb.reads_layers:
@@ -213,12 +203,12 @@ def set_schema(folder: Path) -> dict[str, Any]:
 
 def settable(folder: Path) -> list[dict[str, Any]]:
     """The settings an agent may change here, for metaform_set called with none: each the chassis's or a module's on
-    the folder's surface that serves tools here, never person-only or per-call, with its help, its JSON type, its
-    choices and its value."""
+    the folder's surface that serves tools here, never per-call, with its help, its JSON type, its choices and its
+    value."""
     owners = {'chassis', *(module.id for module, _ in tools(folder).values())}
     listed: list[dict[str, Any]] = []
     for key, setting in settings.SCHEMA.items():
-        if setting.person_only or setting.per_call or setting.owner not in owners:
+        if setting.per_call or setting.owner not in owners:
             continue
         kind = _setting_type(setting, folder)
         choices = kind.get('enum') or cast(dict[str, Any], kind.get('items') or {}).get('enum')
@@ -276,11 +266,11 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
     'list_origins': (("List the project's origins, the baselines variants are stored against, as metaform list "
                       'origins lists them.'),
                      {'type': 'object', 'additionalProperties': False, 'properties': {'project': PROJECT}}),
-    'add_variant': (("Collect a folder, such as a worker's worktree, as a variant of an origin: the work's changes "
+    'add_variant': (("Collect a folder, such as an agent's worktree, as a variant of an origin: the work's changes "
                      'against it. As metaform add variant does.'),
                     {'type': 'object', 'required': ['folder'], 'additionalProperties': False,
                      'properties': {
-                         'folder': _text('The folder to collect, such as a worker\'s worktree.'),
+                         'folder': _text('The folder to collect, such as an agent\'s worktree.'),
                          'origin': ORIGIN,
                          'remove': {'type': 'boolean', 'description': 'Remove the git worktree once its variant '
                                                                       'holds it.'},
@@ -317,18 +307,15 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
     'clear_project': (("Clear the project's map, as metaform clear project does: remove its bases and reports. A "
                        'backup is made first, and metaform restore project (metaform_restore_project) brings it back; its '
                        'registration, folder, '
-                       "settings, origins, variants, memories and conversations with agents stay. It is the person's "
-                       'decision: it runs only when they say yes in the form their AI tool shows them, or on the card '
-                       "in a dispatched agent's chat, and otherwise says what it would remove."),
+                       'settings, origins, variants, memories and conversations with agents stay. It runs with '
+                       'confirm true; without it, it says what it would remove.'),
                       {'type': 'object', 'additionalProperties': False,
-                       'properties': {'project': PROJECT}}),
+                       'properties': {'project': PROJECT, 'confirm': CONFIRM}}),
     'restore_project': (("Bring back a backup of the project's map, as metaform restore project does: the newest a "
                          'clear made, or the one named. What the project holds now is backed up first, so nothing is '
-                         "lost. It is the person's decision: it runs only when they say yes in the form their AI tool "
-                         "shows them, or on the card in a dispatched agent's chat, and otherwise says what it would "
-                         'bring back and replace.'),
+                         'lost. It runs with confirm true; without it, it says what it would bring back and replace.'),
                         {'type': 'object', 'additionalProperties': False,
-                         'properties': {'project': PROJECT,
+                         'properties': {'project': PROJECT, 'confirm': CONFIRM,
                                         'backup': _text('The backup, by the name a clear or a restore gave it; the '
                                                         'newest a clear made when omitted.')}}),
     'extract': (('Write variants out to folders as files you can read or run, with Python alone, as metaform '
@@ -349,7 +336,6 @@ CHASSIS_EFFECTS: dict[str, Effect] = {
     'list_variants': 'read', 'prompts': 'read', 'prompt': 'read', 'save_prompt': 'write', 'clear_project': 'remove',
     'restore_project': 'remove', 'extract': 'write'}
 # The chassis's own tools that are the person's decision, run only on their answer to the form, CLI-011 and MCP-006.
-PERSON_SAYS = ('clear_project', 'restore_project')
 # The chassis's own tools of SURFACED that act on a project's records, so they are listed once the folder has one.
 ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'restore_project',
               'extract')
@@ -405,8 +391,7 @@ def mcp_next(text: str, folder: Path) -> str:
 
 
 def _error(stop: Stop, folder: Path) -> Outcome:
-    # what the person does is said as it is: a command the agent would be refused is never turned into a call for it
-    step = str(stop.next_step) if isinstance(stop, PersonsDecision) else mcp_next(str(stop.next_step), folder)
+    step = mcp_next(str(stop.next_step), folder)
     return True, [f'Error: {stop}\nNext: {step}']
 
 
@@ -435,20 +420,20 @@ def _checked(name: str, arguments: dict[str, Any], schema: dict[str, Any],
     return checked
 
 
-def run_set(folder: Path, arguments: dict[str, Any], consented: bool = False) -> Outcome:
+def run_set(folder: Path, arguments: dict[str, Any]) -> Outcome:
     """The `set` tool stores settings for the server's folder, as `metaform set` would, PROJ-005 and CLI-033.
-    `consented`: the person gave the person-only values among them in their AI tool, so they are not refused."""
+    """
     glue = arguments.pop('glue', False)
-    confirm = arguments.pop('confirm', False) is True or consented  # a person's own answer to the form confirms it
+    confirm = arguments.pop('confirm', False)
     changes: list[dict[str, Any]] = []
     notices: list[dict[str, str]] = []
     try:
         if not isinstance(glue, bool):
             raise Stop('glue is true or false.', schema_step(f'{OWN}_set'))
+        if not isinstance(confirm, bool):
+            raise Stop('confirm is true or false.', schema_step(f'{OWN}_set'))
         if not arguments:  # none given: the settings it takes, as the list is not in its schema
             return False, [result_json({'settings': settable(folder)})]
-        if not consented:
-            refuse_held_control(arguments, folder, set_command(arguments))
         read: list[tuple[str, str]] = []
         typed = {key: setting_value(key, value, folder, read) for key, value in arguments.items()}
         notices += [{'where': key, 'message': message} for key, message in read]
@@ -569,28 +554,21 @@ def provisioning(session: str | None) -> str | None:
 
 
 def connect_instructions(folder: Path) -> str:
-    """The connect message, MCP-007 and MCP-029, for every role and on every wire: `opening`, the directive line and
+    """The connect message, MCP-007 and MCP-029, for every agent and on every wire: `opening`, the directive line and
     the links to the instruction blocks that apply to the agent this server serves, now. Each block is a resource read
     whole, so the message stays far within what any host keeps and no block is cut."""
-    return opening(folder, catalog.role())
+    return opening(served_agent(folder))
 
 
-def role_text(folder: Path, client: str | None = None, session: str | None = None, keyed: bool = True) -> str:
-    """Role responsibilities and module discovery pointers, followed by session and project guidance.
-
-    Capabilities and tool names are read from their owning module only when needed. The module directory is
-    never repeated inside the role prompt, and selecting expertise does not select an MCP tool module.
-    """
-    named = catalog.role()
+def task_text(folder: Path, client: str | None = None, session: str | None = None, keyed: bool = True) -> str:
+    """The task block, metaform://task/<name>: what the session is for, then the catalog's line, the compaction or
+    handle line this connection needs, the project's name to the person's own session and the folder's notices. It is
+    linked to the person's own session, `connect_use`, and to the intake task, `task_intake`; every other task's text
+    is its first turn, so no block repeats it, `task_link`."""
+    own = not catalog.dispatched()
     project = project_for(folder)
-    authored_role = 'not used; assigned tasks and selected skills supply instructions'
-    assignment_id = os.environ.get('METAFORM_WORK') or 'not assigned'
     lines: list[str] = []
-    if named is None or named == 'system':
-        head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
-        lines.append(head)
-    elif said := prompt_files.module('mcp', f'role_{named}',
-                                     assignment=assignment_id, authored_role=authored_role):
+    if said := prompt_files.module('mcp', 'connect_use' if own else f'task_{catalog.task()}'):
         lines.append(said)
     if said := prompt_files.module('mcp', 'connect_catalog'):
         lines.append(said)
@@ -602,9 +580,9 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
         said = ''
     if said:
         lines.append(said)
-    if named is None and project is not None and (said := prompt_files.module('mcp', 'connect_here', project=project)):
+    if own and project is not None and (said := prompt_files.module('mcp', 'connect_here', project=project)):
         lines.append(said)
-    first_run = first_run_text(folder) if named is None else None
+    first_run = first_run_text(folder) if own else None
     lines += [one for one in startup_notices(folder, project) if one != first_run]
     return '\n\n'.join(lines)
 
@@ -626,21 +604,21 @@ def register(folder: Path, given: str | None = None) -> dict[str, Any]:
     return {'project': held, 'said': said, 'instructions': instructions(folder, surface='mcp')}
 
 
-def run_history(folder: Path, name: str, arguments: dict[str, Any], consented: bool = False) -> Outcome:
+def run_history(folder: Path, name: str, arguments: dict[str, Any]) -> Outcome:
     """The history, prompt and clear commands as tools, on the surface while the chassis is, PROJ-024, STORE-044,
-    PROJ-025 and MCP-004. `consented`: the person said yes to the call's caution in their AI tool."""
+    PROJ-025 and MCP-004."""
     notices: list[str] = []
-    if name in PERSON_SAYS:
-        arguments.pop('confirm', None)  # the person's yes is their answer to the form; an agent's confirm is not it
+    confirmed = arguments.pop('confirm', False) is True
     try:
-        error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices), consented)
+        error, blocks = _history(folder, name, _checked(name, arguments, SURFACED[name][1], notices), confirmed)
     except (Stop, StoreError) as stop:
         return _error(stop, folder)
     return error, (['\n'.join(notices)] if notices else []) + blocks
 
 
-def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = False) -> Outcome:
-    """The history, prompt and clear tools once their arguments are read."""
+def _history(folder: Path, name: str, given: dict[str, Any], confirmed: bool = False) -> Outcome:
+    """The history, prompt and clear tools once their arguments are read; `confirmed`, the call's confirm=true, which
+    a restore or a clear asks for with its caution."""
     if name == 'prompts':
         return False, [result_json(list(prompts.prompts()))]
     if name == 'prompt':
@@ -657,9 +635,8 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     if name == 'restore_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         backup = cast(str | None, given.get('backup'))
-        if not consented:  # only the person's yes brings a backup back over what the map holds, CLI-011
-            raise persons_decision(home.restore_caution(project, backup), shlex.join(
-                ['metaform', 'restore', 'project', project, *([backup] if backup else [])]), 'Restore')
+        if not confirmed:
+            raise Stop(home.restore_caution(project, backup), f'If you are sure: call {OWN}_{name} with confirm true')
         restored = home.restore_project(project, backup)
         return False, [result_json({'project': project, 'said': restored.said, 'backup': restored.backup.name,
                                     'held_before': restored.held_before, 'back': restored.back,
@@ -667,9 +644,8 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         again = f'ask the person to clear {project} again'
-        if not consented:  # only the person's yes to the form clears it, CLI-011
-            raise persons_decision(home.to_clear(project).caution,
-                                   shlex.join(['metaform', 'clear', 'project', project, '--confirm']), 'Clear project')
+        if not confirmed:
+            raise Stop(home.to_clear(project).caution, f'If you are sure: call {OWN}_{name} with confirm true')
         cleared = home.clear_project(project)
         result = cleared.to_dict()
         if cleared.not_removed:  # still on disk, and what to do, as a notice and never an error, BASE-044
@@ -708,7 +684,7 @@ def _no_project() -> str:
 
 
 def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dict[str, Any],
-             lines: list[str], client: str | None = None, consented: bool = False,
+             lines: list[str], client: str | None = None,
              session: str | None = None, identity: dict[str, str] | None = None) -> Context:
     project = arguments.get('project')
     layers = arguments.get('layers')
@@ -724,54 +700,15 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise Stop(f'{name} takes no project: it works without one.', schema_step(name))
     if layers is not None and not verb.reads_layers:
         raise Stop(f"{name} takes no layers: it does not read the map's layers.", schema_step(name))
-    if not consented:
-        refuse_held_control((key for key in arguments if key in verb.switches), folder,
-                            person_command(module.id, verb, arguments))
     nouns, switches, notices = tool_arguments(module.id, verb, arguments, ignore=PER_CALL, folder=folder)
     if layers is not None:
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     made = context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp', client=client, session=session, identity=identity)
-    made.consented = consented
-    if verb.person_says and not consented:  # the person's decision: only their answer to the form runs it, CLI-011
-        raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments), verb.page)
-    if verb.caution and not (confirmed or consented):
+    if verb.caution and not confirmed:
         raise Stop(caution_of(verb, made), f'If you are sure: call {name} with confirm true')
-    deciding = None if consented else decided(verb, made)
-    if deciding:  # the person's decision by what this call asks, such as releasing a held ticket: their answer runs it
-        raise persons_decision(deciding, person_command(module.id, verb, arguments), verb.page)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     return made
-
-
-def set_command(arguments: dict[str, Any]) -> str:
-    """The `metaform set` line the person pastes for the person-only settings a metaform_set call names."""
-    words = ['metaform', 'set']
-    for key, given in arguments.items():
-        setting = settings.SCHEMA.get(key)
-        if setting is None or not setting.person_only:
-            continue
-        if setting.kind == 'bool':
-            words.append(setting.switch if given is True else setting.negative or setting.switch)
-        else:
-            words += [setting.switch, ','.join(str(one) for one in cast(list[Any], given)) if isinstance(given, list)
-                      else str(given)]
-    return shlex.join(words)
-
-
-def person_command(module: str, verb: Verb, arguments: dict[str, Any]) -> str:
-    """The command line the person runs to make a call an agent asked for, its nouns given by name."""
-    words = ['metaform', module, verb.name]
-    for noun in verb.nouns:
-        if noun.name in arguments:
-            given = arguments[noun.name]
-            words.append(shlex.quote(f'{noun.name}={given if isinstance(given, str) else json.dumps(given)}'))
-    if isinstance(arguments.get('project'), str) and not any(noun.name == 'project' for noun in verb.nouns):
-        words += ['--project', shlex.quote(str(arguments['project']))]
-    held = {key: given for key, given in arguments.items() if key in verb.switches}
-    if held:  # the person-only settings it asked for, as the switches `metaform set` takes on any verb
-        words += [shlex.quote(word) for word in shlex.split(set_command(held))[2:]]
-    return ' '.join([*words, *(['--confirm'] if verb.caution else [])])
 
 
 # The headers Paperclip's tool gateway forwards with each call, its connection's forwardContextHeaders, ticket T3 of
@@ -824,19 +761,18 @@ class Listed:
     schema: Callable[[], dict[str, Any]]
     effect: Effect
     open_world: bool = False
-    # Long calls run here, workflow runs and assigned agent sessions keep their own task records.
-    task: bool | Literal['run', 'session'] = False
+    # Long calls run here; assigned agent sessions keep their own task records.
+    task: bool | Literal['session'] = False
     # what comes with its first use in a session, MCP-039: what the list cut; given the call's op, that op's part alone
     guide: Callable[[str | None], str] = lambda op: ''
     module: str = 'metaform'  # the module that serves it, whose rules come with the first use of any of its tools
-    persons: bool = False  # the person's decision, Verb.person_says: destructive whatever its effect
     verb: Verb | None = None  # the module verb it runs, None for the chassis's own tools
 
     def annotations(self) -> dict[str, bool]:
         """The four hints, each set from the declared effect. None is left out, since an absent hint falls back on
         the protocol's defaults, which take a tool to be a destructive write that reaches the open world. A tool that
         is the person's decision, such as one that switches the map every agent sees, is destructive too."""
-        return {'read_only_hint': self.effect == 'read', 'destructive_hint': self.effect == 'remove' or self.persons,
+        return {'read_only_hint': self.effect == 'read', 'destructive_hint': self.effect == 'remove',
                 'idempotent_hint': self.effect == 'read', 'open_world_hint': self.open_world}
 
 
@@ -936,7 +872,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
         built = functools.partial(verb_schema, verb, folder)
         found[name] = Listed(name, tool_named(said, folder), functools.partial(briefed, built), verb.effect,
                              verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder),
-                             module.id, verb.person_says, verb)
+                             module.id, verb)
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
         'set': (('Save settings for this folder, each given as name=value. Called with none, it lists the settings '
                  'an agent may change, each with its help, choices and current value.'),
@@ -949,8 +885,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
     for name, (said, build) in own.items():
         head, more = headed(said)
         found[f'{OWN}_{name}'] = Listed(f'{OWN}_{name}', tool_named(head, folder), functools.partial(briefed, build),
-                                        CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder),
-                                        persons=name in PERSON_SAYS)
+                                        CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder))
     return dict(sorted(found.items()))
 
 
@@ -1084,7 +1019,7 @@ def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) 
     """
     parts: list[str] = []
     session = ctx.session if served_session() is not None else None
-    if session is not None and catalog.role() is None and (notice := provisioning(session)) is not None:
+    if session is not None and not catalog.dispatched() and (notice := provisioning(session)) is not None:
         parts.append(notice)  # the person's AI tool's setup: never a dispatched agent's business
         TOLD.add(session)
     if ctx.session is None:  # nothing records what this connection was given, so no guide is repeated on every call
@@ -1264,7 +1199,7 @@ def _digest(text: str) -> str:
 
 
 def catalog_schema(folder: Path, unkeyed: bool = False) -> dict[str, Any]:
-    """metaform_catalog's input schema: the module to open, among those the role may, the words to search, the tool
+    """metaform_catalog's input schema: the module to open, the words to search, the tool
     to run with its arguments, and the flag that says the agent's context was compacted. `unkeyed`: for a listing that
     names no session, whose module's help says what opening it does there."""
     def said(name: str) -> str:
@@ -1289,17 +1224,17 @@ def given_tools(folder: Path) -> dict[str, Listed]:
 
 
 def action_bindings(ctx: Context, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Bindings generated from implemented, surfaced tool declarations and the caller's actual adapter evidence."""
-    named = str((capabilities or {}).get('execution_role') or ctx.identity.get('execution_role') or catalog.role() or '')
+    """Bindings generated from implemented, surfaced tool declarations and the caller's actual adapter evidence, with
+    the name of the task the calling agent runs, None for a session no task names."""
     active = listing(ctx.folder, ctx.client)
-    return {'execution_role': named or None, 'adapter': dict(capabilities or {}),
+    return {'task': catalog.task(), 'adapter': dict(capabilities or {}),
             'tools': {name: {'description': usage_description(one), 'arguments': one.schema(),
-                             'effect': one.effect, 'person_decides': one.persons}
+                             'effect': one.effect}
                       for name, one in active.items()}}
 
 
 def open_module(folder: Path, session: str | None) -> str | None:
-    """The module a session has open: the one it opened last, else the one its role starts with; None for none."""
+    """The module a session has open: the one it opened last; None for none."""
     held = shown_before(session, catalog.OPEN_KEY)
     chosen = held if isinstance(held, str) else None
     return chosen if chosen in openable(folder) else None
@@ -1402,152 +1337,7 @@ def compaction_state(folder: Path, session: str | None, follows: bool = True) ->
     opened = open_module(folder, session) if follows else None
     held = prompt_files.module('mcp', 'compaction_open', module=opened) if opened else ''
     said = prompt_files.module('mcp', 'compaction_state', n=str(gone), open=f' {held}' if held else '') or ''
-    return '\n\n'.join(part for part in (opening(folder, catalog.role()), said) if part)
-
-
-def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | None:
-    """The form a call needs the person to answer before it runs, CLI-011: the caution it carries, and the person-only
-    settings it asks to change; None when it needs neither, or names no tool here, so the call answers as it does."""
-    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
-    if own == 'set':
-        return consent.form(name, None, consent.held({key: value for key, value in arguments.items()
-                                                      if key != 'glue'}, folder), folder)
-    if own in ('clear_project', 'restore_project'):
-        named = arguments.get('project')
-        try:
-            project = project_for(folder, named if isinstance(named, str) else None) \
-                if on_surface('chassis', folder) else None
-        except (Stop, StoreError):
-            return None  # the call says what is wrong with the project it names
-        if project is None:
-            return None
-        backup = arguments.get('backup')
-        said = home.to_clear(project).caution if own == 'clear_project' else \
-            home.restore_caution(project, backup if isinstance(backup, str) else None)
-        return consent.form(name, said, {}, folder)
-    found = None if own else tools(folder).get(name)
-    if found is None:
-        return None
-    module, verb = found
-    said = _decided(folder, module, verb, arguments) or _asked_caution(folder, module, verb, arguments)
-    return consent.form(name, said or None, consent.held(
-        {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
-
-
-def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
-    """Whether a call is the person's decision, which no confirm of an agent's runs: a tool that is theirs
-    (PERSON_SAYS, a verb declared person_says) or person-only settings
-    it asks to change, unless the person lets agents set them."""
-    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
-    if own == 'set':
-        return bool(consent.held({key: value for key, value in arguments.items() if key not in ('glue', 'confirm')},
-                                 folder))
-    if own in PERSON_SAYS:
-        return True
-    if own:
-        return False
-    found = tools(folder).get(name)
-    if found is None:
-        return False
-    module, verb = found
-    return verb.person_says or bool(_decided(folder, module, verb, arguments)) or bool(consent.held(
-        {key: value for key, value in arguments.items() if key in verb.switches}, folder))
-
-
-WORDED = '_persons_word'  # the person's word a call runs on, carried from `consented` to the record after it ran
-
-
-def word_for(folder: Path, name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
-    """The person's word that lets a dispatched system agent's call run without a card: a call that changes only
-    person-only settings the person's own system agent may change on their word (`Setting.on_persons_word`, such as
-    Autostart agents), in a turn their own message in its chat started (`persons_word`). None for any other call: what
-    is the person's decision (a verb declared person_says, clear, restore, a save of what agents are sent) still waits
-    on its card, whoever's turn it is."""
-    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
-    if own == 'set':
-        named = consent.held({key: value for key, value in arguments.items() if key not in ('glue', 'confirm')}, folder)
-    elif own:
-        return None
-    else:
-        found = tools(folder).get(name)
-        if found is None or found[1].person_says:
-            return None
-        named = consent.held({key: value for key, value in arguments.items() if key in found[1].switches}, folder)
-    if not settings.on_persons_word(named):
-        return None
-    return persons_word(folder, f'Setting {", ".join(sorted(named))}')
-
-
-def word_said(arguments: dict[str, Any]) -> str:
-    """What a settings call did on the person's word, as their system agent's chat records it."""
-    return 'set ' + ', '.join(f'{key} to {"on" if value is True else "off" if value is False else value}'
-                              for key, value in arguments.items()
-                              if (setting := settings.SCHEMA.get(key)) is not None and setting.on_persons_word)
-
-
-def persons_line(folder: Path, name: str, arguments: dict[str, Any]) -> str:
-    """The command line that does what a call asks, as the person pastes it into their own terminal."""
-    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
-    named = arguments.get('project')
-    if own in ('clear_project', 'restore_project'):
-        project = project_for(folder, named if isinstance(named, str) else None) or '<project>'
-        backup = arguments.get('backup')
-        return shlex.join(['metaform', 'clear', 'project', project, '--confirm'] if own == 'clear_project' else
-                          ['metaform', 'restore', 'project', project, *([backup] if isinstance(backup, str) else [])])
-    if own == 'set':
-        return set_command(arguments)
-    if own == 'save_prompt':
-        return shlex.join(['metaform', 'prompt', 'save', str(arguments.get('name')), str(arguments.get('text'))])
-    found = tools(folder).get(name)
-    return person_command(found[0].id, found[1], arguments) if found is not None else name
-
-
-def ask_in_chat(folder: Path, name: str, arguments: dict[str, Any], ask: consent.Ask) -> dict[str, Any]:
-    """A dispatched agent's call that is the person's decision, put to the person as a consent card in the agent's
-    chat on the page, its runner's `consent`, and waited on: `action` accept, decline or cancel, and `error` when it
-    could not be asked (UX review, person-consent F5)."""
-    asking = provided(folder, 'person.consent')  # dispatch's, which runs the agent's chat
-    if not asking:
-        return {'action': 'cancel', 'error': 'No module here shows an agent\'s chat to ask the person in.'}
-    named = arguments.get('project')
-    try:
-        project = project_for(folder, named if isinstance(named, str) else None)
-    except (Stop, StoreError) as error:
-        return {'action': 'cancel', 'error': str(error)}
-    if project is None:
-        return {'action': 'cancel', 'error': 'No project for this folder, so there is no chat to ask in.'}
-    ask_consent = cast(Callable[..., dict[str, Any]], asking[0][1])
-    return ask_consent(Store(project), ask.message, tool=name, command=persons_line(folder, name, arguments),
-                       caution=ask.message)
-
-
-def _decided(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
-    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`, as the call itself
-    would say it; empty when it is not, or when the call cannot be read, which the call then says."""
-    if verb.person_decides is None:
-        return ''
-    try:
-        nouns, switches, _ = tool_arguments(module.id, verb, dict(arguments), ignore=PER_CALL, folder=folder)
-        project = arguments.get('project')
-        made = context(module.id, folder, project=project if isinstance(project, str) else None, nouns=nouns,
-                       switches=switches, surface='mcp')
-    except (Stop, StoreError):
-        return ''
-    return decided(verb, made) or ''
-
-
-def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
-    """The caution the person's form says for this call, naming what it would take, as the call itself would."""
-    if not verb.caution:
-        return ''
-    try:
-        nouns, switches, _ = tool_arguments(module.id, verb, dict(arguments), ignore=PER_CALL, folder=folder)
-        project = arguments.get('project')
-        made = context(module.id, folder, project=project if isinstance(project, str) else None, nouns=nouns,
-                       switches=switches, surface='mcp')
-    except (Stop, StoreError):
-        return verb.caution
-    return caution_of(verb, made)
+    return '\n\n'.join(part for part in (opening(served_agent(folder)), said) if part)
 
 
 async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
@@ -1590,12 +1380,12 @@ def _commit_response(receipts: list[dict[str, Any]], blocks: list[str], data: An
 
 
 async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
-                 consented: bool = False, session: str | None = None,
+                 session: str | None = None,
                  identity: dict[str, str] | None = None,
                  shape: shaping.Shape | None = None, instruction_read: bool = False
                  ) -> tuple[bool, list[str], dict[str, Any] | None]:
     with collecting_agent_context(session) as receipts:
-        outcome = await _answer(folder, name, arguments, client=client, consented=consented, session=session,
+        outcome = await _answer(folder, name, arguments, client=client, session=session,
                                 identity=identity, shape=shape, instruction_read=instruction_read)
     if not outcome[0] and receipts:
         await anyio.to_thread.run_sync(_commit_response, receipts, outcome[1], outcome[2], 'mcp_tool')
@@ -1603,13 +1393,12 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
 
 
 async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
-                 consented: bool = False, session: str | None = None,
+                 session: str | None = None,
                  identity: dict[str, str] | None = None,
                  shape: shaping.Shape | None = None, instruction_read: bool = False
                  ) -> tuple[bool, list[str], dict[str, Any] | None]:
     """A call to one listed tool, as `run_tool`, with the result's structured form when it is an object, BASE-036:
-    the same data as the text block holding it, for a host that reads tool output as data. `consented`: the person
-    said yes to the call in their AI tool, so its caution and its person-only settings need no more from the agent.
+    the same data as the text block holding it, for a host that reads tool output as data.
     `shape`: an agent's call over the protocol, whose module tool's result is given as it asks, `shaping.shaped`;
     without it, as the result is, for what reads it as data, a resource or search."""
     if not instruction_read:
@@ -1622,13 +1411,13 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
             return True, [result_json(required)], required
     own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
     if own == 'set':
-        error, blocks = await anyio.to_thread.run_sync(run_set, folder, dict(arguments), consented)
+        error, blocks = await anyio.to_thread.run_sync(run_set, folder, dict(arguments))
         return error, blocks, _structured(error, blocks)
     if own in CHASSIS:
         error, blocks = await anyio.to_thread.run_sync(run_chassis, folder, own, dict(arguments), session)
         return error, blocks, None if own in CHASSIS_TEXT else _structured(error, blocks)
     if own in SURFACED and await anyio.to_thread.run_sync(on_surface, 'chassis', folder):
-        error, blocks = await anyio.to_thread.run_sync(run_history, folder, own, dict(arguments), consented)
+        error, blocks = await anyio.to_thread.run_sync(run_history, folder, own, dict(arguments))
         return error, blocks, _structured(error, blocks)
     known = await anyio.to_thread.run_sync(tools, folder)
     if name not in known:
@@ -1637,7 +1426,7 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
     lines: list[str] = []
     try:
         ctx = await anyio.to_thread.run_sync(_prepare, folder, module, verb, name, dict(arguments), lines, client,
-                                             consented, session, identity)
+                                             session, identity)
         if inspect.iscoroutinefunction(verb.run):
             result = await verb.run(ctx)
         else:
@@ -1656,7 +1445,7 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
             step = (f'this failure is {"filed for a fix as ticket " + ", ".join(filed) if filed else "recorded for a fix"}'
                     f'; call {OWN}_feedback only for what this error does not say')
         return True, [f'Error: {type(error).__name__}: {error}\nNext: {step}'], None
-    if os.environ.get('METAFORM_ROLE') == 'system':  # the one agent that follows the active map, `map_moved`
+    if catalog.task() == 'user_agent':  # the person's own agent, the one that follows the active map, `map_moved`
         moved: str | None = None
         with anyio.CancelScope(shield=True):  # its verb's effect landed: a cancel now never loses the result
             moved = await anyio.to_thread.run_sync(map_moved, ctx.project)
@@ -1687,7 +1476,7 @@ def map_moved(project: str | None) -> str | None:
     it reads changed since its last call: which map it reads now and that the other is kept. Said once per change, in
     the result of the call that first reads it; nothing for any other agent, which stays on its own metaform, nor for
     a first call (decision of 2026-10-17, pending Rich's confirmation; the wording is his to give)."""
-    if not project or os.environ.get('METAFORM_ROLE') != 'system' or os.environ.get(BASE_VARIABLE):
+    if not project or catalog.task() != 'user_agent' or os.environ.get(BASE_VARIABLE):
         return None
     try:
         now = home.active_base(project)
@@ -1914,18 +1703,29 @@ def project_glossary_text(folder: Path, client: str | None = None) -> str:
 RULES_URI = 'metaform://rules'
 MEMORY_URI = 'metaform://memory'
 FIRSTRUN_URI = 'metaform://firstrun'
-ROLE_URI = 'metaform://role/'
-SPECIALIST_URI = 'metaform://specialist/'
-PERSON = 'person'  # the role named in metaform://role/<role> for the person's own sessions, which no runner names
+TASK_URI = 'metaform://task/'
+PERSON = 'person'  # the name in metaform://task/<name> for the person's own sessions, which no runner started
 
 
 @dataclasses.dataclass(frozen=True)
 class Agent:
-    """Who an instruction block's link is decided for: the folder its server serves, its role, None for the person's
-    own sessions, and the ids of the modules on its surface, less what its runner withholds."""
+    """Who an instruction block's link is decided for: the folder its server serves, the name of the task it runs,
+    None for a session no task names, whether the session is the person's own, which no runner started, and the ids
+    of the modules on its surface."""
     folder: Path
-    role: str | None
+    task: str | None
+    own: bool
     modules: tuple[str, ...]
+
+
+def served_agent(folder: Path) -> Agent:
+    """The agent this server serves, as its runner's environment names it, `catalog.task` and `catalog.dispatched`."""
+    return Agent(folder, catalog.task(), not catalog.dispatched(), tuple(module.id for module in surface(folder)))
+
+
+def dispatched_agent(folder: Path, task: str | None) -> Agent:
+    """An agent a runner started, on the task named `task` or on none, for the runner asking what opens its session."""
+    return Agent(folder, task, False, tuple(module.id for module in surface(folder)))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1970,9 +1770,16 @@ def memory_text(folder: Path) -> str | None:
     return None
 
 
-def _role_read(reading: Reading, uri: str) -> str | None:
-    if uri == ROLE_URI + (catalog.role() or PERSON):
-        return role_text(reading.folder, reading.client, reading.session, reading.keyed)
+def task_link(task: str | None, own: bool) -> str | None:
+    """The task block's link: metaform://task/person for the person's own session and metaform://task/intake for the
+    intake task, whose text points it to the intake commands; None for every other agent a runner started, whose
+    first turn is its instructions, so no block repeats them."""
+    return TASK_URI + PERSON if own else TASK_URI + 'intake' if task == 'intake' else None
+
+
+def _task_read(reading: Reading, uri: str) -> str | None:
+    if uri == task_link(catalog.task(), not catalog.dispatched()):
+        return task_text(reading.folder, reading.client, reading.session, reading.keyed)
     return None
 
 
@@ -1990,29 +1797,23 @@ BLOCKS: tuple[Block, ...] = (
     # every tool the agent can reach, by module, so none is unknown to it and none is pushed into its context
     Block('modules', lambda _: MODULES_URI,
           lambda reading, uri: modules_text(reading.folder) if uri == MODULES_URI else None),
-    Block('firstrun', lambda agent: FIRSTRUN_URI if agent.role is None and first_run_text(agent.folder) else None,
+    Block('firstrun', lambda agent: FIRSTRUN_URI if agent.own and first_run_text(agent.folder) else None,
           lambda reading, uri: first_run_text(reading.folder) if uri == FIRSTRUN_URI else None),
-    Block('role', lambda agent: None if os.environ.get('METAFORM_TASK') else ROLE_URI + (agent.role or PERSON),
-          _role_read),
+    Block('task', lambda agent: task_link(agent.task, agent.own), _task_read),
     Block('project', lambda agent: project_uri(agent.folder), _project_read),
 )
 
 
-def links(folder: Path, role: str | None = None, withheld: str = '') -> list[str]:
-    """The links of the instruction blocks that apply to an agent of `role` in `folder` now, in BLOCKS' order.
-    `withheld` is what its runner withholds from its server, for a caller, such as the runner, whose own surface does
-    not withhold it."""
-    named = role if role and role != 'none' else None
-    agent = Agent(folder, named, tuple(module.id for module in withhold(surface(folder), withheld)))
-    found = [uri for block in BLOCKS if (uri := block.link(agent))]
-    return found
+def links(agent: Agent) -> list[str]:
+    """The links of the instruction blocks that apply to `agent` now, in BLOCKS' order."""
+    return [uri for block in BLOCKS if (uri := block.link(agent))]
 
 
-def opening(folder: Path, role: str | None = None, withheld: str = '') -> str:
-    """What opens every agent's session and its first turn after each compaction: mcp's `connect_directive`, then one
+def opening(agent: Agent) -> str:
+    """What opens an agent's session and its first turn after each compaction: mcp's `connect_directive`, then one
     line per link, `links`."""
     directive = prompt_files.module('mcp', 'connect_directive') or ''
-    return '\n'.join(line for line in (directive, *links(folder, role, withheld)) if line)
+    return '\n'.join(line for line in (directive, *links(agent)) if line)
 
 
 def block_text(folder: Path, uri: str, client: str | None = None, session: str | None = None,
@@ -2030,15 +1831,13 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
     """The fixed resources: Metaform's glossary, the project's own, the tools in one line each, the instructions, then
     each surfaced module's declared resources."""
     own = project_uri(folder)
-    applies = links(folder, catalog.role())
+    applies = links(served_agent(folder))
     blocks = {RULES_URI: ('Rules', 'Read first: the rules every agent works by.'),
               MEMORY_URI: ('Memory', 'How to keep memory in this project.'),
               FIRSTRUN_URI: ('First run', 'What to do first: this project has no intake yet.'),
-              **{uri: ('Specialist', 'Assigned specialist expertise and selected prompt versions.')
-                 if uri.startswith(SPECIALIST_URI) else
-                 ('Role', ('What your role is for, the module commands it gets, and what else you need before '
-                           'your first call.'))
-                 for uri in applies if uri.startswith((ROLE_URI, SPECIALIST_URI))}}
+              **{uri: ('Task', ('What your task is, how to reach the module commands, and what else you need before '
+                                'your first call.'))
+                 for uri in applies if uri.startswith(TASK_URI)}}
     listed = [*({'uri': uri, 'name': name, 'description': description, 'mime_type': 'text/plain'}
                 for uri, (name, description) in blocks.items() if uri in applies),
               {'uri': GLOSSARY_URI, 'name': 'Metaform glossary',
@@ -2108,10 +1907,8 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
         components = [one]
     elif uri == project_uri(folder):
         components = [prompt_files.component('map:project_glossary', text)]
-    elif uri == 'metaform://specialists':
-        components = [prompt_files.component('agents:specialists', text)]
-    elif uri == ROLE_URI + (catalog.role() or PERSON):
-        components = [prompt_files.component('mcp:role_' + (catalog.role() or PERSON), text)]
+    elif uri == task_link(catalog.task(), not catalog.dispatched()):
+        components = [prompt_files.component('mcp:task_' + uri.removeprefix(TASK_URI), text)]
     if components:
         prepared = await anyio.to_thread.run_sync(prepare_agent_context, folder, session, components)
         due = cast(list[dict[str, Any]], prepared['components'])
@@ -2130,7 +1927,7 @@ async def _read_resource_text(folder: Path, uri: str, *, client: str | None = No
                               keyed: bool = True) -> tuple[str, str] | None:
     """A resource's text and media type, or None when this folder serves no such resource. The instruction blocks are
     read first, so metaform://metaform is Metaform's own glossary whatever the folder's project or modules are called.
-    `session` and `keyed` say what metaform://role/<role> tells this connection, as `role_text` says."""
+    `session` and `keyed` say what metaform://task/<name> tells this connection, as `task_text` says."""
     if guide := GUIDE_URI.fullmatch(uri):
         handle = guide.group('handle')
         named = (f'handle:{handle}' if handle and (session is None or session.startswith('process:'))
@@ -2463,8 +2260,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     (mcp_search_fetch).
 
     Beside the core it serves the extensions a client declares, each only to a client that declares it: MCP Apps, the
-    map and node views; the tasks extension, for verbs that can take long; and elicitation, by multi round-trip
-    requests on the July 2026 wire, for what only the person says yes to. Completion fills Address arguments and
+    map and node views, and the tasks extension, for verbs that can take long. Completion fills Address arguments and
     `#n` references, and a client listening for a node's brief hears when items are added there."""
     from contextlib import asynccontextmanager
 
@@ -2473,7 +2269,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     from mcp.server.caching import CacheHint
     from mcp.server.lowlevel import NotificationOptions
     from mcp.server.models import InitializationOptions
-    from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
     from mcp.server.session import ServerSession
     from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
     from mcp.server.subscriptions import (
@@ -2496,7 +2291,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     apps_always = settings.value('mcp_apps_offer', folder) == 'always'
     offered = settings.value('mcp_search_fetch', folder)
     searching = offered == 'always' or (offered == 'remote' and http)
-    tokens = consent.Tokens()  # the forms asked and not yet answered, each answer taken once
     running = tasked.Running()  # the tool calls this process runs as tasks
     held: dict[str, Any] = {}  # the task group tasks run in, while the server runs
 
@@ -2699,71 +2493,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         await listed_now(ctx, 'tools')
         return types.ListToolsResult(tools=tools)
 
-    def declined(name: str) -> Any:
-        said = prompt_files.module('mcp', 'consent_declined') or 'The person declined.'
-        return types.CallToolResult(content=[types.TextContent(
-            type='text', text=f'Error: {said}\nNext: call {name} again if the person changes their mind')],
-            is_error=True)
-
-    async def consented(ctx: Any, params: Any, name: str,
-                        arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, Any]:
-        """The arguments the person let the call run with, the person-only values they chose among them; or the
-        result the call answers with now: the form to fill on the July wire, or the refusal when they declined.
-        `(arguments, None)` unchanged when the call needs no form or none can be shown."""
-        if not await anyio.to_thread.run_sync(consent.can_ask, capabilities(ctx), folder):
-            if consent.dispatched() and await anyio.to_thread.run_sync(persons_call, folder, name, arguments):
-                # Autostart on or off, asked by the person in their system agent's chat, is done in the turn their
-                # message started without a card; anything else that is theirs waits on its card
-                word = await anyio.to_thread.run_sync(word_for, folder, name, arguments)
-                if word is not None:
-                    return {**arguments, WORDED: word}, True
-                return await carded(name, arguments)
-            return arguments, None
-        ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
-        if ask is None:
-            return arguments, None
-        if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:  # multi round-trip: ask, then read the retry's answer
-            raw = cast(dict[str, Any], dict(ctx.params or {}))
-            responses: Any = raw.get('inputResponses') or {}
-            answer_given: Any = cast(dict[str, Any], responses).get(consent.FORM) if isinstance(responses, dict) else None
-            if not isinstance(answer_given, dict) or not tokens.spend(params.request_state):
-                return None, types.InputRequiredResult(input_requests={consent.FORM: types.ElicitRequest(
-                    params=types.ElicitRequestFormParams(message=ask.message, requested_schema=ask.schema))},
-                    request_state=tokens.mint())
-            answered = cast(dict[str, Any], answer_given)
-            action, content = str(answered.get('action')), answered.get('content')
-        else:  # the 2025 handshake: the form is a request of the server's while the call waits
-            try:
-                got = await ctx.session.elicit_form(ask.message, ask.schema, related_request_id=ctx.request_id)
-            except Exception:  # noqa: BLE001  a client that cannot show it keeps the plain rule
-                return arguments, None
-            action, content = got.action, got.content
-        values = ask.accepted(action, cast(dict[str, Any] | None, content))
-        if values is None:
-            return None, declined(name)
-        return {**arguments, **values}, True
-
-    async def carded(name: str, arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, Any]:
-        """A dispatched agent's call that is the person's decision, asked of the person on a consent card in its
-        chat, and waited on: the call runs with the person's yes, the agent's own values for the settings it named,
-        once; a no, a wait that ran out or a card that could not be shown is said as the call's error."""
-        ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
-        if ask is None:
-            return arguments, None
-        answer = await anyio.to_thread.run_sync(ask_in_chat, folder, name, arguments, ask)
-        if answer.get('action') == 'accept':
-            values = ask.accepted('accept', {consent.GO: True, **{key: arguments[key] for key in ask.kinds}})
-            return {**arguments, **(values or {})}, True
-        if not answer.get('request'):  # no card was shown, a worker's among them: the call is refused as it says
-            return arguments, None
-        if answer.get('action') == 'decline':
-            return None, declined(name)
-        line = await anyio.to_thread.run_sync(persons_line, folder, name, arguments)
-        said = 'The person did not answer the card in your chat in time, so it was closed and nothing ran.'
-        step = f'ask the person in chat if they still want it; to do it they paste into {settings.TERMINAL}: {line}'
-        return None, types.CallToolResult(content=[types.TextContent(type='text', text=f'Error: {said}\nNext: {step}')],
-                                          is_error=True)
-
     def outcome(error: bool, blocks: list[str], structured: dict[str, Any] | None) -> Any:
         # A result that carries a picture, `image` with its base64 `data` and `mimeType`, as web look does: the picture
         # is the tool's image content, and the text and the structured result name it rather than repeat it.
@@ -2825,22 +2554,18 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             return outcome(error, blocks, None)
         if required is not None:
             return outcome(True, [result_json(required)], required)
-        given, answered = await consented(ctx, params, name, arguments)
-        if given is None:
-            return answered
-        word = cast(dict[str, Any] | None, given.pop(WORDED, None))
-        approved = answered is True
+        given = arguments
         tasked_as = listed.task if listed is not None and tasked.declared(capabilities(ctx)) else False
         headers = ctx.request.headers if ctx.request is not None else None
         identity = gateway_identity(headers)
         if tasked_as is True and 'group' in held:
             project = await anyio.to_thread.run_sync(tasked.owning, folder)
             if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
-                return await start_task(project, name, given, client, approved, session, identity)
+                return await start_task(project, name, given, client, session, identity)
         fired: list[dict[str, Any]] = []
         try:
-            error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
-                                                     session=session, identity=identity, shape=shape, instruction_read=not approved)
+            error, blocks, structured = await answer(folder, name, given, client=client,
+                                                     session=session, identity=identity, shape=shape)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             fired = await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
@@ -2856,11 +2581,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             note = prompt_files.module('mcp', 'triage_note')
             blocks = [*blocks, note] if note else blocks
         await announce(ctx, fired)
-        if word is not None and not error:  # what it did on the person's word, in their system agent's chat
-            said = word_said(given)
-            await anyio.to_thread.run_sync(lambda: persons_word_acted(folder, word, said, cast(
-                str | None, given.get('project')) if isinstance(given.get('project'), str) else None))
-            blocks = [*blocks, f'On the person\'s word, "{word.get("text")}": {said}.']
         if not error:
             discussed(ctx, name, given)
         if tasked_as == 'session' and not error:
@@ -2872,10 +2592,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             if seeded is None:
                 raise MCPError(-32603, 'Failed to retrieve the launched task')
             return seeded
-        if tasked_as == 'run' and not error and isinstance((structured or {}).get('run'), str):
-            seeded = await anyio.to_thread.run_sync(run_task, str(cast(dict[str, Any], structured)['run']))
-            if seeded is not None:
-                return seeded
         return outcome(error, blocks, structured)
 
     def guided(listed: Listed, client: str | None, session: str | None, op: str | None = None) -> str:
@@ -2906,12 +2622,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         # after a compaction the rules and the glossary's order come first in the turn, compaction_state
         return error, blocks + before if given.get('compacted') is True else before + blocks
 
-    def run_task(run_id: str) -> dict[str, Any] | None:
-        """The task a verb declared `task='run'` answers with: the workflow run it just made, by its run id."""
-        found = tasked.store(folder)
-        return None if found is None else tasked.seed_run(found, run_id)
-
-    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None, approved: bool,
+    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None,
                          session: str | None, identity: dict[str, str]) -> Any:
         """A tool call answered with a task: the task is written first, so tasks/get finds it at once, then the call
         runs in this process and the task keeps its result."""
@@ -2920,7 +2631,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
         async def work() -> dict[str, Any]:
             try:
-                error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
+                error, blocks, structured = await answer(folder, name, given, client=client,
                                                          session=session, identity=identity)
             finally:  # shielded, so a cancel after the verb finished leaves its result to the task
                 with anyio.CancelScope(shield=True):
@@ -3204,10 +2915,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)
-    # The state a form's answer comes back with is sealed by the SDK and bound to the call and its arguments, MRTR's
-    # integrity requirement; this server's own tokens make each answer count once.
-    server.middleware.append(RequestStateBoundary(RequestStateSecurity.ephemeral(ttl=consent.EXPIRES_S),
-                                                  default_audience='metaform'))
 
     return server, relay, subscriptions
 
@@ -3490,8 +3197,8 @@ def serving(config: Any) -> Any:
 
 def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: Any) -> None:
     """`tasks/get`, `tasks/update` and `tasks/cancel` of the tasks extension, BASE-030, on the tool calls kept as
-    tasks, workflow run records and assigned agent sessions; each refused to a client that does not declare the
-    extension, -32021, and for an unknown task, -32602."""
+    tasks and assigned agent sessions; each refused to a client that does not declare the extension, -32021, and for
+    an unknown task, -32602."""
     from pydantic import Field
 
     from . import tasks as tasked
@@ -3502,40 +3209,34 @@ def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: A
     class UpdateParams(TaskParams):
         input_responses: dict[str, Any] = Field(default_factory=dict[str, Any])
 
-    def required(ctx: Any) -> tuple[str | None, Any]:
-        """The project whose store keeps the tool-call tasks and the workflow runs' store, each None where there is
-        none; refused to a client without the extension."""
+    def required(ctx: Any) -> str | None:
+        """The project whose store keeps the tool-call tasks, None where there is none; refused to a client without
+        the extension."""
         if not tasked.declared(ctx.session.client_capabilities):
             raise error_type(-32021, 'Missing required client capability',
                              {'requiredCapabilities': {'extensions': {tasked.EXTENSION: {}}}})
-        return tasked.owning(folder), tasked.store(folder)
+        return tasked.owning(folder)
 
     def missing() -> Any:
         return error_type(-32602, 'Failed to retrieve task: Task not found')
 
-    async def verb(module_id: str, verb_name: str, nouns: dict[str, Any]) -> Any:
-        try:
-            return await anyio.to_thread.run_sync(run_verb, folder, module_id, verb_name, nouns)
-        finally:
-            await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
-
     async def get(ctx: Any, params: Any) -> Any:
-        project, found = await anyio.to_thread.run_sync(required, ctx)
-        detail = await anyio.to_thread.run_sync(tasked.detailed, project, found, params.task_id, folder)
+        project = await anyio.to_thread.run_sync(required, ctx)
+        detail = await anyio.to_thread.run_sync(tasked.detailed, project, params.task_id, folder)
         if detail is None:
             raise missing()
         return {**detail, 'resultType': 'complete'}
 
     async def update(ctx: Any, params: Any) -> Any:
-        project, found = await anyio.to_thread.run_sync(required, ctx)
-        if not await tasked.update(project, found, params.task_id, dict(params.input_responses), verb, folder):
+        project = await anyio.to_thread.run_sync(required, ctx)
+        if not await tasked.update(project, params.task_id, dict(params.input_responses), folder):
             raise missing()
         return {'resultType': 'complete'}
 
     async def cancel(ctx: Any, params: Any) -> Any:
-        project, found = await anyio.to_thread.run_sync(required, ctx)
+        project = await anyio.to_thread.run_sync(required, ctx)
         try:
-            if not await tasked.cancel(running, project, found, params.task_id, verb, folder):
+            if not await tasked.cancel(running, project, params.task_id, folder):
                 raise missing()
         finally:  # the cancel's change, so the process running the task hears it, BASE-053
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')

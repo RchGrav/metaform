@@ -354,21 +354,6 @@ def test_a_second_non_owner_account_is_refused_every_owner_route(tmp_path, home)
         page.server_close()
 
 
-def test_an_mcp_caller_cannot_change_the_five_hosting_settings(home, tmp_path):
-    """H2: which folders a Node exposes, the host deploy reaches, the SSH key it uses, the key a created VM trusts
-    for root, and the intake file every intake agent follows are the person's: MCP's set does not offer them and
-    refuses them, stored or given for one call."""
-    from metaform import loader
-    from metaform.module import Stop
-    from metaform.modules.mcp.server import refuse_person_only, set_schema
-    loader.enabled()  # every module loaded, its settings declared, as the MCP server has them when it starts
-    five = ('node_projects', 'node_host', 'node_ssh_identity', 'node_ssh_public_key', 'intake_file')
-    for key in five:
-        with pytest.raises(Stop, match=f'{key} is set only by the person'):
-            refuse_person_only([key], tmp_path)
-    assert not set(five) & set(set_schema(tmp_path)['properties'])
-
-
 def test_the_auth_database_is_not_reachable_from_the_web_container(tmp_path, home, monkeypatch):
     """C1: the accounts, passkeys and keys live on the `auth` volume, which only the auth container mounts; the page
     and MCP containers, and every agent they start, share `home` without them. An older Node's accounts move there

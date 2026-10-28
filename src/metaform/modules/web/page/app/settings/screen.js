@@ -6,13 +6,15 @@ import {expandCut} from '/page/app/core/expand.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, undoable, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
+import {readFailed} from '/page/app/core/errors.js';
 import {renderChips} from '/page/app/header/layers.js';
 import {toggler} from '/page/app/header/menus.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {PROMPT_WORDS, renderAgents, cancelStarting} from '/page/app/agents/dispatch.js';
-import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS, agentName}
+  from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
 import {NOTICES} from '/page/app/core/banner.js';
 import {WS, takeBubbleSeconds} from '/page/app/workspace/workspace.js';
@@ -87,9 +89,46 @@ function openAgentMenu() {
   if (!$('#defaultAgentPick').firstChild) $('#defaultAgentPick').append(PICKERS.default ||= defaultPicker());
   readHarnesses();
   readPrompts();  // the saved setting, as it is now
+  drawPair();
   $('#bubbleSeconds').value = String(WS.view().bubble_seconds ?? 'auto');
 }
 toggler($('#agentsMenuBtn'), $('#agentbox'), openAgentMenu);
+/* The pair tasks start: Agent 1 and Agent 2, each with its model and thinking level, the person's own choices for the
+ * agents they start (the owner's decision, 2026-10-25). A model or level at default runs on the agent's own dispatch
+ * setting. Read as the menu opens and after each choice, since a slot's choices follow its agent. */
+const PAIR = ['tasks_agent_1', 'tasks_agent_1_model', 'tasks_agent_1_effort',
+  'tasks_agent_2', 'tasks_agent_2_model', 'tasks_agent_2_effort'];
+async function drawPair() {
+  const project = S.project, box = $('#pairPick');
+  let rows = [];
+  try { rows = (await read('settings', {keys: PAIR.join(',')})).settings || []; } catch (error) {
+    if (S.project === project) readFailed(error);  // the pair stays as last drawn
+    return;
+  }
+  if (S.project !== project) return;
+  const shown = PAIR.map(key => rows.find(row => row.key === key)).filter(Boolean);
+  box.hidden = !shown.length;  // a server without the tasks module's settings has no pair
+  fill(box, shown.map(row => h('label', {class: SLOTS.has(row.key) ? 'pair-agent' : null},
+    h('span', {}, row.label), pairSelect(row))));
+}
+const SLOTS = new Set(['tasks_agent_1', 'tasks_agent_2']);
+/* A slot's choice by the name the settings screen gives it, such as `opus — Opus 5.5`, an agent by its own name. */
+function pairSelect(row) {
+  const names = row.choice_names || {}, groups = row.choice_groups || {};
+  const choices = (row.choices || []).includes(row.value) ? row.choices : [row.value, ...(row.choices || [])];
+  const word = choice => SLOTS.has(row.key) ? agentName(choice) : names[choice] || choiceWords(choice, false);
+  const option = choice => h('option', {value: choice, selected: choice === row.value,
+    title: row.choice_help?.[choice] || null}, word(choice));
+  const headed = [...new Set(choices.map(choice => groups[choice]).filter(Boolean))];
+  const pick = h('select', {'aria-label': row.label, onchange: async () => {
+    pick.disabled = true;
+    const done = await posted('/api/settings', {key: row.key, value: pick.value});
+    toast(done.ok ? `${row.label}: ${word(pick.value)}.` : done.body.error || `${row.label} was not kept.`);
+    await drawPair();
+  }}, choices.filter(choice => !groups[choice]).map(option),
+  headed.map(group => h('optgroup', {label: group}, choices.filter(choice => groups[choice] === group).map(option))));
+  return pick;
+}
 /* The default as dispatch has it, and while one chosen is being made the default, that one. */
 function defaultPicker() {
   const holder = {chosen: false, asked: null};
@@ -346,7 +385,9 @@ const PAGE_ROWS = [
   {at: 1000, row: data => folderRow(data)},
 ];
 function essentialsPage(data, page) {
-  const declared = page.rows.map(row => ({at: row.essential, row: () => settingRow(row, {link: true})}));
+  // a setting of a section, such as an agent's Model, is named with its section here, Claude Code model
+  const declared = page.rows.map(row => ({at: row.essential, row: () => settingRow(row, {link: true,
+    label: row.section ? `${row.section.split('/').pop()} ${row.label.toLowerCase()}` : row.label})}));
   const all = [...declared, ...PAGE_ROWS].sort((one, two) => one.at - two.at);
   return [pageHead(page), h('div', {class: 'setlist essentials'}, all.map(one => one.row(data)).filter(Boolean))];
 }
@@ -607,8 +648,6 @@ function settingRow(row, {label = row.label, link = false, go = null} = {}) {
     h('div', {class: 'what'},
       h('div', {class: 'name'}, named, stateBadge(row),
         row.scope === 'global' ? h('span', {class: 'badge', title: 'Applies in every folder'}, 'Global') : null,
-        row.person_only ? h('span', {class: 'badge mine', title: 'Only you change it, here or on the command line; '
-          + 'an agent is refused it over MCP'}, 'Yours') : null,
         risky ? h('span', {class: 'badge warn', title: row.choice_help?.[row.value] || 'Agents act without asking'},
           'Risky') : null, more),
       h('div', {class: 'helpline'}, help ? h('span', {class: `help${ready ? ' readyhint' : ''}`, title: help}, help) : null,

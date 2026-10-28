@@ -13,9 +13,7 @@ pytestmark = pytest.mark.kind('simulation')
 
 
 @pytest.fixture
-def web(threaded, monkeypatch):
-    # Model an authenticated person's browser; caller-authentication behavior has its own integration tests.
-    monkeypatch.setattr('metaform.module.page_caller', lambda *args: None)
+def web(threaded):
     return threaded
 
 

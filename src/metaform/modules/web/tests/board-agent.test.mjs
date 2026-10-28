@@ -148,3 +148,50 @@ test('Fast keeps explicit Off distinct from project inheritance', async () => {
   await fast.attributes.onchange({currentTarget: fast});
   assert.equal(changes[1].fast, 'none');
 });
+
+/* The page's conversation lookup, figures/agents.js: a running user agent task session is a system conversation,
+ * named by its work id, as the legacy conversation-system is; its body goes through the same figure lifecycle. */
+const SYSTEM_TALK = 'Conversation with the system agent';
+const agents = readFileSync(new URL('../page/app/figures/agents.js', import.meta.url), 'utf8');
+const conversations = agents.slice(agents.indexOf('const SYSTEM_TALK'), agents.indexOf('function keptBodies()'))
+  .replaceAll('export ', '');
+function conversationFixture(sessions, tickets = []) {
+  const elements = new Map([['el-2', {element: {id: 'el-2', role: 'DE'}}], ['el-1', {element: {id: 'el-1'}}]]);
+  return runInNewContext(`${conversations}\n({conversationOf, systemTalk, figureTickets})`, {
+    D: {sessions}, S: {tickets, elements},
+    ticketOf: work => tickets.find(ticket => ticket.id === work),
+    isSystemTalk: ticket => Boolean(ticket?.held && ticket.task === SYSTEM_TALK),
+  });
+}
+
+test('a running user agent task is a system conversation on the page', () => {
+  const sessions = [
+    {work_id: 'conversation-system', state: 'ended', task_name: null},
+    {work_id: 'task-36e454f8e6b54867bf43e5867642f997', state: 'running', task_name: 'user_agent'}];
+  const api = conversationFixture(sessions);
+  const found = api.conversationOf('task-36e454f8e6b54867bf43e5867642f997');
+  assert.deepEqual({...found}, {id: 'task-36e454f8e6b54867bf43e5867642f997', node_kind: 'element', node_id: null,
+    held: true, done: null, task: SYSTEM_TALK});
+  assert.equal(api.systemTalk(), found);
+  assert.equal(api.conversationOf('conversation-system'), null, 'the legacy conversation is not running');
+  const drawn = api.figureTickets([{id: 'work-1'}]);
+  assert.deepEqual(Array.from(drawn, ticket => ticket.id), ['work-1', 'task-36e454f8e6b54867bf43e5867642f997']);
+  assert.equal(found.node_id, 'el-2', 'its home is the primary element');
+});
+
+test('a user agent task that is not running, and a worker session, are no conversation', () => {
+  const api = conversationFixture([
+    {work_id: 'task-old', state: 'ended', task_name: 'user_agent'},
+    {work_id: 'work-9', state: 'running', task_name: 'worker'}], [{id: 'work-9', held: false}]);
+  assert.equal(api.conversationOf('task-old'), null);
+  assert.equal(api.conversationOf('task-unknown'), undefined, 'no ticket holds it');
+  assert.deepEqual(api.conversationOf('work-9'), {id: 'work-9', held: false}, 'a worker keeps its ticket');
+  assert.equal(api.systemTalk(), undefined);
+  assert.deepEqual(Array.from(api.figureTickets([{id: 'work-9', held: false}]), ticket => ticket.id), ['work-9']);
+});
+
+test('the legacy system conversation still answers when it runs', () => {
+  const api = conversationFixture([{work_id: 'conversation-system', state: 'running', task_name: null}]);
+  assert.equal(api.conversationOf('conversation-system').id, 'conversation-system');
+  assert.equal(api.systemTalk().task, SYSTEM_TALK);
+});

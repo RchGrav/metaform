@@ -36,11 +36,11 @@ import {CLICK_LEAD} from '/page/app/session/text.js';
 
 /* Who sees: the calling agent's own figure, by the work its runner gave it, or else the person's mascot, which is the
  * system agent's figure and the person's. A refusal says why. */
-function seer(work, role) {
+function seer(work, task) {
   const figure = work ? ROAM.figures.get(work) : null;  // its own figure, an embodied conversation agent's too
   if (figure?.mesh) return {mesh: figure.mesh, who: figure.glyph, figure};
   // the person's own agent
-  if (role === 'system' && MASCOT.mesh) return {mesh: MASCOT.mesh, who: MASCOT.glyph, mascot: true};
+  if (task === 'user_agent' && MASCOT.mesh) return {mesh: MASCOT.mesh, who: MASCOT.glyph, mascot: true};
   if (work && conversing(ticketOf(work)) && !isSystemTalk(ticketOf(work)))
     return {refuse: 'You have no body on the map yet: the person can give you one, or ask for one with web_embody.'};
   if (work && ticketOf(work) && !ticketOf(work).held) {
@@ -218,7 +218,7 @@ function drawPointer(pen, camera, width, height) {
  * once it does, `faceToward`, so the picture is taken facing it. A figure at work on its ticket glances at it. */
 export function sight(payload, node, answer) {
   if (!G) return answer({error: 'The 3D map is not open on this page.'});
-  const who = seer(payload.work, payload.role);
+  const who = seer(payload.work, payload.task);
   if (who.refuse) return answer({error: who.refuse});
   const seen = turn => answer({...seenBy(who, payload.act === 'look'), ...(turn ? {turn} : {})});
   wake3d(1500);

@@ -2,7 +2,58 @@
 
 [System introduction](../README.md)
 
-The Inference Metaform prepares substantive understanding before work and retains it for subsequent reasoning. These guides explain how to use the present implementation and how to read the functional understanding it carries.
+
+## Project Functional Map
+
+Metaform prepares substantive understanding before work and retains it for subsequent reasoning. These guides explain how to use the present implementation and how to read the functional understanding it carries in the form of a project functional map.
+
+The map is a structured representation of a project's functionality, describing what the project does, how its capabilities work together, what each contributes, and why those capabilities exist.
+
+It contains a connected hierarchy of named functional components, organized from general capabilities to more specific ones. Each component has a unique identity, a recognized name, and a defined significance within the project. The structure distinguishes the capabilities that establish the project's fundamental purpose, those that support them, and the important requirements and dependencies they rely upon.
+
+The map identifies the external roles or organizations whose objectives the project serves. It records their specific objectives and how the project's functionality satisfies them.
+
+**The relationships between components contain the essential functional knowledge.** Each relationship records:
+
+- Which component or party has a particular need or objective.
+- What that component or party is trying to accomplish.
+- Which other component provides the necessary functionality.
+- How that functionality satisfies the need in this particular project.
+- The direction in which information moves between them.
+- Stable facts about the relationship, including relevant constraints and references.
+
+These relationships connect supporting capabilities and their dependencies to the larger purposes they serve. A component can provide functionality to several others while depending on additional components itself.
+
+Smaller related functions can be represented within larger capabilities, preserving their individual contributions without unnecessarily expanding the main structure.
+
+The map also contains references connecting its functional descriptions to actual project files and artifacts, along with observations of missing, broken, inconsistent, or potentially misplaced functionality.
+
+**The completed map therefore contains a unified model of the project's capabilities, their identities, their functional composition, their dependencies, the objectives they satisfy, and the specific ways they interact to accomplish the project's overall purpose.**
+
+## Agentic Pair Programming Design
+
+1. **Pair Programming Combats Hallucination**
+
+   * LLMs working alone tend to drift, compound errors, and hallucinate completion. Forcing pair work with continuous messaging acts like real-world code review and sanity checking in flight.
+
+2. **Discrete Telemetry via the Worksheet (0/N→N/N)**
+
+   * LLMs are notoriously bad at estimating vague progress percentages ("I am about 65% done").
+   * Grounding progress in a hard, registered checklist (k/N) turns a fuzzy concept into an unambiguous integer that external observers, other agents, and orchestrators can read effortlessly.
+
+3. **Turn-Taking Prevents Race Conditions & Starvation**
+
+   * The rule stating the prior ticket holder yields choice to their partner prevents dominant agents from monopolizing high-value or simple tasks, and keeps the two paired agents from racing each other for the next item on the board.
+
+4. **Blind Peer Review with Anti-Collusion Governance**
+
+   * Giving agents reputations helps with emergent team optimization (choosing high-performing peers).
+   * **Crucially**, banning agents from checking their own ratings or discussing ratings prevents LLMs from falling into Sybil attacks, mutual score inflation, or recursive status-signaling loops. The instruction to report violators to the user agent creates a built-in compliance check.
+
+5. **Dynamic Skill Loading (Skill Layer Joins)**
+
+   * Keeping the core prompt lightweight while loading skills on the fly from the graph joins prevents prompt bloat and keeps context windows lean and focused.
+
 
 ## Start with your task
 

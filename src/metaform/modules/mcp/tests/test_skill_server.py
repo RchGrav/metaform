@@ -93,7 +93,7 @@ def test_real_resource_reads_match_every_raw_manifest_digest_and_size(served):
 def test_graph_skill_supports_direct_standard_get_and_read_without_enumeration(served):
     from metaform.data import Store
     from metaform.module import context
-    from metaform.modules.tasks import expertise
+    from metaform.modules.tasks import skill_layer
 
     store = Store('proj')
     with store.atomic():
@@ -102,10 +102,10 @@ def test_graph_skill_supports_direct_standard_get_and_read_without_enumeration(s
         store.add_element(layer.name, 'code.receiver', name_length=1, role='DE')
     text = TEXT.replace('server-fixture', 'graph-fixture')
     ctx = context('tasks', served.folder)
-    made = expertise.put(ctx, 'code.receiver', 'graph-fixture', text,
-                         files={'references/details.md': 'Exact graph reference.'})
+    made = skill_layer.put(ctx, 'code.receiver', 'graph-fixture', text,
+                           files={'references/details.md': 'Exact graph reference.'})
     uri = made['uri']
-    assert uri.startswith('skill://expertise/')
+    assert uri.startswith('skill://skills/')
     assert uri not in {entry['uri'] for entry in invoke(served, 'skills/list', {})['skills']}
     assert uri not in {str(resource.uri) for resource in invoke(served, 'resources/list', {}).resources}
     entry = invoke(served, 'skills/get', {'uri': uri})['skill']

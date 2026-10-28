@@ -36,12 +36,12 @@ SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a deployment tool for the person; a remote agent has no use for it
 
 G = 'global'
-settings.text('node_domain', '', scope=G, person_only=True, label='Node domain',
+settings.text('node_domain', '', scope=G, label='Node domain',
               help='The public name the Node is reached at, such as metaform.example.com.',
               details='Set by metaform node init and read by the authorization server, whose issuer is https://<it>. '
                       'Passkeys belong to this name: moving the Node to another name means enrolling them again.',
               heading='Node')
-settings.choice('node_mode', list(config.MODES), 'acme', scope=G, person_only=True, label='Node TLS mode',
+settings.choice('node_mode', list(config.MODES), 'acme', scope=G, label='Node TLS mode',
                 help='How the Node gets its certificate and is reached: acme, dns, relay or internal.',
                 details='acme: a public host, Let\'s Encrypt over HTTP-01 or TLS-ALPN-01. dns: DNS-01 through the DNS '
                         'provider\'s API (node_dns_provider), for a wildcard or a host port 80 cannot reach. relay: '
@@ -51,7 +51,7 @@ settings.choice('node_mode', list(config.MODES), 'acme', scope=G, person_only=Tr
 settings.text('node_email', '', scope=G, label='Certificate contact',
               help='The email address the certificate authority warns before a certificate lapses.',
               heading='Node')
-settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G, person_only=True,
+settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G,
                 label='Node capability',
                 help='What the Node lets an agent do: read, write (memories, tickets, terms), or dispatch (start '
                      'agents with shells and file writes).',
@@ -59,15 +59,15 @@ settings.choice('node_capability', list(config.CAPABILITIES), 'write', scope=G, 
                         'a2a:tickets; dispatch adds mcp:dispatch. Below dispatch the dispatch module is off in the '
                         'Node. A Node at dispatch runs agents on its host, so it belongs on a VM of its own.',
                 heading='Node')
-settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scope=G, person_only=True,
+settings.choice('node_relay_capability', list(config.CAPABILITIES), 'read', scope=G,
                 label='Capability through a relay',
                 help='The capability a Node reached through a relay has: read unless you raise it.',
                 details='Used instead of node_capability by metaform node relay, so dispatch is reachable through a '
                         'relay only when you set this to dispatch yourself.',
                 category='advanced')
-# node_projects, node_host, node_ssh_identity and node_ssh_public_key are person_only like their neighbours: they say
-# which folders the Node exposes, which host deploy reaches and which key a created VM trusts for root.
-settings.items('node_projects', (), scope=G, person_only=True, label='Node project folders',
+# node_projects, node_host, node_ssh_identity and node_ssh_public_key say which folders the Node exposes, which host
+# deploy reaches and which key a created VM trusts for root.
+settings.items('node_projects', (), scope=G, label='Node project folders',
                help='Folders on the host mounted into the Node, each at /srv/projects/<its name>.',
                heading='Node')
 settings.text('node_dns_provider', '', scope=G, label='DNS provider',
@@ -77,7 +77,7 @@ settings.text('node_dns_provider', '', scope=G, label='DNS provider',
 settings.text('node_wildcard', '', scope=G, label='Wildcard base',
               help='A base domain to hold a wildcard certificate for, such as metaform.ing, with node_mode dns.',
               category='advanced')
-settings.choice('node_role', list(config.ROLES), 'node', scope=G, person_only=True, label='Node role',
+settings.choice('node_role', list(config.ROLES), 'node', scope=G, label='Node role',
                 help='node serves a Metaform of its own; broker serves accounts and carries AI tools\' MCP to the '
                      'Metaform on each person\'s own machine, as metaform.ing does.',
                 details='A broker keeps nothing on disk but accounts and their passkeys\' public keys: its tokens are '
@@ -85,7 +85,7 @@ settings.choice('node_role', list(config.ROLES), 'node', scope=G, person_only=Tr
                         'connect), and the record of who called what is kept on each person\'s machine. It mounts no '
                         'project and runs no MCP server or page of its own.',
                 heading='Node')
-settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G, person_only=True,
+settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G,
                 label='Refresh reuse detection',
                 help='Where a broker keeps the newest refresh token number of each sign-in: memory, or durable on disk '
                      'as well.',
@@ -96,19 +96,19 @@ settings.choice('node_refresh_replay', ['memory', 'durable'], 'memory', scope=G,
                         'same marks, grant ids and counters with no secret, in the broker\'s store, which closes that '
                         'gap.',
                 category='advanced')
-settings.boolean('node_member_dispatch', False, scope=G, person_only=True, label='Members may dispatch',
+settings.boolean('node_member_dispatch', False, scope=G, label='Members may dispatch',
                  help='On a broker, let an account that is not the owner approve an AI tool to start agents '
                       '(mcp:dispatch) on its own machine.',
                  details='Each machine still caps what it allows with its own cloud_capability.',
                  heading='Node')
-settings.boolean('node_dcr', False, scope=G, person_only=True, label='Dynamic client registration',
+settings.boolean('node_dcr', False, scope=G, label='Dynamic client registration',
                  help='Let older AI tools register themselves (RFC 7591), which the MCP specification of 2026-07-28 '
                       'deprecates in favour of Client ID Metadata Documents.',
                  category='advanced')
-settings.text('node_host', '', scope=G, person_only=True, label='Node host',
+settings.text('node_host', '', scope=G, label='Node host',
               help='The host deploy reaches over SSH, a name or address.',
               category='advanced')
-settings.text('node_ssh_identity', '', scope=G, person_only=True, label='SSH identity',
+settings.text('node_ssh_identity', '', scope=G, label='SSH identity',
               help='The private key file deploy uses; empty uses your SSH agent and configuration.',
               category='advanced')
 settings.text('node_dir', 'metaform-node', label='Node folder',
@@ -122,7 +122,7 @@ settings.text('node_vultr_region', 'ewr', scope=G, label='Vultr region', help='T
 settings.text('node_vultr_plan', 'vhf-1c-1gb', scope=G, label='Vultr plan',
               help='The plan id: GET https://api.vultr.com/v2/plans lists them.',
               category='advanced')
-settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, person_only=True, label='SSH public key',
+settings.text('node_ssh_public_key', '~/.ssh/id_ed25519.pub', scope=G, label='SSH public key',
               help='The public key a created VM lets in, for root and the working user.',
               category='advanced')
 settings.text('node_relay_server', '', scope=G, label='Relay server',

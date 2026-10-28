@@ -1,81 +1,11 @@
-"""Project notifications are real Chat messages and retain their latest body across the session view's cache."""
+"""The roundtable stage on the page: its setup, its results and the pipeline's decisions."""
 from __future__ import annotations
-
-import json
-from concurrent.futures import ThreadPoolExecutor
-from contextvars import copy_context
 
 import pytest
 
-from metaform.module import context, provided, refresh_modules
 from metaform.modules.web.tests.test_web import browser, mapped, opened, started, web  # noqa: F401
 
 pytestmark = pytest.mark.kind('fixture')
-
-
-def notify(folder, identifier, body):
-    def publish():
-        refresh_modules()
-        transport = provided(folder, 'orchestration.transport')[0][1]
-        return transport.notify_user(context('dispatch', folder), {'body': body}, identifier)
-
-    # The real background drain calls this synchronous transport in a worker thread. Playwright's main thread
-    # already has an event loop, where the chassis intentionally refuses synchronous event publication.
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(copy_context().run, publish).result()
-
-
-def test_notification_body_and_cache_refresh_are_exposed_by_the_real_session_read(run, mapped):  # noqa: F811
-    run('enable', 'dispatch', cwd=mapped)
-    first = notify(mapped, 'change-1', 'Adaptive revision 2 preserves checkout completion with a simpler interaction.')
-
-    def read():
-        return json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=mapped).stdout)
-
-    visible = read()
-    state = visible['states'][first['session_id']]
-    assert state['notification'] is True
-    assert state['latest_message_id'] == 'change-1'
-    assert 'checkout completion' in state['latest_message_text']
-    notify(mapped, 'change-2', 'The GC received the change order and the explanation is visible in Project updates.')
-    latest = read()['states'][first['session_id']]
-    assert latest['latest_message_id'] == 'change-2'
-    assert 'GC received' in latest['latest_message_text']
-    # Replaying the same continuation neither duplicates its message nor invents a new latest update.
-    notify(mapped, 'change-2', 'The GC received the change order and the explanation is visible in Project updates.')
-    thread = json.loads(run('dispatch', 'sessions', f'id={first["session_id"]}', '--json', cwd=mapped).stdout)
-    assert len([one for one in thread['lines'] if one['kind'] == 'agent_message_chunk']) == 2
-
-
-def test_project_update_opens_its_actual_chat_without_start_resume_or_send_controls(
-        run, web, mapped, browser):  # noqa: F811
-    run('enable', 'dispatch', cwd=mapped)
-    body = 'Adaptive revision 2 preserves checkout completion with a simpler interaction.'
-    notify(mapped, 'change-1', body)
-    started(run)
-    page, problems, _ = opened(browser, web, plain=True)
-    # an update raises no banner the person has to close: it is in the chat, 2026-10-18
-    page.evaluate('''async () => {
-        const {D, agentAt} = await import('/page/app/agents/dispatch.js');
-        const {notificationState} = await import('/page/app/session/tasks.js');
-        for (let n = 0; n < 100 && !D.sessions.some(one => notificationState(D.states?.[one.session_id])); n++)
-            await new Promise(done => setTimeout(done, 100));
-        const session = D.sessions.find(one => notificationState(D.states?.[one.session_id]));
-        agentAt(session.work_id, session.session_id);
-    }''')
-    assert page.locator('#banners [data-key="project-updates"]').count() == 0
-    page.wait_for_selector('#helpdesk .log .bubble')
-    assert body in page.locator('#helpdesk .log').inner_text()
-    assert page.locator('#helpdesk .compose').is_hidden()
-    assert page.locator('#helpdesk .calls').is_hidden()
-    assert page.locator('#helpdesk .threadbar .again').is_hidden()
-    assert page.locator('#helpdesk .threadbar .stop').is_hidden()
-    assert page.locator('#helpdesk .sessionbar').is_hidden()
-    assert page.locator('#helpdesk .who .title').inner_text() == 'Project updates'
-    notify(mapped, 'change-2', 'The GC received the new direction; the ticket continues without an approval wait.')
-    page.wait_for_function('() => document.querySelector("#helpdesk .log").innerText.includes("without an approval wait")')
-    assert page.locator('#banners [data-key="project-updates"]').count() == 0
-    assert problems == []
 
 
 def test_roundtable_creation_automation_is_explicit_and_resets_for_each_table(

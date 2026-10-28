@@ -251,7 +251,7 @@ def test_routing_off_carries_once_into_a_jev_decisions_without_paperclip_route(f
     settings._carried.clear()
     assert paperclip.carry_route() == [f'{scope}: jev_decisions leaves out paperclip.route']
     chosen = settings.value('jev_decisions', folder)
-    assert paperclip.ROUTE_DECISION not in chosen and 'choose_agent' in chosen
+    assert paperclip.ROUTE_DECISION not in chosen and 'triage' in chosen
     assert home.stored(scope, 'paperclip', 'paperclip_jev_route') is None
     assert paperclip.carry_route() == [], 'once per home'
 
@@ -292,6 +292,15 @@ def test_send_creates_the_issue_and_links_it_and_a_refused_create_gives_the_tick
         f'address: code.timer.kitchen\nbrief: map_where code.timer.kitchen\nticket: {work_id}\n'
     assert store.ticket(work_id).work.taken_by == 'paperclip'
     assert verb(folder, 'send', id=work_id) == shown and len(server.issues) == 1  # a repeat shows the same link
+
+
+def test_send_with_no_assignee_files_the_issue_in_the_backlog_unassigned(folder, server):
+    """Nothing chooses a Paperclip agent for the person (the owner's decision, 2026-10-25): with no assignee named and
+    paperclip_assignee empty, the issue waits in Paperclip's backlog."""
+    shown = verb(folder, 'send', id=ticket('Wire the beeper'))
+    issue = server.issues[shown['issue_id']]
+    assert issue['assigneeAgentId'] is None and issue['status'] == 'backlog'
+    assert 'assignee_chosen' not in shown and not server.sent('GET', f'/companies/{COMPANY}/agents')
 
 
 def test_sync_closes_a_ticket_whose_issue_is_done_or_cancelled_cancelling_through_dispatch_when_it_is_on(

@@ -1,0 +1,1 @@
+__pycache__ test_assigned_tasks.py test_project_expertise.py test_worker_board.py test_worker_events.py test_worker_protocol.py

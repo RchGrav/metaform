@@ -193,8 +193,8 @@ def test_explicit_worker_assignment_and_board_reads_keep_their_arguments(passive
     monkeypatch.setattr(module, 'module_verb', explicit)
     handler = object.__new__(module.Handler)
     handler.reply = lambda status, body, *args: replies.append((status, json.loads(body)))
-    given = {'project': 'proj', 'name': 'worker', 'agent_name': 'Exact Worker Name', 'text': 'Do this work.',
-             'node': 'Exact.Node', 'skills': ['skill-id'], 'options': {'mode': 'plan'}}
+    given = {'project': 'proj', 'name': 'worker', 'text': 'Do this work.', 'node': 'Exact.Node',
+             'skills': ['skill-id'], 'options': {'mode': 'plan'}}
     handler.assign_task(given)
     handler.worker_board({'project': 'proj'})
     assert calls == [('tasks', 'assign', {key: value for key, value in given.items() if key != 'project'}),

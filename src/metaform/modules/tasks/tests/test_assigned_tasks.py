@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
@@ -64,6 +66,74 @@ def create(assigned):
     return ctx, lifecycle, task_id
 
 
+def test_keyed_assignment_replay_and_concurrent_calls_start_one_task(assigned):
+    ctx, lifecycle, adapter = assigned
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        replies = list(pool.map(lambda _: lifecycle.assign(ctx, '', None, request_key='one-attempt'), range(2)))
+    assert replies[0]['task_id'] == replies[1]['task_id']
+    assert len(adapter.started) == 1
+    assert lifecycle.assign(ctx, '', None, request_key='one-attempt')['task_id'] == replies[0]['task_id']
+    assert len(adapter.started) == 1
+
+
+def test_keyed_assignment_rejects_changed_instructions_and_new_attempt_uses_new_key(assigned):
+    ctx, lifecycle, adapter = assigned
+    adapter.start_error = Stop('No free slots.', 'Wait for a slot.')
+    failed = lifecycle.assign(ctx, '', None, request_key='attempt-one')
+    assert failed['state'] == 'completed'
+    adapter.start_error = None
+    assert lifecycle.assign(ctx, '', None, request_key='attempt-one')['task_id'] == failed['task_id']
+    assert len(adapter.started) == 1
+    with pytest.raises(Stop, match='different instructions'):
+        lifecycle.assign(replace(ctx, nouns={'text': 'Changed request.'}), '', None, request_key='attempt-one')
+    retry = lifecycle.assign(ctx, '', None, request_key='attempt-two')
+    assert retry['task_id'] != failed['task_id'] and len(adapter.started) == 2
+
+
+def test_keyed_assignment_recovers_a_record_written_before_transport_start(assigned):
+    ctx, lifecycle, adapter = assigned
+
+    def interrupted(*_args):
+        raise KeyboardInterrupt
+
+    adapter.before_start = interrupted
+    with pytest.raises(KeyboardInterrupt):
+        lifecycle.assign(ctx, '', None, request_key='interrupted-start')
+    assert adapter.started == []
+    adapter.before_start = None
+    recovered = lifecycle.assign(ctx, '', None, request_key='interrupted-start')
+    assert len(adapter.started) == 1
+    assert lifecycle.assignment(ctx, recovered['task_id'])['locator'] == {'session_id': 'dedicated-test-session'}
+
+
+def test_cancel_before_initial_transport_start_prevents_keyed_replay_from_launching(assigned):
+    ctx, lifecycle, adapter = assigned
+
+    def interrupted(*_args):
+        raise KeyboardInterrupt
+
+    adapter.before_start = interrupted
+    with pytest.raises(KeyboardInterrupt):
+        lifecycle.assign(ctx, '', None, request_key='cancel-before-start')
+    with runtime.own(ctx).tables(write=False) as tx:
+        task_id = tx.rows('assignments', limit=0).results[0]['task_id']
+    lifecycle.cancel(ctx, task_id)
+    adapter.before_start = None
+    assert lifecycle.assign(ctx, '', None, request_key='cancel-before-start')['task_id'] == task_id
+    assert adapter.started == []
+
+
+@pytest.mark.parametrize('state', ['completed', 'cancelled'])
+def test_keyed_replay_never_recreates_a_terminal_task(assigned, state):
+    ctx, lifecycle, adapter = assigned
+    created = lifecycle.assign(ctx, '', None, request_key='terminal-attempt')
+    adapter.observed = {'state': state, 'result': runtime.tool_result('Done.'), 'inputs': {}}
+    assert lifecycle.get(ctx, created['task_id'])['status'] == state
+    replayed = lifecycle.assign(ctx, '', None, request_key='terminal-attempt')
+    assert replayed['task_id'] == created['task_id'] and replayed['state'] == state
+    assert len(adapter.started) == 1
+
+
 def test_user_agent_preserves_canonical_source_and_binds_only_project(project_folder):
     canonical = (tasks.PACKAGE / 'resources' / 'user_agent.txt').read_text(encoding='utf-8')
     ctx = context('tasks', project_folder, nouns={'name': 'user_agent', 'project_name': 'Example & <Project>'})
@@ -90,7 +160,7 @@ def test_default_user_agent_uses_the_same_literal_selected_task_document(assigne
     assert adapter.started[0]['payload'] == payload
 
 
-@pytest.mark.parametrize('name', ['worker', 'facilitator', 'architect'])
+@pytest.mark.parametrize('name', ['project_agent', 'composer', 'facilitator', 'architect'])
 def test_authored_task_source_and_delivered_component_preserve_user_wording(project_folder, name):
     canonical = (tasks.PACKAGE / 'resources' / f'{name}.txt').read_bytes()
     fingerprint = hashlib.sha256(canonical).hexdigest()
@@ -117,6 +187,27 @@ def test_intake_is_discoverable_and_reads_the_same_opaque_instructions_as_intake
     assert intake.prompt(context('intake', project_folder)) == expected
     read = json.loads(run('tasks', 'read', 'name=intake', '--json', cwd=project_folder).stdout)
     assert read['instructions'] == expected
+
+
+def test_list_shows_reusable_skills_beside_the_skill_layer_with_or_without_a_project(project_folder, tmp_path):
+    from metaform import skills
+    from metaform.modules.tasks import skill_layer
+    ctx = context('tasks', project_folder, nouns={'node': 'code.receiver'})
+    store = ctx.require_store()
+    base = store.layer('functional-map', 'map', 'The functional map.', kind='base', mutable=False, hideable=False)
+    for address in ('code', 'code.receiver'):
+        store.add_element(base.name, address, name=address, role='SE')
+    store.finish(base.name)
+    layered = skill_layer.put(ctx, 'code.receiver', 'layer-skill', 'Follow the node method.', 'Found at the node.')
+    skills.publish('listed-reference', 'Follow the listed method.', 'Find this skill through tasks list.')
+    entry = {'name': 'listed-reference', 'description': 'Find this skill through tasks list.',
+             'uri': 'skill://listed-reference/SKILL.md'}
+    listed = tasks.catalog(ctx)['skills']
+    assert [row.get('id') for row in listed] == [layered['id'], None]
+    assert listed[1] == entry
+    outside = context('tasks', tmp_path)
+    assert outside.store is None
+    assert tasks.catalog(outside)['skills'] == [entry]
 
 
 @pytest.mark.parametrize(('filename', 'authored'), [
@@ -168,8 +259,8 @@ def test_selected_intake_edit_is_shared_by_task_reads_and_fake_adapter_assignmen
 
 def test_assignment_is_durable_before_transport_start_without_role_or_ticket(assigned, monkeypatch):
     ctx, lifecycle, adapter = assigned
-    expertise = importlib.import_module('metaform.modules.tasks.expertise')
-    monkeypatch.setattr(expertise, 'read', lambda *args: pytest.fail('No skill was selected.'))
+    skill_layer = importlib.import_module('metaform.modules.tasks.skill_layer')
+    monkeypatch.setattr(skill_layer, 'read', lambda *args: pytest.fail('No skill was selected.'))
 
     def durable(start_ctx, row):
         persisted = runtime.Lifecycle().assignment(start_ctx, row['task_id'])
@@ -203,15 +294,11 @@ def test_named_task_retains_exact_component_and_assignment_input(assigned, name)
     assert adapter.started[0]['payload'] == payload
 
 
-@pytest.mark.parametrize('native', [False, True])
-def test_assignment_attaches_reusable_document_by_uri_without_reference_bodies(assigned, native):
+def test_assignment_attaches_reusable_document_by_uri_without_reference_bodies(assigned):
     from metaform import skills
     ctx, lifecycle, adapter = assigned
-    if native:
-        source = skills.native_document(skills.get('work-evidence'))
-    else:
-        source = skills.publish('assigned-reference', 'Use [the reference](references/input.md) when needed.',
-                                'Execute the supplied assignment.', {'references/input.md': 'Reference body.'})
+    source = skills.publish('assigned-reference', 'Use [the reference](references/input.md) when needed.',
+                            'Execute the supplied assignment.', {'references/input.md': 'Reference body.'})
     ctx.nouns['skills'] = [source['uri']]
     created = lifecycle.assign(ctx, '', None)
     payload = lifecycle.assignment(ctx, created['task_id'])['payload']
@@ -233,14 +320,14 @@ def test_only_explicitly_selected_skills_are_loaded(assigned, monkeypatch):
         assert skill_ctx is ctx and node == 'code.Example'
         loaded.append(name)
         text = f'Exact instructions for {name}.'
-        attachment = {'layer': 'expertise', 'node': node, 'item_id': f'item-{name}'}
-        component = prompt_files.component(f'map:expertise/item-{name}', text)
+        attachment = {'layer': 'skills', 'node': node, 'item_id': f'item-{name}'}
+        component = prompt_files.component(f'map:skills/item-{name}', text)
         component.update(origin='graph', source={'kind': 'graph', **attachment})
         return {'id': f'item-{name}', 'name': name, 'node': node, 'text': text,
                 'component': component, 'attachment': attachment}
 
-    expertise = importlib.import_module('metaform.modules.tasks.expertise')
-    monkeypatch.setattr(expertise, 'read', read)
+    skill_layer = importlib.import_module('metaform.modules.tasks.skill_layer')
+    monkeypatch.setattr(skill_layer, 'read', read)
     ctx.nouns['skills'] = ['review', 'research']
     ctx.nouns['node'] = 'code.Example'
     created = lifecycle.assign(ctx, '', None)
@@ -275,7 +362,7 @@ def test_input_requests_accept_once_and_ignore_unknown_keys(assigned):
 
 
 @pytest.mark.parametrize('state', ['completed', 'failed', 'cancelled'])
-def test_terminal_result_is_immutable_under_poll_update_and_cancel(assigned, state):
+def test_terminal_result_stays_as_recorded_until_its_session_runs_again(assigned, state):
     ctx, lifecycle, task_id = create(assigned)
     adapter = assigned[2]
     adapter.observed.update(state=state, result=runtime.tool_result('Done.'),
@@ -283,13 +370,23 @@ def test_terminal_result_is_immutable_under_poll_update_and_cancel(assigned, sta
     terminal = lifecycle.get(ctx, task_id)
     assert terminal['status'] == state
     before = lifecycle.assignment(ctx, task_id)
-    adapter.observed.update(state='working', inputs={'late': {'request': {}, 'route': {'kind': 'message'}}})
+    adapter.observed.update(result=runtime.tool_result('Said later.'), message='Said later.')
     assert lifecycle.update(ctx, task_id, {'late': {'action': 'accept'}})
     assert lifecycle.cancel(ctx, task_id)
-    assert lifecycle.get(ctx, task_id) == terminal
+    assert lifecycle.get(ctx, task_id) == terminal, 'an ended task reads as recorded while its session is ended'
     assert lifecycle.assignment(ctx, task_id) == before
     assert adapter.responses == []
     assert adapter.cancelled == []
+    # its session runs again, the context called back: the task comes out of its terminal state, its outcome open
+    adapter.observed.update(state='working', inputs={'late': {'request': {}, 'route': {'kind': 'message'}}})
+    assert lifecycle.get(ctx, task_id) == terminal, 'an observation naming no session is no session of it running'
+    adapter.observed['session_id'] = 'dedicated-test-session'
+    revived = lifecycle.get(ctx, task_id)
+    assert revived['status'] == 'input_required' and list(revived['inputRequests']) == ['late']
+    row = lifecycle.assignment(ctx, task_id)
+    assert (row['result'], row['error'], row['cancel_requested']) == (None, None, False)
+    assert lifecycle.update(ctx, task_id, {'late': {'action': 'accept'}})
+    assert len(adapter.responses) == 1
 
 
 def test_cancellation_waits_for_transport_acknowledgement(assigned):
@@ -341,3 +438,26 @@ def test_idle_message_request_stays_stable_until_a_new_agent_turn(assigned):
     assert next_turn['status'] == 'input_required'
     assert set(next_turn['inputRequests']) != {key}
     assert lifecycle.get(ctx, task_id) == next_turn
+
+
+def test_start_begins_a_pair_of_project_agents_as_the_settings_choose_them(assigned, monkeypatch, tmp_path):
+    from metaform.modules.tasks.board import Board
+    monkeypatch.setenv('TMPDIR', str(tmp_path / 'temporary'))
+    from metaform import settings
+    ctx, _, adapter = assigned
+    from dataclasses import replace
+    for key, offered in (('tasks_agent_1_model', ['default', 'opus']), ('tasks_agent_1_effort', ['default', 'high'])):
+        monkeypatch.setitem(settings.SCHEMA, key, replace(settings.SCHEMA[key], choices=lambda ctx=None, o=offered: o))
+    settings.put('tasks_agent_1_model', 'opus', ctx.folder)
+    settings.put('tasks_agent_1_effort', 'high', ctx.folder)
+    started = tasks.start(ctx)['agents']
+    assert [row['agent'] for row in adapter.started] == ['claude', 'codex']
+    assert all(row['name'] == 'project_agent' and row['payload']['persistent'] for row in adapter.started)
+    # each slot's own model and thinking level ride on the task for the runner to apply; a slot at default sends none
+    assert adapter.started[0]['payload']['options'] == {'model': 'opus', 'thought_level': 'high'}
+    assert adapter.started[1]['payload']['options'] == {}
+    assert adapter.started[0]['payload']['instructions'] == adapter.started[1]['payload']['instructions']
+    ids = {one['task_id'] for one in started}
+    assert len(ids) == 2
+    online = Board(ctx.require_store().project_id).workers()
+    assert {worker['agent_id'] for worker in online} >= ids and all(worker['score'] == 100 for worker in online)

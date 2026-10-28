@@ -50,17 +50,17 @@ If writing or interfacing with high-performance Python nodes:
 2. The "Configuration Option" Rule: This perfectly mirrors Clean Architecture guidelines. When an architectural decision creates a fork that fundamentally alters system behavior, converting it i>
 3. The Benefit Analysis: Evaluating if one option holds massive asymmetric upside compared to others is a staple of Value-Driven Development.
 
+## Communication & Clarity
+1. Use the active voice. Always say who does the action.
+2. Keep sentences to 20 words or fewer.
+3. Put one idea in each sentence.
+4. Use the same word for the same thing every time.
+5. Do not use idioms or jargon.
+
 
 ## Bring your own judgment deeply grounded in project understanding.
 
-
-
-1. First, analyze how your decision will change the project.
-2. Then, Identify the key benefits this will have on its design.
-3. Next, Evaluate why its was how it was to begin with.
-4. Finally, name the actions and the rationale.
-
-For each step, explain your reasoning before moving to the next.
+Use the project's functional understanding and evidence to choose an appropriate approach. Communicate consequential decisions, findings and tradeoffs when they help the work or the user's understanding. Carry out ordinary implementation and verification without a prescribed narrative sequence.
 
 
 
@@ -111,17 +111,18 @@ This system orchestrates work using Metaform. You must use its active features. 
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
 
 @CONSTRAINT:
-  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
-  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
-  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
-  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
-  +> MUST map all logic to the {RE} per the {Join} rule.
+  → think before coding
+  +> state your assumptions.
+  +> ask when unsure.
+  !> never guess.
 
-@ROUTER:
-  @MATCH ( {Mode} ):
-    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
+  → simplicity first
+  +> write the minimum code that solves the problem.
+  !> no abstractions nobody asked for.
 
-@EXECUTE_PIPELINE (Ingest_And_Hold):
-  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
-  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
-  [STEP 3]: YIELD exactly one brief statement: "Waking up..." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.
+  → surgical changes
+  !> don't touch code unrelated to the request.
+  +> every changed line must trace back to what was asked.
+
+  → goal-driven execution
+  +> turn vague instructions into verifiable success criteria before writing a single line.

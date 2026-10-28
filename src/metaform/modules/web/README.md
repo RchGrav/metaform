@@ -2,19 +2,11 @@
 
 Metaform's one web GUI for the user: one server per Metaform home, serving every registered project.
 
-## Known control limit
+## Writes
 
-On loopback, the write gate checks Origin but does not authenticate the caller. Since UX review round 1
-(2026-10-17, CLI-011), a write that is the person's alone (`PERSONS_WRITES`: clearing, switching or removing the map,
-restoring, discarding an intake, memory changes, settings, modules, and dispatch's start permissions, tuning and
-cancelling) is also refused with 403 when the process at the other end of the connection is an agent's: it carries a
-runner's identity, or a Metaform runner, a Metaform MCP server or an AI tool working in this home started it. The
-server finds that process from the connection (Linux, `/proc/net/tcp`), so an agent that forges Origin or clears
-METAFORM_ROLE is still refused. What it cannot see: a sender outside Linux's process table, such as a browser or a
-program on the Windows side of WSL or another machine, which is taken as the person, as before. The commands such a
-write runs, and every other write the page sends with its key and no agent sent, carry the server's vouch (`METAFORM_PAGE_VOUCH`, a secret held in memory and kept on disk only as its
-hash beside the server's pid), so the person's write still runs when an agent started the server. The home token on
-loopback (H13 part 2, VIEW-002) remains the stronger fix and is tracked separately from SEC-F2.
+On loopback, a write runs when its Origin is the page's own; the server does not judge who sent it. Metaform has no
+permission system of its own: the harnesses it orchestrates have theirs, and the page relays a harness's permission
+request to the person (2026-10-25).
 
 Activate and Remove beside the base chooser ask first, in the server's own caution (`/api/base-preview`), which names
 what the base being left or removed holds; `/api/activate-base` runs only with `confirm` true.
@@ -37,14 +29,12 @@ Add Task and each board card offer Eligible agents, defaulting to Any agent. Cho
 
 Add Task can start the new ticket immediately: check Start an agent now and choose Claude Code, Codex or Google Antigravity. Add Element uses the same ACP dispatch for its validation ticket, with the validation prompt kept verbatim. A launch failure leaves the recorded ticket available on the board for another attempt.
 
-To run a stored workflow, open Add Task at its target node, choose a Workflow subroutine, and edit its Entry call arguments. For example, `workflow.quality.code.review(target=this)` passes the first linked node as the target. Task text is optional and can supply additional context. Check Start an agent now to run it through ACP, or leave it queued. The agent starts the call with `workflow run`, follows the stored procedure, and records its returned result on the ticket. The picker lists callable workflows selected in the active project's folder settings, matching the context dispatched agents use. No workflow run is recorded until the agent starts the call, so a failed ACP launch leaves a retryable ticket without a stranded run.
-
 Agents are started explicitly from the page's session controls or the assigned-task API. `GET /api/tasks`
 discovers task metadata, `GET /api/task-definition?name=...` reads one canonical definition, and
 `POST /api/task-assign` starts the selected task with its supplied context and skills. Default chat opens the
 `user_agent` task. The named task definitions and their exact prompts are documented in [tasks](../tasks/README.md).
 
-`GET /api/worker-board` supplies the live paired-worker panel: agent name, average rating, reported context
+`GET /api/worker-board` supplies the live paired project agent panel: agent name, average rating, reported context
 percentage and checklist completion, followed by Next, Current and Past task phrases and canonical node names.
 The board reopens temporary SQLite records across server restarts and page refreshes. Workers keep their native
 session while idle; messages and partner-completion events wake them through the native event path.
@@ -72,7 +62,7 @@ Started from template 0.3.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `connect`, web's line in the connect message; `instructions`, returned by `metaform_instructions` with module web; `resume_run`, the message the page sends the agent of a workflow run the person answered with Tell its agent to resume; the mascots' personas, `persona_<character>`; and `commands`, the `web` slash command.
+`resources/prompts.xml` holds `connect`, web's line in the connect message; `instructions`, returned by `metaform_instructions` with module web; the mascots' personas, `persona_<character>`; and `commands`, the `web` slash command.
 
 ## Verbs
 
@@ -147,11 +137,11 @@ The page reads `/api/workspace` once its project is chosen, and draws from it al
 - Panes: four docking areas around the main one, left, right and bottom, and floating windows. Each area holds its groups stacked, each group a tab strip over one pane; the tabs follow `tabs`, showing those not in `off`. Drag a tab onto another group's strip to join it, onto an area's edge to start a group there, where blue drop zones show while dragging, or away from every zone to float it; Ctrl while dragging keeps it from docking. A tab's context menu has Move to Left, Main, Right, Bottom and Float, and Close, which turns it off. A pane is never drawn smaller than its `min_width` and `min_height`. An area with no group shown takes no room. Swap, today's button on each map, now exchanges the places of `web.map2d` and `web.map3d` and saves the layout.
 - Views the page draws, by `page`: `map2d` (today's small 2D map), `map3d` (the 3D stage), `object`, `provenance` and `prompt` (today's side panel tabs), `settings` (today's settings dialog, as a pane), `dock` (the chat), `board` (the Kanban), `messages` (the questions waiting for the person).
 - Commands the page runs, by `page`: `search`, `export-markdown`, `export-xml`, `build`, `shortcuts`, `layers` (the layer list), `add-task` and `add-element` (their windows, at the selected node), `dispatch-node` (Add Task at the selected node with Start an agent now checked), `agents` (the Agents menu), `intake` (Run an intake), `orphaned` (Orphaned memories).
-- Views the page draws only as panes, `page/views.js`: `messages`, the questions and messages waiting for the person, oldest first, each opening its node; `runs`, the workflow runs (`web.runs`), with a run paused on the person showing what stopped it, an answer box and Tell its agent to resume, which answers through `metaform workflow answer` and then sends the agent the `resume_run` prompt with `metaform dispatch message`, and Cancel run…, asked first; and, with `--web-debug`, `dev-prompts` and `dev-trace`.
+- Views the page draws only as panes, `page/views.js`: `messages`, the questions and messages waiting for the person, oldest first, each opening its node; and, with `--web-debug`, `dev-prompts` and `dev-trace`.
 - A verb pane's content, `content.kind` `verb`, is drawn by the workspace from `/api/workspace/pane`: the result as every surface shows it, text as text, a list as a list, an object as its fields, with its length in characters, what an agent is handed, and the JSON as an agent reads it folded below; read again as the pane shows, when the selection changes for a pane that follows it, and on each `map.changed`. A `resource` pane shows its file, an HTML one in a sandboxed frame.
 - A verb tool whose verb takes nouns its fixed arguments and the selection leave open carries them as `action.form`, each `{name, help, kind, required, many, choices?}`; the page opens a small form typed by them, and `/run` takes the person's `values`, only those fields, the fixed arguments and the selection staying the tool's. A tool's `shortcut` runs it from the keyboard, by the key's place, and is listed under Tools in the `?` reference.
 - The page's own parts: `page/workspace.js` draws the toolbar, the Window menu, the areas and groups, floating panes, Edit Toolbar… and the forms; app.js lends it the views, commands and windows, and a window of the page shown as a pane leaves the overlay stack while docked. Every built-in icon of `module.ICONS` is drawn.
-- Settings, from the header's gear in one click or All settings… in the Agents menu (`page/app/settings/screen.js`): the categories down the side and the one chosen on the right, the only part that scrolls. It always opens on Essentials, one screen of what a person sets up and changes day to day: the settings declared `essential`, in their order, with the colour theme, the mascot's voice, the phone's status (its Check runs `GET /api/phone-check`, `metaform twilio status`, only when pressed) and the project folder among them, each linking to its category. Then General, Agents, Budgets, Agent options, Map and display, Voice and speech, Phone, Integrations and Advanced, each setting on the page its `category` names, else its module's `settings_category`, under its `heading`, section or module name; Advanced folds each module, and Modules, the on and off switches, is last, under Advanced. Find a setting searches every category, and Enter goes to the first found. Each row shows its plain label, whether it is the default, set here, inherited from a named folder or glued, Global, Yours for a person-only setting and Risky for a risky choice in force; More shows its switch, key, whole help and Glue. A number shows its unit; ElevenLabs' voices are listed from the account only on List voices, `GET /api/speech-voices`. The screen reads again whenever a setting changes elsewhere.
+- Settings, from the header's gear in one click or All settings… in the Agents menu (`page/app/settings/screen.js`): the categories down the side and the one chosen on the right, the only part that scrolls. It always opens on Essentials, one screen of what a person sets up and changes day to day: the settings declared `essential`, in their order, with the colour theme, the mascot's voice, the phone's status (its Check runs `GET /api/phone-check`, `metaform twilio status`, only when pressed) and the project folder among them, each linking to its category. Then General, Agents, Budgets, Agent options, Map and display, Voice and speech, Phone, Integrations and Advanced, each setting on the page its `category` names, else its module's `settings_category`, under its `heading`, section or module name; Advanced folds each module, and Modules, the on and off switches, is last, under Advanced. Find a setting searches every category, and Enter goes to the first found. Each row shows its plain label, whether it is the default, set here, inherited from a named folder or glued, Global, and Risky for a risky choice in force; More shows its switch, key, whole help and Glue. A number shows its unit; ElevenLabs' voices are listed from the account only on List voices, `GET /api/speech-voices`. The screen reads again whenever a setting changes elsewhere.
 - Broadcast, from Broadcast… in the header's Agents menu (`page/app/agents/broadcast.js`): a small window, not modal, with a text box (Enter sends, Shift+Enter makes a new line), "include my chat agent", off by default, and Send, disabled with no agent running, when it says so. Send posts `/api/dispatch-broadcast {text, system}`, which runs `dispatch broadcast` once and tells every running session at once; the window lists each session told, its glyph, agent and ticket, delivered or failed with why, and the broadcasts kept on the project, `GET /api/dispatch-broadcasts`. Each receiving thread marks the person's bubble Broadcast.
 - The header keeps one row while it can (`foldHeader`, `page/app/header/menus.js`): above 1100 px it measures its row and, only while the row does not hold everything, gives back room in steps, the search's icon alone, then tighter spacing, then no labels or padding, then shorter names, and folds its rest behind the menu button last. Text cut short with an ellipsis opens in place at a click or Enter through one helper, `expandCut` (`page/app/core/expand.js`), on Settings, the thread bar's task, agents' lines, tool call titles and Edit Toolbar…; a surface whose text can be cut calls it once on its container.
 - On a screen narrower than 820 px the areas stack in the order main, right, left, bottom, and the layout is left as saved.
@@ -165,7 +155,7 @@ Default is the page as written. The 2D map fills the main area, where its names 
 | main | stage | 2D map |
 | right, the side column's width | overview | 3D map |
 | right | node | Object, Brief, Provenance, (Code), Prompt, (Memories) |
-| right | chat | (Messages), (Glossary), (Chat), (Workflow runs) |
+| right | chat | (Messages), (Glossary), (Chat) |
 | float | | (Board), (Settings), (What the agent sees) |
 | bottom, 280 px | none | |
 

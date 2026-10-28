@@ -1,0 +1,1699 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="hermes-agent-intake-20261024-01">
+  <description>
+    Hermes Agent, examined at repository commit
+    97246dfcc2d9853fc5b5aad3829dba8d7d7335d4.
+    The artifact implements an autonomous agent that conducts conversations,
+    calls tools, performs digital tasks, retains knowledge and procedures,
+    delegates work, and runs automations through several client interfaces.
+    This map groups implementations by their functional contribution.
+    All 20,933 tracked paths were inventoried; Python modules were structurally
+    surveyed, and implementation bodies were traced across the principal
+    functional systems. External integrations were not exercised.
+    CQU identities are functional inferences. No confirmed broken or missing
+    functionality is asserted from source inspection alone.
+    ICE blocks are not assigned where indivisible coupling was not established.
+  </description>
+  <elements>
+    <element namespace_address="code.agent.autonomous" name_length="2" role="DE">
+      <name>Hermes Agent</name>
+      <elements>
+        <element namespace_address="downstream.cqu.worker.knowledge" name_length="2" role="CQU">
+          <name>Knowledge worker</name>
+          <elements/>
+          <joins>
+            <join type="purpose"
+                  provider="code.agent.autonomous"
+                  purpose="Complete digital work through a persistent assistant that can act on requests and reuse accumulated knowledge."
+                  function="Interprets requests, alternates model inference with tool execution, and returns task results across conversations."
+                  ef="Interprets requests, alternates model inference with tool execution, and returns task results across conversations."
+                  ifd="receive"
+                  relation="executes delegated digital work"
+                  verb="executes"
+                  observation="Inferred principal CQU: the party whose recurring research, writing, analysis, and computing tasks drive improvements in task completion, continuity, and learned procedures.">
+              <refs>
+                <ref key="repository" value="https://github.com/NousResearch/hermes-agent"/>
+                <ref key="commit" value="97246dfcc2d9853fc5b5aad3829dba8d7d7335d4"/>
+                <ref key="path" value="run_agent.py"/>
+                <ref key="path" value="agent/conversation_loop.py"/>
+                <ref key="symbol" value="run_agent.AIAgent"/>
+              </refs>
+              <elements/>
+            </join>
+          </joins>
+        </element>
+        <element namespace_address="downstream.cqu.owner.workflow" name_length="2" role="CQU">
+          <name>Workflow owner</name>
+          <elements/>
+          <joins>
+            <join type="purpose"
+                  provider="code.agent.autonomous"
+                  purpose="Carry out recurring and coordinated work with retained execution state and delivery of its results."
+                  function="Executes scheduled, event-triggered, goal-directed, and delegated work through the shared agent runtime."
+                  ef="Executes scheduled, event-triggered, goal-directed, and delegated work through the shared agent runtime."
+                  ifd="receive"
+                  relation="performs automated workflows"
+                  verb="performs"
+                  observation="Inferred CQU distinguished by responsibility for the continuing outcome of an automation, rather than responsibility for operating the software.">
+              <refs>
+                <ref key="path" value="cron/scheduler.py"/>
+                <ref key="path" value="hermes_cli/goals.py"/>
+                <ref key="path" value="hermes_cli/kanban_db_dispatch.py"/>
+                <ref key="path" value="gateway/platforms/webhook.py"/>
+              </refs>
+              <elements/>
+            </join>
+          </joins>
+        </element>
+        <element namespace_address="downstream.cqu.researcher.ai" name_length="2" role="CQU">
+          <name>AI researcher</name>
+          <elements/>
+          <joins>
+            <join type="purpose"
+                  provider="code.agent.autonomous"
+                  purpose="Produce and examine tool-using agent trajectories for evaluation and model training."
+                  function="Runs agent tasks over datasets and exposes recorded conversations, tool interactions, and compressed trajectories."
+                  ef="Runs agent tasks over datasets and exposes recorded conversations, tool interactions, and compressed trajectories."
+                  ifd="receive"
+                  relation="produces agent execution trajectories"
+                  verb="produces"
+                  observation="Inferred secondary CQU supported by explicit batch execution, trajectory export, compression, and evaluation functionality.">
+              <refs>
+                <ref key="path" value="batch_runner.py"/>
+                <ref key="path" value="mini_swe_runner.py"/>
+                <ref key="path" value="agent/trajectory.py"/>
+                <ref key="path" value="trajectory_compressor.py"/>
+                <ref key="path" value="evals"/>
+              </refs>
+              <elements/>
+            </join>
+          </joins>
+        </element>
+      </elements>
+      <joins>
+        <join type="purpose"
+              provider="code.client.inference"
+              purpose="Obtain model decisions, responses, and tool calls throughout task execution."
+              function="Routes inference requests and normalizes provider responses for the common agent loop."
+              ef="Routes inference requests and normalizes provider responses for the common agent loop."
+              ifd="receive"
+              relation="supplies model inference"
+              verb="supplies"
+              observation="The agent loop retains tool execution and turn termination while provider-specific transports translate requests, streams, usage, reasoning, and tool calls.">
+          <refs>
+            <ref key="path" value="agent/turn_api_call.py"/>
+            <ref key="path" value="agent/turn_response_intake.py"/>
+            <ref key="path" value="agent/transports"/>
+            <ref key="path" value="agent/auxiliary_client.py"/>
+            <ref key="path" value="plugins/model-providers"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.client.inference" name_length="2" role="SE">
+              <name>Provider transports</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="upstream.service.inference"
+                      purpose="Receive generated responses from a compatible model service."
+                      function="Accepts model requests and returns generated text, structured tool calls, reasoning, or streaming events."
+                      ef="Accepts model requests and returns generated text, structured tool calls, reasoning, or streaming events."
+                      ifd="receive"
+                      relation="returns model-generated responses"
+                      verb="returns"
+                      observation="Implemented routes include OpenAI-compatible chat completions, Responses, Anthropic Messages, Bedrock, Gemini, Codex app-server, and ACP-backed inference bridges; support depends on the selected route.">
+                  <refs>
+                    <ref key="path" value="agent/transports/chat_completions.py"/>
+                    <ref key="path" value="agent/transports/anthropic.py"/>
+                    <ref key="path" value="agent/transports/bedrock.py"/>
+                    <ref key="path" value="agent/transports/codex.py"/>
+                    <ref key="path" value="agent/transports/codex_app_server.py"/>
+                    <ref key="path" value="agent/gemini_native_adapter.py"/>
+                    <ref key="path" value="agent/copilot_acp_client.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="upstream.service.inference" name_length="2" role="NE">
+                      <name>Model inference service</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.manager.credential"
+                      purpose="Authenticate model requests and recover supported credential failures."
+                      function="Resolves credential sources, refreshes supported tokens, and rotates eligible pooled credentials."
+                      ef="Resolves credential sources, refreshes supported tokens, and rotates eligible pooled credentials."
+                      ifd="receive"
+                      relation="provides inference credentials"
+                      verb="provides"
+                      observation="Credential identity, provider routing, cooldowns, and persistence are handled separately from response-format conversion.">
+                  <refs>
+                    <ref key="path" value="agent/credential_pool.py"/>
+                    <ref key="path" value="agent/credential_sources.py"/>
+                    <ref key="path" value="agent/anthropic_credentials.py"/>
+                    <ref key="path" value="agent/agent_runtime_helpers.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.credential" name_length="2" role="SE">
+                      <name>Credential pool</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="upstream.provider.credential"
+                              purpose="Acquire credentials accepted by the selected external service."
+                              function="Issues or supplies API credentials, OAuth grants, or credentials resolved through configured secret sources."
+                              ef="Issues or supplies API credentials, OAuth grants, or credentials resolved through configured secret sources."
+                              ifd="receive"
+                              relation="supplies service credentials"
+                              verb="supplies"
+                              observation="Credentials can originate in configuration, environment files, supported account stores, commands, or external secret-source integrations.">
+                          <refs>
+                            <ref key="path" value="agent/command_token_source.py"/>
+                            <ref key="path" value="agent/secret_sources/registry.py"/>
+                            <ref key="path" value="agent/secret_sources"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="upstream.provider.credential" name_length="2" role="NE">
+                              <name>Credential source</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.server.inference.local"
+                      purpose="Use supported locally hosted models through a managed inference endpoint."
+                      function="Acquires compatible runtime binaries, supervises llama-server, and resolves local model endpoints."
+                      ef="Acquires compatible runtime binaries, supervises llama-server, and resolves local model endpoints."
+                      ifd="receive"
+                      relation="serves local model inference"
+                      verb="serves"
+                      observation="The managed local runtime includes hardware inspection, model browsing, model metadata, context-memory estimation, loading progress, and runtime recovery.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/local_runtime"/>
+                    <ref key="path" value="hermes_cli/local_runtime/bootstrap.py"/>
+                    <ref key="path" value="hermes_cli/local_runtime/supervisor.py"/>
+                    <ref key="path" value="hermes_cli/local_runtime/estimator.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.server.inference.local" name_length="3" role="SE">
+                      <name>Managed llama.cpp runtime</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.engine.context"
+              purpose="Present the model with instructions and working history that remain usable across continued execution."
+              function="Assembles session instructions, selects working context, and coordinates context reduction."
+              ef="Assembles session instructions, selects working context, and coordinates context reduction."
+              ifd="receive"
+              relation="maintains model working context"
+              verb="maintains"
+              observation="System-prompt snapshots and historical message prefixes are preserved across ordinary turns; turn-local additions use current-turn content rather than routine prompt reconstruction.">
+          <refs>
+            <ref key="path" value="agent/context_engine.py"/>
+            <ref key="path" value="agent/system_prompt.py"/>
+            <ref key="path" value="agent/turn_context.py"/>
+            <ref key="path" value="gateway/session_prompt_pin.py"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.engine.context" name_length="2" role="SE">
+              <name>Context Engine</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.builder.prompt"
+                      purpose="Ground each session in its instructions, available capabilities, and relevant environment."
+                      function="Builds the system prompt from identity, context files, memory snapshots, skill information, and platform or plugin sections."
+                      ef="Builds the system prompt from identity, context files, memory snapshots, skill information, and platform or plugin sections."
+                      ifd="receive"
+                      relation="assembles session instructions"
+                      verb="assembles"
+                      observation="Instruction-file discovery, context references, skill preprocessing, platform hints, and frozen plugin sections contribute to the assembled prompt.">
+                  <refs>
+                    <ref key="path" value="agent/prompt_builder.py"/>
+                    <ref key="path" value="agent/system_prompt.py"/>
+                    <ref key="path" value="agent/context_file_sources.py"/>
+                    <ref key="path" value="agent/context_references.py"/>
+                    <ref key="path" value="agent/skill_preprocessing.py"/>
+                    <ref key="path" value="SOUL.md"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.builder.prompt" name_length="2" role="SE">
+                      <name>System prompt assembly</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.compressor.context"
+                      purpose="Continue conversations when accumulated context approaches the selected model's capacity."
+                      function="Prunes eligible results, preserves protected history, and summarizes or delegates supported native compaction."
+                      ef="Prunes eligible results, preserves protected history, and summarizes or delegates supported native compaction."
+                      ifd="receive"
+                      relation="reduces accumulated context"
+                      verb="reduces"
+                      observation="The default engine combines deterministic reduction with auxiliary-model summarization. Compaction coordinates stored history, active rows, provider-specific carriers, and client-visible summaries.">
+                  <refs>
+                    <ref key="path" value="agent/context_compressor.py"/>
+                    <ref key="path" value="agent/context_compressor_prellm.py"/>
+                    <ref key="path" value="agent/context_compressor_prune.py"/>
+                    <ref key="path" value="agent/conversation_compression.py"/>
+                    <ref key="path" value="agent/conversation_compression_codex.py"/>
+                    <ref key="path" value="hermes_state_compression.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.compressor.context" name_length="2" role="SE">
+                      <name>ContextCompressor</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.memory.agent"
+              purpose="Reuse durable knowledge and procedures across otherwise separate conversations."
+              function="Combines curated memory, procedural skills, historical recall, and maintenance of learned material."
+              ef="Combines curated memory, procedural skills, historical recall, and maintenance of learned material."
+              ifd="receive"
+              relation="supplies retained knowledge and procedures"
+              verb="supplies"
+              observation="The built-in memory provider can operate with one selected external provider. The implemented learning loop stores and retrieves information; improvement depends on what the model elects to retain and apply.">
+          <refs>
+            <ref key="path" value="agent/memory_manager.py"/>
+            <ref key="path" value="agent/memory_provider.py"/>
+            <ref key="path" value="plugins/memory"/>
+            <ref key="path" value="plugin-catalog/honcho.yaml"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.memory.agent" name_length="2" role="SE">
+              <name>MemoryManager</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.store.memory"
+                      purpose="Retain selected facts and personal context beyond the current session."
+                      function="Reads and modifies profile-local memory entries and supplies a frozen session-start snapshot."
+                      ef="Reads and modifies profile-local memory entries and supplies a frozen session-start snapshot."
+                      ifd="both"
+                      relation="stores curated persistent memory"
+                      verb="stores"
+                      observation="MEMORY.md and USER.md hold distinct memory targets. Mid-session writes persist to disk without replacing the current session's frozen prompt snapshot.">
+                  <refs>
+                    <ref key="path" value="tools/memory_tool.py"/>
+                    <ref key="path" value="tools/memory_tool_store.py"/>
+                    <ref key="path" value="tools/write_approval.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.store.memory" name_length="2" role="SE">
+                      <name>MemoryStore</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.memory.procedural"
+                      purpose="Retain reusable instructions and load their detail when a task needs them."
+                      function="Discovers, lists, reads, creates, patches, and manages skill packages and their supporting files."
+                      ef="Discovers, lists, reads, creates, patches, and manages skill packages and their supporting files."
+                      ifd="both"
+                      relation="preserves reusable task procedures"
+                      verb="preserves"
+                      observation="Skill metadata supports progressive disclosure; full instructions and linked resources are loaded separately. Bundled and optional skill collections retain member identity through their paths.">
+                  <refs>
+                    <ref key="path" value="tools/skills_tool.py"/>
+                    <ref key="path" value="tools/skill_manager_tool.py"/>
+                    <ref key="path" value="agent/skill_commands.py"/>
+                    <ref key="path" value="agent/skill_bundles.py"/>
+                    <ref key="path" value="hermes_cli/skills_hub.py"/>
+                    <ref key="path" value="skills"/>
+                    <ref key="path" value="optional-skills"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.memory.procedural" name_length="2" role="SE">
+                      <name>Skills System</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.search.session"
+                      purpose="Recover relevant information from earlier conversations."
+                      function="Searches stored sessions and returns matching conversation material with optional model-assisted synthesis."
+                      ef="Searches stored sessions and returns matching conversation material with optional model-assisted synthesis."
+                      ifd="receive"
+                      relation="retrieves prior conversation knowledge"
+                      verb="retrieves"
+                      observation="Historical recall is distinct from curated memory: it searches retained conversation records rather than requiring facts to have been copied into the memory files.">
+                  <refs>
+                    <ref key="path" value="tools/session_search_tool.py"/>
+                    <ref key="path" value="hermes_state_search.py"/>
+                    <ref key="path" value="hermes_state_fts.py"/>
+                    <ref key="path" value="native/fts5_cjk"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.search.session" name_length="2" role="SE">
+                      <name>session_search</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="code.store.session"
+                              purpose="Access retained conversations as searchable records."
+                              function="Provides stored session messages and full-text search indexes."
+                              ef="Provides stored session messages and full-text search indexes."
+                              ifd="receive"
+                              relation="provides searchable conversation records"
+                              verb="provides">
+                          <refs>
+                            <ref key="path" value="hermes_state.py"/>
+                            <ref key="path" value="hermes_state_fts.py"/>
+                          </refs>
+                          <elements/>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.review.memory"
+                      purpose="Turn useful execution experience into maintained memory and skills."
+                      function="Reviews conversation snapshots and performs configured background or idle maintenance of retained material."
+                      ef="Reviews conversation snapshots and performs configured background or idle maintenance of retained material."
+                      ifd="both"
+                      relation="maintains learned knowledge and skills"
+                      verb="maintains"
+                      observation="Background review forks inspect completed work without modifying the foreground transcript. Idle curation separately manages skill lifecycle, consolidation, archiving, and recoverable backups.">
+                  <refs>
+                    <ref key="path" value="agent/background_review.py"/>
+                    <ref key="path" value="agent/curator.py"/>
+                    <ref key="path" value="agent/curator_backup.py"/>
+                    <ref key="path" value="agent/review_idle_queue.py"/>
+                    <ref key="path" value="run_agent.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.review.memory" name_length="2" role="SE">
+                      <name>Background memory/skill review</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.manager.session"
+              purpose="Continue the correct conversation and preserve ownership of its queued and running work."
+              function="Routes session inputs, serializes admissions, manages execution ownership, and publishes committed results."
+              ef="Routes session inputs, serializes admissions, manages execution ownership, and publishes committed results."
+              ifd="both"
+              relation="coordinates durable conversation execution"
+              verb="coordinates"
+              observation="The shared gateway owns canonical local-session execution. Viewers submit inputs and observe results; reconnecting a viewer does not independently recreate the execution owner.">
+          <refs>
+            <ref key="path" value="gateway/session.py"/>
+            <ref key="path" value="gateway/session_ingress.py"/>
+            <ref key="path" value="gateway/session_results.py"/>
+            <ref key="path" value="gateway/session_managed_worker.py"/>
+            <ref key="path" value="gateway/session_runtime_workers.py"/>
+            <ref key="path" value="gateway/session_viewer_close.py"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.manager.session" name_length="2" role="SE">
+              <name>SessionStore</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.store.session"
+                      purpose="Persist conversation identity, history, execution state, and results for continued use and recovery."
+                      function="Maintains canonical session records, messages, lineage, metadata, usage, and transactional execution receipts."
+                      ef="Maintains canonical session records, messages, lineage, metadata, usage, and transactional execution receipts."
+                      ifd="both"
+                      relation="persists canonical session state"
+                      verb="persists"
+                      observation="SessionDB uses SQLite with WAL, multiple readers, and a writer boundary. Its supporting modules implement mutations, compression history, rewind, branching, media, search, maintenance, and recovery.">
+                  <refs>
+                    <ref key="path" value="hermes_state.py"/>
+                    <ref key="path" value="hermes_state_schema.py"/>
+                    <ref key="path" value="hermes_state_messages.py"/>
+                    <ref key="path" value="hermes_state_sessions.py"/>
+                    <ref key="path" value="hermes_state_mutations.py"/>
+                    <ref key="path" value="hermes_state_rewind.py"/>
+                    <ref key="path" value="hermes_state_runtime.py"/>
+                    <ref key="path" value="hermes_state_repair.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.store.session" name_length="2" role="SE">
+                      <name>SessionDB</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="upstream.storage.persistent"
+                              purpose="Retain committed state and related files across process lifetimes."
+                              function="Provides writable persistent files and the filesystem operations required by the database and stores."
+                              ef="Provides writable persistent files and the filesystem operations required by the database and stores."
+                              ifd="both"
+                              relation="retains persistent application state"
+                              verb="retains"
+                              observation="Conversation databases, configuration, memory, skills, cron state, caches, and execution receipts use profile-aware storage locations.">
+                          <refs>
+                            <ref key="path" value="hermes_constants.py"/>
+                            <ref key="path" value="hermes_state_dbfile.py"/>
+                            <ref key="path" value="hermes_state_wal.py"/>
+                            <ref key="path" value="hermes_cli/profiles.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="upstream.storage.persistent" name_length="2" role="NE">
+                              <name>Persistent storage</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.executor.tool"
+              purpose="Turn model-selected operations into observable actions and results."
+              function="Resolves tool calls, applies the dispatch pipeline, invokes handlers, and returns normalized results."
+              ef="Resolves tool calls, applies the dispatch pipeline, invokes handlers, and returns normalized results."
+              ifd="both"
+              relation="executes model-selected operations"
+              verb="executes"
+              observation="The agent persists tool-call messages before side effects and persists tool results before subsequent inference. Dispatch carries task, session, turn, and request identity through hooks and middleware.">
+          <refs>
+            <ref key="path" value="model_tools.py"/>
+            <ref key="path" value="agent/turn_tool_round.py"/>
+            <ref key="path" value="agent/turn_tool_validation.py"/>
+            <ref key="path" value="agent/tool_call_batches.py"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.executor.tool" name_length="2" role="SE">
+              <name>Tool orchestration</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.registry.tool"
+                      purpose="Associate available tool schemas with their executable handlers."
+                      function="Discovers tool registrations and resolves schema, availability, ownership, scope, and dispatch metadata."
+                      ef="Discovers tool registrations and resolves schema, availability, ownership, scope, and dispatch metadata."
+                      ifd="receive"
+                      relation="resolves registered tools"
+                      verb="resolves"
+                      observation="Built-in discovery and plugin registrations converge on the registry; toolsets select combinations without requiring a separate execution implementation.">
+                  <refs>
+                    <ref key="path" value="tools/registry.py"/>
+                    <ref key="path" value="toolsets.py"/>
+                    <ref key="path" value="toolset_distributions.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.registry.tool" name_length="2" role="SE">
+                      <name>ToolRegistry</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.search.tool"
+                      purpose="Expose a large capability set without placing every tool definition in every model request."
+                      function="Lists and describes deferred tools and unwraps selected calls into the ordinary dispatch pipeline."
+                      ef="Lists and describes deferred tools and unwraps selected calls into the ordinary dispatch pipeline."
+                      ifd="receive"
+                      relation="reveals deferred tool capabilities"
+                      verb="reveals"
+                      observation="tool_search, tool_describe, and tool_call provide progressive tool disclosure using the live definitions available to the session.">
+                  <refs>
+                    <ref key="path" value="tools/tool_search.py"/>
+                    <ref key="path" value="model_tools.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.search.tool" name_length="2" role="SE">
+                      <name>Tool Search</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.executor.command"
+                      purpose="Run shell commands in the workspace selected for a task."
+                      function="Executes commands through a common environment interface with working-directory, interruption, and output handling."
+                      ef="Executes commands through a common environment interface with working-directory, interruption, and output handling."
+                      ifd="both"
+                      relation="runs workspace commands"
+                      verb="runs"
+                      observation="Built-in backends include local execution, Docker, SSH, Modal, Daytona, and Vercel Sandbox. Persistent cloud filesystems do not imply preservation of live processes.">
+                  <refs>
+                    <ref key="path" value="tools/terminal_tool.py"/>
+                    <ref key="path" value="tools/terminal_tool_backends.py"/>
+                    <ref key="path" value="tools/environments/base.py"/>
+                    <ref key="path" value="tools/environments"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.executor.command" name_length="2" role="SE">
+                      <name>terminal</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="upstream.environment.execution"
+                              purpose="Obtain a host capable of running the selected shell and task processes."
+                              function="Provides operating-system process execution, working files, and backend-specific execution facilities."
+                              ef="Provides operating-system process execution, working files, and backend-specific execution facilities."
+                              ifd="both"
+                              relation="hosts task processes"
+                              verb="hosts"
+                              observation="Execution can depend on a local host, container engine, SSH destination, or configured remote sandbox service.">
+                          <refs>
+                            <ref key="path" value="tools/environments"/>
+                            <ref key="path" value="hermes_platform"/>
+                            <ref key="path" value="pm/shell.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="upstream.environment.execution" name_length="2" role="NE">
+                              <name>Execution environment</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                        <join type="purpose"
+                              provider="code.manager.process"
+                              purpose="Continue and inspect commands that outlive a foreground tool call."
+                              function="Tracks background processes, captures output, accepts control operations, and reports completion."
+                              ef="Tracks background processes, captures output, accepts control operations, and reports completion."
+                              ifd="both"
+                              relation="manages background command processes"
+                              verb="manages"
+                              observation="Process handling includes checkpointed identity, termination, bounded result receipts, and completion notifications to the originating execution context.">
+                          <refs>
+                            <ref key="path" value="tools/process_registry.py"/>
+                            <ref key="path" value="tools/process_registry_checkpoint.py"/>
+                            <ref key="path" value="tools/process_registry_results.py"/>
+                            <ref key="path" value="tools/terminal_tool_background.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="code.manager.process" name_length="2" role="SE">
+                              <name>ProcessRegistry</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.operations.file"
+                      purpose="Inspect and modify task files through explicit file operations."
+                      function="Reads, searches, writes, and patches files across supported execution backends."
+                      ef="Reads, searches, writes, and patches files across supported execution backends."
+                      ifd="both"
+                      relation="performs workspace file operations"
+                      verb="performs"
+                      observation="The implementation includes path resolution, fuzzy replacement, read tracking, concurrent file coordination, syntax checks, and optional language-server diagnostic deltas.">
+                  <refs>
+                    <ref key="path" value="tools/file_tools.py"/>
+                    <ref key="path" value="tools/file_operations.py"/>
+                    <ref key="path" value="tools/file_operations_search.py"/>
+                    <ref key="path" value="tools/file_operations_lint.py"/>
+                    <ref key="path" value="tools/file_state.py"/>
+                    <ref key="path" value="agent/lsp"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.operations.file" name_length="2" role="SE">
+                      <name>File operations</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.executor.script"
+                      purpose="Perform multi-step computation and tool coordination within a single model-directed operation."
+                      function="Runs generated Python in a session kernel and exposes selected Hermes tools through RPC."
+                      ef="Runs generated Python in a session kernel and exposes selected Hermes tools through RPC."
+                      ifd="both"
+                      relation="executes programmatic tool workflows"
+                      verb="executes"
+                      observation="Local and remote kernels support reusable execution state; script stdout returns to the model and oversized output can be spilled. README's zero-context-cost wording overstates the mechanism: script calls and returned output still enter the conversation.">
+                  <refs>
+                    <ref key="path" value="tools/code_execution_tool.py"/>
+                    <ref key="path" value="tools/code_execution_rpc.py"/>
+                    <ref key="path" value="tools/code_kernel.py"/>
+                    <ref key="path" value="tools/code_kernel_remote.py"/>
+                    <ref key="path" value="README.md"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.executor.script" name_length="2" role="SE">
+                      <name>execute_code</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.automation.browser"
+                      purpose="Inspect and operate websites that require interactive browsing."
+                      function="Runs browser automation against a managed local, remote, cloud, or connected browser session."
+                      ef="Runs browser automation against a managed local, remote, cloud, or connected browser session."
+                      ifd="both"
+                      relation="operates interactive browser sessions"
+                      verb="operates"
+                      observation="Browser execution includes session lifecycle, CDP access, dialog handling, frame tracking, profile handling, and backend placement.">
+                  <refs>
+                    <ref key="path" value="tools/browser_use_cli.py"/>
+                    <ref key="path" value="tools/browser_session.py"/>
+                    <ref key="path" value="tools/browser_supervisor.py"/>
+                    <ref key="path" value="tools/browser_cdp_tool.py"/>
+                    <ref key="path" value="tools/browser_dialog_tool.py"/>
+                    <ref key="path" value="plugins/browser"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.automation.browser" name_length="2" role="SE">
+                      <name>browser_exec</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="code.vault.credential"
+                              purpose="Fill supported website credentials without exposing their secret values to the model."
+                              function="Resolves saved logins and performs controlled credential autofill through the browser integration."
+                              ef="Resolves saved logins and performs controlled credential autofill through the browser integration."
+                              ifd="receive"
+                              relation="fills saved browser credentials"
+                              verb="fills"
+                              observation="The vault supports a local encrypted backend and external password-manager backends, with unlock and account-selection interactions.">
+                          <refs>
+                            <ref key="path" value="tools/browser_vault_tool.py"/>
+                            <ref key="path" value="agent/vault_backends"/>
+                            <ref key="path" value="gateway/session_vault_prompt.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="code.vault.credential" name_length="2" role="SE">
+                              <name>Browser credential vault</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.automation.desktop"
+                      purpose="Perform tasks through application windows and desktop input."
+                      function="Captures desktop state and sends pointer, keyboard, and other supported control actions."
+                      ef="Captures desktop state and sends pointer, keyboard, and other supported control actions."
+                      ifd="both"
+                      relation="operates desktop applications"
+                      verb="operates"
+                      observation="Computer use is implemented through provider backends. Bot Desktop additionally provides a profile-owned headless desktop with remote viewing and control ownership.">
+                  <refs>
+                    <ref key="path" value="tools/computer_use/tool.py"/>
+                    <ref key="path" value="tools/computer_use/cua_backend.py"/>
+                    <ref key="path" value="tools/bot_desktop/runtime.py"/>
+                    <ref key="path" value="tools/bot_desktop/lease.py"/>
+                    <ref key="path" value="tools/bot_desktop/sandbox_host.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.automation.desktop" name_length="2" role="SE">
+                      <name>computer_use</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.search.web"
+                      purpose="Find external sources relevant to a task."
+                      function="Queries a selected search provider and returns source metadata and result locations."
+                      ef="Queries a selected search provider and returns source metadata and result locations."
+                      ifd="receive"
+                      relation="finds relevant external sources"
+                      verb="finds"
+                      observation="Search providers are pluggable. Web search and X search have separate implementations; result caching and provider selection support repeated retrieval.">
+                  <refs>
+                    <ref key="path" value="tools/web_tools.py"/>
+                    <ref key="path" value="tools/x_search_tool.py"/>
+                    <ref key="path" value="tools/web_result_cache.py"/>
+                    <ref key="path" value="plugins/web"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.search.web" name_length="2" role="SE">
+                      <name>web_search</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="upstream.service.web"
+                              purpose="Receive results and content from reachable external web services."
+                              function="Supplies search responses, retrieved pages, and service-specific network responses."
+                              ef="Supplies search responses, retrieved pages, and service-specific network responses."
+                              ifd="receive"
+                              relation="supplies external web information"
+                              verb="supplies"
+                              observation="Required destinations depend on configured search, extraction, browsing, and tool-service providers.">
+                          <refs>
+                            <ref key="path" value="plugins/web"/>
+                            <ref key="path" value="tools/managed_tool_gateway.py"/>
+                            <ref key="path" value="tools/website_policy.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="upstream.service.web" name_length="2" role="NE">
+                              <name>Web service</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.extractor.content"
+                      purpose="Read the substance of located external documents."
+                      function="Retrieves page content and returns extracted text with recoverable handling of oversized results."
+                      ef="Retrieves page content and returns extracted text with recoverable handling of oversized results."
+                      ifd="receive"
+                      relation="extracts external document content"
+                      verb="extracts"
+                      observation="web_extract performs content extraction rather than automatic LLM summarization; large results use an inline window and stored full-text reference.">
+                  <refs>
+                    <ref key="path" value="tools/web_tools_extract.py"/>
+                    <ref key="path" value="tools/web_tools_truncate.py"/>
+                    <ref key="path" value="tools/web_tools.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.extractor.content" name_length="2" role="SE">
+                      <name>web_extract</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.analyzer.media"
+                      purpose="Interpret visual material supplied by a task or encountered during execution."
+                      function="Prepares images or video material and obtains model-assisted visual analysis."
+                      ef="Prepares images or video material and obtains model-assisted visual analysis."
+                      ifd="receive"
+                      relation="interprets supplied visual material"
+                      verb="interprets"
+                      observation="vision_analyze and video_analyze handle distinct inputs while sharing model routing, source resolution, and visual-content preparation.">
+                  <refs>
+                    <ref key="path" value="tools/vision_tools.py"/>
+                    <ref key="path" value="tools/vision_tools_image_prep.py"/>
+                    <ref key="path" value="tools/image_source.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.analyzer.media" name_length="2" role="SE">
+                      <name>Vision tools</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.generator.media"
+                      purpose="Create or transform visual deliverables requested by a task."
+                      function="Dispatches supported image and video generation or editing requests and returns generated output references."
+                      ef="Dispatches supported image and video generation or editing requests and returns generated output references."
+                      ifd="receive"
+                      relation="produces requested visual deliverables"
+                      verb="produces"
+                      observation="Image and video generation use separate provider contracts and catalogs; available editing operations depend on the chosen provider and model.">
+                  <refs>
+                    <ref key="path" value="tools/image_generation_tool.py"/>
+                    <ref key="path" value="tools/video_generation_tool.py"/>
+                    <ref key="path" value="plugins/image_gen"/>
+                    <ref key="path" value="plugins/video_gen"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.generator.media" name_length="2" role="SE">
+                      <name>Image and video generation</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.client.mcp"
+                      purpose="Invoke capabilities supplied by independently hosted tool servers."
+                      function="Connects to MCP servers, discovers supported capabilities, and translates their calls and results into Hermes dispatch."
+                      ef="Connects to MCP servers, discovers supported capabilities, and translates their calls and results into Hermes dispatch."
+                      ifd="both"
+                      relation="connects external tool capabilities"
+                      verb="connects"
+                      observation="Implemented transports include stdio, Streamable HTTP, and SSE. Supporting functions handle schemas, resources, prompts, OAuth, reconnects, server lifecycle, and optional experimental events.">
+                  <refs>
+                    <ref key="path" value="tools/mcp_tool.py"/>
+                    <ref key="path" value="tools/mcp_tool_handlers.py"/>
+                    <ref key="path" value="tools/mcp_tool_schema.py"/>
+                    <ref key="path" value="tools/mcp_oauth.py"/>
+                    <ref key="path" value="tools/mcp_oauth_device.py"/>
+                    <ref key="path" value="tools/mcp_tool_events.py"/>
+                    <ref key="path" value="optional-mcps"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.client.mcp" name_length="2" role="SE">
+                      <name>MCP client</name>
+                      <elements/>
+                      <joins>
+                        <join type="purpose"
+                              provider="upstream.server.mcp"
+                              purpose="Obtain capabilities conforming to the configured MCP connection."
+                              function="Advertises and serves its available tools, resources, prompts, or supported extensions."
+                              ef="Advertises and serves its available tools, resources, prompts, or supported extensions."
+                              ifd="both"
+                              relation="serves external MCP capabilities"
+                              verb="serves"
+                              observation="A server must be reachable and satisfy the configured transport and authentication requirements; advertised capabilities determine what Hermes exposes.">
+                          <refs>
+                            <ref key="path" value="tools/mcp_tool_discovery.py"/>
+                            <ref key="path" value="tools/mcp_tool_config.py"/>
+                            <ref key="path" value="tools/mcp_tool_schema.py"/>
+                          </refs>
+                          <elements>
+                            <element namespace_address="upstream.server.mcp" name_length="2" role="NE">
+                              <name>MCP server</name>
+                              <elements/>
+                              <joins/>
+                            </element>
+                          </elements>
+                        </join>
+                      </joins>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.controller.access"
+                      purpose="Apply the configured authority and execution policies to requested actions."
+                      function="Evaluates operation policies, obtains supported human decisions, and enforces resulting dispatch decisions."
+                      ef="Evaluates operation policies, obtains supported human decisions, and enforces resulting dispatch decisions."
+                      ifd="receive"
+                      relation="applies configured action authority"
+                      verb="applies"
+                      observation="Existing mechanisms cover command approval, file and instruction protections, memory and skill write policies, website policy, and computer-use approval. These are observed project behavior.">
+                  <refs>
+                    <ref key="path" value="tools/approval.py"/>
+                    <ref key="path" value="tools/approval_detection.py"/>
+                    <ref key="path" value="tools/file_tools_write_guards.py"/>
+                    <ref key="path" value="tools/write_approval.py"/>
+                    <ref key="path" value="tools/website_policy.py"/>
+                    <ref key="path" value="tools/computer_use/tool.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.controller.access" name_length="2" role="SE">
+                      <name>Tool approval</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.manager.checkpoint"
+                      purpose="Recover workspace state after supported file-mutating operations."
+                      function="Creates workspace snapshots and restores selected checkpoints through a shadow Git store."
+                      ef="Creates workspace snapshots and restores selected checkpoints through a shadow Git store."
+                      ifd="both"
+                      relation="preserves recoverable workspace snapshots"
+                      verb="preserves"
+                      observation="Checkpointing is host infrastructure rather than a model-visible tool; retention and pruning manage its stored history.">
+                  <refs>
+                    <ref key="path" value="tools/checkpoint_manager.py"/>
+                    <ref key="path" value="tools/checkpoint_maintenance.py"/>
+                    <ref key="path" value="tools/checkpoint_pruning.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.checkpoint" name_length="2" role="SE">
+                      <name>Checkpoint Manager</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.orchestrator.agent"
+              purpose="Divide work among agents and combine their contributions."
+              function="Constructs child agents, routes their tasks, exposes progress and controls, and returns or asynchronously delivers results."
+              ef="Constructs child agents, routes their tasks, exposes progress and controls, and returns or asynchronously delivers results."
+              ifd="both"
+              relation="coordinates delegated agent work"
+              verb="coordinates"
+              observation="Delegation supports synchronous and background execution, per-task routing, grouped completion, independent child histories, result processing, and originating-session delivery.">
+          <refs>
+            <ref key="path" value="tools/delegate_tool.py"/>
+            <ref key="path" value="tools/delegate_tool_dispatch.py"/>
+            <ref key="path" value="tools/delegate_tool_registry.py"/>
+            <ref key="path" value="tools/delegate_tool_results.py"/>
+            <ref key="path" value="tools/async_delegation.py"/>
+            <ref key="path" value="agent/review_engine.py"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.orchestrator.agent" name_length="2" role="SE">
+              <name>Subagent Architecture</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.dispatcher.task"
+                      purpose="Coordinate durable dependent tasks and assign eligible work to execution workers."
+                      function="Maintains task boards and dependency state, dispatches workers, and records task lifecycle events."
+                      ef="Maintains task boards and dependency state, dispatches workers, and records task lifecycle events."
+                      ifd="both"
+                      relation="dispatches dependency-ordered tasks"
+                      verb="dispatches"
+                      observation="Kanban includes atomic decomposition, task readiness, cross-profile assignment, worker liveness, failure accounting, review dispatch, notifications, and workspace selection.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/kanban_db.py"/>
+                    <ref key="path" value="hermes_cli/kanban_db_graph.py"/>
+                    <ref key="path" value="hermes_cli/kanban_db_dispatch.py"/>
+                    <ref key="path" value="hermes_cli/kanban_db_context.py"/>
+                    <ref key="path" value="tools/kanban_tools.py"/>
+                    <ref key="path" value="plugins/kanban"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.dispatcher.task" name_length="2" role="SE">
+                      <name>Kanban</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.list.task"
+                      purpose="Maintain the agent's current multi-step work list."
+                      function="Stores and revises task-list entries and projects them into supported client plan displays."
+                      ef="Stores and revises task-list entries and projects them into supported client plan displays."
+                      ifd="both"
+                      relation="maintains current task progress"
+                      verb="maintains"
+                      observation="todo_list is distinct from the durable Kanban dispatch board; task-list state is revisioned and can be hydrated from conversation history.">
+                  <refs>
+                    <ref key="path" value="tools/todo_tool.py"/>
+                    <ref key="path" value="run_agent.py"/>
+                    <ref key="path" value="acp_adapter/events.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.list.task" name_length="2" role="SE">
+                      <name>todo_list</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.ensemble.model"
+                      purpose="Use multiple model contributions within a selected agent turn."
+                      function="Collects reference-model guidance for an aggregator while retaining the ordinary agent tool loop."
+                      ef="Collects reference-model guidance for an aggregator while retaining the ordinary agent tool loop."
+                      ifd="receive"
+                      relation="combines reference-model contributions"
+                      verb="combines"
+                      observation="Mixture-of-Agents is a selected turn mode rather than the replacement owner of tool execution or turn termination.">
+                  <refs>
+                    <ref key="path" value="agent/moa_loop.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.ensemble.model" name_length="2" role="SE">
+                      <name>Mixture-of-Agents</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.communication.agent"
+                      purpose="Exchange work and discussion between independently situated agents or profiles."
+                      function="Routes bot messages and hosted group interactions with retained membership, task, attachment, and execution identities."
+                      ef="Routes bot messages and hosted group interactions with retained membership, task, attachment, and execution identities."
+                      ifd="both"
+                      relation="connects collaborating agents"
+                      verb="connects"
+                      observation="Bot Chat, cross-connection relay, and gateway-owned Group Chats provide collaboration distinct from constructing local delegate_task children.">
+                  <refs>
+                    <ref key="path" value="tools/bot_mode_dm.py"/>
+                    <ref key="path" value="tools/bot_relay.py"/>
+                    <ref key="path" value="tools/bot_live_delivery.py"/>
+                    <ref key="path" value="gateway/hosted_room_driver.py"/>
+                    <ref key="path" value="gateway/hosted_room_discussion.py"/>
+                    <ref key="path" value="gateway/session_hosted_transport.py"/>
+                    <ref key="path" value="gateway/hosted_room_attachments.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.communication.agent" name_length="2" role="SE">
+                      <name>Bot Chat and Group Chats</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.scheduler.task"
+              purpose="Perform work at scheduled times or continue an active objective without a fresh manual request."
+              function="Schedules durable jobs and supplies session-scoped goal, loop, and heartbeat continuations."
+              ef="Schedules durable jobs and supplies session-scoped goal, loop, and heartbeat continuations."
+              ifd="receive"
+              relation="initiates automated task execution"
+              verb="initiates"
+              observation="Durable cron scheduling and live-session continuations have different lifetimes; stored continuation state does not itself provide an independent scheduler process.">
+          <refs>
+            <ref key="path" value="cron"/>
+            <ref key="path" value="hermes_cli/goals.py"/>
+            <ref key="path" value="hermes_cli/loops.py"/>
+            <ref key="path" value="hermes_cli/heartbeat.py"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.scheduler.task" name_length="2" role="SE">
+              <name>Scheduled automations</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.scheduler.cron"
+                      purpose="Persist recurring or one-time jobs and execute their scheduled occurrences."
+                      function="Claims due jobs, runs agent-backed or script jobs, records outcomes, and delivers configured results."
+                      ef="Claims due jobs, runs agent-backed or script jobs, records outcomes, and delivers configured results."
+                      ifd="both"
+                      relation="executes durable scheduled jobs"
+                      verb="executes"
+                      observation="Cron includes occurrence identity, execution bookkeeping, monitor change suppression, per-job state, failure incidents, worker recovery, and delivery. Blueprints package reusable skill-and-schedule automations.">
+                  <refs>
+                    <ref key="path" value="cron/jobs.py"/>
+                    <ref key="path" value="cron/scheduler.py"/>
+                    <ref key="path" value="cron/scheduler_tick.py"/>
+                    <ref key="path" value="cron/occurrences.py"/>
+                    <ref key="path" value="cron/executions.py"/>
+                    <ref key="path" value="cron/monitor.py"/>
+                    <ref key="path" value="cron/notepad.py"/>
+                    <ref key="path" value="cron/scheduler_delivery.py"/>
+                    <ref key="path" value="tools/blueprints.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.scheduler.cron" name_length="2" role="SE">
+                      <name>Cron scheduler</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.manager.goal"
+                      purpose="Continue a session toward an active objective or recurring session instruction."
+                      function="Evaluates goal completion and inserts ordinary continuation or timed wakeup prompts into eligible sessions."
+                      ef="Evaluates goal completion and inserts ordinary continuation or timed wakeup prompts into eligible sessions."
+                      ifd="both"
+                      relation="continues active session objectives"
+                      verb="continues"
+                      observation="Goals use auxiliary-model judgments; loops and heartbeats provide recurring re-entry. Heartbeats yield to real queued input, and the live CLI or gateway drives session wakeups.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/goals.py"/>
+                    <ref key="path" value="hermes_cli/goal_command.py"/>
+                    <ref key="path" value="hermes_cli/loops.py"/>
+                    <ref key="path" value="hermes_cli/heartbeat.py"/>
+                    <ref key="path" value="gateway/session_viewer_automation.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.goal" name_length="2" role="SE">
+                      <name>Goals, loops, and heartbeats</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.interface.chat"
+              purpose="Receive task requests, present execution, and accept interaction through supported clients."
+              function="Projects conversations and controls into command-line, terminal, desktop, browser, voice, and programming interfaces."
+              ef="Projects conversations and controls into command-line, terminal, desktop, browser, voice, and programming interfaces."
+              ifd="both"
+              relation="mediates task conversations"
+              verb="mediates"
+              observation="Client interfaces share agent and session functions while providing different input, rendering, attachment, interaction, and control mechanisms.">
+          <refs>
+            <ref key="path" value="cli.py"/>
+            <ref key="path" value="ui-tui"/>
+            <ref key="path" value="apps/desktop"/>
+            <ref key="path" value="web"/>
+            <ref key="path" value="acp_adapter"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.interface.chat" name_length="2" role="SE">
+              <name>Hermes interfaces</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.interface.command_line"
+                      purpose="Conduct interactive conversations and administer Hermes from a shell."
+                      function="Provides a REPL, slash commands, session controls, and command-line administration."
+                      ef="Provides a REPL, slash commands, session controls, and command-line administration."
+                      ifd="both"
+                      relation="provides shell-based interaction"
+                      verb="provides"
+                      observation="The CLI facade and mixins implement input, streaming presentation, interruption, commands, and integration with shared session functionality.">
+                  <refs>
+                    <ref key="path" value="cli.py"/>
+                    <ref key="path" value="hermes_cli/main.py"/>
+                    <ref key="path" value="hermes_cli/commands.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.interface.command_line" name_length="2" role="SE">
+                      <name>HermesCLI</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.interface.terminal"
+                      purpose="Use a structured conversational interface within a terminal."
+                      function="Renders interactive conversation state and sends canonical session operations through the terminal client."
+                      ef="Renders interactive conversation state and sends canonical session operations through the terminal client."
+                      ifd="both"
+                      relation="renders terminal conversations"
+                      verb="renders"
+                      observation="The Ink TUI includes editing, command discovery, history, tool presentation, and request/result projection for the shared gateway.">
+                  <refs>
+                    <ref key="path" value="ui-tui/src/app.tsx"/>
+                    <ref key="path" value="ui-tui/src/canonicalGateway.ts"/>
+                    <ref key="path" value="ui-tui/src/gatewayClient.ts"/>
+                    <ref key="path" value="tui_gateway"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.interface.terminal" name_length="2" role="SE">
+                      <name>Hermes TUI</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.interface.desktop"
+                      purpose="Manage conversations, workspaces, deliverables, and connected capabilities in a desktop application."
+                      function="Combines chat with terminals, previews, artifacts, agent views, connection management, and desktop integration."
+                      ef="Combines chat with terminals, previews, artifacts, agent views, connection management, and desktop integration."
+                      ifd="both"
+                      relation="presents the desktop agent workspace"
+                      verb="presents"
+                      observation="The Electron application includes local and remote backend connections, profiles, automation controls, capability discovery, overlays, notifications, and contributed interface surfaces.">
+                  <refs>
+                    <ref key="path" value="apps/desktop/src/app/routes.ts"/>
+                    <ref key="path" value="apps/desktop/src/app/contrib"/>
+                    <ref key="path" value="apps/desktop/src/app/artifacts"/>
+                    <ref key="path" value="apps/desktop/src/app/agents"/>
+                    <ref key="path" value="apps/desktop/src/app/starmap"/>
+                    <ref key="path" value="apps/desktop/electron/main.ts"/>
+                    <ref key="path" value="tools/desktop_ui.py"/>
+                    <ref key="path" value="tools/preview_tool.py"/>
+                    <ref key="path" value="tools/project_tools.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.interface.desktop" name_length="2" role="SE">
+                      <name>Hermes Desktop</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.interface.dashboard"
+                      purpose="Inspect and configure a Hermes installation through a browser."
+                      function="Serves administration pages, backend APIs, and an embedded terminal chat interface."
+                      ef="Serves administration pages, backend APIs, and an embedded terminal chat interface."
+                      ifd="both"
+                      relation="provides browser-based administration"
+                      verb="provides"
+                      observation="Dashboard pages cover sessions, files, logs, models, configuration, profiles, skills, plugins, channels, pairing, MCP, webhooks, analytics, and cron.">
+                  <refs>
+                    <ref key="path" value="web/src/App.tsx"/>
+                    <ref key="path" value="web/src/pages"/>
+                    <ref key="path" value="hermes_cli/web_server.py"/>
+                    <ref key="path" value="hermes_cli/web_routers"/>
+                    <ref key="path" value="plugins/dashboard_auth"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.interface.dashboard" name_length="2" role="SE">
+                      <name>Web dashboard</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.server.api"
+                      purpose="Accept agent requests from external programs."
+                      function="Exposes agent execution through HTTP APIs, compatible completion endpoints, and streamed responses."
+                      ef="Exposes agent execution through HTTP APIs, compatible completion endpoints, and streamed responses."
+                      ifd="both"
+                      relation="serves programmatic agent requests"
+                      verb="serves"
+                      observation="The API adapter includes OpenAI-compatible chat-completions and Responses routes, run state, request identity, and result retrieval.">
+                  <refs>
+                    <ref key="path" value="gateway/platforms/api_server.py"/>
+                    <ref key="path" value="gateway/platforms/api_server_openai_routes.py"/>
+                    <ref key="path" value="gateway/platforms/api_server_runs.py"/>
+                    <ref key="path" value="gateway/platforms/api_server_response_store.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.server.api" name_length="2" role="SE">
+                      <name>APIServerAdapter</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.adapter.acp"
+                      purpose="Participate as an agent in clients using the Agent Client Protocol."
+                      function="Projects session creation, prompts, updates, permissions, history, and controls into ACP."
+                      ef="Projects session creation, prompts, updates, permissions, history, and controls into ACP."
+                      ifd="both"
+                      relation="exposes Hermes through ACP"
+                      verb="exposes"
+                      observation="The ACP gateway projection submits work to the profile gateway and translates its events; the connection acts as a viewer of daemon-owned execution.">
+                  <refs>
+                    <ref key="path" value="acp_adapter/entry.py"/>
+                    <ref key="path" value="acp_adapter/server.py"/>
+                    <ref key="path" value="acp_adapter/gateway_server.py"/>
+                    <ref key="path" value="acp_adapter/gateway_reply.py"/>
+                    <ref key="path" value="acp_adapter/permissions.py"/>
+                    <ref key="path" value="acp_adapter/elicitation.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.adapter.acp" name_length="2" role="SE">
+                      <name>ACP adapter</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.interface.voice"
+                      purpose="Exchange task requests and responses as speech."
+                      function="Transcribes speech input and synthesizes or streams spoken output through supported clients and providers."
+                      ef="Transcribes speech input and synthesizes or streams spoken output through supported clients and providers."
+                      ifd="both"
+                      relation="supports spoken conversation"
+                      verb="supports"
+                      observation="Voice memo transcription, local or cloud speech providers, streaming TTS, and voice-specific model routing are implemented. Meeting plugins add live meeting participation and transcript workflows.">
+                  <refs>
+                    <ref key="path" value="tools/transcription_tools.py"/>
+                    <ref key="path" value="tools/transcription_streaming.py"/>
+                    <ref key="path" value="tools/tts_tool.py"/>
+                    <ref key="path" value="tools/tts_streaming.py"/>
+                    <ref key="path" value="gateway/streaming_tts_consumer.py"/>
+                    <ref key="path" value="agent/voice_turn_route.py"/>
+                    <ref key="path" value="hermes_cli/web_routers/audio.py"/>
+                    <ref key="path" value="plugins/google_meet"/>
+                    <ref key="path" value="plugins/teams_pipeline"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.interface.voice" name_length="2" role="SE">
+                      <name>Voice interaction</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.companion.virtual"
+                      purpose="Provide an animated companion within supported Hermes interfaces."
+                      function="Maintains pet selection and animation state and supports creation of custom pet assets."
+                      ef="Maintains pet selection and animation state and supports creation of custom pet assets."
+                      ifd="receive"
+                      relation="presents an animated virtual companion"
+                      verb="presents"
+                      observation="The pet engine serves CLI, TUI, and desktop surfaces; its generation pipeline constructs the animation atlas used by the companion.">
+                  <refs>
+                    <ref key="path" value="agent/pet"/>
+                    <ref key="path" value="agent/pet/generate"/>
+                    <ref key="path" value="apps/desktop/src/app/pet-overlay"/>
+                    <ref key="path" value="apps/desktop/src/app/pet-generate"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.companion.virtual" name_length="2" role="SE">
+                      <name>Petdex</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.gateway.messaging"
+              purpose="Conduct agent conversations and deliver work through external communication channels."
+              function="Manages messaging adapters, routes inbound events to sessions, and delivers replies, streams, media, and notifications."
+              ef="Manages messaging adapters, routes inbound events to sessions, and delivers replies, streams, media, and notifications."
+              ifd="both"
+              relation="connects conversations to messaging channels"
+              verb="connects"
+              observation="GatewayRunner manages adapter lifecycles and profile routing. Channel policies, pairing, session keys, busy-input handling, streaming, and delivery are coordinated with canonical session execution.">
+          <refs>
+            <ref key="path" value="gateway/run.py"/>
+            <ref key="path" value="gateway/run_adapters.py"/>
+            <ref key="path" value="gateway/stream_consumer.py"/>
+            <ref key="path" value="gateway/stream_events.py"/>
+            <ref key="path" value="gateway/session_identity.py"/>
+            <ref key="path" value="plugins/platforms"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.gateway.messaging" name_length="2" role="SE">
+              <name>GatewayRunner</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="upstream.service.messaging"
+                      purpose="Receive channel events and send results to their intended conversation destinations."
+                      function="Provides platform messaging APIs, connection events, and supported media or interactive-message facilities."
+                      ef="Provides platform messaging APIs, connection events, and supported media or interactive-message facilities."
+                      ifd="both"
+                      relation="transports channel conversations"
+                      verb="transports"
+                      observation="Bundled platform plugins include Telegram, Discord, Slack, WhatsApp, Signal, Teams, and additional channels; their adapters translate platform-specific behavior into the shared gateway contract.">
+                  <refs>
+                    <ref key="path" value="gateway/platforms/base.py"/>
+                    <ref key="path" value="gateway/platform_registry.py"/>
+                    <ref key="path" value="plugins/platforms"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="upstream.service.messaging" name_length="2" role="NE">
+                      <name>Messaging platform</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.receiver.webhook"
+                      purpose="Start or inform work from configured external events."
+                      function="Receives webhook deliveries, applies subscription routing, and admits the resulting event into agent execution."
+                      ef="Receives webhook deliveries, applies subscription routing, and admits the resulting event into agent execution."
+                      ifd="receive"
+                      relation="admits subscribed external events"
+                      verb="admits"
+                      observation="Webhook handling includes filters, coalescing, delivery behavior, and the receiving side of optional MCP event subscriptions.">
+                  <refs>
+                    <ref key="path" value="gateway/platforms/webhook.py"/>
+                    <ref key="path" value="gateway/platforms/webhook_ingress.py"/>
+                    <ref key="path" value="gateway/platforms/webhook_filters.py"/>
+                    <ref key="path" value="gateway/platforms/webhook_coalesce.py"/>
+                    <ref key="path" value="gateway/platforms/webhook_mcp_events.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.receiver.webhook" name_length="2" role="SE">
+                      <name>Webhook adapter</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.system.plugin"
+              purpose="Add or replace capabilities without incorporating every integration into the agent core."
+              function="Discovers and loads plugins that register tools, hooks, providers, commands, middleware, and interface contributions."
+              ef="Discovers and loads plugins that register tools, hooks, providers, commands, middleware, and interface contributions."
+              ifd="receive"
+              relation="extends the agent's capabilities"
+              verb="extends"
+              observation="Plugin sources include bundled packages, profile packages, opted-in project packages, and Python entry points. Memory and context-engine plugins have specialized discovery paths.">
+          <refs>
+            <ref key="path" value="hermes_cli/plugins.py"/>
+            <ref key="path" value="hermes_cli/plugins_activation.py"/>
+            <ref key="path" value="plugins/plugin_loader.py"/>
+            <ref key="path" value="plugins"/>
+            <ref key="path" value="apps/desktop/src/sdk"/>
+            <ref key="path" value="web/src/plugins"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.system.plugin" name_length="2" role="SE">
+              <name>Hermes Plugin System</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.manager.connection"
+                      purpose="Make selected external accounts and installable capabilities available to a conversation."
+                      function="Discovers connection targets, conducts connection operations, and installs selected catalog plugins or skills."
+                      ef="Discovers connection targets, conducts connection operations, and installs selected catalog plugins or skills."
+                      ifd="both"
+                      relation="manages capability connections"
+                      verb="manages"
+                      observation="Connection operations are backend-owned and tied to profile and session identity. Managed accounts and local MCP connections converge on the connector lifecycle and ordinary tool dispatch.">
+                  <refs>
+                    <ref key="path" value="tools/connectors/tool.py"/>
+                    <ref key="path" value="tools/connectors/run.py"/>
+                    <ref key="path" value="tools/connectors/operation.py"/>
+                    <ref key="path" value="tools/connectors/dispatch.py"/>
+                    <ref key="path" value="tools/connectors/catalog_tool.py"/>
+                    <ref key="path" value="plugin-catalog"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.connection" name_length="2" role="SE">
+                      <name>manage_connections</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.manager.runtime"
+              purpose="Install, configure, maintain, and diagnose the environment in which the agent runs."
+              function="Coordinates configuration, isolated profiles, managed dependencies, updates, and operational diagnostics."
+              ef="Coordinates configuration, isolated profiles, managed dependencies, updates, and operational diagnostics."
+              ifd="both"
+              relation="maintains the agent runtime"
+              verb="maintains"
+              observation="Source installers, desktop packaging, container and Nix definitions, and runtime bootstrap paths provide different deployment implementations of the same operational purpose.">
+          <refs>
+            <ref key="path" value="hermes_bootstrap.py"/>
+            <ref key="path" value="hermes_cli/main.py"/>
+            <ref key="path" value="setup-hermes.sh"/>
+            <ref key="path" value="setup-hermes.ps1"/>
+            <ref key="path" value="apps/bootstrap-installer"/>
+            <ref key="path" value="Dockerfile"/>
+            <ref key="path" value="docker"/>
+            <ref key="path" value="nix"/>
+            <ref key="path" value="website"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.manager.runtime" name_length="2" role="SE">
+              <name>Hermes runtime management</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.manager.configuration"
+                      purpose="Apply selected behavior and account settings to the correct isolated profile."
+                      function="Loads, validates, migrates, and writes configuration and manages profile-specific state locations."
+                      ef="Loads, validates, migrates, and writes configuration and manages profile-specific state locations."
+                      ifd="both"
+                      relation="maintains profile-specific configuration"
+                      verb="maintains"
+                      observation="Configuration separates ordinary settings from secret-bearing environment values. Profiles isolate state while supported gateway multiplexing serves several profiles in one process.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/config.py"/>
+                    <ref key="path" value="hermes_cli/profiles.py"/>
+                    <ref key="path" value="hermes_constants.py"/>
+                    <ref key="path" value="hermes_yaml.py"/>
+                    <ref key="path" value="gateway/run_adapters.py"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.configuration" name_length="2" role="SE">
+                      <name>Configuration and profiles</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.manager.package"
+                      purpose="Supply a reproducible, compatible set of application and tool dependencies."
+                      function="Resolves locked packages, acquires and verifies artifacts, builds environments, and publishes usable runtime generations."
+                      ef="Resolves locked packages, acquires and verifies artifacts, builds environments, and publishes usable runtime generations."
+                      ifd="receive"
+                      relation="provides managed runtime dependencies"
+                      verb="provides"
+                      observation="PM owns Python and tool environments, package storage, plugin dependency composition, compatibility handling, recovery, and platform-specific executable acquisition.">
+                  <refs>
+                    <ref key="path" value="pm/install.py"/>
+                    <ref key="path" value="pm/store.py"/>
+                    <ref key="path" value="pm/runtime.py"/>
+                    <ref key="path" value="pm/workspace.py"/>
+                    <ref key="path" value="pm/plugin_eviction.py"/>
+                    <ref key="path" value="pm/packages.py"/>
+                    <ref key="path" value="pyproject.toml"/>
+                    <ref key="path" value="uv.lock"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.package" name_length="2" role="SE">
+                      <name>PM</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.manager.update"
+                      purpose="Move an installation to an available application version and restore the appropriate running services."
+                      function="Checks update channels, prepares version changes, commits the update, and coordinates restart or recovery."
+                      ef="Checks update channels, prepares version changes, commits the update, and coordinates restart or recovery."
+                      ifd="both"
+                      relation="updates the installed application"
+                      verb="updates"
+                      observation="Update ownership depends on installation method; source updates and packaged desktop updates use their respective publication and replacement mechanisms.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/update_cmd.py"/>
+                    <ref key="path" value="hermes_cli/update_cmd_check.py"/>
+                    <ref key="path" value="hermes_cli/update_cmd_commit.py"/>
+                    <ref key="path" value="hermes_cli/update_abort_recovery.py"/>
+                    <ref key="path" value="apps/desktop/electron/bundle-swap.ts"/>
+                    <ref key="path" value="apps/desktop/electron/update-order.ts"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.manager.update" name_length="2" role="SE">
+                      <name>Hermes update</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+                <join type="purpose"
+                      provider="code.monitor.runtime"
+                      purpose="Explain runtime health, execution failures, and resource or usage behavior."
+                      function="Collects diagnostics, presents logs and usage, runs supported checks, and exports configured monitoring or metrics."
+                      ef="Collects diagnostics, presents logs and usage, runs supported checks, and exports configured monitoring or metrics."
+                      ifd="receive"
+                      relation="reports operational health"
+                      verb="reports"
+                      observation="Doctor, verification recipes, account-usage views, liveness tracking, local metrics, and configured telemetry serve diagnosis. Tests and evaluation probes provide supporting evidence rather than additional agent capabilities.">
+                  <refs>
+                    <ref key="path" value="hermes_cli/doctor.py"/>
+                    <ref key="path" value="agent/verify"/>
+                    <ref key="path" value="agent/account_usage.py"/>
+                    <ref key="path" value="agent/turn_liveness.py"/>
+                    <ref key="path" value="agent/monitoring"/>
+                    <ref key="path" value="hermes_cli/observability"/>
+                    <ref key="path" value="hermes_logging.py"/>
+                    <ref key="path" value="tests"/>
+                    <ref key="path" value="tests-js"/>
+                    <ref key="path" value="scripts"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.monitor.runtime" name_length="2" role="SE">
+                      <name>Diagnostics and observability</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+
+        <join type="purpose"
+              provider="code.generator.trajectory"
+              purpose="Produce reusable records of agent behavior over individual tasks or datasets."
+              function="Records agent trajectories and runs dataset prompts through parallel, resumable agent execution."
+              ef="Records agent trajectories and runs dataset prompts through parallel, resumable agent execution."
+              ifd="both"
+              relation="generates research execution records"
+              verb="generates"
+              observation="Batch execution uses the same AIAgent implementation as interactive work. Toolset distributions and trajectory conversion shape the generated research records.">
+          <refs>
+            <ref key="path" value="batch_runner.py"/>
+            <ref key="path" value="mini_swe_runner.py"/>
+            <ref key="path" value="agent/trajectory.py"/>
+            <ref key="path" value="agent/agent_runtime_helpers.py"/>
+            <ref key="path" value="toolset_distributions.py"/>
+            <ref key="path" value="evals"/>
+          </refs>
+          <elements>
+            <element namespace_address="code.generator.trajectory" name_length="2" role="SE">
+              <name>Batch Agent Runner</name>
+              <elements/>
+              <joins>
+                <join type="purpose"
+                      provider="code.compressor.trajectory"
+                      purpose="Fit recorded agent trajectories into a target training or processing budget."
+                      function="Protects selected trajectory boundaries and summarizes the necessary middle material."
+                      ef="Protects selected trajectory boundaries and summarizes the necessary middle material."
+                      ifd="receive"
+                      relation="compresses recorded agent trajectories"
+                      verb="compresses"
+                      observation="Trajectory compression is an offline post-processing function distinct from reducing the active conversation context. It supports asynchronous processing and directory-level workloads.">
+                  <refs>
+                    <ref key="path" value="trajectory_compressor.py"/>
+                    <ref key="symbol" value="TrajectoryCompressor"/>
+                  </refs>
+                  <elements>
+                    <element namespace_address="code.compressor.trajectory" name_length="2" role="SE">
+                      <name>TrajectoryCompressor</name>
+                      <elements/>
+                      <joins/>
+                    </element>
+                  </elements>
+                </join>
+              </joins>
+            </element>
+          </elements>
+        </join>
+      </joins>
+    </element>
+  </elements>
+</result>

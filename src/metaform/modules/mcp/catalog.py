@@ -17,20 +17,26 @@ from metaform.module import Module, Verb
 CATALOG = 'metaform_catalog'
 OPEN_KEY = 'catalog:module'
 
-def role() -> str | None:
-    """The role of the agent this server serves, from METAFORM_ROLE, which dispatch's runner sets on its agent's MCP
-    server; None for the person's own sessions."""
-    named = os.environ.get('METAFORM_ROLE') or ''
-    return named if named and named != 'none' else None
+def task() -> str | None:
+    """The name of the task the agent this server serves runs, `user_agent`, `composer`, `intake` and the rest, from
+    METAFORM_TASK_NAME, which dispatch's runner sets on a task session's MCP server; None for a session no task names:
+    the person's own, or one a runner started on a ticket, a talk or a brief, whose first turn is its instructions."""
+    return os.environ.get('METAFORM_TASK_NAME') or None
 
 
-FOR_PERSON = ('system', 'sentinel')
+def dispatched() -> bool:
+    """Whether a runner started the agent this server serves: METAFORM_SESSION names its runner. False for the
+    person's own sessions."""
+    return bool(os.environ.get('METAFORM_SESSION'))
 
 
-def for_person(named: str | None = None) -> bool:
-    """Whether the agent this server serves acts for the person: the person's own sessions and FOR_PERSON."""
-    named = role() if named is None else named
-    return named is None or named in FOR_PERSON
+FOR_PERSON = ('user_agent',)
+
+
+def for_person() -> bool:
+    """Whether the agent this server serves acts for the person: the person's own sessions and the tasks FOR_PERSON
+    names, the person's own agent."""
+    return not dispatched() or task() in FOR_PERSON
 
 
 def grouped(names: Iterable[str], declared: dict[str, tuple[Module, Verb]]) -> dict[str, list[str]]:

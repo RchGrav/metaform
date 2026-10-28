@@ -1,1 +1,0 @@
-if all agents finish and no new tickets have appeared they all leave the map and end their context.

@@ -26,9 +26,9 @@ What the server sends when an agent connects is the mcp module's `<instructions>
 
 Each agent is given what its role needs, at the moment it needs it; there is no setting that switches back to listing every tool and returning every field. Code: `src/metaform/modules/mcp/server.py`, `catalog.py`, `shaping.py`; the build report is `artifacts/critic/mcp-context-build.md`.
 
-- **Tools by purpose.** `tools/list` holds `metaform_catalog` and the tools of the one category the session has open, or, while none is, the tools its role starts with (a talk's and a sentinel's `map_where`). A listing that names no session, HTTP on the 2026-07-28 wire, holds every tool the role is given, since no category it opens could change it; there opening a category only says its tools. `metaform_catalog` with nothing lists the categories the role may open; `category=<name>` opens one, listing its tools in place of the last one's, announced with `notifications/tools/list_changed`; `search=<words>` finds tools in any category; `tool=<name> arguments={...}` runs one, for an AI tool that keeps the list it was first given. The categories are `metaform.module.CATEGORY_NAMES`; a verb's `category` places its tool, else the mcp module's table, else its module's.
-- **Roles.** A dispatched agent's role, `METAFORM_ROLE`, decides which categories it may open (`catalog.ROLE_CATEGORIES`) and which is open at connect: a worker's and a merge preparation's ticket, an intake's intake; a sentinel and a talk start with `map_where` alone. A tool outside them is neither listed nor run for it, and a category whose tools are all withheld is never named. Steering is never opened by a role in `roles_without_authority`, and such a role's `map_work` schema and guide leave out the board's ops and arguments (`catalog.HELD_OPS`, `HELD_ARGUMENTS`). A verb's `person_details` reach only the person's own sessions, the system agent and a sentinel. The system agent and the person's own sessions open every category.
-- **Connect message.** Every agent, in every role and on every wire, gets the mcp module's `connect_directive` line, then one link per line to each instruction block that applies to it now, in this order: `metaform://rules` (the rules block, `connect_rules`), `metaform://metaform` (the glossary), `metaform://memory` (the memory module's instructions prompt, through the prompt store) while the memory module is on, `metaform://firstrun` (intake's `no_intake`) to the person's own sessions while the project has no intake and none is being recorded, `metaform://role/<role>` (`person` for the person's own sessions), and `metaform://<project>` in a registered project. The server generates the links from its registry of instruction blocks (`BLOCKS` in `server.py`), each with its condition; no prompt holds a link. Each block is a resource served whole and exactly as its prompt holds it. The role block holds the role's line (`connect_use` or `role_<role>`) with one line per category for the person's own sessions and the system agent, the catalog's line, the compaction line to a session no runner follows or `connect_unkeyed` on the 2026-07-28 wire over HTTP, the project's name to the person's own sessions, the folder's other notices, and the skill index to the person's own sessions and the system agent. The provisioning notice comes with the person's session's first tool result. After a compaction, the same directive and links come again first: at the head of a dispatched agent's next turn, or of its next tool result when that comes first, and first in what `metaform_catalog compacted=true` and `metaform://runtime/compaction-state` answer.
+- **Tools by purpose.** `tools/list` holds `metaform_catalog` and the tools of the one category the session has open, or, while none is, the tools it starts with (a talk's `map_where`). A listing that names no session, HTTP on the 2026-07-28 wire, holds every tool the agent is given, since no category it opens could change it; there opening a category only says its tools. `metaform_catalog` with nothing lists the categories the agent may open; `category=<name>` opens one, listing its tools in place of the last one's, announced with `notifications/tools/list_changed`; `search=<words>` finds tools in any category; `tool=<name> arguments={...}` runs one, for an AI tool that keeps the list it was first given. The categories are `metaform.module.CATEGORY_NAMES`; a verb's `category` places its tool, else the mcp module's table, else its module's.
+- **Tasks.** A session is its task; there are no roles (2026-10-25, the owner's decision). The runner of a task session sets `METAFORM_TASK_NAME` (`user_agent`, `project_agent`, `composer`, `facilitator`, `architect`, `intake`) on its agent's MCP server beside `METAFORM_TASK`; a session no task names, a ticket's agent started with `dispatch start`, a talk or a helper, carries no such name, and its first turn is its instructions. The name decides which instruction blocks open the session (`metaform://task/<name>`: `person` for the person's own session, which no runner started, and `intake` for the intake task; no block for a task whose text is its first turn) and whether a verb's `person_details` are said to it (`catalog.for_person`: the person's own sessions and the `user_agent` task). The tools are the same for every agent: nothing is withheld by task, and no runner withholds tools from its agent's server (the intake's withheld list went with it).
+- **Connect message.** Every agent, on every wire, gets the mcp module's `connect_directive` line, then one link per line to each instruction block that applies to it now, in this order: `metaform://rules` (the rules block, `connect_rules`), `metaform://metaform` (the glossary), `metaform://memory` (the memory module's instructions prompt, through the prompt store) while the memory module is on, `metaform://firstrun` (intake's `no_intake`) to the person's own sessions while the project has no intake and none is being recorded, `metaform://task/<name>` (`person` for the person's own session, `intake` for the intake task; no task block for any other task, whose text is its first turn), and `metaform://<project>` in a registered project. The server generates the links from its registry of instruction blocks (`BLOCKS` in `server.py`), each with its condition; no prompt holds a link. Each block is a resource served whole and exactly as its prompt holds it. The task block holds its first line (`connect_use` or `task_intake`), the catalog's line, the compaction line to a session no runner follows or `connect_unkeyed` on the 2026-07-28 wire over HTTP, the project's name to the person's own session, and the folder's other notices. The provisioning notice comes with the person's session's first tool result. After a compaction, the same directive and links come again first: at the head of a dispatched agent's next turn, or of its next tool result when that comes first, and first in what `metaform_catalog compacted=true` and `metaform://runtime/compaction-state` answer.
 - **Results.** A lookup tool takes `view` (`triage` by default, `full`, `count`), `fields`, `must_contain` and `status_equals`. Triage drops what holds nothing and a nested record's id, gives lists as tables and nested records as `parent.field` lines, never JSON inside a line; a list of more than 25 records without a filter is cut there. A field, filter or count no record holds is refused with the fields the records hold. `map_work`'s rows carry `status`, open or done. How to ask for more is said once a session, with the first trimmed list.
 - **Once a session.** Each tool's guide is given once, for the call's op alone when the tool has ops; a line given with one tool is not given again with another. A second read of a glossary in a session answers one line. Over HTTP the session is the client's `Mcp-Session-Id`; on the 2026-07-28 wire, which has none, `metaform_catalog` gives a session handle that each call passes as `session_handle` (or in `_meta` under `io.metaform/session`); a call that names none gets the line saying so, never the guide on every call.
 - **Compaction.** A dispatched agent's runner advertises ACP's session compaction; on `compaction_update` completed it forgets what the session was given, all but the category its AI tool lists, publishes `session.compacted`, and leaves the `compacted` line for the agent's next tool call, else the next turn opens with it. Another session says it itself, with `metaform_catalog compacted=true` or by reading `metaform://runtime/compaction-state`.
@@ -92,22 +92,21 @@ Each is served only to a client that declares it on the request, and every tool 
 | Extension | What Metaform does with it |
 |---|---|
 | MCP Apps, `io.modelcontextprotocol/ui` | `map_where` and `map_roots` open `ui://metaform/map`, the web GUI's 2D and 3D map focused on the address; `map_item` and `map_node` open `ui://metaform/node`, the node with what relies on it, what it relies on and its numbered items; `dispatch_sessions` and `dispatch_start` open `ui://metaform/trace`, the ticket's agent threads followed while the agent works; `metaform_instructions` and `map_glossary` open `ui://metaform/glossary`. The views use the official MCP Apps SDK, `@modelcontextprotocol/ext-apps` 2.0.3, declare an empty content policy, the clipboard and their border in `_meta.ui`, follow the host's theme, size and display modes, and read through `metaform_view`, an app-only tool the model never sees. Selecting a node tells the agent which Address the person is looking at; an Address the agent names in a later call turns the open views to it, and a host that calls a view's own tools can turn it with `metaform_view_show`. The map view is built by `scripts/build_map_view.mjs`, which the wheel build runs; a map view older than the page is not served. Settings `mcp_apps` and `mcp_apps_offer`. |
-| Tasks, `io.modelcontextprotocol/tasks` | A verb declared `task=True`, such as `hello_wait`, is answered with a task while it runs on in the server, kept in the project for a day so it outlives that server; a verb declared `task='run'` is answered with the workflow run the server advances by itself as the task (none ships yet: `workflow_assign`, whose run id the calling agent acts on, answers as any tool). `tasks/get`, `tasks/update` (the person's answer to a paused run) and `tasks/cancel` work on both; a cancel ends a task cancelled once its verb stops, or completed with its result when the verb finished first. Setting `mcp_tasks`. |
-| Elicitation (core) | A tool with a caution, and a person-only setting an agent asks to change, are put to the person as a form: `input_required` on the 2026-07-28 wire, `elicitation/create` on the 2025 handshake. Never for a dispatched agent. Setting `mcp_consent`, person only. |
+| Tasks, `io.modelcontextprotocol/tasks` | A verb declared `task=True`, such as `hello_wait`, is answered with a task while it runs on in the server, kept in the project for a day so it outlives that server. `tasks/get`, `tasks/update` and `tasks/cancel` work on it; a cancel ends a task cancelled once its verb stops, or completed with its result when the verb finished first. Setting `mcp_tasks`. |
+| Elicitation (core) | Not used by Metaform's own tools since 2026-10-25: a tool with a caution runs with `confirm=true`. A harness's own elicitation and permission requests are relayed to the person by dispatch. |
 
 ## Tools
 
 ### agents
 
-The roles of the agents Metaform starts, the prompts each is sent, and what each session was sent.
+Instruction delivery history and context evidence for agent sessions.
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `agents_drop` | Go back to a prompt's shipped text, so its edit is no longer sent. Caution: Every agent of the roles that name this prompt is sent the shipped text from its next turn. | write |
-| `agents_override` | Save an edit of a role's prompt, sent in place of the shipped text from the next turn. Caution: Every agent of the roles that name this prompt is sent the edit from its next turn. | write |
-| `agents_role` | Read one role: what it is for, each prompt it is sent with its text and version, its tools and authority, and the agents running as it. | read |
-| `agents_roles` | List the roles of the agents Metaform starts, with the prompts each is sent. | read |
-| `agents_sent` | Read which role a session ran as and which prompt versions each of its turns carried. | read |
+| `agents_receipts` | Read context delivery fingerprints and versions, without bodies. | read |
+| `agents_confirm` | Report a startup context marker using your retained key; omit the key if unavailable. The observation does not establish which facts remain in context. | write |
+| `agents_updates` | Read selected prompt merge evidence, exact parent versions and retained conflicts. | read |
+| `agents_sent` | Read which prompt versions each session turn carried. | read |
 
 ### autoticket
 
@@ -134,9 +133,9 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_autostart` | Start agents on the waiting tickets in board order, while the person has Autostart agents checked. Held tickets are left out, and at most dispatch_agents run at once. | write, open world |
 | `dispatch_broadcast` | Send a person's message to every agent running on the project at once, and keep it with whom it reached. | write, open world |
 | `dispatch_broadcasts` | List the broadcasts kept on the project, newest first, each with whom it reached. | read |
-| `dispatch_claim` | Reserve the part of the map a chosen proposal touches, so no other ticket there starts until its tickets land. | write |
-| `dispatch_claims` | List the work claims reserving parts of the map, with their state, and the proposals sentinels made. | read |
-| `dispatch_cancel` | Cancel a ticket, the person's own: its agent's turn is cancelled with session/cancel, its session ends, and the ticket is closed with the outcome cancelled, never completed. Refused to an agent while agents_may_set_control is off. | remove, open world |
+| `dispatch_claim` | Reserve a part of the map for named work, so no other ticket there starts until its tickets land. | write |
+| `dispatch_claims` | List the work claims reserving parts of the map, with their state. | read |
+| `dispatch_cancel` | Cancel a ticket, the person's own: its agent's turn is cancelled with session/cancel, its session ends, and the ticket is closed with the outcome cancelled, never completed. | remove, open world |
 | `dispatch_fork` | Fork a running agent's session into a side conversation that keeps everything it knows, where its agent offers session/fork; its thread is a child of the session's. | write, open world |
 | `dispatch_handoff` | Read a ticket handed to you by its id: the ticket, the node it is at and the counts there with the calls that read them, and one line saying to work it with map_work. Its reads are named as tool calls, with metaform:// links to the node and the ticket. | read |
 | `dispatch_helper` | Start a helper agent with a brief and no ticket, for the person's system agent: a figure on the map, steered and stopped like any agent, outside the worker slots. It reports one line to the system agent's inbox when done and ends. | write, open world |
@@ -150,7 +149,6 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_notes` | List your notes, sent and received, with where each stands for each receiver: queued, delivered, read or replied; note=<id> for one note and its replies. | read |
 | `dispatch_peers` | See who is at work where: each agent on an open ticket, its Address, the files it touched and what it said last. With at=, file= or topic=, who else is in that part or file, with a note ready to ask them before you edit. | read |
 | `dispatch_prep` | Start an agent in a merge's worktree to prepare its code for the person's review. | write, open world |
-| `dispatch_propose` | Record a sentinel's proposals for the issue it was raised on, for the person to choose one on the page. Each is presented beside the part of the map it reserves. | write |
 | `dispatch_recover` | Return the tickets of dead agent runners to the queue, while the dispatch_recovery setting is automatic. Cleanup it cannot be sure of leaves the work taken. | write, open world |
 | `dispatch_registry` | List the agents of the ACP Registry dispatch can start, each with its version and whether it runs here, and pin one: add=<id> installs the version listed now and dispatch starts that version until you pin another. | write, open world |
 | `dispatch_reset` | Put agent bookkeeping back in order after a crash, returning tickets no live agent holds to the queue. Dead sessions are recorded as ended; live agents are left alone. | write |
@@ -163,7 +161,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_stop` | Stop the agent working a ticket. | write, open world |
 | `dispatch_stop-all` | Stop every agent of the project, or of every project with home=true, and turn Autostart agents off, so nothing starts in their place; an agent stops only the agents it started. | write, open world |
 | `dispatch_system` | Start the person's system agent, who talks with them about anything in the project, or reuse the running one; `fresh=true` resumes no earlier conversation. | write, open world |
-| `dispatch_tune` | Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the person's own. A running session takes them at once. Refused to an agent while agents_may_set_control is off. | write |
+| `dispatch_tune` | Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the person's own. A running session takes them at once. | write |
 | `dispatch_talk` | Talk with an agent about a ticket, a node, or an ended agent's session. The ticket may be open or done; an agent at work on it is talked to directly. | write, open world |
 | `dispatch_wait` | Wait until a ticket is done, its agent stops with it open, or a signal is raised on it. With no id, until any ticket of the project is, naming which. It answers pending with the call to make next after dispatch_wait_seconds. | read |
 
@@ -280,13 +278,31 @@ Bring a question to a table of agents at an Address, through the Roundtable 2 en
 | `roundtables_follow` | Start a table's follower again when it stopped before the table ended. | write, open world |
 | `roundtables_adopt` | Adopt an idea of an ended table as a ticket, the table its source. | write |
 
-### orchestration
+### tasks
 
-Assignments, specialists, check-ins and independent assessment. Only the tool that writes a specification is listed here so far.
+Assigned tasks and the paired project agents: the named task definitions, a pair's worktree rounds, ratings and scores, and node-scoped skills.
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `orchestration_change` | Publish an adaptive operative revision or record a strict-mode recommendation. With `section` (a record id such as `CTX-050`, or a heading), `content` is that one record, starting with its Markdown heading: it replaces the record with that heading, through its last line, or is added after the last record of its level (a new `###` record goes after the last `###` record, before a closing `## Open questions`), and every other record stays. `content` holding more than one record, or headed by a record the file already holds under another `section`, is refused, nothing written, with the call that does what was meant. Without `section`, `content` is the whole new file. Either way, a write that would drop a heading of the file is refused, nothing written, unless `removing` names each record it removes; the refusal lists the records it would have dropped and gives the `section` call that adds or replaces the one record instead (2026-10-19, ticket code.router.assignment#13, after two amendments overwrote whole specifications). The person's message and the team's change order show the changed lines, each hunk headed by its record, not the whole file; agents still get the whole revision as `operative_content`. A stored workflow takes only the whole-content form. | write |
+| `tasks_list` | Discover task definitions and skills without loading their instruction bodies. | read |
+| `tasks_read` | Load a task's full instructions before carrying out its assignment. | read |
+| `tasks_assign` | Assign a named or explicit task to a dedicated agent with selected skills; no ticket required. | write, open world |
+| `tasks_start` | Start a pair of project agents, agent 1 and agent 2 as the settings `tasks_agent_1` and `tasks_agent_2` choose them, even for one ticket. | write, open world |
+| `tasks_get` | Read an assigned task's progress, input requests or terminal result. | read |
+| `tasks_update` | Supply responses for currently outstanding task input requests. | write |
+| `tasks_cancel` | Request cancellation of an assigned task. | write |
+| `tasks_configure` | Set an option advertised by the assigned agent, including its planning mode. | write |
+| `tasks_board` | Read the live board: the other agents online with their scores and work, and the worktrees open on the project, claimed or free. | read |
+| `tasks_message` | Send an attributed message or invitation to any assigned agent; every message is logged for the run. | write |
+| `tasks_status` | Update an agent's availability, canonical nodes and current or next worktree. | write |
+| `tasks_ticket` | Write a ticket with a summary phrase and detailed work for a pair: in a worktree (`worktree=<name>`) when it lands with others, and naming the agents who work it (`agents=[...]`, the first claims, the next is partner, each one online is told). | write |
+| `tasks_worksheet` | Read a worktree's worksheet, or claim the worktree and register its unified checklist: the claim makes the git worktree `.worktrees/<name>` and takes every ticket in it. | write |
+| `tasks_pair` | Register a partnership accepted through messages, and its next/current worktree. | write |
+| `tasks_check` | Mark a worksheet item and calculate the exact completion percentage. | write |
+| `tasks_rate` | Rate an agent at the close of a worktree, stars of five in each category (Efficient, Alert & Aware, Thorough, Coordination) and the bonus, or say you worked alone; the worktree closes once every participant has. With `tasks_full_auto` on, the close merges the worktree's branch into the checked-out branch and removes the worktree. | write |
+| `tasks_handoff` | At 50% context, once the task in hand is finished: start a new project agent on the same agent with your handoff as its input, move your assignments and partners to it, and end your own session. | write |
+| `tasks_skills` | Discover, read or write the skill layer: project skills at a node, each with its front matter. | write |
+| `tasks_reusable` | Store a reusable SKILL.md and supporting resources served through the MCP Skills Extension. | write |
 
 ### twilio
 
@@ -328,37 +344,6 @@ Start and stop Metaform's web GUI, and serve web variants.
 | `web_stop` | Stop the web GUI. | write |
 | `web_restart` | Stop the web GUI and start it again; it comes back even if your session ends meanwhile. | write |
 
-### workflow
-
-Write, import and run reusable Axiom subroutines.
-
-| Tool | What it does | Effect |
-|---|---|---|
-| `workflow_add_prompt` | Record a named Axiom subroutine on a workflow element or any other project element. | write |
-| `workflow_assign` | Hand a workflow skill to a fresh agent: it gets a run id and reads its assignment with resume. | write |
-| `workflow_call` | Call an Axiom subroutine on the same agent, keeping the caller's scope. | write |
-| `workflow_cancel` | Cancel a run and every run below it; its caller receives the error cancelled. | write |
-| `workflow_complete` | Finish a run: deliver its RETURN to the caller, or close an assignment. The interpreter supplies its final variables. | write |
-| `workflow_export` | Export a workflow from its stored layer as a portable document, printed or written to a file. | write |
-| `workflow_fail` | Fail a run: deliver an error to its caller, for the caller's authored Retry or Catch. | write |
-| `workflow_handoff` | Start a callee run for a fresh agent; its run id reaches that agent directly or through the orchestrator. | write |
-| `workflow_history` | Read every saved version of one named Axiom subroutine on an element. | read |
-| `workflow_import` | Import a portable workflow document into an ordinary knowledge layer. | write |
-| `workflow_lexicalize` | Read the prompt-lexicalization script with a prompt as input, to tie its names to map addresses. | read |
-| `workflow_lib` | Read one Axiom lib: its shared sections at their newest stored versions. | read |
-| `workflow_libs` | List the Axiom libs, each with its first line, its marker. | read |
-| `workflow_list` | List the visible workflow elements and the names of their Axiom subroutines. | read |
-| `workflow_parallel` | Run independent subroutine calls as branches; the run resumes when every branch returns. | write |
-| `workflow_pause` | Pause a run on the person when something its prompt does not decide stops it, saying what you found. | write |
-| `workflow_preprocess` | Prepare a lexicalized prompt by placing the knowledge visible at its addresses before its address footer. | read |
-| `workflow_resume` | Read a workflow run by its id: its current subroutine and values, or its assignment. | write |
-| `workflow_run` | Start a workflow run: an entry call to an Axiom subroutine, whose run id the interpreter follows. | write |
-| `workflow_runs` | List the open workflow runs, or those in one state, with what stopped a paused one. | read |
-| `workflow_scan` | Read the scan skill, which decides the libs a task needs, with a workflow and its task bound as data. | read |
-| `workflow_skill` | Read one workflow skill's Axiom, to follow it. | read |
-| `workflow_skills` | List discoverable workflow skills with their descriptions and required libs. | read |
-| `workflow_submit` | Record a workflow element, which holds Axiom subroutines, in an ordinary knowledge layer. | write |
-
 ### metaform
 
 Metaform's own commands: settings, feedback and reports, and the project's history and prompts.
@@ -385,11 +370,12 @@ Reusable skills use `io.modelcontextprotocol/skills` (SEP-2640): `skills/list`
 and `skills/get` return canonical URIs, preserved frontmatter and complete
 resource manifests. `resources/read` loads one requested file. Entries contain
 SHA-256 digests and raw byte sizes. Text remains UTF-8 and binary uses base64.
-The connect message does not embed a skill list. Known graph expertise URIs are
-readable without adding all project expertise to discovery.
+The connect message does not embed a skill list. Known skill layer URIs are
+readable without adding the whole skill layer to discovery.
 
 Authored reusable skills live in the Metaform home's `skills/` directory and
 use `skill://<name>/SKILL.md`. Packaged skills use
-`skill://metaform/<name>/SKILL.md`. Expertise remains in the receiving element's
-`joins` in the expertise layer, or directly attached to its functional joins,
+`skill://metaform/<name>/SKILL.md`. The skill layer, the layer `skills`, uses
+`skill://skills/<node>/<name>/SKILL.md` and remains in the receiving element's
+`joins`, or directly attached to its functional joins,
 using the same SKILL.md and manifest format.

@@ -11,7 +11,7 @@ import {EASE} from '/page/app/camera/fly3d.js';
 import {asked} from '/page/app/selection/select.js';
 import {DOCK, clockOf, STANDBY, UPDATES_ONLY, DOCKMOTION, dockGoingAway, paintAvatar, embodyRows,
   dockState} from '/page/app/dock/embody.js';
-import {showChat, drawProposals, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
+import {showChat, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
   chatActivity, drawAgentSessions} from '/page/app/dock/threads.js';
 import {queuedRows, deliverQueued, startFailed} from '/page/app/dock/send.js';
 import {messagesOf} from '/page/app/board/messages.js';
@@ -53,7 +53,6 @@ export async function drawHelpdesk(trouble) {
   sayWhere(notification);
   drawAsked(target, session, lines);
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
-  drawProposals();
   drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
   drawTask($('#helpdesk .assignmentbox'), state, agentAt);
   drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);

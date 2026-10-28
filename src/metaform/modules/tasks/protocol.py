@@ -1,14 +1,20 @@
-"""Worker worksheets, peer records and event-driven rendezvous over ordinary project tickets."""
+"""Worktree rounds over ordinary project tickets: the unified worksheet a pair registers, their picks and scores at the
+close, and event-driven rendezvous between the agents online."""
 from __future__ import annotations
 
+import functools
 import os
 import uuid
+from collections.abc import Callable
+from importlib import resources
 from typing import Any, cast
 
-from metaform.data import Node
-from metaform.module import Context, Stop
+from metaform import prompt_files
+from metaform.data import Node, StoreError
+from metaform.module import Context, Stop, context
 
-from .board import Board
+from . import worktrees
+from .board import CATEGORIES, Board
 
 
 def board(ctx: Context) -> Board:
@@ -19,176 +25,365 @@ def actor(ctx: Context, supplied: Any = None) -> str:
     return str(ctx.identity.get('METAFORM_TASK') or os.environ.get('METAFORM_TASK') or supplied or '')
 
 
-def changed(ctx: Context, agents: list[str] | None = None, ticket: str | None = None, *, wake: bool = False) -> None:
-    ids = agents or []
-    ctx.publish('map.changed', {'project': ctx.project, 'tables': ['tasks.board'],
-                'kinds': ['tasks.board'], 'work_ids': [ticket] if ticket else [], 'agent_ids': ids, 'wake': wake})
+def agent_id(ctx: Context, given: Any) -> str:
+    """An agent by its task id, or by the name the board shows for it: agents sign with their names, so a name given
+    where an id is taken means the agent online with that name."""
+    text = str(given or '')
+    if not text:
+        return text
+    data = board(ctx)
+    if data.worker(text) is not None:
+        return text
+    named = [str(worker['agent_id']) for worker in data.workers() if worker.get('name') == text]
+    return named[0] if len(named) == 1 else text
+
+
+def changed(ctx: Context, agents: list[str] | None = None, worktree: str | None = None,
+            tickets: list[str] | None = None, *, wake: bool = False) -> None:
+    ids = [agent for agent in agents or [] if agent]
+    ctx.publish('map.changed', {'project': ctx.project, 'tables': ['tasks.board'], 'kinds': ['tasks.board'],
+                'work_ids': list(tickets or []), 'worktree': worktree, 'agent_ids': ids, 'wake': wake})
 
 
 def view(ctx: Context) -> dict[str, Any]:
-    return {'agents': board(ctx).view(actor(ctx) or None)}
+    """The board an agent reads: every other agent online with its score and work, and the worktrees open on the
+    project, claimed or free."""
+    return {'agents': board(ctx).view(actor(ctx) or None), 'worktrees': open_worktrees(ctx)}
+
+
+def open_worktrees(ctx: Context) -> list[dict[str, Any]]:
+    """Every worktree with an open ticket: its tickets, and when claimed its holder, partner and progress."""
+    store = ctx.require_store()
+    records = [record for record in store.work(open=True, limit=0).results if record.task]
+    ids = [record.id for record in records]
+    names = worktrees.of(ctx, ids)
+    titles: dict[str, Any] = store.numbers_of('work', ids) if ids else {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(names[record.id], []).append({
+            'ticket': record.id, 'title': titles.get(record.id, ('', None, None))[1] or '',
+            'taken': record.taken is not None, 'held': bool(record.held)})
+    rounds = {round_['worktree']: round_ for round_ in board(ctx).rounds() if not round_['completed']}
+    named = worktrees.agents_of(ctx, ids)
+    listed: list[dict[str, Any]] = []
+    for name, tickets in grouped.items():
+        round_ = rounds.get(name)
+        agents = list(dict.fromkeys(one for ticket in tickets for one in named[ticket['ticket']]))
+        listed.append({'worktree': name, 'tickets': tickets, 'agents': agents,
+                       'phrase': round_['phrase'] if round_ else tickets[0]['title'],
+                       'holder': round_['holder'] if round_ else None,
+                       'partner': round_.get('partner') if round_ else None,
+                       **(Board.progress(round_) if round_ else {'checked': 0, 'total': 0})})
+    return listed
 
 
 def status(ctx: Context) -> dict[str, Any]:
     ident = str(ctx.nouns.get('agent_id') or actor(ctx))
     if not ident:
-        raise Stop('Name the worker whose status is being updated.', 'metaform tasks board')
+        raise Stop('Name the agent whose status is being updated.', 'metaform tasks board')
     fields = {key: ctx.nouns[key] for key in ('state', 'nodes', 'current', 'next', 'waiting_for') if key in ctx.nouns}
-    board(ctx).patch(ident, fields)
+    try:
+        board(ctx).patch(ident, fields)
+    except KeyError:
+        raise Stop(f'No agent {ident} is online.', 'metaform tasks board') from None
+    except ValueError as error:
+        raise Stop(str(error), 'metaform tasks status') from None
     changed(ctx, [ident])
     return {'agent_id': ident, 'updated': list(fields)}
 
 
 def ticket(ctx: Context) -> dict[str, Any]:
+    """A ticket for a pair, on its node, in the worktree the composer names or one of its own. The ticket may name
+    the agents who work it, the first named claiming it and the next its partner; each one online is told."""
     store = ctx.require_store()
     name = str(ctx.nouns['node'])
     target = Node('join', name[5:]) if name.startswith('join:') else Node('element', name)
+    worktree = worktrees.named(str(ctx.nouns['worktree'])) if ctx.nouns.get('worktree') else None
+    given: Any = ctx.nouns.get('agents') or []
+    if not isinstance(given, list) or any(not isinstance(one, str) or not one.strip() for one in cast(list[Any], given)):
+        raise Stop('agents is a list of agent names.', 'metaform tasks board')
+    agents = list(dict.fromkeys(one.strip() for one in cast(list[str], given)))
     result = store.add_work(target, None, task=str(ctx.nouns['text']), title=str(ctx.nouns['summary']))
-    return {'ticket': result.id, 'summary': ctx.nouns['summary'], 'node': name}
+    if worktree is not None or agents:
+        worktrees.assign(ctx, result.id, worktree, agents)
+    if worktree is not None:
+        round_ = board(ctx).add_ticket(worktree, result.id)
+        if round_ is not None:  # written into a claimed worktree: the pair's, taken and counted with the rest
+            store.take_work(result.id, by=str(round_['holder']))
+            _sync_progress(ctx, round_)
+            changed(ctx, [str(round_['holder']), str(round_.get('partner') or '')], worktree, round_['tickets'])
+    told = _tell_named(ctx, result.id, str(ctx.nouns['summary']), agents)
+    return {'ticket': result.id, 'summary': ctx.nouns['summary'], 'node': name, 'worktree': worktree or result.id,
+            'agents': agents, 'told': told}
+
+
+def _tell_named(ctx: Context, ticket_id: str, summary: str, agents: list[str]) -> list[str]:
+    """The agents a ticket names, each online one told of it; their ids."""
+    if not agents:
+        return []
+    data = board(ctx)
+    online = {str(worker['name']): str(worker['agent_id']) for worker in data.workers()}
+    told = [online[name] for name in agents if name in online]
+    for name in agents:
+        if name in online:
+            others = ', '.join(one for one in agents if one != name) or 'nobody else'
+            data.enqueue(online[name], f'named:{ticket_id}:{online[name]}',
+                         worded('ticket_named', ticket=ticket_id, summary=summary, others=others))
+    if told:
+        changed(ctx, told, None, [ticket_id], wake=True)
+    return told
+
+
+def tickets_of(ctx: Context, name: str) -> list[dict[str, Any]]:
+    """The open tickets in a worktree: those the composer put there, and the ticket named for itself."""
+    store = ctx.require_store()
+    listed: list[dict[str, Any]] = []
+    own = worktrees.of(ctx, [name])[name] == name  # a ticket put in another worktree is not claimable by its own id
+    for ident in dict.fromkeys([*worktrees.tickets(ctx, name), *([name] if own else [])]):
+        try:
+            record = store.ticket(ident).work
+        except StoreError:
+            continue
+        if record.done is None and record.task:
+            listed.append({'ticket': ident, 'taken': record.taken is not None})
+    titles: dict[str, Any] = store.numbers_of('work', [one['ticket'] for one in listed]) if listed else {}
+    for one in listed:
+        one['title'] = titles.get(one['ticket'], ('', None, None))[1] or ''
+    return listed
 
 
 def worksheet(ctx: Context) -> dict[str, Any]:
-    ident = str(ctx.nouns['ticket'])
-    record = ctx.require_store().ticket(ident).work
+    """Read a worktree's worksheet, or register it: the holder's claim of the worktree, which takes every open ticket
+    in it and sets the unified checklist, each item for a ticket, an agent and nodes when it says so. The git worktree
+    is made only when the composer put the tickets in one; a ticket claimed by its own id is worked in the project
+    folder."""
+    name = worktrees.named(str(ctx.nouns['worktree']))
     data = board(ctx)
     if 'items' not in ctx.nouns:
-        return data.round(ident) or {'ticket': ident, 'items': []}
+        return data.round(name) or {'worktree': name, 'items': [],
+                                    'tickets': [one['ticket'] for one in tickets_of(ctx, name)]}
     holder = str(ctx.nouns.get('holder') or actor(ctx))
     if not holder:
         raise Stop('Give the worksheet holder identifier.', 'metaform tasks board')
+    tickets = tickets_of(ctx, name)
+    if not tickets:
+        raise Stop(f'No open ticket is in worktree {name}.', 'metaform tasks board')
     items = cast(list[str | dict[str, Any]], ctx.nouns['items'])
+    if not items:
+        raise Stop('A worksheet needs at least one item.', 'metaform tasks worksheet')
+    for item in items:  # an item's agent by name or id, as the board shows it
+        if isinstance(item, dict) and item.get('agent'):
+            item['agent'] = agent_id(ctx, item['agent'])
     nodes = cast(list[str], ctx.nouns.get('nodes') or [])
-    titles: dict[str, Any] = ctx.require_store().numbers_of('work', [ident])
-    title = titles.get(ident, ('', None, None))[1]
-    result = data.set_round(ident, str(title or record.task or ''), holder, items, nodes,
-                            ctx.nouns.get('partner'))
-    if not record.taken and not record.done:
-        ctx.require_store().take_work(ident, by=actor(ctx) or holder)
+    held = data.round(name)
+    if held and not held['completed'] and holder != str(held['holder']):
+        raise Stop(f'{name} is held by {held["holder"]}: pair with them (tasks pair) or message them; only the holder '
+                   'registers its worksheet again.', 'metaform tasks board')
+    # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
+    made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
+    try:
+        result = data.set_round(name, str(tickets[0]['title'] or ''), holder, items, nodes,
+                                agent_id(ctx, ctx.nouns.get('partner')) or None,
+                                [one['ticket'] for one in tickets])
+    except ValueError as error:
+        raise Stop(str(error), 'metaform tasks worksheet') from None
+    store = ctx.require_store()
+    for one in tickets:
+        if not one['taken']:
+            store.take_work(one['ticket'], by=actor(ctx) or holder)
     _sync_progress(ctx, result)
-    changed(ctx, [holder], ident)
-    return result
+    changed(ctx, [holder], name, result['tickets'])
+    if made is None:
+        return {**result, 'folder': str(ctx.folder), 'branch': None}
+    return {**result, 'folder': made['folder'], 'branch': made['branch'],
+            **({'notice': made['notice']} if made.get('notice') else {})}
 
 
 def pair(ctx: Context) -> dict[str, Any]:
-    ident, partner = str(ctx.nouns['ticket']), str(ctx.nouns['partner'])
-    result = board(ctx).pair(ident, partner)
-    changed(ctx, [str(result['holder']), partner], ident)
+    name, partner = str(ctx.nouns['worktree']), agent_id(ctx, ctx.nouns['partner'])
+    try:
+        result = board(ctx).pair(name, partner)
+    except KeyError as missing:
+        raise Stop(f'No worksheet or agent {missing.args[0]}.', 'metaform tasks board') from None
+    changed(ctx, [str(result['holder']), partner], name, result['tickets'])
     return result
 
 
 def check(ctx: Context) -> dict[str, Any]:
-    ident = str(ctx.nouns['ticket'])
-    result = board(ctx).check(ident, str(ctx.nouns['item']), bool(ctx.nouns.get('done', True)))
+    name = str(ctx.nouns['worktree'])
+    try:
+        result = board(ctx).check(name, str(ctx.nouns['item']), bool(ctx.nouns.get('done', True)))
+    except KeyError as missing:
+        raise Stop(f'No worksheet or item {missing.args[0]}.', 'metaform tasks worksheet') from None
     _sync_progress(ctx, result)
-    completed = _close(ctx, ident)
-    changed(ctx, [str(result['holder']), str(result.get('partner') or '')], ident)
+    completed = _close(ctx, name)
+    changed(ctx, [str(result['holder']), str(result.get('partner') or '')], name, result['tickets'])
     return {**result, 'completed': completed}
 
 
 def rate(ctx: Context) -> dict[str, Any]:
-    ident = str(ctx.nouns['ticket'])
+    """A reviewer's pick at the close of a worktree: the agent it rates, with stars of five in each category and the
+    bonus, or alone=true when there was no one to rate. Each participant picks before the worktree's tickets close."""
+    name = str(ctx.nouns['worktree'])
     data = board(ctx)
-    current = data.round(ident)
+    current = data.round(name)
     if current is None:
-        raise Stop(f'No worksheet for ticket {ident}.', 'metaform tasks worksheet')
+        raise Stop(f'No worksheet for worktree {name}.', 'metaform tasks worksheet')
     reviewer = actor(ctx, ctx.nouns.get('reviewer'))
-    target = str(ctx.nouns.get('target') or (current.get('partner') if reviewer == current['holder']
-                                           else current['holder']) or '')
-    if not reviewer or not target:
-        raise Stop('Identify the reviewer and the contribution being rated.', 'metaform tasks board')
-    data.rate(ident, reviewer, target, cast(dict[str, float], ctx.nouns['scores']))
-    completed = _close(ctx, ident)
-    changed(ctx, [reviewer, target], ident)
-    return {'ticket': ident, 'reviewer': reviewer, 'target': target, 'recorded': True, 'completed': completed}
+    if not reviewer:
+        raise Stop('Identify the reviewer.', 'metaform tasks board')
+    alone = bool(ctx.nouns.get('alone'))
+    target = '' if alone else agent_id(ctx, ctx.nouns.get('target'))
+    if not alone and not target:
+        target = str((current.get('partner') if reviewer == current['holder'] else current['holder']) or '')
+        if not target or target == reviewer:
+            raise Stop('Name the agent you rate with target=<id>, or rate alone=true.', 'metaform tasks board')
+    scores = cast(dict[str, Any], ctx.nouns.get('scores') or {})
+    if not alone and not scores:
+        raise Stop(f'Give stars 0 to 5 in each category, {", ".join(CATEGORIES)}, or rate alone=true.',
+                   'metaform tasks rate')
+    try:
+        rating = data.rate(name, reviewer, target or None, scores, bonus=bool(ctx.nouns.get('bonus')), alone=alone)
+    except ValueError as error:
+        raise Stop(str(error), 'metaform tasks rate') from None
+    completed = _close(ctx, name)
+    changed(ctx, [reviewer, target], name, current['tickets'])
+    return {'worktree': name, 'reviewer': reviewer, 'target': target or None, 'alone': alone,
+            'points': rating['points'], 'recorded': True, 'completed': completed}
 
 
 def _sync_progress(ctx: Context, round_: dict[str, Any]) -> None:
-    items = cast(list[dict[str, Any]], round_['items'])
-    total, checked = len(items), sum(bool(item.get('done')) for item in items)
+    """Each ticket's steps follow its items, its own and the shared; at N/N the worksheet is appended to each."""
     store = ctx.require_store()
+    items = cast(list[dict[str, Any]], round_['items'])
     with store.atomic():
-        store.worksheet_progress(str(round_['ticket']), total, checked)
-        if total and checked == total:
+        for ticket_id in cast(list[str], round_['tickets']):
+            progress = Board.progress(round_, ticket=ticket_id)
+            store.worksheet_progress(ticket_id, progress['total'], progress['checked'])
+        if items and all(item.get('done') for item in items):
             _append(ctx, round_)
 
 
 def _append(ctx: Context, round_: dict[str, Any]) -> None:
-    ident = str(round_['ticket'])
-    marker = f'Completed worksheet ({ident})'
+    """The completed items appended to each ticket, its own and the shared, once; a note written by others stays."""
+    name = str(round_['worktree'])
+    marker = f'Completed worksheet ({name})'
     store = ctx.require_store()
-    record = store.ticket(ident).work
-    note = str(record.note or '')
-    text = marker + '\n' + '\n'.join('[x] ' + str(item['text']) for item in round_['items'])
-    if marker in note:
-        # Replace only this worksheet, retaining notes written by other participants.
-        before, _, tail = note.partition(marker)
-        _, separator, after = tail.partition('\n\n')
-        note = before + text + (separator + after if separator else '')
-    else:
-        note = '\n\n'.join(part for part in (note, text) if part)
-    store.edit_work(ident, {'note': note})
+    items = cast(list[dict[str, Any]], round_['items'])
+    for ticket_id in cast(list[str], round_['tickets']):
+        record = store.ticket(ticket_id).work
+        note = str(record.note or '')
+        text = marker + '\n' + '\n'.join('[x] ' + str(item['text']) for item in items
+                                         if item.get('ticket') in (None, ticket_id))
+        if marker in note:
+            before, _, tail = note.partition(marker)
+            _, separator, after = tail.partition('\n\n')
+            note = before + text + (separator + after if separator else '')
+        else:
+            note = '\n\n'.join(part for part in (note, text) if part)
+        store.edit_work(ticket_id, {'note': note})
 
 
-def _close(ctx: Context, ident: str) -> bool:
+def _close(ctx: Context, name: str) -> bool:
+    """The worktree closes when every item is checked and every participant has rated or said alone: its tickets are
+    done, and with Full Auto on a git worktree the composer asked for is merged into the checked-out branch and
+    removed."""
     data = board(ctx)
-    round_ = data.round(ident)
+    round_ = data.round(name)
     if round_ is None:
         return False
     if round_['completed']:
         return True
     items = cast(list[dict[str, Any]], round_['items'])
     holder, partner = str(round_['holder']), str(round_.get('partner') or '')
-    ratings = {(r['reviewer'], r['target']) for r in data.ratings(ident)}
-    if not items or not all(item.get('done') for item in items) or not partner or not {
-            (holder, partner), (partner, holder)} <= ratings:
+    participants = {one for one in (holder, partner) if one}
+    if not items or not all(item.get('done') for item in items):
         return False
+    if not participants <= {str(rating['reviewer']) for rating in data.ratings(name)}:
+        return False
+    tickets = cast(list[str], round_['tickets'])
     store = ctx.require_store()
     with store.atomic():
         _append(ctx, round_)
-        record = store.ticket(ident).work
-        if not record.done:
-            store.finish_work(ident, 'Completed the registered worksheet.', 'Both partners submitted their peer ratings.')
-    data.complete_round(ident)
+        for ticket_id in tickets:
+            if not store.ticket(ticket_id).work.done:
+                store.finish_work(ticket_id, 'Completed the registered worksheet.',
+                                  f'Every participant rated at the close of worktree {name}.')
+    data.complete_round(name)
+    if ctx.setting('tasks_full_auto') and worktrees.assigned(ctx, name):
+        landed = worktrees.land(ctx.folder, name, f'{round_["phrase"]}\n\nWorktree {name}: {", ".join(tickets)}.')
+        if not landed['merged']:
+            for ticket_id in tickets:
+                note = str(store.ticket(ticket_id).work.note or '')
+                store.edit_work(ticket_id, {'note': note + f'\n\nNot merged: {landed["why"]}'})
     wake_ids: list[str] = []
-    for available in (holder, partner):
+    for available in participants:
         for waiter in data.waiters(available):
             waiting = str(waiter['agent_id'])
             data.patch(waiting, {'waiting_for': None})
-            data.enqueue(waiting, f'partner:{ident}:{waiting}', f'Your selected partner finished ticket {ident}.')
+            data.enqueue(waiting, f'partner:{name}:{waiting}', worded('partner_finished', assignment=name))
             wake_ids.append(waiting)
-    if any(record.task for record in store.work(open=True, limit=0).results):
-        for agent in (holder, partner):
-            data.enqueue(agent, f'complete:{ident}:{agent}',
-                         f'Ticket {ident} is complete. Follow the agreed turn-taking for new work.')
+    if open_worktrees(ctx):
+        for agent in participants:
+            data.enqueue(agent, f'complete:{name}:{agent}', worded('assignment_closed', assignment=name))
             wake_ids.append(agent)
     if wake_ids:
-        changed(ctx, wake_ids, ident, wake=True)
-    drain(ctx)
+        changed(ctx, wake_ids, name, tickets, wake=True)
     return True
 
 
 def flush(ctx: Context, assignment: dict[str, Any]) -> None:
+    """Queued messages reach an idle agent as a wake. A working agent reads them on its next tasks tool call instead
+    (`inbox`), so a message never waits for the end of a long turn. A row is marked delivered after its wake, so a
+    failure between the two sends it again: at least once, never lost."""
     from .runtime import transport
     data = board(ctx)
     ident = str(assignment['task_id'])
+    worker = data.worker(ident)
+    if worker is not None and worker.get('state') == 'working':
+        return
     for message in data.pending(ident):
         transport(ctx).wake(ctx, assignment, message['key'], message['text'])
         data.delivered(message['key'])
 
 
+def inbox(ctx: Context, result: dict[str, Any]) -> dict[str, Any]:
+    """The caller's queued messages, carried on the result of any tasks tool it calls and marked delivered: an agent
+    in the middle of a long turn hears its partner at its next tool call."""
+    ident = actor(ctx)
+    if not ident:
+        return result
+    data = board(ctx)
+    pending = data.pending(ident)
+    if not pending:
+        return result
+    for message in pending:
+        data.delivered(message['key'])
+    return {**result, 'messages': [message['text'] for message in pending]}
+
+
+def with_inbox(handler: Callable[[Context], dict[str, Any]]) -> Callable[[Context], dict[str, Any]]:
+    """A tasks verb whose result carries the caller's inbox."""
+    @functools.wraps(handler)
+    def run(ctx: Context) -> dict[str, Any]:
+        return inbox(ctx, handler(ctx))
+    return run
+
+
 def reconcile(ctx: Context, assignment: dict[str, Any], observed: dict[str, Any]) -> None:
-    if assignment['name'] != 'worker':
+    if assignment['name'] != 'project_agent':
         return
     data = board(ctx)
     ident = str(assignment['task_id'])
     if observed['state'] in ('completed', 'failed', 'cancelled'):
+        _released(ctx, ident)
         data.remove(ident)
         changed(ctx, [ident])
         return
     worker = data.worker(ident)
     if worker is None:
-        worker = data.register(ident, str(observed.get('name') or assignment['payload'].get('agent_name') or ident),
-                               str(assignment['work_id']), str(observed.get('session_id') or ''))
+        worker = data.register(ident, str(observed.get('name') or 'agent-' + ident[:8]), str(assignment['work_id']),
+                               str(observed.get('session_id') or ''))
     fields = {'state': 'idle' if observed.get('idle') else 'working'}
     for key in ('name', 'context', 'session_id'):
         if observed.get(key) is not None:
@@ -196,29 +391,67 @@ def reconcile(ctx: Context, assignment: dict[str, Any], observed: dict[str, Any]
     if any(worker.get(key) != value for key, value in fields.items()):
         data.patch(ident, fields)
         changed(ctx, [ident])
-    if not drain(ctx):
-        flush(ctx, assignment)
+    flush(ctx, assignment)
 
 
-def drain(ctx: Context) -> bool:
-    """End a finished run, without polling or deciding how workers should select tickets."""
-    from .runtime import SERVICE, transport
+def worded(name: str, **fills: str) -> str:
+    """A message of this module's resources, `resources/<name>.txt`, sent as written there through the prompt store as
+    the task files are, `prompt.tasks:<name>.txt`, with its {...} fills; no words of it are written here."""
+    source = resources.files(cast(str, __package__)) / 'resources' / f'{name}.txt'
+    bindings = {f'{{{key}}}': value for key, value in fills.items()}
+    return str(prompt_files.resolve_text(f'prompt.tasks:{name}.txt', source.read_bytes().decode('utf-8'),
+                                         **bindings)['text']).rstrip('\n')
+
+
+def handoff(ctx: Context) -> dict[str, Any]:
+    """A project agent's place given to a new one on the same agent, started with the caller's handoff as its input:
+    the newcomer, a fresh context at 100, takes the caller's worktrees, partners and waits, and the caller's own task
+    ends. Project agents stay running and hand off rather than shut down and come back, which wastes context."""
+    from . import definition
+    from .runtime import SERVICE
+    leaving = actor(ctx, ctx.nouns.get('agent_id'))
+    if not leaving:
+        raise Stop('Name the agent handing off with agent_id=<id>, or call from its own task session.',
+                   'metaform tasks board')
+    row = SERVICE.assignment(ctx, leaving)
+    if row is None:
+        raise Stop(f'No assigned agent {leaving}.', 'metaform tasks board')
+    if board(ctx).worker(leaving) is None:  # before the newcomer starts, so none starts with no place to take
+        raise Stop(f'No agent {leaving} is online.', 'metaform tasks board')
+    locator = cast(dict[str, Any], row.get('locator') or {})
+    nouns: dict[str, Any] = {'name': 'project_agent', 'text': str(ctx.nouns['text']),
+                             'agent': locator.get('agent') or row.get('agent'), 'folder': row['cwd']}
+    if row['payload'].get('node'):
+        nouns['node'] = row['payload']['node']
+    own = context('tasks', ctx.folder, project=ctx.project, nouns=nouns, surface=ctx.surface,
+                  session=ctx.session, identity=ctx.identity)
+    started = SERVICE.assign(own, 'project_agent', definition(own)['component'])
+    arriving = str(started['task_id'])
+    if started['state'] == 'completed':  # the replacement did not start: the caller keeps its place
+        raise Stop('The replacement agent did not start, so your place stays yours; try again.', 'metaform tasks board')
+    try:
+        moved = board(ctx).handoff(leaving, arriving)
+    except KeyError as missing:
+        raise Stop(f'No agent {missing.args[0]} is online.', 'metaform tasks board') from None
+    changed(ctx, [leaving, arriving], wake=True)
+    try:
+        SERVICE.finish(ctx, leaving, f'Handed off to {arriving}.')
+        ended = True
+    except (OSError, Stop):  # the places moved all the same; the caller's session ends on its own
+        ended = False
+    return {**moved, 'agent': started['agent'], 'state': started['state'], 'ended': ended}
+
+
+def _released(ctx: Context, ident: str) -> None:
+    """An agent gone offline mid-round has its pick recorded as alone, so the worktree can still close."""
     data = board(ctx)
-    workers = data.workers()
-    if not workers or not data.rounds() or any(w['state'] == 'draining' for w in workers):
-        return False
-    if any(w['state'] not in ('idle', 'waiting') or w.get('current') or w.get('next') for w in workers):
-        return False
-    if any(record.task for record in ctx.require_store().work(open=True, limit=0).results):
-        return False
-    # Persist the run transition before delivering its notifications. No role or creator owns this transition.
-    for worker in workers:
-        data.patch(str(worker['agent_id']), {'state': 'draining'})
-    for worker in workers:
-        assignment = SERVICE.assignment(ctx, str(worker['agent_id']))
-        if assignment is not None:
-            transport(ctx).finish(ctx, assignment, 'All project tickets and worker contributions are complete.')
-    return True
+    for round_ in data.rounds():
+        name = str(round_['worktree'])
+        if round_['completed'] or ident not in (round_['holder'], round_.get('partner')):
+            continue
+        if ident not in {str(rating['reviewer']) for rating in data.ratings(name)}:
+            data.rate(name, ident, None, {}, alone=True)
+        _close(ctx, name)
 
 
 def event(ctx: Context, payload: dict[str, Any]) -> None:
@@ -234,12 +467,18 @@ def event(ctx: Context, payload: dict[str, Any]) -> None:
 
 
 def message(ctx: Context) -> dict[str, Any]:
-    from .runtime import SERVICE
-    ident = str(ctx.nouns['agent_id'])
-    if SERVICE.assignment(ctx, ident) is None:
+    """A message queued for an agent, delivered to its session. An ended agent is called back for it: its context is
+    resumed in place, and the message reaches it once its session is on the board again."""
+    from .runtime import SERVICE, TERMINAL
+    ident = agent_id(ctx, ctx.nouns['agent_id'])
+    assignment = SERVICE.assignment(ctx, ident)
+    if assignment is None:
         raise Stop(f'No assigned agent {ident}.', 'metaform tasks board')
     sender = actor(ctx) or ctx.surface
     key = uuid.uuid4().hex
-    board(ctx).enqueue(ident, key, f'From {sender}: ' + str(ctx.nouns['text']))
+    board(ctx).log_message(key, sender, ident, str(ctx.nouns['text']))  # the run's log of messages
+    board(ctx).enqueue(ident, key, worded('message_from', sender=sender, text=str(ctx.nouns['text'])))
+    called = SERVICE.resume(ctx, ident) if assignment['state'] in TERMINAL else None
     changed(ctx, [ident], wake=True)
-    return {'message': key, 'to': ident, 'from': sender, 'queued': True}
+    return {'message': key, 'to': ident, 'from': sender, 'queued': True,
+            **({'called_back': called} if called is not None else {})}

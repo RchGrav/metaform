@@ -113,7 +113,6 @@ def test_removed_role_routes_and_launch_helpers_are_not_exposed():
     for route in ('/api/agent-roles', '/api/agent-role', '/api/orchestration-call'):
         assert route not in handler_source
         assert route not in server.DISPATCH_ROUTES
-        assert route not in server.PERSONS_WRITES
     assert '/api/task-assign' in server.DISPATCH_ROUTES
     for helper in ('role_choices', 'call_role'):
         assert not hasattr(server, helper)

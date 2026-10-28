@@ -61,44 +61,14 @@ def home(tmp_path, monkeypatch, request):
         monkeypatch.setattr(metaform_home, 'CHASSIS_SCHEMA', metaform_home.CHASSIS_SCHEMA + ''.join(
             f'INSERT OR IGNORE INTO settings VALUES ({quoted(scope)}, {quoted(owner)}, {quoted(key)}, {position}, '
             f'{quoted(value)});\n' for scope, owner, key, position, value in rows))
-    # A test run from a dispatched agent's session would otherwise sign each memory written with it, and be refused
-    # the tickets the agent's role may not write, MAP-050.
-    for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_AUTHORED_ROLE'):
+    # A test run from a dispatched agent's session would otherwise sign each memory written with it and run each
+    # command as that agent's, MAP-050.
+    for name in ('METAFORM_TASK', 'METAFORM_TASK_NAME', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE'):
         monkeypatch.delenv(name, raising=False)
     # Intake's optional live classifier must never inherit real billing credentials in fixture tests.
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
-    # The test process stands at the person's own terminal: a command it runs in this process carries their consent,
-    # as one typed there does, while the identity names and the processes above it still take that away,
-    # metaform.caller. A command run as its own process gets a terminal of its own instead, `own_terminal`.
-    from metaform import caller
-    monkeypatch.setattr(caller, '_at_tty', lambda: None)
-    # The fixture models a person's test terminal, not the harness running pytest. Stop host ancestry at
-    # this test process; explicit agent identities and tests' simulated process trees still apply.
-    original_parent = caller._parent
-    test_pid = os.getpid()
-    monkeypatch.setattr(caller, '_parent', lambda pid: 1 if pid == test_pid else original_parent(pid))
-    monkeypatch.setattr(caller, '_leader_agent', lambda pid, own_home: None)
     yield path
     loader.reset()
-
-
-def own_terminal():
-    """Popen keywords that give a command run as its own process a terminal of its own, in whose foreground it runs,
-    as a command the person types does, metaform.caller: a new session whose controlling terminal is a fresh
-    pseudo-terminal. Its input and output stay as given. The second value is the terminal's two ends, closed by the
-    caller once the command is done; ({}, ()) where there are no terminals to make."""
-    if os.name != 'posix':
-        return {}, ()
-    master, slave = os.openpty()
-    name = os.ttyname(slave)
-
-    def acquire():
-        import fcntl
-        import termios
-        held = os.open(name, os.O_RDWR)
-        fcntl.ioctl(held, termios.TIOCSCTTY, 0)
-        os.close(held)
-    return {'start_new_session': True, 'preexec_fn': acquire}, (master, slave)
 
 
 def _loop_running():
@@ -129,22 +99,12 @@ def run(home, tmp_path, request):
         # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
         if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
             # A hung call names itself, well inside the test's own time limit (pyproject.toml).
-            from metaform import caller
-            proof = caller.Vouch() if not any(environment.get(key) for key in caller.IDENTITY) else None
-            if proof is not None:
-                environment.update(proof.environment())
-            terminal, ends = own_terminal()  # typed at the person's terminal, as the in-process run stands
             try:
                 result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
                                         capture_output=True, text=True, encoding='utf-8', input=input,
-                                        timeout=CLI_LIMIT, check=False, **terminal)
+                                        timeout=CLI_LIMIT, check=False)
             except subprocess.TimeoutExpired:
                 raise AssertionError(f'metaform {" ".join(args)} did not finish in {CLI_LIMIT} s') from None
-            finally:
-                if proof is not None:
-                    proof.close()
-                for end in ends:
-                    os.close(end)
             # A chassis database that process made was made without this process's schema, so without the test
             # home's settings; they are stored now, before the next call can start an agent.
             if pending and environment['METAFORM_HOME'] == str(home) and metaform_home.chassis_path().exists():

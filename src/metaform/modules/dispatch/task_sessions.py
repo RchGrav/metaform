@@ -20,7 +20,13 @@ def assigned(ctx: Context, task_id: str) -> dict[str, Any] | None:
 
 class TaskSessions:
     def start(self, ctx: Context, task: dict[str, Any]) -> dict[str, Any]:
-        from . import agent_named, runnable
+        from . import agent_named, launches, runnable
+        existing = self._session(ctx, task)
+        if existing is not None:
+            return {'work_id': task['work_id'], 'agent': existing['agent'], 'session_id': existing['session_id']}
+        for entry in launches():
+            if entry.get('project') == ctx.project and entry.get('work_id') == task['work_id']:
+                return {'work_id': task['work_id'], 'agent': entry['agent'], 'pid': entry['pid']}
         called = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
                          session=ctx.session, identity=ctx.identity, nouns={
                              'id': task['work_id'], 'task': task['task_id'], 'prep': True})
@@ -71,12 +77,19 @@ class TaskSessions:
         store = called.require_store()
         payload = {**task['payload'], 'task_id': task['task_id'], 'name': task['name'], 'cwd': task['cwd']}
         with Store(store.project_id, module='dispatch').tables() as tx:
-            tx.insert('raised', {'work_id': task['work_id'], 'node': '', 'agent': agent,
-                      'started': time.time(), 'seq': time.time_ns(), 'asked': json.dumps(payload)})
+            raised = {'node': '', 'agent': agent, 'started': time.time(), 'seq': time.time_ns(),
+                      'asked': json.dumps(payload)}
+            if tx.get('raised', {'work_id': task['work_id']}) is None:
+                tx.insert('raised', {'work_id': task['work_id'], **raised})
+            else:  # a task started again, its ended context renewed: the new runner reads this payload
+                tx.update('raised', {'work_id': task['work_id']}, raised)
         try:
+            requested_at = cast(dict[str, Any], task['payload'].get('options') or {}).get('requested_at')
+            asked = requested_at if isinstance(requested_at, int) and not isinstance(requested_at, bool) else None
             started = spawn(store, task['work_id'], agent,
                             ['prep=true', f'task={task["task_id"]}', f'cwd={task["cwd"]}'],
-                            'task', kept=bool(ctx.nouns.get('wait')), ctx=called)
+                            'task', kept=bool(ctx.nouns.get('wait')), ctx=called, subject=f'task:{task["task_id"]}',
+                            asked=asked)
         except Exception:
             with Store(store.project_id, module='dispatch').tables() as tx:
                 tx.delete('raised', {'work_id': task['work_id']})
@@ -87,6 +100,42 @@ class TaskSessions:
         from . import sessions
         rows = sessions(ctx.require_store(), str(task['work_id']), verify=False)
         return rows[-1] if rows else None
+
+    def resume(self, ctx: Context, task: dict[str, Any]) -> dict[str, Any]:
+        """The task's ended context called back: its last session resumed in place as the same task agent, with its own
+        memory, where its agent offers resume or load, or else a new session of the same agent reading the ended
+        thread, `renew`; a running one is the answer as it is. A task that never had a session starts."""
+        from . import agent_named, resumed_session, runnable
+        row = self._session(ctx, task)
+        called = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
+                         session=ctx.session, identity=ctx.identity, nouns={'id': task['work_id']})
+        if row is None:
+            agent = agent_named(str(cast(dict[str, Any], task.get('locator') or {}).get('agent') or task.get('agent')
+                                    or called.setting('dispatch_agent')))
+            runnable(called, agent)
+            return self._start(ctx, called, task, agent)  # it never ran: its first session, no thread to read
+        if row['state'] == 'running':
+            return {key: row[key] for key in ('work_id', 'agent', 'session_id', 'state')}
+        return resumed_session(called, called.require_store(), row, f'thread:{row["session_id"]}')
+
+    def renew(self, ctx: Context, task_id: str, session_id: str, agent: str) -> dict[str, Any]:
+        """A new session of the task's agent where the ended one cannot be resumed: the same assignment started again,
+        its opening input the thread it continues, so it comes back onto the board as that task's agent and takes the
+        messages queued for it. The assignment comes out of its terminal state first, so the runner starts."""
+        from . import prompt
+        task = None
+        for owner, service in provided(ctx.folder, 'task.lifecycle'):
+            task_ctx = context(owner, ctx.folder, project=ctx.project, surface=ctx.surface)
+            task = service.called_back(task_ctx, task_id)
+            break
+        if task is None:
+            raise Stop(f'No assigned task {task_id}.', 'metaform tasks get <id>')
+        called = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
+                         session=ctx.session, identity=ctx.identity, nouns={
+                             'id': task['work_id'], 'task': task_id, 'prep': True})
+        task['payload'] = {**task['payload'], 'input': prompt('new_context', work=str(task['work_id']),
+                                                              session=session_id)}
+        return self._start(ctx, called, task, agent)
 
     def inspect(self, ctx: Context, task: dict[str, Any]) -> dict[str, Any]:
         from . import read_sessions, tell

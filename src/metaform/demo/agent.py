@@ -183,7 +183,7 @@ def mascot() -> None:
 
 
 def main() -> None:
-    system = os.environ.get('METAFORM_ROLE') == 'system'
+    system = os.environ.get('METAFORM_TASK_NAME') == 'user_agent'  # the person's own agent, the mascot
     for line in sys.stdin.buffer:
         message = cast(dict[str, Any], json.loads(line))
         method, ident = message.get('method'), message.get('id')

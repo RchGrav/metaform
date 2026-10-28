@@ -190,7 +190,7 @@ def keep(own: Store, work_id: str, value: dict[str, Any]) -> None:
 def restart_web(project: Path) -> dict[str, Any]:
     """The CLI hands off to restart.py before stopping web, so the page survives caller exit."""
     env = {key: value for key, value in os.environ.items()
-           if key not in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
+           if key not in ('METAFORM_TASK', 'METAFORM_TASK_NAME', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
     done = subprocess.run([sys.executable, '-m', 'metaform', 'web', 'restart', '--json'], cwd=project,
                           env=env, capture_output=True, text=True, timeout=130, check=False)
     if done.returncode:

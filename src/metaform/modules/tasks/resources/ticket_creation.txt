@@ -1,5 +1,0 @@
-Write the requested project ticket for a team of two agents. Preserve the requested outcome and source wording. Give the ticket a concise summary phrase and the relevant canonical node names without expanding those names.
-
-Choose a division of work that lets both agents finish together. Specify the intended allocation and any checklist structure needed to express it. The agent taking the ticket will prepare the end-to-end execution plan, register the worksheet, and recruit its partner through messaging.
-
-Use the existing ticket and worksheet tools.
