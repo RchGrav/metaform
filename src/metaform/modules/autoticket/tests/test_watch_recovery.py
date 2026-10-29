@@ -1,6 +1,7 @@
 """Exercise Watch's real event/recovery paths with SQLite transactions and controlled external dependencies."""
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import sys
 import threading
@@ -101,8 +102,13 @@ class Clock:
 def case(tmp_path, monkeypatch):
     store = Store(tmp_path / 'watch.sqlite')
     published = []
+
+    def publish(topic, payload):
+        published.append((topic, payload))
+        return []
+
     ctx = SimpleNamespace(folder=tmp_path, store=store, project=store.project_id,
-                          publish=lambda topic, payload: published.append((topic, payload)), say=lambda text: None)
+                          publish=publish, say=lambda text: None)
     clock = Clock()
     monkeypatch.setattr(watch, 'similarity', lambda folder: .45)
     monkeypatch.setattr(watch, 'secret_values', lambda folder: set())
@@ -187,6 +193,7 @@ def test_capture_is_committed_before_publication_and_has_no_ticket_dependency(ca
                 count = independent.execute('SELECT SUM(count) FROM groups').fetchone()[0]
             observed.append((payload, count))
         published.append((topic, payload))
+        return []
     watcher.ctx.publish = published_after_commit
     watcher.events.put((held.source, ('line', 'ERROR failure', 0, 14)))
     watcher.tick()
@@ -283,3 +290,41 @@ def test_failure_does_not_suspend_other_log(case, tmp_path):
     assert store.count() == 1
     assert bad.retry_at == 160
     assert good.retry_at is None
+
+
+@pytest.mark.parametrize('error', [RuntimeError('injected repair policy failure'), asyncio.CancelledError()])
+def test_failed_capture_policy_delivery_preserves_committed_group_for_retry(case, tmp_path, monkeypatch, error):
+    from metaform import context, events, loader
+    from metaform.modules import autoticket
+
+    watcher, store, clock, _ = case
+    log = tmp_path / 'app.log'
+    log.touch()
+    reader = SimpleNamespace(stop=lambda: None, join=lambda timeout: None)
+    held = hold(watcher, store, log, reader)
+    calls = []
+
+    def policy(ctx, captured_store, groups, by_agent):
+        assert captured_store is store
+        calls.append(tuple(groups))
+        if len(calls) == 1:
+            raise error
+
+    source = SimpleNamespace(module='autoticket', folder=tmp_path, project=store.project_id,
+                             sink=None, surface='cli')
+    monkeypatch.setattr(loader, 'enabled', lambda: [autoticket.MODULE])
+    monkeypatch.setattr(context, 'build', lambda *args, **kwargs: watcher.ctx)
+    monkeypatch.setattr(autoticket.faults, 'tell', policy)
+    watcher.ctx.publish = lambda topic, payload: events.publish(topic, payload, source)
+    watcher.events.put((held.source, ('line', 'ERROR failure', 0, 14)))
+    watcher.tick()
+    clock.now += 3
+    with pytest.raises(RuntimeError, match='autoticket.captured delivery failed'):
+        watcher.tick()
+    assert store.count() == 1
+    assert store.row(str(log))['offset'] == 14
+    assert watcher.touched == {1}
+    watcher.settle([])
+    assert calls == [(1,), (1,)]
+    assert watcher.touched == set()
+    assert store.count() == 1
