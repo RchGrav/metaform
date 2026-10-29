@@ -32,7 +32,7 @@ SSH_PREFIX = 'ssh://'
 
 # Run on the remote host by its shell: says which file it follows and from which byte, then follows it with tail -F.
 # A recorded position on the same file resumes there; a different file, or a first start, begins at its start or end.
-REMOTE = ('f=$1; o=$2; i=$3; n=$(ls -di "$f" 2>/dev/null | awk \'{print $1}\'); '
+REMOTE = ('LC_ALL=C; export LC_ALL; f=$1; o=$2; i=$3; n=$(ls -di "$f" 2>/dev/null | awk \'{print $1}\'); '
           'if [ "$o" = end ]; then o=$(( $( { wc -c < "$f"; } 2>/dev/null || echo 0) + 1 )); '
           'elif [ -n "$i" ] && [ "$n" != "$i" ]; then o=1; fi; '
           'echo "@autoticket ${n:-none} $o"; exec tail -F -c +"$o" "$f" 2>&1')
@@ -84,7 +84,8 @@ Event = tuple[Any, ...]
 
 class Reader(threading.Thread):
     """Reads one log into the events queue: ('file', identity, offset) when it starts on a file, ('line', text, start,
-    end) for each complete line, ('drop', reason) and ('reconnect',) for an ssh stream. `stop()` ends it."""
+    end) for each complete line, ('drop', reason) and ('reconnect',) for an ssh stream, and ('failed', reason)
+    when a local reader terminates unexpectedly. `stop()` ends it."""
 
     def __init__(self, source: Source, identity: str, offset: int, events: queue.Queue[tuple[Source | None, Event]]):
         super().__init__(name=f'autoticket {source.name}', daemon=True)
@@ -162,8 +163,12 @@ class Inotify(Waker):
         if self.fd < 0:
             error = ctypes.get_errno()
             raise OSError(error, f'inotify: {os.strerror(error)}')
-        self.stop_read, self.stop_write = os.pipe()
-        self.arm()
+        try:
+            self.stop_read, self.stop_write = os.pipe()
+            self.arm()
+        except OSError:
+            self.close()
+            raise
 
     def _add(self, path: str, mask: int) -> int:
         import ctypes
@@ -221,8 +226,11 @@ class Inotify(Waker):
         os.write(self.stop_write, b'.')
 
     def close(self) -> None:
-        for descriptor in (self.fd, self.stop_read, self.stop_write):
-            os.close(descriptor)
+        for name in ('fd', 'stop_read', 'stop_write'):
+            descriptor = getattr(self, name)
+            setattr(self, name, -1)
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 class Kqueue(Waker):
@@ -234,10 +242,14 @@ class Kqueue(Waker):
         if sys.platform == 'linux' or sys.platform == 'win32':
             raise OSError('kqueue is a call of macOS and BSD.')
         self.queue = select.kqueue()
-        self.stop_read, self.stop_write = os.pipe()
-        self.queue.control([select.kevent(self.stop_read, select.KQ_FILTER_READ, select.KQ_EV_ADD)], 0)
-        self.folder_fd = -1
-        self.arm()
+        self.stop_read = self.stop_write = self.folder_fd = -1
+        try:
+            self.stop_read, self.stop_write = os.pipe()
+            self.queue.control([select.kevent(self.stop_read, select.KQ_FILTER_READ, select.KQ_EV_ADD)], 0)
+            self.arm()
+        except OSError:
+            self.close()
+            raise
 
     def _watch(self, descriptor: int, notes: int) -> None:
         if sys.platform == 'linux' or sys.platform == 'win32':
@@ -301,6 +313,7 @@ class LocalReader(Reader):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.waker: Waker | None = None
+        self.waker_lock = threading.Lock()
         self.unfollowed = ''
         try:
             self.waker = waker(self.source.name)
@@ -309,17 +322,30 @@ class LocalReader(Reader):
 
     def stop(self) -> None:
         super().stop()
-        if self.waker is not None:
-            self.waker.wake()
+        with self.waker_lock:
+            if self.waker is not None:
+                self.waker.wake()
 
     def run(self) -> None:
-        if self.waker is None:  # said on the log as a drop, so a log no one reads is never taken for a quiet one
-            self.emit('drop', f'the file cannot be followed: {self.unfollowed}')
-            return
+        failed = ''
         try:
-            self.follow(self.waker)
+            if self.waker is None:
+                failed = f'the file cannot be followed: {self.unfollowed}'
+            else:
+                self.follow(self.waker)
+        except Exception as error:  # noqa: BLE001  reader-thread failures must reach the owning watch
+            failed = f'{type(error).__name__}: {error}'
         finally:
-            self.waker.close()
+            with self.waker_lock:
+                current, self.waker = self.waker, None
+                if current is not None:
+                    try:
+                        current.close()
+                    except OSError as error:
+                        failed = f'{failed}; cleanup: {error}' if failed else f'cleanup: {error}'
+        # No further events from this reader follow failed; its owner can checkpoint and replace it.
+        if failed and not self.stopping.is_set():
+            self.emit('failed', failed)
 
     def follow(self, waker: Waker) -> None:
         handle = None
@@ -361,7 +387,8 @@ class LocalReader(Reader):
                     handle.close()
                     handle, identity, offset = None, '', 0
                     continue
-                if held.st_size < position:  # truncated: read again from the start
+                # The cursor includes an unfinished line; position only includes emitted complete lines.
+                if held.st_size < handle.tell():  # truncated: discard the old fragment and start again
                     handle.seek(0)
                     buffer.clear()
                     position = 0
@@ -399,10 +426,10 @@ class SshReader(Reader):
     def run(self) -> None:
         identity, offset = self.identity, self.offset
         wait = BACKOFF_FIRST
-        first = True
+        reconnecting = False
         while not self.stopping.is_set():
             start = 'end' if offset < 0 else str(offset + 1)
-            reason = ''
+            reason, rotated = '', False
             try:
                 with self.lock:
                     if self.stopping.is_set():
@@ -415,37 +442,42 @@ class SshReader(Reader):
                 if header is None:
                     reason = 'no stream: ' + _said(process)
                 else:
-                    if not first:
+                    if reconnecting:
                         self.emit('reconnect')
-                    first = False
+                    reconnecting = False
                     wait = BACKOFF_FIRST
                     identity = header.group(1).decode() if header.group(1) != b'none' else ''
                     offset = int(header.group(2)) - 1
                     self.emit('file', identity, offset)
-                    offset, identity = self.follow(process, offset, identity)
+                    offset, identity, rotated = self.follow(process, offset, identity)
                     reason = 'stream ended: ' + _said(process)
             except OSError as error:
                 reason = f'ssh could not start: {error}'
             if self.stopping.is_set():
                 return
+            if rotated:
+                # No replacement-file line has been emitted. Reopen now to bind offset zero to its identity.
+                # A rotation is not a dropped connection and needs no failure backoff.
+                continue
             self.emit('drop', reason)
+            reconnecting = True
             self.stopping.wait(wait)
             wait = min(wait * 2, BACKOFF_MOST)
 
-    def follow(self, process: subprocess.Popen[bytes], offset: int, identity: str) -> tuple[int, str]:
-        """Emit each line of the stream until it ends; returns where it had reached."""
+    def follow(self, process: subprocess.Popen[bytes], offset: int, identity: str) -> tuple[int, str, bool]:
+        """Emit complete lines; stop at a generation change before consuming any replacement-file data."""
         assert process.stdout is not None
         for raw in process.stdout:
             if TAIL_NOTICE.match(raw):
-                if TAIL_RESTARTED.match(raw):  # tail started the file again from its start
-                    offset, identity = 0, ''
-                    self.emit('file', identity, 0)
+                if TAIL_RESTARTED.match(raw):
+                    self.emit('file', '', 0)
+                    return 0, '', True
                 continue
             if not raw.endswith(b'\n'):  # a partial last line when the link drops: read again on reconnect
                 break
             self.emit('line', raw.rstrip(b'\r\n').decode('utf-8', 'replace'), offset, offset + len(raw))
             offset += len(raw)
-        return offset, identity
+        return offset, identity, False
 
 
 def _said(process: subprocess.Popen[bytes]) -> str:
