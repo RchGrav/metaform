@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from metaform.modules.roundtables.roundtable import budget, judge, runner, stages, store
+from metaform.modules.roundtables.roundtable import budget, judge, runner, server, stages, store
 from metaform.modules.roundtables.roundtable.seat import NoReply, Reply, Seat
 
 pytestmark = pytest.mark.kind('simulation')
@@ -47,14 +47,14 @@ def phase_table(tmp_path, monkeypatch):
 
     monkeypatch.setitem(runner.KINDS, 'acp', Fake)
 
-    def make(maximum=100, total=1, judging=False):
+    def make(maximum=100, total=1, judging=False, token_basis='all'):
         seats = [{'kind': 'acp', 'id': f'acp:claude/{name}', 'agent': 'claude', 'model': name}
                  for name in ('haiku', 'sonnet', 'opus')]
         return store.opened({'subject': 'phase budget', 'opening': 'Preserve original session instructions.',
                              'folder': str(tmp_path), 'chair_key': None, 'chair_token': 'fixture',
                              'reporter': seats[0]['id'], 'rounds': 0, 'spend': 1}, seats,
                             [{'name': 'first', 'title': 'First topic', 'text': 'Explore the first topic.'}],
-                            judging=judging, token_budget=maximum,
+                            judging=judging, token_budget=maximum, token_basis=token_basis,
                             session={'total': total, 'folder': str(materials), 'between': 'Collaborate after {index}.',
                                      'score': 'Send your anonymous scorecard.', 'farewell': 'Say farewell.'})
 
@@ -119,6 +119,66 @@ def test_phase_usage_survives_restart_and_limit_changes_but_resets_for_each_phas
                           (number,)).fetchall()
     assert [(row['topic'], row['phase'], row['tokens']) for row in rows] == [
         (0, 'collaboration', 30), (0, 'panel', 80), (1, 'panel', 25)]
+
+
+def test_progress_exposes_fresh_zero_and_actual_first_turn_without_seeding_or_mutation(phase_table, monkeypatch):
+    make, _, _, _, _ = phase_table
+    number = make(maximum=500000)
+    role = store.seats(number)[0]
+    store.change(number, host=role, synthesizer=role)
+    received(number, 0, 715295, 'previous-panel')
+    store.phase(number, 'collaboration', 'Start collaborating.')
+    tables = ('phase_usage', 'phase_replies', 'phase_notices', 'phase_seed')
+
+    def saved():
+        with store.connect() as db:
+            return {name: [tuple(row) for row in db.execute(f'SELECT * FROM {name} ORDER BY rowid')]
+                    for name in tables}
+
+    before = saved()
+    with monkeypatch.context() as guard:
+        def forbidden(*args, **kwargs):
+            raise AssertionError('Reading progress must not initialize, evaluate or fence a runner.')
+        guard.setattr(budget, '_initialize', forbidden)
+        guard.setattr(budget, '_evaluate', forbidden)
+        guard.setattr(store, 'fence', forbidden)
+        fresh = budget.progress(store.discussion(number))
+        assert fresh['phase'] == 'collaboration' and fresh['topic'] == 1
+        assert fresh['limit'] == 500000
+        assert fresh['basis'] == 'all'
+        assert [one['tokens'] for one in fresh['participants']] == [0, 0, 0]
+        assert fresh['notices'] == [] and not fresh['closing'] and not fresh['forced']
+    assert saved() == before
+    found = store.discussion(number)
+    budget.record_reply(found, store.seats(number)[0], {'prompt_tokens': 12, 'cached_tokens': 462034,
+                                                      'cache_write_tokens': 14223, 'completion_tokens': 3208},
+                        'first-collaboration-turn')
+    before = saved()
+    current = server.status_of(store.discussion(number))['phase_budget']
+    assert current['participants'][0]['tokens'] == 479477
+    assert current['participants'][0]['reported']
+    assert [one['percent'] for one in current['notices']] == [50, 80]
+    assert saved() == before
+    store.add_topic(number, 'Open the next panel.')
+    store.change(number, topic=1, stage='discussion')
+    next_panel = budget.progress(store.discussion(number))
+    assert next_panel['phase'] == 'panel' and next_panel['topic'] == 2
+    assert [one['tokens'] for one in next_panel['participants']] == [0, 0, 0]
+    assert saved() == before
+
+
+def test_budget_notices_identify_their_roundtable_and_phase(phase_table):
+    make, _, _, _, _ = phase_table
+    number = make()
+    received(number, 0, 120, 'first-panel')
+    assert all('roundtable 1' in one['text'].lower() and 'panel' in one['text'].lower()
+               for one in budget.progress(store.discussion(number))['notices'])
+    store.add_topic(number, 'A second topic.')
+    store.change(number, topic=1)
+    store.phase(number, 'collaboration', 'Collaborate on topic two.')
+    received(number, 0, 120, 'second-collaboration')
+    assert all('roundtable 2' in one['text'].lower() and 'collaboration' in one['text'].lower()
+               for one in budget.progress(store.discussion(number))['notices'])
 
 
 def test_whole_phase_closing_messages_do_not_reset_votes_and_are_delivered_on_safe_turns(phase_table):

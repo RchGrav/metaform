@@ -55,7 +55,8 @@ SHIPS_DISABLED = False  # a person can open a table in any project: the engine s
 
 PACKAGE = resources.files(__name__)
 OPEN_LIMIT = engine.CALL_LIMIT + 30  # seconds `open` waits for its follower's first line: a deadline on one request
-CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner', 'token_budget')
+CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner', 'token_budget',
+         'token_basis', 'phase_budget')
 
 settings.number('roundtables_spend', 2, min=0, max=100, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
@@ -75,8 +76,14 @@ settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000
                 help='State plus judging criteria. Conservative headroom under the unconfirmed OpenRouter limits.')
 settings.number('roundtables_token_budget', 0, min=0, max=9007199254740991,
                 label='Tokens per agent per panel or collaboration', category='integrations', heading='Roundtables',
-                help='Total reported input, cached input and output per agent. Fresh counters for each panel and '
+                help='Reported tokens under the selected counting basis. Fresh counters for each panel and '
                      'collaboration. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.')
+settings.choice('roundtables_token_basis', ['uncached', 'output', 'all'], 'uncached',
+                label='Count toward the phase token budget', category='integrations', heading='Roundtables',
+                choice_names={'uncached': 'Uncached input + output', 'output': 'Generated output only',
+                              'all': 'Input + cached input + output'},
+                help='Uncached counts input, cache writes and output, excluding cached reads. Full usage stays '
+                     'recorded. Existing tables keep their basis until explicitly adjusted while stopped.')
 settings.boolean('roundtables_live_summary', True, label='Explain the live roundtable with Haiku',
                  category='integrations', heading='Roundtables',
                  help='A separate Haiku observer explains the live discussion in plain language for you. '
@@ -209,19 +216,42 @@ def report_of(ctx: Context, row: dict[str, Any]) -> str | None:
     return found if found and (Path(ctx.require_store().project().path) / found).is_file() else None
 
 
+def phase_progress(ctx: Context, row: dict[str, Any]) -> dict[str, Any] | None:
+    """Read this table's current counters without starting an engine or depending on follower cursors."""
+    if row.get('discussion') is None:
+        return None
+    from .roundtable import budget, config, store
+
+    if not (config.home() / 'roundtable.sqlite3').is_file():
+        return None
+    try:
+        found = store.discussion(int(row['discussion']))
+    except store.Missing:
+        return None
+    project = Path(ctx.require_store().project().path).resolve()
+    if not Path(str(found['folder'])).resolve().is_relative_to(project) or \
+            not str(found['subject']).startswith(str(row['table_id'])):
+        return None
+    return budget.progress(found)
+
+
 def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
     followed = cast(dict[str, Any], row.get('followed') or {})  # where its record was saved and its memory kept
     report = report_of(ctx, row)
     materials = cast(dict[str, Any], followed.get('session') or {}).get('folder')
+    progress = phase_progress(ctx, row)
     return {'table': row['table_id'], **({'address': row['address']} if row.get('address') else {}),
             **({'materials': materials} if materials else {}),
             'topic': row['topic'], 'state': row['state'],
             **({'reason': row['reason']} if row.get('reason') else {}), 'seats': row['seats'],
             **({'seated': row['seated']} if row.get('seated') else {}),
             'spend': row['spend'], 'reply_limit': followed.get('reply_limit', 512), 'discussion': row.get('discussion'),
-            'token_budget': int(row['token_budget'] if row.get('token_budget') is not None
+            'token_budget': int(progress['limit'] if progress is not None else
+                                row['token_budget'] if row.get('token_budget') is not None
                                 else followed.get('token_budget') or 0),
+            'token_basis': progress['basis'] if progress is not None else followed.get('token_basis', 'all'),
             'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
+            'phase_budget': progress,
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],
@@ -335,6 +365,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
     token_budget = ctx.nouns.get('token_budget', ctx.setting('roundtables_token_budget'))
     if type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991:
         raise Stop('token_budget is a non-negative whole number; zero disables it.', 'metaform roundtables open')
+    token_basis = ctx.nouns.get('token_basis', ctx.setting('roundtables_token_basis'))
+    if token_basis not in ('uncached', 'output', 'all'):
+        raise Stop('token_basis is uncached, output or all.', 'metaform roundtables open')
     given = ctx.nouns.get('seats') or ctx.setting('roundtables_seats')
     listed = cast(list[Any], json.loads(given) if isinstance(given, str) else given)
     seats = [seat_of(ctx, str(one)) for one in listed]
@@ -361,6 +394,7 @@ def open_table(ctx: Context) -> dict[str, Any]:
                              'state': 'opening', 'created': follow.now(), 'token_budget': token_budget,
                              'followed': {'reply_limit': reply_limit, 'judging': judging,
                                           'token_budget': token_budget,
+                                          'token_basis': token_basis,
                                           'permissions': permissions,
                                           **({'session': held} if held else {}),
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
@@ -387,6 +421,8 @@ def chaired(ctx: Context, tool: str, **more: Any) -> dict[str, Any]:
             current = tx.get('tables', {'table_id': row['table_id']})
             if current is not None:
                 tx.concern(kind=f'roundtables:control:{row["discussion"]}')
+                tx.concern(kind=follow.CHANGE_KIND)
+                tx.concern(kind=f'{follow.CHANGE_KIND}:{row["table_id"]}')
                 changes: dict[str, Any] = {'reason': dict(current).get('reason')}
                 if tool == 'budget':
                     changes['token_budget'] = more['token_budget']
@@ -436,7 +472,10 @@ def set_token_budget(ctx: Context) -> dict[str, Any]:
     tokens = ctx.nouns['token_budget']
     if type(tokens) is not int or not 0 <= tokens <= 9007199254740991:
         raise Stop('token_budget is a non-negative whole number; zero disables it.', 'metaform roundtables budget')
-    return chaired(ctx, 'budget', token_budget=tokens)
+    basis = ctx.nouns.get('token_basis')
+    if basis is not None and basis not in ('uncached', 'output', 'all'):
+        raise Stop('token_basis is uncached, output or all.', 'metaform roundtables budget')
+    return chaired(ctx, 'budget', token_budget=tokens, **({'token_basis': basis} if basis is not None else {}))
 
 
 def reseat(ctx: Context) -> dict[str, Any]:
@@ -515,7 +554,8 @@ def table_events(ctx: Context) -> dict[str, Any]:
                                                   'at': one['at'], **cast(dict[str, Any], one['payload'])}
                                                  for one in found],
             'latest': max((int(one['seq']) for one in found), default=after),
-            'live_summary': live_summary.snapshot(ctx, str(row['table_id']))}
+            'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
+            'phase_budget': phase_progress(ctx, row)}
 
 
 def follow_table(ctx: Context) -> dict[str, Any]:
@@ -631,9 +671,12 @@ MODULE = Module(
                          kind='bool', required=False),
                     Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
                          required=False),
-                    Noun('token_budget', 'Total reported tokens per agent per panel and collaboration; resets each '
+                    Noun('token_budget', 'Counted tokens per agent per panel and collaboration; resets each '
                          'phase. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.',
                          kind='int', required=False),
+                    Noun('token_basis', 'uncached input plus output (default), output only, or all including cached '
+                         'reads.', required=False,
+                         schema={'type': 'string', 'enum': ['uncached', 'output', 'all']}),
                     Noun('permissions', 'Per-agent permission prompts and native ACP mode for the complete session; '
                          'project settings when left out.', kind='json', required=False,
                          schema={'type': 'object', 'additionalProperties': {'type': 'object',
@@ -660,7 +703,10 @@ MODULE = Module(
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
         Verb('budget', set_token_budget, 'Set the per-agent token budget for panels and collaboration without '
              'resetting the current counters.',
-             nouns=(TABLE, Noun('token_budget', 'Tokens per agent per phase; zero disables the budget.', kind='int')),
+             nouns=(TABLE, Noun('token_budget', 'Tokens per agent per phase; zero disables the budget.', kind='int'),
+                    Noun('token_basis', 'Optional uncached, output or all. A basis adjustment requires a stopped '
+                         'runner and recounts the current phase; omitted preserves the existing basis.',
+                         required=False, schema={'type': 'string', 'enum': ['uncached', 'output', 'all']})),
              open_world=True),
         Verb('permit', permit, 'Answer an agent\'s ACP permission request with one of its supplied options.',
              nouns=(TABLE, Noun('request', 'The waiting permission request id.'),

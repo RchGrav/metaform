@@ -55,11 +55,17 @@ documents in the shared session folder. There is no automatic minutes or summary
 ## Settings
 
 - `roundtables_spend`, 2, the person's: the most US dollars one table spends through OpenRouter; `open` may only lower it.
-- `roundtables_token_budget`, 0: reported input, cached input and output tokens per participant per panel and per
+- `roundtables_token_budget`, 0: counted tokens per participant per panel and per
   collaboration. Zero disables the limit. Setup captures this default, and `budget <table> <token_budget>` or the
   live budget control changes the limit without clearing usage already recorded in the current phase.
   A runner started before token-budget support must first be held, finish stopping, and be continued to load the
   new code. Live edits refuse that older active runner rather than claim enforcement it cannot provide.
+- `roundtables_token_basis`, `uncached`: uncached input plus output, including cache writes and excluding cache
+  reads. `output` counts generated output only. `all` also counts cached input. Setup captures the project's choice.
+  Existing tables without a saved choice retain `all`. To change an existing table's basis, stop its runner first,
+  then use `budget <table> <token_budget> token_basis=uncached`. This recounts only the current phase from saved
+  usage and clears that phase's old warnings. Earlier phases and full usage records remain intact. Editing the
+  limit without specifying a basis preserves the table's choice.
 - `roundtables_seats`, `claude/opus`, `codex/astra`, `codex/sol`, `claude/fable`, the person's: the seats, in speaking order, of a table opened without any named, as the page's stage opens one. A model is a short name, such as `opus` or `sol`, which means the newest release of its family when the table opens, or an exact value, such as `gpt-6-sol`, which pins one; one the agent does not offer is refused, naming the nearest.
 
 ## Completion and context handoff
@@ -86,9 +92,14 @@ agents receive closing instructions. At 120%, discussion advances into collabora
 the submitted next topic without waiting for every DONE. After the final collaboration, scoring follows. Each new
 panel and collaboration starts fresh per-participant counters with the same configured limit. Agents can finish
 earlier through the normal PASS and DONE flow. Usage is counted once per completed physical turn, including PASS
-and carry-forward replies. Cached tokens count once, and reasoning tokens already included in output are not added
-again. Context-window occupancy is not spent usage. Agents that omit usage cannot trigger a measured cap. A long
+and carry-forward replies. The default closing counter excludes cached reads. Full usage records retain them.
+Reasoning tokens already included in output are not added again. Context-window occupancy is not spent usage.
+Agents that omit usage cannot trigger a measured cap. A long
 turn can overshoot a threshold before its usage report arrives. Saved shared documents survive automatic advancement.
+
+The live controls show each participant's reported count, percentage, roundtable and phase. A fresh panel or
+collaboration shows zero before its first reply. A single tool-using turn can include several model calls, so its
+first usage report can be large. The displayed counting basis identifies whether cached input is included.
 
 `roundtables_judging` selects the default novelty filter. Setup exposes the same choice for each new table. With judging off, every substantive reply is retained within the existing character reply limit, including repetitions. Synthesis, ranking, explanation and host stages remain unchanged.
 

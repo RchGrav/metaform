@@ -88,6 +88,7 @@ function summaryFixture(get = async () => ({events: [], latest: 0})) {
     UI, S, TABLE, h: node, SEAT: {n: 1}, TOLD: {list: []},
     getJson: async path => { reads.push(path); return get(path); },
     seated: () => {}, stateIs: () => {}, ended: () => {}, pipelineIs: () => {}, tell: () => {},
+    watchPhaseBudget: () => {}, phaseBudgetIs: () => {},
     readNotes: () => {}, toast: message => { warnings.push(message); }, wrote: async () => ({}),
   });
   return {api, UI, S, TABLE, reads, warnings};

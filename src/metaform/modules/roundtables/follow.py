@@ -180,6 +180,7 @@ class Follower:
                              judging=self.followed.get('judging', True),
                              permissions=self.followed.get('permissions'),
                              token_budget=int(self.followed.get('token_budget') or 0),
+                             token_basis=str(self.followed.get('token_basis') or 'all'),
                              folder=str(self.ctx.folder))
         a2a = cast(dict[str, Any], answer.get('a2a') or {})
         changes = {'discussion': int(answer['discussion']), 'chair': str(answer['chair']), 'state': 'running',

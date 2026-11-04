@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS phase_replies(
   discussion INTEGER NOT NULL, reply TEXT NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL,
   position INTEGER NOT NULL, tokens INTEGER NOT NULL, reported INTEGER NOT NULL, recorded INTEGER,
   PRIMARY KEY (discussion, reply));
+CREATE TABLE IF NOT EXISTS phase_reply_usage(
+  discussion INTEGER NOT NULL, reply TEXT NOT NULL, kind TEXT NOT NULL, usage TEXT NOT NULL,
+  PRIMARY KEY (discussion, reply));
 CREATE TABLE IF NOT EXISTS phase_notices(
   discussion INTEGER NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL, percent INTEGER NOT NULL,
   position INTEGER NOT NULL, tokens INTEGER NOT NULL, token_limit INTEGER NOT NULL, text TEXT NOT NULL,
@@ -338,7 +341,8 @@ def submission(number: int, at: int) -> dict[str, Any]:
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
            topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None,
            session: Mapping[str, Any] | None = None,
-           permissions: Mapping[str, Mapping[str, str]] | None = None, token_budget: int = 0) -> int:
+           permissions: Mapping[str, Mapping[str, str]] | None = None, token_budget: int = 0,
+           token_basis: str = 'uncached') -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
@@ -346,6 +350,7 @@ def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
     names = named(chosen)
     snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
     snapshot['token_budget'] = token_budget
+    snapshot['token_basis'] = token_basis
     if permissions:
         snapshot['permissions'] = {agent: dict(values) for agent, values in permissions.items()}
     if session:  # a session of roundtables: Jev judges only whether a turn keeps to the topic

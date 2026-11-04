@@ -14,6 +14,7 @@ import pytest
 if 'PYTEST_METAFORM_HOME' not in os.environ:
     os.environ['PYTEST_METAFORM_HOME'] = tempfile.mkdtemp(prefix='metaform-tests-')
 os.environ['METAFORM_HOME'] = os.environ['PYTEST_METAFORM_HOME']
+os.environ['ROUNDTABLE_HOME'] = str(Path(os.environ['PYTEST_METAFORM_HOME']) / 'roundtable')
 # The web GUI's watchdog never runs under the person's hold tool in a test, which would place calls in their own ledger.
 os.environ['METAFORM_HOLD'] = ''
 # No browser a test starts can show a window: without a display to connect to, a headed launch fails instead of
@@ -54,6 +55,7 @@ def home(tmp_path, monkeypatch, request):
     loader.reset()
     path = tmp_path / 'home'
     monkeypatch.setenv('METAFORM_HOME', str(path))
+    monkeypatch.setenv('ROUNDTABLE_HOME', str(path / 'roundtable'))
     rows = _test_defaults(request, tmp_path)
     if rows:
         def quoted(text):

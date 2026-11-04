@@ -2367,6 +2367,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder),
                                        'judging': settings.value('roundtables_judging', folder),
                                        'token_budget': settings.value('roundtables_token_budget', folder),
+                                       'token_basis': settings.value('roundtables_token_basis', folder),
                                        **({'running': running} if running else {})})
             table = {'table': given['table']}
             if given.get('notes') or given.get('note'):
@@ -2441,6 +2442,10 @@ class Handler(BaseHTTPRequestHandler):
             if type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991:
                 return self.send(400, {'error': 'Token budget is a non-negative whole number; zero disables it.'})
             nouns['token_budget'] = token_budget
+            if 'token_basis' in given:
+                if given['token_basis'] not in ('uncached', 'output', 'all'):
+                    return self.send(400, {'error': 'Token basis is uncached, output or all.'})
+                nouns['token_basis'] = given['token_basis']
         try:
             found = module_verb(given, 'roundtables', action, nouns)
         except StoreError as error:
@@ -2474,6 +2479,9 @@ class Handler(BaseHTTPRequestHandler):
         token_budget = given.get('token_budget')
         if token_budget is not None and (type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991):
             return self.send(400, {'error': 'Token budget is a non-negative whole number; zero disables it.'})
+        token_basis = given.get('token_basis')
+        if token_basis is not None and token_basis not in ('uncached', 'output', 'all'):
+            return self.send(400, {'error': 'Token basis is uncached, output or all.'})
         if address is not None and not isinstance(address, str):
             return self.send(400, {'error': 'The Address a table is about is text, or left out.'})
         if not isinstance(topic, str) or not topic.strip():
@@ -2492,6 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
         nouns: dict[str, Any] = {'topic': topic.strip(), **({'chain': chain} if chain else {}),
                                **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
                                **({'token_budget': token_budget} if token_budget is not None else {}),
+                               **({'token_basis': token_basis} if token_basis is not None else {}),
                                'automate_ticket_creation': automate_ticket_creation,
                                **({'permissions': permissions} if permissions is not None else {}),
                                **({'judging': judging} if judging is not None else {}),

@@ -390,15 +390,18 @@ Reply in <limit/> characters or fewer.</phase_turn>
 <score_received>Your private scorecard was received.</score_received>
 <session_profile>Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.</session_profile>
 <farewell_instruction>Speak freely. Say done when you are finished.</farewell_instruction>
-<budget_warning>Token budget warning for <phase/>: <seat/> has used <tokens/> tokens, crossing the <percent/>% threshold of <limit/> tokens per agent.
+<budget_warning>Token budget warning for roundtable <topic/>, <phase/>: <seat/> has used <tokens/> tokens, crossing the <percent/>% threshold of <limit/> tokens per agent.
 Bring the current work toward closure. This phase advances automatically when any participant reaches 120%.</budget_warning>
-<budget_closing_panel>Panel closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
+<budget_closing_panel>Roundtable <topic/> panel closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
 Make your closing statement now. Do not start new lines of discussion. Reply PASS alone when you have finished.
 At 120%, the panel advances into collaboration without waiting for unanimous PASS.</budget_closing_panel>
-<budget_closing_collaboration>Collaboration closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
+<budget_closing_collaboration>Roundtable <topic/> collaboration closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
 Finish the current shared documents. Agree on the next topic and write next-topic.md in the shared session folder now.
 Say done if finished. At 120%, collaboration advances without waiting for every DONE. Your shared documents remain available.</budget_closing_collaboration>
-<budget_forced>The <phase/> token limit was reached: <seat/> used <tokens/> tokens against a <limit/>-token budget. Advancing now.</budget_forced>
+<budget_forced>The roundtable <topic/> <phase/> token limit was reached: <seat/> used <tokens/> tokens against a <limit/>-token budget. Advancing now.</budget_forced>
+<budget_reconfigured>Roundtable <topic/> <phase/> now counts <basis/>. The previous counter counted <previous/>.
+Recounted usage in this part: <counts/>. The limit is <limit/> tokens per agent.
+Earlier parts and full usage records are preserved.</budget_reconfigured>
 <carry_forward_retry>Complete the carry-forward note already requested. Keep the decisions, evidence, disagreements and open questions needed to continue, within <limit/> characters.
 
 New queued contributions since your last delivery:

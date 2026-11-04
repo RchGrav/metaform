@@ -10,6 +10,7 @@ const setupForm = source.slice(source.indexOf('UI.setup ='), source.indexOf('UI.
 const start = source.slice(source.indexOf('async function startTable('), source.indexOf('/* ---------- the seats'));
 const open = source.slice(source.indexOf('export async function openRoundtable('), source.indexOf('function showStage('))
   .replace('export ', '');
+const phase = source.slice(source.indexOf('function tokenBasisLabel('), source.indexOf('/* Status refreshes report'));
 const chair = source.slice(source.indexOf('function budgetIs('), source.indexOf('/* One line of the transcript, whole'));
 const status = source.slice(source.indexOf('function seated('), source.indexOf('function heard('));
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -18,7 +19,8 @@ function node(tag, attributes = {}, ...children) {
     hidden: attributes.hidden ?? false, disabled: false, checked: false, invalid: 0, dataset: {},
     focus() {}, reportValidity() { this.invalid++; }};
 }
-const textOf = value => typeof value === 'string' ? value : (value?.children || []).map(textOf).join(' ');
+const textOf = value => typeof value === 'string' ? value
+  : value?.textContent || (value?.children || []).map(textOf).join(' ');
 function fixture(options = {}) {
   const writes = [], reads = [], messages = [];
   const BUDGET = {value: 0, dirty: false, setupDirty: false}, CHAIR = {writing: false};
@@ -28,9 +30,9 @@ function fixture(options = {}) {
     'seatList', 'addSeat', 'saveParticipants', 'launchPermissions', 'hold', 'discussion', 'discussionComment',
     'sendDiscussion', 'endDiscussion', 'continueDiscussion', 'endTable', 'root'].map(key => [key, node('div')]));
   UI.question.value = 'Plan a project'; UI.replyLimit.value = '512'; UI.tables.value = '1';
-  const api = runInNewContext(`${setupControl}\n${liveControl}\n${setupForm}\n${start}\n${open}\n${chair}\n${status}
-    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated})`, {
-    UI, TABLE, S, BUDGET, CHAIR, G: {}, SEAT: {n: 1}, h: node,
+  const api = runInNewContext(`${setupControl}\n${liveControl}\n${setupForm}\n${start}\n${open}\n${phase}\n${chair}\n${status}
+    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated, phaseBudgetIs, watchPhaseBudget})`, {
+    UI, TABLE, S, BUDGET, CHAIR, PHASE_BUDGET: {project: null, table: null}, G: {}, SEAT: {n: 1}, h: node,
     LAUNCH: {project: 'project'}, LINEUP: {project: 'project'}, OFFERED: new Map(),
     getJson: async path => { reads.push(path); return options.get ? options.get(path) : {seats: [], token_budget: 0}; },
     wrote: async (path, body) => {
@@ -40,7 +42,7 @@ function fixture(options = {}) {
     toast: message => { messages.push(message); },
     chosenPermissions: () => ({}), seatsChosen: () => ['claude/opus', 'codex/sol'],
     rememberParticipants: () => {}, rememberedParticipants: (_, defaults) => defaults,
-    fill: () => {}, addSeat: () => {}, drawSetupPermissions: () => {},
+    fill: (box, ...children) => { box.children = children.flat(Infinity).filter(Boolean); }, addSeat: () => {}, drawSetupPermissions: () => {},
     showStage: () => {}, resetTable: () => { TABLE.id = null; }, leaveStage: () => {},
     readTable: async () => {}, seatAll: () => {}, ended: () => {},
   });
@@ -62,7 +64,9 @@ test('setup explains independent phase counts, disabled default and all threshol
   assert.match(description, /0 disables/);
   assert.match(description, /Each panel and collaboration phase starts a fresh count for each agent/);
   assert.match(description, /50% or 80% warns.*100% asks it to close.*120% forces.*without waiting for everyone to finish/);
-  assert.match(description, /input, cached input and output.*updated after reports or turns/);
+  assert.match(description, /Uncached input \+ output; cached reads excluded/);
+  assert.match(description, /Cache writes count as input/);
+  assert.match(description, /Totals update after reports or turns/);
   assert.match(textOf(f.UI.budget), /Changing the limit keeps tokens already counted/);
 });
 
@@ -123,6 +127,7 @@ test('live budget edits use the existing table control and can disable a limit',
   f.running('held', 'collaboration');
   f.edit(7000);
   const saving = f.api.chairControl('budget');
+  assert.equal('token_basis' in f.writes[0].body, false, 'Saving a limit must not convert the counting basis.');
   assert.deepEqual(f.writes[0], {path: '/api/roundtable-control',
     body: {table: 'active-table', action: 'budget', token_budget: 7000}});
   assert.equal(f.UI.liveTokenBudget.disabled, true);
@@ -184,5 +189,178 @@ test('late budget responses do not change another table or project', async () =>
     await saving;
     assert.equal(f.BUDGET.value, 0, changed);
     assert.equal(f.BUDGET.dirty, true, changed);
+  }
+});
+
+const phaseSnapshot = (phase = 'panel', topic = 3, tokens = 0) => ({limit: 500000, phase, topic,
+  participants: [
+    {position: 0, name: 'Alpha', tokens, reported: !!tokens, unreported: 0, closing: false},
+    {position: 1, name: 'Beta', tokens: 0, reported: false, unreported: 0, closing: false}],
+  notices: [], closing: false, forced: false});
+
+test('each new panel and collaboration phase displays authoritative zero counters for every agent', () => {
+  const f = fixture();
+  f.api.phaseBudgetIs(phaseSnapshot('panel', 3, 479477));
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Panel 3');
+  assert.match(textOf(f.UI.phaseBudgetRows), /Alpha 479,477 \/ 500,000 tokens \(96%\)/);
+  assert.match(textOf(f.UI.phaseBudgetRows), /Beta 0 \/ 500,000 tokens \(0%\)/);
+  for (const [phase, topic, label] of [['collaboration', 3, 'Collaboration 3'], ['panel', 4, 'Panel 4']]) {
+    f.api.phaseBudgetIs(phaseSnapshot(phase, topic));
+    assert.equal(f.UI.phaseBudgetLabel.textContent, label);
+    assert.equal(f.UI.phaseBudgetRows.children.length, 2);
+    assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
+    for (const row of f.UI.phaseBudgetRows.children) {
+      assert.match(textOf(row), /0 \/ 500,000 tokens \(0%\)/);
+      assert.equal(row.children.find(child => child.tag === 'progress').attributes.value, 0);
+    }
+  }
+  assert.match(textOf(f.UI.phaseBudget), /Input \+ cached input \+ output/);
+});
+
+test('phase progress preserves the draft limit, chair hold and discussion comment', () => {
+  const f = fixture();
+  f.running('held');
+  f.edit(700000);
+  f.UI.discussionComment.value = 'Keep the current phase held.';
+  f.api.phaseBudgetIs(phaseSnapshot('panel', 3, 479477));
+  assert.equal(f.UI.liveTokenBudget.value, '700000');
+  assert.equal(f.BUDGET.dirty, true);
+  assert.equal(f.TABLE.state, 'held');
+  assert.equal(f.UI.discussionComment.value, 'Keep the current phase held.');
+  assert.equal(f.writes.length, 0);
+});
+
+test('missing reports and phase closing state stay explicit alongside the usage totals', () => {
+  const f = fixture(), snapshot = phaseSnapshot();
+  snapshot.participants[0].unreported = 1;
+  snapshot.participants[0].closing = true;
+  snapshot.closing = true;
+  f.api.phaseBudgetIs(snapshot);
+  assert.match(textOf(f.UI.phaseBudgetRows), /Usage missing for 1 reply; the reported total is incomplete/);
+  assert.match(textOf(f.UI.phaseBudgetRows), /Closing statement requested/);
+  assert.equal(f.UI.phaseBudgetState.textContent, 'Closing statements requested.');
+  snapshot.forced = true;
+  f.api.phaseBudgetIs(snapshot);
+  assert.equal(f.UI.phaseBudgetState.textContent, 'Hard limit reached.');
+  snapshot.limit = 0;
+  f.api.phaseBudgetIs(snapshot);
+  assert.match(textOf(f.UI.phaseBudgetRows), /0 tokens · limit disabled/);
+  f.api.phaseBudgetIs({phase: null});
+  assert.equal(f.UI.phaseBudget.hidden, true);
+  assert.equal(f.UI.phaseBudgetRows.children.length, 0);
+});
+
+function phaseReader(f, get) {
+  const TABLE = {id: 'active-table', seq: 17, busy: false, again: false}, S = {project: 'project'};
+  const code = source.slice(source.indexOf('async function readTable('), source.indexOf('function tell('));
+  const read = runInNewContext(`${code}\nreadTable`, {TABLE, S, UI: f.UI, SEAT: {n: 1}, TOLD: {list: []},
+    getJson: get, phaseBudgetIs: f.api.phaseBudgetIs, watchPhaseBudget: f.api.watchPhaseBudget,
+    watchMinutes: () => {}, minutesIs: () => {}, seated: () => {}, tell: () => {}, readNotes: () => {},
+    toast: message => { throw new Error(message); },
+  });
+  return {read, TABLE, S};
+}
+
+test('phase usage updates independently of the transcript cursor and clears when the selected table changes', async () => {
+  const f = fixture();
+  let snapshot = phaseSnapshot('panel', 3, 0);
+  const reader = phaseReader(f, async () => ({events: [], latest: 17, phase_budget: snapshot}));
+  await reader.read();
+  assert.match(textOf(f.UI.phaseBudgetRows), /0 \/ 500,000/);
+  snapshot = phaseSnapshot('panel', 3, 479477);
+  await reader.read();
+  assert.equal(reader.TABLE.seq, 17);
+  assert.match(textOf(f.UI.phaseBudgetRows), /479,477/);
+  snapshot = phaseSnapshot('collaboration', 3, 0);
+  await reader.read();
+  assert.equal(reader.TABLE.seq, 17);
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Collaboration 3');
+  assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
+  reader.TABLE.id = 'another-table';
+  f.api.watchPhaseBudget(reader.S.project, reader.TABLE.id);
+  assert.equal(f.UI.phaseBudget.hidden, true);
+});
+
+test('a stale project response cannot replace the selected table phase counters', async () => {
+  const f = fixture();
+  let resolve;
+  const reader = phaseReader(f, path => path.includes('project=project&table=active-table&')
+    ? new Promise(done => { resolve = done; })
+    : {events: [], latest: 17, phase_budget: phaseSnapshot('panel', 4, 0)});
+  const first = reader.read();
+  reader.S.project = 'other-project'; reader.TABLE.id = 'other-table';
+  await reader.read();
+  resolve({events: [], latest: 17, phase_budget: phaseSnapshot('panel', 3, 479477)});
+  await first;
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Panel 4');
+  assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
+});
+
+test('a whole response uses the phase counters bundled with its newer table status', async () => {
+  const f = fixture();
+  f.running('held', 'collaboration');
+  const reader = phaseReader(f, async () => ({events: [], latest: 17,
+    phase_budget: phaseSnapshot('panel', 3, 479477),
+    status: {state: 'held', phase_budget: phaseSnapshot('collaboration', 3, 0)}}));
+  await reader.read(true);
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Collaboration 3');
+  assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
+  assert.match(textOf(f.UI.phaseBudgetRows), /0 \/ 500,000 tokens \(0%\)/);
+  assert.equal(f.TABLE.state, 'held');
+  assert.equal(f.writes.length, 0);
+});
+
+test('explicit null phase snapshots clear stale usage with status taking precedence', async () => {
+  const f = fixture();
+  f.running('held');
+  f.api.phaseBudgetIs(phaseSnapshot('panel', 3, 479477));
+  let response = {events: [], latest: 17, phase_budget: phaseSnapshot('panel', 3, 479477),
+    status: {phase_budget: null}};
+  const reader = phaseReader(f, async () => response);
+  await reader.read(true);
+  assert.equal(f.UI.phaseBudget.hidden, true);
+  assert.equal(f.UI.phaseBudgetRows.children.length, 0);
+  f.api.phaseBudgetIs(phaseSnapshot('panel', 3, 479477));
+  response = {events: [], latest: 17, phase_budget: null};
+  await reader.read();
+  assert.equal(f.UI.phaseBudget.hidden, true);
+  assert.equal(f.UI.phaseBudgetRows.children.length, 0);
+  assert.equal(f.TABLE.state, 'held');
+  assert.equal(f.writes.length, 0);
+});
+
+test('progress names the server counting basis and keeps a legacy all-tokens snapshot unchanged', () => {
+  const f = fixture();
+  f.running('held');
+  f.edit(700000);
+  f.UI.discussionComment.value = 'Keep the current phase held.';
+  for (const [basis, label] of [
+    ['all', 'Input + cached input + output'],
+    ['uncached', 'Uncached input + output; cached reads excluded'],
+    ['output', 'Generated output only'],
+    [undefined, 'Input + cached input + output'],
+  ]) {
+    f.api.phaseBudgetIs({...phaseSnapshot('panel', 3, 479477), basis});
+    assert.equal(f.UI.phaseBudgetBasis.textContent, label);
+    assert.match(textOf(f.UI.phaseBudgetRows), /479,477 \/ 500,000 tokens \(96%\)/);
+    assert.equal(f.UI.liveTokenBudget.value, '700000');
+    assert.equal(f.UI.discussionComment.value, 'Keep the current phase held.');
+    assert.equal(f.TABLE.state, 'held');
+  }
+  assert.equal(f.writes.length, 0);
+});
+
+test('setup help uses the project counting basis without adding a hidden conversion to limit saves', async () => {
+  for (const [token_basis, label] of [
+    ['uncached', 'Uncached input + output; cached reads excluded'],
+    ['output', 'Generated output only'],
+    ['all', 'Input + cached input + output'],
+  ]) {
+    const f = fixture({get: async () => ({seats: [], token_budget: 12000, token_basis})});
+    await f.api.openRoundtable(true);
+    assert.equal(f.UI.setupBudgetBasis.textContent, label);
+    assert.equal(f.UI.setupBudgetCache.textContent, token_basis === 'uncached' ? ' Cache writes count as input.' : '');
+    await f.api.startTable();
+    assert.equal('token_basis' in f.writes[0].body, false, 'The new table follows the backend project default.');
   }
 });

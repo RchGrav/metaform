@@ -149,13 +149,19 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     opens, controls = [], []
-    current = {'value': 12000, 'state': 'running'}
+    current = {'value': 12000, 'state': 'running', 'phase': 'panel', 'topic': 3, 'tokens': 0, 'basis': 'all'}
 
     def table(route):
         if 'table=' not in route.request.url:
             route.continue_()  # The real project settings supply the setup default.
         else:
-            route.fulfill(json={'events': [], 'latest': 0, 'notes': [], 'status': {
+            route.fulfill(json={'events': [], 'latest': 0, 'notes': [], 'phase_budget': {
+                'limit': current['value'], 'phase': current['phase'], 'topic': current['topic'], 'basis': current['basis'],
+                'participants': [
+                    {'position': 0, 'name': 'Alpha', 'tokens': current['tokens'],
+                     'reported': bool(current['tokens']), 'unreported': 0, 'closing': False},
+                    {'position': 1, 'name': 'Beta', 'tokens': 0, 'reported': False, 'unreported': 0, 'closing': False}],
+                'notices': [], 'closing': False, 'forced': False}, 'status': {
                 'table': 'budget-fixture', 'topic': 'Keep the phase budget.', 'state': current['state'],
                 'seats': [], 'token_budget': current['value']}})
 
@@ -180,6 +186,8 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     assert 'Each panel and collaboration phase starts a fresh count for each agent' in explanation
     assert '50% or 80% warns' in explanation and '100% asks it to close' in explanation
     assert '120% forces' in explanation and 'without waiting for everyone to finish' in explanation
+    assert 'Uncached input + output; cached reads excluded' in explanation
+    assert 'Cache writes count as input' in explanation
     setup.get_by_role('textbox', name='Your question to the table', exact=True).fill('Keep the phase budget.')
     with page.expect_response('**/api/roundtable-open'):
         setup.get_by_role('button', name='Start', exact=True).click()
@@ -188,22 +196,42 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     assert len(opens) == 1 and opens[0]['token_budget'] == 12000
     budget = live.get_by_role('spinbutton', name='Token budget per agent, per phase', exact=True)
     assert budget.input_value() == '12000'
+    progress = page.get_by_role('region', name='Current phase token usage', exact=True)
+    assert progress.is_visible()
+    assert progress.locator('.rt-phase-budget-label').text_content() == 'Panel 3'
+    assert progress.locator('.rt-phase-budget-count').all_text_contents() == [
+        '0 / 12,000 tokens (0%)', '0 / 12,000 tokens (0%)']
+    assert 'Input + cached input + output' in progress.text_content()
     assert 'Changing the limit keeps tokens already counted' in page.locator('#rt-live-budget-hint').text_content()
     budget.fill('9000')
-    current['value'] = 11000
+    current.update(value=11000, tokens=10000)
     page.evaluate('''async () => {
         const stage = await import('/page/app/roundtable/stage.js');
         stage.tableChange({kinds: ['roundtables', 'roundtables:budget-fixture']});
     }''')
     page.wait_for_function('() => document.querySelector(".rt-budget-current").textContent.includes("11,000")')
     assert budget.input_value() == '9000', 'A status refresh must preserve the unsaved edit.'
+    assert progress.locator('.rt-phase-budget-count').first.text_content() == '10,000 / 11,000 tokens (91%)'
+    assert page.get_by_role('button', name='Breakdown', exact=True).get_attribute('aria-pressed') == 'true'
+    assert page.locator('.rt-transcript').is_hidden()
     with page.expect_response('**/api/roundtable-control'):
         live.get_by_role('button', name='Update budget', exact=True).click()
     page.get_by_role('button', name='Continue', exact=True).wait_for()
     assert len(controls) == 1
+    assert 'token_basis' not in controls[0], 'Saving a limit must preserve the table counting basis.'
     assert {key: controls[0][key] for key in ('project', 'table', 'action', 'token_budget')} == {
         'project': 'proj', 'table': 'budget-fixture', 'action': 'budget', 'token_budget': 9000}
     assert live.is_visible() and budget.input_value() == '9000'
     assert page.locator('.rt-budget-current').text_content() == 'Current: 9,000 tokens'
+    current.update(phase='collaboration', tokens=0, basis='uncached')
+    page.evaluate('''async () => (await import('/page/app/roundtable/stage.js')).tableChange({
+        kinds: ['roundtables', 'roundtables:budget-fixture']})''')
+    page.wait_for_function('() => document.querySelector(".rt-phase-budget-label").textContent === "Collaboration 3"')
+    assert progress.locator('.rt-phase-budget-count').all_text_contents() == [
+        '0 / 9,000 tokens (0%)', '0 / 9,000 tokens (0%)']
+    assert progress.locator('.rt-phase-budget-basis').text_content() == (
+        'Uncached input + output; cached reads excluded')
+    assert page.get_by_role('button', name='Continue', exact=True).is_visible(), 'The chair hold is preserved.'
+    assert len(controls) == 1, 'Counter refreshes must not send controls or resume the table.'
     assert not problems
     page.close()

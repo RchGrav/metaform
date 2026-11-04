@@ -21,7 +21,7 @@ PAYLOAD = {'title': 'Write the shared notes', 'description': 'The agent wants to
 
 
 @pytest.fixture
-def discussion(tmp_path, monkeypatch):
+def discussion(home, tmp_path, monkeypatch):
     monkeypatch.setenv('ROUNDTABLE_HOME', str(tmp_path / 'engine'))
     chosen = [{'kind': 'acp', 'id': 'acp:codex/sol', 'agent': 'codex', 'model': 'sol'}]
     role = {**chosen[0], 'name': 'Sol'}

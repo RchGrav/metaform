@@ -74,6 +74,7 @@ const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right:
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 const CHAIR = {writing: false};
 const BUDGET = {value: 0, dirty: false, setupDirty: false};
+const PHASE_BUDGET = {project: null, table: null};
 const LINEUP = {project: null, saving: false};
 const LAUNCH = {project: null, agents: new Map()};
 const MINUTES = {project: null, table: null, seq: 0, through: 0, pending: 0, live: false, permissions: new Set()};
@@ -206,11 +207,20 @@ UI.liveTokenBudget = h('input', {type: 'number', min: 0, max: Number.MAX_SAFE_IN
   oninput: () => { BUDGET.dirty = true; }});
 UI.saveBudget = h('button', {class: 'btn sm', type: 'submit'}, 'Update budget');
 UI.currentBudget = h('span', {class: 'rt-budget-current', role: 'status'}, 'Current: disabled');
+UI.phaseBudgetLabel = h('b', {class: 'rt-phase-budget-label'});
+UI.phaseBudgetState = h('span', {class: 'rt-phase-budget-state', role: 'status'});
+UI.phaseBudgetRows = h('ul', {class: 'rt-phase-budget-rows'});
+UI.phaseBudgetBasis = h('small', {class: 'rt-phase-budget-basis'}, tokenBasisLabel('all'));
+UI.phaseBudget = h('section', {class: 'rt-phase-budget', hidden: true, 'aria-label': 'Current phase token usage'},
+  h('div', {class: 'rt-phase-budget-head'}, UI.phaseBudgetLabel, UI.phaseBudgetState), UI.phaseBudgetRows,
+  UI.phaseBudgetBasis,
+  h('small', {}, 'Reported usage across model calls. Each panel and collaboration phase starts at 0. '
+    + 'Totals update after usage reports or completed turns.'));
 UI.budget = h('form', {class: 'rt-budget', hidden: true,
   onsubmit: event => { event.preventDefault(); chairControl('budget'); }},
   h('label', {}, 'Token budget per agent, per phase', UI.liveTokenBudget), UI.saveBudget, UI.currentBudget,
   h('small', {id: 'rt-live-budget-hint'}, 'The same limit applies to each panel and collaboration phase. '
-    + '0 disables. Changing the limit keeps tokens already counted.'));
+    + '0 disables. Changing the limit keeps tokens already counted.'), UI.phaseBudget);
 UI.summaryStatus = h('p', {class: 'rt-summary-status', role: 'status'},
   'Preparing Haiku’s explanation of the discussion.');
 UI.summaryText = h('div', {class: 'rt-summary-text', 'aria-live': 'polite'});
@@ -356,6 +366,8 @@ UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER
 UI.tokenBudget = h('input', {type: 'number', min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, value: 0,
   name: 'token_budget', required: true, 'aria-describedby': 'rt-token-budget-hint',
   oninput: () => { BUDGET.setupDirty = true; }});
+UI.setupBudgetBasis = h('span', {class: 'rt-setup-budget-basis'}, tokenBasisLabel('uncached'));
+UI.setupBudgetCache = h('span', {}, ' Cache writes count as input.');
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.judging = h('input', {type: 'checkbox', name: 'judging', checked: true});
@@ -373,8 +385,8 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
   h('label', {}, 'Token budget per agent, per phase', UI.tokenBudget),
   h('small', {id: 'rt-token-budget-hint'}, '0 disables. Each panel and collaboration phase starts a fresh count '
     + 'for each agent. The first agent at 50% or 80% warns the group, at 100% asks it to close, and at 120% forces '
-    + 'the next phase without waiting for everyone to finish. Counts input, cached input and output, updated after '
-    + 'reports or turns.'),
+    + 'the next phase without waiting for everyone to finish. Counting basis: ', UI.setupBudgetBasis, '.',
+  UI.setupBudgetCache, ' Totals update after reports or turns.'),
   h('label', {}, UI.judging, 'Judge novelty with Jev'),
   h('small', {}, 'Optional. Off keeps substantive replies without filtering.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
@@ -426,6 +438,8 @@ export async function openRoundtable(fresh = false) {
   UI.start.disabled = true;  // wait for the project's budget before offering Start
   UI.question.focus();
   UI.tokenBudget.value = 0;
+  UI.setupBudgetBasis.textContent = tokenBasisLabel('uncached');
+  UI.setupBudgetCache.textContent = ' Cache writes count as input.';
   BUDGET.setupDirty = false;
   const project = S.project;
   if (LAUNCH.project !== project) {
@@ -437,6 +451,9 @@ export async function openRoundtable(fresh = false) {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}`);
     if (project !== S.project) return;
     UI.judging.checked = found.judging !== false;
+    const basis = found.token_basis || 'uncached';
+    UI.setupBudgetBasis.textContent = tokenBasisLabel(basis);
+    UI.setupBudgetCache.textContent = basis === 'uncached' ? ' Cache writes count as input.' : '';
     if (!BUDGET.setupDirty && Number.isSafeInteger(found.token_budget) && found.token_budget >= 0) {
       UI.tokenBudget.value = found.token_budget;
     }
@@ -503,6 +520,8 @@ function resetTable() {
   UI.topic.textContent = ''; UI.state.textContent = '';
   UI.discussionComment.value = '';
   BUDGET.dirty = false;
+  Object.assign(PHASE_BUDGET, {project: null, table: null});
+  resetPhaseBudget();
   budgetIs(0);
   renderChair();
 }
@@ -706,6 +725,7 @@ async function readTable(whole = false) {
       TABLE.again = false;
       id = TABLE.id; project = S.project;
       watchMinutes(project, id);
+      watchPhaseBudget(project, id);
       const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}&table=${
         encodeURIComponent(id)}&after=${TABLE.seq}${whole || !SEAT.n ? '&whole=1' : ''}`);
       if (id !== TABLE.id || project !== S.project) {
@@ -726,6 +746,8 @@ async function readTable(whole = false) {
       }
       if (found.status) seated(found.status);
       if (found.live_summary) minutesIs(found.live_summary);
+      if (found.status && Object.hasOwn(found.status, 'phase_budget')) phaseBudgetIs(found.status.phase_budget);
+      else if (Object.hasOwn(found, 'phase_budget')) phaseBudgetIs(found.phase_budget);
       TABLE.seq = Math.max(TABLE.seq, found.latest || 0);
       tell();
       if (wrote) readNotes();  // a seat writes notes on its turn, so the folder is read again after one
@@ -964,6 +986,48 @@ async function decidePipeline(action) {
     PIPELINE.writing = false; renderPipeline();
     if (PIPELINE.value?.state === 'awaiting' && !PIPELINE.reviewed) reviewPipeline();
   } }
+}
+/* Phase counts come from the engine's current phase, independently of paced turns and unsaved budget edits. */
+function tokenBasisLabel(basis) {
+  if (basis === 'uncached') return 'Uncached input + output; cached reads excluded';
+  if (basis === 'output') return 'Generated output only';
+  return 'Input + cached input + output';
+}
+function resetPhaseBudget() {
+  UI.phaseBudget.hidden = true;
+  UI.phaseBudgetLabel.textContent = UI.phaseBudgetState.textContent = '';
+  fill(UI.phaseBudgetRows);
+}
+function watchPhaseBudget(project, table) {
+  if (PHASE_BUDGET.project === project && PHASE_BUDGET.table === table) return;
+  resetPhaseBudget();
+  PHASE_BUDGET.project = project;
+  PHASE_BUDGET.table = table;
+}
+function phaseBudgetIs(snapshot) {
+  if (!snapshot || !['panel', 'collaboration'].includes(snapshot.phase)) { resetPhaseBudget(); return; }
+  const maximum = Number(snapshot.limit || 0), topic = snapshot.topic;
+  budgetIs(maximum);
+  UI.phaseBudget.hidden = false;
+  UI.phaseBudgetBasis.textContent = tokenBasisLabel(snapshot.basis);
+  UI.phaseBudgetBasis.title = snapshot.basis === 'uncached' ? 'Cache writes count as input.' : '';
+  UI.phaseBudgetLabel.textContent = `${snapshot.phase === 'panel' ? 'Panel' : 'Collaboration'}${topic ? ` ${topic}` : ''}`;
+  const notices = snapshot.notices || [], last = notices.at(-1);
+  UI.phaseBudgetState.textContent = snapshot.forced ? 'Hard limit reached.'
+    : snapshot.closing ? 'Closing statements requested.'
+    : last ? `${last.percent}% notice sent.` : '';
+  fill(UI.phaseBudgetRows, ...(snapshot.participants || []).map(one => {
+    const tokens = Number(one.tokens || 0), fraction = maximum ? tokens / maximum : 0;
+    const name = one.name || `Participant ${Number(one.position) + 1}`;
+    const count = maximum ? `${tokens.toLocaleString()} / ${maximum.toLocaleString()} tokens (${Math.round(fraction * 100)}%)`
+      : `${tokens.toLocaleString()} tokens · limit disabled`;
+    return h('li', {'data-position': one.position}, h('span', {class: 'rt-phase-budget-name'}, name),
+      h('span', {class: 'rt-phase-budget-count'}, count),
+      maximum ? h('progress', {max: maximum, value: Math.min(tokens, maximum), 'aria-label': `${name} phase token use`}) : null,
+      one.closing ? h('small', {}, 'Closing statement requested.') : null,
+      one.unreported ? h('small', {}, `Usage missing for ${one.unreported} ${one.unreported === 1 ? 'reply' : 'replies'}; `
+        + 'the reported total is incomplete.') : null);
+  }));
 }
 /* Status refreshes report the current limit while an unsaved edit stays in the person's input. */
 function budgetIs(value) {
