@@ -1,6 +1,6 @@
 """One detached runner per table, with persistent turns and fenced writes.
 
-Only unanimous voluntary PASS replies in one complete round or explicit chair advancement finish discussion.
+Unanimous voluntary PASS replies, explicit chair advancement or a configured participant budget finish discussion.
 Novelty filtering is optional. Resource limits and errors hold discussion with a reason. A held runner closes
 its seats and stops. Continue explicitly starts it again without changing the table's identity or transcript.
 
@@ -20,12 +20,13 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import events
 
-from . import config, export, harness, health, judge, openrouter, outside, peers, render, stages, store
+from . import budget, config, export, harness, health, judge, openrouter, outside, peers, render, stages, store
 from . import seats as seating
 from .names import base as named_base
 from .prompts import said
@@ -204,6 +205,7 @@ class Table:
         found = self.row()
         if not store.claim(self.number, self.token, STALE):
             return {'discussion': self.number, 'state': found['state'], 'runner': 'already running'}
+        self.change(budget_runner=self.token)
         main = cast(asyncio.Task[Any], asyncio.current_task())
         with contextlib.suppress(NotImplementedError, AttributeError):  # SIGTERM closes the seats, then the runner stops
             asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, self.stop, main)
@@ -235,8 +237,11 @@ class Table:
                     return self.summary()
                 if found['state'] == 'held':
                     return self.summary()
+                if await self.enforce_budget(found):
+                    continue
                 if found['advance_asked']:
                     await self.stop_panel(record=True)
+                    self.change(handoff=None)
                     self.discussed(found, 'chair')
                     continue
                 seated = store.seats(self.number)
@@ -308,7 +313,7 @@ class Table:
         self.change(position=int(self.row()['position']) + 1)
 
     async def round_over(self, found: dict[str, Any]) -> None:
-        """Only an explicit PASS from every participant in this round completes discussion."""
+        """An ordinary round completes through every participant's explicit PASS."""
         store.close_round(self.number, said('why_passes'))
         if render.session(found) and self.row()['stage'] == 'synthesis':  # a session collaborates instead
             self.collaboration(found)
@@ -333,6 +338,42 @@ class Table:
                      {'discussed': store.stamp(), 'advanced_by': why, 'why': said(f'why_{why}')})
         if render.session(found):
             self.collaboration(found)
+
+    async def enforce_budget(self, found: dict[str, Any]) -> bool:
+        """A reported participant cap ends the phase, without waiting for another busy agent's DONE or PASS."""
+        if not budget.limit(found) or budget.phase(found) is None:
+            return False
+        current = budget.evaluate(found)
+        if not current['forced']:
+            return False
+        if current['phase'] == 'panel':
+            await self.stop_panel(record=True)
+            await self.unseat()
+            found = self.row()
+            if found['state'] != 'running' or not budget.status(found)['forced']:
+                return True
+            reason = next(str(one['text']) for one in current['notices'] if one['percent'] == 120)
+            if not found['stage']:
+                self.change(handoff=None, advance_asked=False)
+                self.ending(reason)
+                return True
+            store.decide(self.number, None, {'handoff': None, 'advance_asked': False},
+                         {'discussed': store.stamp(), 'advanced_by': 'budget', 'why': reason})
+            if render.session(found):
+                self.collaboration(self.row())
+            else:
+                self.change(stage='synthesis', position=0)
+        else:
+            self.harvest(found, 'collab')
+            for row in store.seats(self.number):
+                self.keep_collaboration(found, row)
+            await self.unseat()
+            found = self.row()
+            if found['state'] != 'running' or not budget.status(found)['forced']:
+                return True
+            self.change(handoff=None)
+            await self.phase_done(self.row(), 'collaboration', store.seats(self.number), [])
+        return True
 
     def enter_comments(self) -> None:
         """The chair's comments waiting, entered inline in order, unjudged."""
@@ -474,9 +515,13 @@ class Table:
                 original = str(held['original'])
                 found = {**self.row(), 'round': held['round'], 'topic': held['topic']}
                 store.record(self.number, self.entry(found, row, original, unjudged=True,
-                                                     **cast(dict[str, Any], held['use'])))
+                                                     **cast(dict[str, Any], held['use'])),
+                             receipt=str(held['usage_id']) if held.get('usage_id') else None)
                 seat.extra['panel_reply'] = None
                 self.keep(seat, None)
+            unjudged = store.pending(self.number)
+            if unjudged is not None:
+                store.record(self.number, unjudged, judged=True)
 
     async def panel(self, found: dict[str, Any], seated: list[dict[str, Any]]) -> None:
         """Rotate among ready seats while busy seats keep their requests, then await the next completion."""
@@ -492,7 +537,9 @@ class Table:
         covered = {int(one['position']) for one in rows
                    if one['position'] is not None and one['kind'] in ('seat', 'pass')}
         pending = [row for row in seated if cast(dict[str, Any], row.get('extra') or {}).get('panel_reply')]
-        if not self.panel_work and not pending and all(int(row['position']) in covered for row in seated):
+        closing = {int(row['position']) for row in seated if budget.needs_closing(found, int(row['position']))}
+        if not self.panel_work and not pending and not closing and all(
+                int(row['position']) in covered for row in seated):
             await self.round_over(found)
             return
         at = int(found['position']) % max(1, len(seated))
@@ -506,7 +553,7 @@ class Table:
             mine = [one for one in rows if one['position'] == position]
             if mine and self.panel_work and not self.panel_asking:
                 continue  # A reply waiting for Jev alone does not extend the speaking round.
-            if mine and mine[-1]['kind'] == 'pass' and not any(
+            if position not in closing and mine and mine[-1]['kind'] == 'pass' and not any(
                     one['position'] != position and one['number'] > mine[-1]['number'] and one['kind'] == 'seat'
                     for one in rows):
                 continue
@@ -577,6 +624,11 @@ class Table:
         notes = [one for one in store.submissions(self.number, int(pending['after'])) if one['kind'] == 'carry']
         try:
             for row in store.seats(self.number):
+                prior = next((one for one in notes if one['position'] == row['position']), None)
+                if prior is not None:
+                    budget.record_reply(found, row, prior, f'carry:{pending["after"]}:{row["position"]}')
+                    if budget.status(found)['forced']:
+                        return
                 if any(one['position'] == row['position'] for one in notes):
                     continue
                 if self.row()['state'] != 'running' or self.row()['advance_asked']:
@@ -590,6 +642,9 @@ class Table:
                 unseen = [one for one in self.segment(found) if one['number'] > int(row['seen'])]
                 prompt = said('carry_forward', limit=2 * render.reply_limit(found),
                               turns=render.labeled(unseen), continuation=render.shared(found))
+                notice = budget.prompt(self.row(), int(row['position']))
+                if notice.text:
+                    prompt = notice.text + '\n\n' + prompt
                 if judge.tokens([seat.system, seat.messages, prompt]) + 2048 >= self.context_limit(found):
                     raise NoReply('Seat context cannot fit its carry-forward request. '
                                   'Raise the smallest context budget, then Continue, or choose End discussion.')
@@ -601,10 +656,14 @@ class Table:
                     raise
                 if not reply.text.strip():
                     raise NoReply(f'{row["name"]} gave no carry-forward note. Continue to retry.')
+                receipt = f'carry:{pending["after"]}:{row["position"]}'
+                budget.record_reply(found, row, reply.use, receipt, budget.Prompt(notice.text, notice.notice, False))
                 note = store.record(self.number, self.entry(found, row, reply.text, kind='carry',
-                                    **{key: value for key, value in reply.use.items() if key in USE}))
+                                    **{key: value for key, value in reply.use.items() if key in USE}), receipt=receipt)
                 notes.append(note)
                 self.keep(seat, max([one['number'] for one in unseen], default=int(row['seen'])))
+                if budget.status(self.row())['forced']:
+                    return
             if self.row()['state'] != 'running' or self.row()['advance_asked']:
                 return
             if float(self.row()['spent']) >= float(found['spend']) and self.requires_payment(found):
@@ -646,6 +705,11 @@ class Table:
             found = {**found, 'round': held['round'], 'topic': held['topic'],
                      'pass_after': held.get('pass_after', found['pass_after'])}
             original, use = str(held['original']), cast(dict[str, Any], held['use'])
+            if not held.get('usage_id'):
+                held['usage_id'] = uuid.uuid4().hex
+                self.keep(seat, None)
+            budget.record_reply(found, row, use, str(held['usage_id']), budget.Prompt(
+                notice=int(held.get('notice', 0)), closing=bool(held.get('closing', False))))
         else:
             since = store.submissions(self.number, max(int(row['seen']),
                                       int(render.continuation(found).get('through', 0))))
@@ -665,6 +729,9 @@ class Table:
             if not seat.messages and mine and mine[-1].get('repeat_of') is not None:  # started again after repeats
                 view = render.tidy(said('repeat_rebuilt', count=REPEATS) + '\n\n' + view)
             latest = max([int(one['number']) for one in since], default=int(row['seen']))
+            notice = budget.prompt(self.row(), int(row['position']))
+            if notice.text:
+                view = notice.text + '\n\n' + view
             self.panel_asking.add(int(row['position']))
             try:
                 reply = await seat.reply(view, float(config.value('agent_wait')))
@@ -688,16 +755,23 @@ class Table:
             original, use = reply.text, reply.use
             # Every completed reply is durable before it waits behind another seat's Jev request.
             seat.extra['panel_reply'] = {'original': original, 'use': use, 'round': found['round'],
-                                         'topic': found['topic'], 'pass_after': found['pass_after']}
+                                         'topic': found['topic'], 'pass_after': found['pass_after'],
+                                         'usage_id': uuid.uuid4().hex, 'notice': notice.notice,
+                                         'closing': notice.closing}
             self.keep(seat, latest)
+            budget.record_reply(found, row, use, str(seat.extra['panel_reply']['usage_id']), notice)
+            if budget.limit(self.row()):
+                self.control.set()
         async with self.judging:
             current = self.row()
             if current['state'] != 'running' or current['stage'] != found['stage'] or current['topic'] != found['topic']:
                 return False
             if render.passed(original):  # A voluntary pass stays a pass, never a skipped or failed turn.
+                receipt = cast(dict[str, Any], seat.extra.get('panel_reply') or {}).get('usage_id')
                 recorded = store.record(self.number, self.entry(
                     found, row, original.strip()[:render.reply_limit(found)], kind='pass',
-                    **{key: value for key, value in use.items() if key in USE}))
+                    **{key: value for key, value in use.items() if key in USE}),
+                    receipt=str(receipt) if receipt else None)
                 if int(current['pass_after']) > int(found['pass_after']):
                     self.change(pass_after=recorded['number'])  # The seat had not seen the new chair instruction.
                 seat.extra['panel_reply'] = None
@@ -717,8 +791,10 @@ class Table:
                 'label': label}
         use = {key: value for key, value in use.items() if key in USE}
         # kept before anything that can fail, so a reply taken and paid for is never lost: continue judges it
-        self.change(unjudged={'position': row['position'], 'text': text, **kept, 'use': use})
         seat = self.seat(row)
+        pending = cast(dict[str, Any], seat.extra.get('panel_reply') or {})
+        self.change(unjudged={'position': row['position'], 'text': text, **kept, 'use': use,
+                              'usage_id': pending.get('usage_id')})
         seat.extra['panel_reply'] = None
         self.keep(seat, None)
         return await self.verdict(found, row, self.entry(found, row, text, **use, **kept))
@@ -1030,7 +1106,7 @@ class Table:
         if kind == 'score':
             phase += [{**one, 'kind': 'score', 'number': 0} for one in store.scorecards(self.number)]
         due = [row for row in seated if not row['gone'] and health.usable(row)
-               and int(row['position']) not in self.working and self.needs(row, phase, kind)]
+               and int(row['position']) not in self.working and self.needs(row, phase, kind, found)]
         if due:
             at = int(found['position'])
             row = min(due, key=lambda one: (int(one['position']) - at) % max(1, len(seated)))
@@ -1040,16 +1116,24 @@ class Table:
         if self.working:  # every seat working or finished: the next reply to land is waited for, nothing polled
             await self.wait_work(list(self.working.values()))
             return
-        unfinished = [row for row in seated if self.needs(row, phase, kind)]
+        unfinished = [row for row in seated if self.needs(row, phase, kind, found)]
         if unfinished:
             self.change(state='held', reason='Waiting for participants: ' + ', '.join(
                 str(row['name']) for row in unfinished) + '. Reseat unavailable participants, then Continue.')
             return
         await self.phase_done(found, stage, seated, phase)
 
-    def needs(self, row: dict[str, Any], phase: list[dict[str, Any]], kind: str) -> bool:
+    def needs(self, row: dict[str, Any], phase: list[dict[str, Any]], kind: str,
+              found: dict[str, Any] | None = None) -> bool:
         """A seat keeps its turn until it explicitly finishes; unseen substantive replies reopen collaboration."""
         position = int(row['position'])
+        if kind == 'collab':
+            current = found if found is not None else self.row()
+            pending = cast(dict[str, Any], row.get('extra') or {}).get('phase_reply')
+            if isinstance(pending, dict) and cast(dict[str, Any], pending).get('topic') == current['topic']:
+                return True
+            if budget.needs_closing(current, position):
+                return True
         mine = [one for one in phase if one['position'] == position and one['kind'] == kind]
         if not mine:
             return True
@@ -1075,7 +1159,25 @@ class Table:
                     limit=str(render.reply_limit(found)))
         async def reply() -> tuple[Reply | None, int, str | None]:
             try:
-                return await seat.reply(text, float(config.value('agent_wait'))), latest, None
+                saved = seat.extra.get('phase_reply')
+                if kind == 'collab' and isinstance(saved, dict) and \
+                        cast(dict[str, Any], saved).get('topic') == found['topic']:
+                    held = cast(dict[str, Any], saved)
+                    made = Reply(str(held['text']), cast(dict[str, Any], held['use']))
+                    budget.record_reply(found, row, made.use, str(held['usage_id']), budget.Prompt(
+                        notice=int(held.get('notice', 0)), closing=bool(held.get('closing', False))))
+                    return made, int(held['seen']), None
+                notice = budget.prompt(self.row(), position) if kind == 'collab' else budget.Prompt()
+                prompt = notice.text + '\n\n' + text if notice.text else text
+                made = await seat.reply(prompt, float(config.value('agent_wait')))
+                if kind == 'collab':
+                    receipt = uuid.uuid4().hex
+                    seat.extra['phase_reply'] = {'topic': found['topic'], 'text': made.text, 'use': made.use,
+                                                 'seen': latest, 'usage_id': receipt, 'notice': notice.notice,
+                                                 'closing': notice.closing}
+                    self.keep(seat, latest)
+                    budget.record_reply(found, row, made.use, receipt, notice)
+                return made, latest, None
             except openrouter.Unpaid as error:
                 self.unpaid(error)
                 return None, latest, str(error)
@@ -1106,12 +1208,31 @@ class Table:
                 seat.settled(reply.text, said('score_received'))
                 self.keep(seat, latest)
                 continue
+            if kind == 'collab' and self.keep_collaboration(found, row):
+                continue
             self.keep(seat, latest)
             original = reply.text.strip()
             text = original[:render.reply_limit(found)]
             use = {key: value for key, value in reply.use.items() if key in USE}
             cut = {'original': original, 'truncated': True} if text != original else {}
             store.record(self.number, {**self.entry(found, row, text, kind=kind, accepted=True), **use, **cut})
+
+    def keep_collaboration(self, found: dict[str, Any], row: dict[str, Any]) -> bool:
+        """A completed collaboration reply and its receipt survive cancellation or a runner restart together."""
+        seat = self.seat(row)
+        saved = seat.extra.get('phase_reply')
+        if not isinstance(saved, dict) or cast(dict[str, Any], saved).get('topic') != found['topic']:
+            return False
+        held = cast(dict[str, Any], saved)
+        original = str(held['text']).strip()
+        text = original[:render.reply_limit(found)]
+        use = {key: value for key, value in cast(dict[str, Any], held['use']).items() if key in USE}
+        cut = {'original': original, 'truncated': True} if text != original else {}
+        store.record(self.number, {**self.entry(found, row, text, kind='collab', accepted=True), **use, **cut},
+                     receipt=str(held['usage_id']))
+        seat.extra['phase_reply'] = None
+        self.keep(seat, int(held['seen']))
+        return True
 
     def scored(self, row: dict[str, Any], last: dict[str, Any]) -> bool:
         return stages.scorecard(str(last['text']), [str(one['name']) for one in store.seats(self.number)

@@ -128,9 +128,22 @@ class Follower:
         def write() -> None:
             with self.store.tables() as tx:
                 self.concern(tx)
+                if 'followed' in changes:
+                    changes['followed'] = self.current_budget(tx, changes['followed'])
                 tx.update('tables', {'table_id': self.table_id}, changes)
         with self.telling:
             events.announced(self.ctx.folder, 'cli', write)
+
+    def current_budget(self, tx: Any, followed: dict[str, Any]) -> dict[str, Any]:
+        """Preserve a chair's live edit when this detached follower writes its older in-memory cursors."""
+        row = tx.get('tables', {'table_id': self.table_id})
+        saved = cast(dict[str, Any], dict(row).get('followed') or {}) if row is not None else {}
+        if row is not None and dict(row).get('token_budget') is not None:
+            saved = {**saved, 'token_budget': row['token_budget']}
+        if 'token_budget' in saved:
+            self.followed['token_budget'] = saved['token_budget']
+            return {**followed, 'token_budget': saved['token_budget']}
+        return followed
 
     def emit(self, kind: str, audience: str = 'table', changes: dict[str, Any] | None = None,
              **payload: Any) -> None:
@@ -148,7 +161,9 @@ class Follower:
                 self.concern(tx)
                 tx.insert('events', {'table_id': self.table_id, 'seq': self.seq, 'kind': kind, 'audience': audience,
                                      'payload': payload, 'at': now()})
-                tx.update('tables', {'table_id': self.table_id}, {'followed': self.followed, **(changes or {})})
+                updated = {'followed': self.followed, **(changes or {})}
+                updated['followed'] = self.current_budget(tx, updated['followed'])
+                tx.update('tables', {'table_id': self.table_id}, updated)
         events.announced(self.ctx.folder, 'cli', write)
         self.ctx.publish(TOPIC, event)
 
@@ -164,6 +179,7 @@ class Follower:
                              reply_limit=self.followed.get('reply_limit', 512),
                              judging=self.followed.get('judging', True),
                              permissions=self.followed.get('permissions'),
+                             token_budget=int(self.followed.get('token_budget') or 0),
                              folder=str(self.ctx.folder))
         a2a = cast(dict[str, Any], answer.get('a2a') or {})
         changes = {'discussion': int(answer['discussion']), 'chair': str(answer['chair']), 'state': 'running',
@@ -327,6 +343,10 @@ class Follower:
             if one.get('kind') == 'permission':
                 payload = json.loads(str(one['text']))
                 self.emit('permission', 'person', **payload)
+                continue
+            if one.get('kind') == 'budget':
+                notice = cast(dict[str, Any], json.loads(str(one['text'])))
+                self.emit('operational', 'person', what='budget', text=notice['text'], budget=notice)
                 continue
             self.emit('seat_lost' if one.get('kind') in SEAT_LOST else 'operational', 'person', what=one.get('kind'),
                       text=one.get('text'), **({'seat': one['seat']} if one.get('seat') else {}))

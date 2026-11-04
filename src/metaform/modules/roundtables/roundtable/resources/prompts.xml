@@ -21,7 +21,7 @@
 - A turn enters the discussion only when it scores <keep/> or more on all four.
 - Every seat sees a vetoed turn as one line with the failed questions and the four scores [new, valuable, relevant, keep], for example: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88].
 - Reply PASS alone when you have nothing to add.
-- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- The discussion ends after a full round of unanimous PASS, chair advancement, or 120% of its configured per-agent token budget.
 - A veto, an error or a skipped turn is not a PASS.
 - A chair comment or a context handoff cancels the earlier PASS votes.</rules>
 <!-- A seat's system message, fixed for the table's life: the table's rules, which seat it is, and the opening. Sent
@@ -170,9 +170,9 @@ All findings from Roundtable 1 may be reconsidered. No architecture or technical
 - Jev judges each contribution. Jev vetoes a contribution that is off topic, repeats earlier material or adds no new context.
 - At your next turn, you learn if your last contribution was cut or vetoed, and you get the other seats' contributions.
 - Reply PASS alone only when you have nothing to add.
-- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- The discussion ends after a full round of unanimous PASS, chair advancement, or 120% of its configured per-agent token budget.
 - A veto, a skipped turn or a failure is not a PASS. A chair comment or a context handoff cancels the earlier PASS votes.
-- The synthesis, ranking and explanation stages come later, each with its own instructions.</discussion_start>
+- Later phases follow their own instructions. For a panel session, collaboration follows the discussion.</discussion_start>
 <!-- The three Roundtable 2 topics, a table's topics when open names none. A topic given at open by one of these
      names (01_WORLD, 02_OBJECTS, 03_COLLABORATION) is its text below; any other topic is the text the chair gave.
      A table keeps each topic's text as it was when the table opened. -->
@@ -389,6 +389,15 @@ Reply in <limit/> characters or fewer.</phase_turn>
 <score_received>Your private scorecard was received.</score_received>
 <session_profile>Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.</session_profile>
 <farewell_instruction>Speak freely. Say done when you are finished.</farewell_instruction>
+<budget_warning>Token budget warning for <phase/>: <seat/> has used <tokens/> tokens, crossing the <percent/>% threshold of <limit/> tokens per agent.
+Bring the current work toward closure. This phase advances automatically when any participant reaches 120%.</budget_warning>
+<budget_closing_panel>Panel closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
+Make your closing statement now. Do not start new lines of discussion. Reply PASS alone when you have finished.
+At 120%, the panel advances into collaboration without waiting for unanimous PASS.</budget_closing_panel>
+<budget_closing_collaboration>Collaboration closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.
+Finish the current shared documents. Agree on the next topic and write next-topic.md in the shared session folder now.
+Say done if finished. At 120%, collaboration advances without waiting for every DONE. Your shared documents remain available.</budget_closing_collaboration>
+<budget_forced>The <phase/> token limit was reached: <seat/> used <tokens/> tokens against a <limit/>-token budget. Advancing now.</budget_forced>
 <!-- One seat's entry among the host's inputs and in the record. -->
 <stage_entry><seat/>: <text/></stage_entry>
 <!-- A seat's ranking that could not be read, among the host's inputs and in the record. -->
@@ -573,7 +582,7 @@ The topic has no synthesis.</mechanical_no_ideas>
 - Discuss the question. Give ideas, evidence, objections and alternatives.
 - Every reply with substance enters the discussion. No judge filters the replies.
 - Reply PASS alone only when you have nothing to add.
-- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- The discussion ends after a full round of unanimous PASS, chair advancement, or 120% of its configured per-agent token budget.
 - A failure or a skipped turn is not a PASS. A chair comment or a context handoff cancels the earlier PASS votes.</discussion_unjudged>
 <why_passes>Every participant voluntarily replied PASS in the same full round.</why_passes>
 <held_empty>No participant is available. Reseat unavailable participants, then Continue.</held_empty>

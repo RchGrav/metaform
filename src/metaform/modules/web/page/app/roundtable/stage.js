@@ -72,6 +72,7 @@ const CLOCK = {last: 0};
 const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 const CHAIR = {writing: false};
+const BUDGET = {value: 0, dirty: false, setupDirty: false};
 const LINEUP = {project: null, saving: false};
 const LAUNCH = {project: null, agents: new Map()};
 
@@ -197,6 +198,16 @@ UI.discussion = h('form', {class: 'rt-discussion', hidden: true,
   onsubmit: event => { event.preventDefault(); chairControl('comment'); }},
   UI.discussionComment, UI.sendDiscussion,
   h('small', {}, 'Comments enter at the next gap. Hold pauses AI turns. Continue resumes them.'));
+UI.liveTokenBudget = h('input', {type: 'number', min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, value: 0,
+  name: 'token_budget', required: true, 'aria-describedby': 'rt-live-budget-hint',
+  oninput: () => { BUDGET.dirty = true; }});
+UI.saveBudget = h('button', {class: 'btn sm', type: 'submit'}, 'Update budget');
+UI.currentBudget = h('span', {class: 'rt-budget-current', role: 'status'}, 'Current: disabled');
+UI.budget = h('form', {class: 'rt-budget', hidden: true,
+  onsubmit: event => { event.preventDefault(); chairControl('budget'); }},
+  h('label', {}, 'Token budget per agent, per phase', UI.liveTokenBudget), UI.saveBudget, UI.currentBudget,
+  h('small', {id: 'rt-live-budget-hint'}, 'The same limit applies to each panel and collaboration phase. '
+    + '0 disables. Changing the limit keeps tokens already counted.'));
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
 UI.permissions = h('div', {class: 'rt-permissions', 'aria-label': 'Agent permission requests', hidden: true});
 const PERMISSIONS = new Map();
@@ -258,7 +269,7 @@ function dragGrip(event) {
 }
 UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
   UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
-  UI.permissions, UI.transcript, UI.discussion);
+  UI.permissions, UI.budget, UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -269,6 +280,9 @@ UI.where = h('span', {class: 'rt-where'});
 UI.launchPermissions = h('div', {class: 'rt-launch-permissions'});
 UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER, step: 1, value: 512,
   name: 'reply_limit', required: true});
+UI.tokenBudget = h('input', {type: 'number', min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, value: 0,
+  name: 'token_budget', required: true, 'aria-describedby': 'rt-token-budget-hint',
+  oninput: () => { BUDGET.setupDirty = true; }});
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.judging = h('input', {type: 'checkbox', name: 'judging', checked: true});
@@ -283,6 +297,11 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
   h('small', {}, 'Each roundtable opens the next one when it ends, with the same seats.'),
   h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
   h('small', {}, 'Applies to each discussion reply.'),
+  h('label', {}, 'Token budget per agent, per phase', UI.tokenBudget),
+  h('small', {id: 'rt-token-budget-hint'}, '0 disables. Each panel and collaboration phase starts a fresh count '
+    + 'for each agent. The first agent at 50% or 80% warns the group, at 100% asks it to close, and at 120% forces '
+    + 'the next phase without waiting for everyone to finish. Counts input, cached input and output, updated after '
+    + 'reports or turns.'),
   h('label', {}, UI.judging, 'Judge novelty with Jev'),
   h('small', {}, 'Optional. Off keeps substantive replies without filtering.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
@@ -331,8 +350,10 @@ export async function openRoundtable(fresh = false) {
   showStage();
   UI.setup.hidden = false;
   UI.automate.checked = false;
-  UI.start.disabled = false;
+  UI.start.disabled = true;  // wait for the project's budget before offering Start
   UI.question.focus();
+  UI.tokenBudget.value = 0;
+  BUDGET.setupDirty = false;
   const project = S.project;
   if (LAUNCH.project !== project) {
     LAUNCH.project = project;
@@ -343,6 +364,9 @@ export async function openRoundtable(fresh = false) {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}`);
     if (project !== S.project) return;
     UI.judging.checked = found.judging !== false;
+    if (!BUDGET.setupDirty && Number.isSafeInteger(found.token_budget) && found.token_budget >= 0) {
+      UI.tokenBudget.value = found.token_budget;
+    }
     OFFERED.clear();  // each agent's models read again, as it offers them now
     if (LINEUP.project !== project || !UI.seatList.children.length) {
       fill(UI.seatList);
@@ -351,6 +375,7 @@ export async function openRoundtable(fresh = false) {
     }
     drawSetupPermissions();
   } catch (error) { toast(error.message); }
+  finally { if (project === S.project && !TABLE.id) UI.start.disabled = false; }
 }
 function showStage() {
   if (!TABLE.on && !WS.on && $('.app').classList.contains('swapped')) { TABLE.swapped = true; swap(false, false); }
@@ -404,6 +429,8 @@ function resetTable() {
   UI.ideasBox.hidden = UI.rankingsBox.hidden = UI.answerBox.hidden = true;
   UI.topic.textContent = ''; UI.state.textContent = '';
   UI.discussionComment.value = '';
+  BUDGET.dirty = false;
+  budgetIs(0);
   renderChair();
 }
 /* The seats' characters given back, so the agents at work may take them again. */
@@ -429,12 +456,17 @@ async function startTable() {
   if (!Number.isSafeInteger(replyLimit) || replyLimit < 1) { UI.replyLimit.reportValidity(); return; }
   const tables = Number(UI.tables.value);
   if (!Number.isSafeInteger(tables) || tables < 1 || tables > 20) { UI.tables.reportValidity(); return; }
+  const tokenBudget = Number(UI.tokenBudget.value);
+  if (UI.tokenBudget.value === '' || !Number.isSafeInteger(tokenBudget) || tokenBudget < 0) {
+    UI.tokenBudget.reportValidity(); return;
+  }
   if (listed.length) rememberParticipants(S.project, listed);
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
   const permissions = chosenPermissions(listed);
   const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit, chain: tables,
+    token_budget: tokenBudget,
     judging: UI.judging.checked,
     automate_ticket_creation: UI.automate.checked,
     ...(Object.keys(permissions).length ? {permissions} : {}),
@@ -651,6 +683,7 @@ function toldAll() {
 function seated(status) {
   TABLE.topic = status.topic;
   UI.topic.textContent = status.topic;
+  budgetIs(status.token_budget);
   if (!SEAT.n) {
     TABLE.seats = status.seats || [];
     TABLE.names = status.seated || TABLE.seats.map(one => String(one).split('/').at(-1));
@@ -847,9 +880,17 @@ async function decidePipeline(action) {
     if (PIPELINE.value?.state === 'awaiting' && !PIPELINE.reviewed) reviewPipeline();
   } }
 }
+/* Status refreshes report the current limit while an unsaved edit stays in the person's input. */
+function budgetIs(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return;
+  BUDGET.value = value;
+  UI.currentBudget.textContent = value ? `Current: ${value.toLocaleString()} tokens` : 'Current: disabled';
+  if (!BUDGET.dirty) UI.liveTokenBudget.value = value;
+}
 function renderChair() {
   const active = !!TABLE.id && (TABLE.state === 'running' || TABLE.state === 'held');
-  UI.hold.hidden = UI.discussion.hidden = !active;
+  UI.hold.hidden = UI.discussion.hidden = UI.budget.hidden = !active;
+  UI.liveTokenBudget.disabled = UI.saveBudget.disabled = CHAIR.writing;
   UI.endDiscussion.hidden = !active || (!!TABLE.stage && TABLE.stage !== 'discussion');
   UI.endDiscussion.disabled = CHAIR.writing;
   UI.continueDiscussion.hidden = TABLE.state !== 'ended';
@@ -865,14 +906,23 @@ async function chairControl(action) {
   if (!TABLE.id || CHAIR.writing || (!['running', 'held'].includes(TABLE.state)
       && !(action === 'continue' && TABLE.state === 'ended')
       && !(action === 'abort' && !['ended', 'refused'].includes(TABLE.state)))) return;
-  const table = TABLE.id, text = UI.discussionComment.value;
+  const table = TABLE.id, project = S.project, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
+  const tokenBudget = Number(UI.liveTokenBudget.value);
+  if (action === 'budget' && (UI.liveTokenBudget.value === '' || !Number.isSafeInteger(tokenBudget) || tokenBudget < 0)) {
+    UI.liveTokenBudget.reportValidity(); return;
+  }
   CHAIR.writing = true;
   renderChair();
   try {
     const found = await wrote('/api/roundtable-control', {table, action,
-      ...(action === 'comment' ? {text} : {})});
-    if (!found || TABLE.id !== table) return;
+      ...(action === 'comment' ? {text} : {}),
+      ...(action === 'budget' ? {token_budget: tokenBudget} : {})});
+    if (!found || TABLE.id !== table || S.project !== project) return;
+    if (action === 'budget') {
+      BUDGET.dirty = false;
+      budgetIs(Number.isSafeInteger(found.token_budget) ? found.token_budget : tokenBudget);
+    }
     if (action === 'continue' && TABLE.ended) {
       TABLE.ended = false;
       TABLE.stage = 'discussion';

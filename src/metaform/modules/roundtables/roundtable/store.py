@@ -61,7 +61,7 @@ JSON = frozenset({'messages', 'reply', 'unjudged', 'models', 'extra', 'imported'
 # What an operational event says happened, in `events`: OpenRouter's credits ran out, the table held or resumed, a
 # seat left the table, was degraded or came back, the table's runner stopped
 EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report',
-          'permission')
+          'permission', 'budget')
 SYNTHESIZER, HOST, REPORTER = -1, -2, -3  # the position of a fresh request's seat, never one at the table
 
 SCHEMA = """
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS discussions(
   chair_key TEXT, chair_token TEXT NOT NULL, reporter TEXT NOT NULL,
   state TEXT NOT NULL, reason TEXT,
   round INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL DEFAULT 0, round_kept INTEGER NOT NULL DEFAULT 0,
-  runner TEXT, beat REAL NOT NULL DEFAULT 0, unjudged TEXT,
+  runner TEXT, budget_runner TEXT, beat REAL NOT NULL DEFAULT 0, unjudged TEXT,
   rounds INTEGER NOT NULL, spend REAL NOT NULL, spent REAL NOT NULL DEFAULT 0,
   report TEXT, export TEXT, report_error TEXT, created TEXT NOT NULL, ended TEXT,
   context_id TEXT, task_id TEXT, imported TEXT, snapshot TEXT,
@@ -128,6 +128,22 @@ CREATE TABLE IF NOT EXISTS scorecards(
   PRIMARY KEY (discussion, position));
 CREATE TABLE IF NOT EXISTS session_ratings(
   discussion INTEGER NOT NULL, agent TEXT NOT NULL, PRIMARY KEY (discussion, agent));
+CREATE TABLE IF NOT EXISTS phase_usage(
+  discussion INTEGER NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL, position INTEGER NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0, reported INTEGER NOT NULL DEFAULT 0, unreported INTEGER NOT NULL DEFAULT 0,
+  notice INTEGER NOT NULL DEFAULT 0, closing INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (discussion, topic, phase, position));
+CREATE TABLE IF NOT EXISTS phase_replies(
+  discussion INTEGER NOT NULL, reply TEXT NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL,
+  position INTEGER NOT NULL, tokens INTEGER NOT NULL, reported INTEGER NOT NULL, recorded INTEGER,
+  PRIMARY KEY (discussion, reply));
+CREATE TABLE IF NOT EXISTS phase_notices(
+  discussion INTEGER NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL, percent INTEGER NOT NULL,
+  position INTEGER NOT NULL, tokens INTEGER NOT NULL, token_limit INTEGER NOT NULL, text TEXT NOT NULL,
+  PRIMARY KEY (discussion, topic, phase, percent));
+CREATE TABLE IF NOT EXISTS phase_seed(
+  discussion INTEGER NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL,
+  PRIMARY KEY (discussion, topic, phase));
 """
 
 
@@ -145,7 +161,7 @@ ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported
                          ('synthesizer', 'TEXT'), ('advance_asked', 'INTEGER NOT NULL DEFAULT 0'),
                          ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT'),
                          ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0'),
-                         ('phase_after', 'INTEGER NOT NULL DEFAULT 0')),
+                         ('phase_after', 'INTEGER NOT NULL DEFAULT 0'), ('budget_runner', 'TEXT')),
          'seats': (('extra', 'TEXT'), ('availability', "TEXT NOT NULL DEFAULT 'active'"),
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
@@ -322,13 +338,14 @@ def submission(number: int, at: int) -> dict[str, Any]:
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
            topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None,
            session: Mapping[str, Any] | None = None,
-           permissions: Mapping[str, Mapping[str, str]] | None = None) -> int:
+           permissions: Mapping[str, Mapping[str, str]] | None = None, token_budget: int = 0) -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
 
     names = named(chosen)
     snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
+    snapshot['token_budget'] = token_budget
     if permissions:
         snapshot['permissions'] = {agent: dict(values) for agent, values in permissions.items()}
     if session:  # a session of roundtables: Jev judges only whether a turn keeps to the topic
@@ -456,7 +473,7 @@ def release(number: int, token: str) -> None:
     """The table let go by the runner with `token`, if it still holds it; its writes are no longer fenced."""
     _fences.pop(number, None)
     with connect() as db:
-        db.execute('UPDATE discussions SET runner=NULL WHERE number=? AND runner=?', (number, token))
+        db.execute('UPDATE discussions SET runner=NULL, budget_runner=NULL WHERE number=? AND runner=?', (number, token))
 
 
 def spend(number: int, cost: float) -> None:
@@ -540,18 +557,33 @@ def close_round(number: int, reason: str) -> None:
 
 
 def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
-           judgment: Mapping[str, Any] | None = None) -> dict[str, Any]:
+           judgment: Mapping[str, Any] | None = None, receipt: str | None = None) -> dict[str, Any]:
     """One submission, numbered next in its discussion; a seat's counts its turn and, when accepted, its keep.
     `judged` when it is the table's unjudged submission, now judged: the table lets it go and its round counts the
     keep in the same transaction, so the submission is neither recorded twice nor lost. `judgment`, the judgment that
     decided it, is written in that transaction too, naming the submission."""
     with connect() as db:
         fence(db, number)
+        if judged and receipt is None:
+            pending = plain(db.execute('SELECT unjudged FROM discussions WHERE number=?', (number,)).fetchone())
+            saved = cast(dict[str, Any], pending.get('unjudged') or {}) if pending else {}
+            receipt = str(saved['usage_id']) if saved.get('usage_id') else None
+        if receipt is not None:
+            previous = db.execute('SELECT recorded FROM phase_replies WHERE discussion=? AND reply=?',
+                                  (number, receipt)).fetchone()
+            if previous is not None and previous['recorded'] is not None:
+                saved = plain(db.execute('SELECT * FROM submissions WHERE discussion=? AND number=?',
+                                         (number, previous['recorded'])).fetchone())
+                if saved is not None:
+                    return saved
         latest = int(db.execute('SELECT COALESCE(MAX(number), 0) FROM submissions WHERE discussion=?',
                                 (number,)).fetchone()[0])
         row = {'over512': False, 'truncated': False, 'accepted': False, **entry, 'discussion': number, 'number': latest + 1,
                'created': stamp()}
         insert(db, 'submissions', row)
+        if receipt is not None:
+            db.execute('UPDATE phase_replies SET recorded=? WHERE discussion=? AND reply=?',
+                       (row['number'], number, receipt))
         if row['kind'] in ('chair', 'handoff'):
             update(db, 'discussions', {'number': number}, {'pass_after': row['number']})
         if entry.get('position') is not None:  # a slot filled; a submission only when the seat contributed

@@ -1776,6 +1776,12 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .rt-grip:hover{background-color:color-mix(in srgb,var(--text) 8%,transparent)}
 .rt-transcript .vetoed{opacity:.5;text-decoration:line-through}
 .rt-transcript .rt-note{font-style:italic;color:var(--muted)}
+.rt-budget{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.rt-budget[hidden]{display:none}
+.rt-budget>label{display:flex;align-items:center;gap:var(--s2);color:var(--muted)}
+.rt-budget input{width:9em}
+.rt-budget>small{flex-basis:100%;color:var(--muted)}
+.rt-budget-current{color:var(--muted);font-size:var(--t-sm)}
 .rt-discussion{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}
 .rt-discussion[hidden]{display:none}
 .rt-discussion>textarea{flex:1 1 220px;min-width:0;max-width:100%;resize:vertical;max-height:16vh}

@@ -49,7 +49,7 @@ function fixture(readOptions = null) {
   const S = {project: 'project'}, LAUNCH = {project: null, agents: new Map()};
   const START = {own: {prompts: '', mode: ''}, permissionsFor: null};
   const UI = {seatList: node('ol'), launchPermissions: node('div'), question: {value: 'The question'},
-    replyLimit: {value: 512}, tables: {value: 1}, start: {disabled: false}, state: {}, topic: {},
+    replyLimit: {value: 512}, tokenBudget: {value: 0}, tables: {value: 1}, start: {disabled: false}, state: {}, topic: {},
     judging: {checked: false}, automate: {checked: false}, setup: {hidden: false}};
   const dispatchPanel = panel();
   const api = runInNewContext(`${shared}\n${setup}\n${start}\n${launch}\n({drawSetupPermissions, chosenPermissions,

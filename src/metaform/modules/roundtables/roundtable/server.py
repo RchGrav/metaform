@@ -34,6 +34,9 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
+from metaform import events
+from metaform.module import Context as ModuleContext
+
 from . import a2a_server, config, export, harness, peers, render, runner, stages, store
 from . import seats as seating
 from .names import base as named
@@ -134,6 +137,7 @@ def status_of(found: dict[str, Any]) -> dict[str, Any]:
             'reason': found['reason'], **topic_of(found), 'round': found['round'], 'turn_of': turn_of(found, held),
             'latest': latest[-1]['number'] if latest else 0, 'judging': render.judging(found), 'spend': found['spend'],
             'reply_limit': render.reply_limit(found),
+            'token_budget': int(render.captured(found).get('token_budget') or 0),
             'spent': round(float(found['spent'] or 0), 4), 'reporter': found['reporter'], 'report': found['report'],
             'export': found['export'], **({'report_error': found['report_error']} if found['report_error'] else {}),
             'runner': 'running' if runner.alive(found) else 'stopped', 'folder': found['folder'],
@@ -154,7 +158,8 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
                  topics: list[str] | None = None, host: str | None = None,
                  synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT,
                  judging: bool | None = None, session: dict[str, Any] | None = None,
-                 permissions: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
+                 permissions: dict[str, dict[str, str]] | None = None,
+                 token_budget: int = 0) -> dict[str, Any]:
     """A table opened and its runner started, for `open` and the web page alike; ToolError says why it cannot be.
     With topics, the three Roundtable 2 topics unless others are given, it runs the Roundtable 2 protocol, its
     opening the Roundtable 2 opening unless one is given; with `topics=[]` it discusses its opening alone."""
@@ -162,6 +167,8 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
         raise ToolError('judging is true or false.')
     if type(reply_limit) is not int or reply_limit < 1:
         raise ToolError('reply_limit is a positive whole number of characters.')
+    if type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991:
+        raise ToolError('token_budget is a non-negative whole number; zero disables it.')
     if permissions is not None and (type(permissions) is not dict or any(
                 agent not in config.AGENTS or type(values) is not dict or any(
                     key not in ('prompts', 'mode') or type(value) is not str or
@@ -210,7 +217,7 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
                            'chair_key': chair_key, 'chair_token': token, 'reporter': writer,
                            'rounds': 0, 'spend': most_spend if spend is None else spend,
                            **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit, judging,
-                          session, permissions)
+                          session, permissions, token_budget)
     pid = runner.spawn(number)
     found = store.discussion(number)
     return {'discussion': number, 'chair': token, 'a2a': {'context_id': found['context_id'],
@@ -231,7 +238,8 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
                folder: str | None = None, seat_mcp: list[dict[str, Any]] | None = None,
                ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT,
                judging: bool | None = None, session: dict[str, Any] | None = None,
-               permissions: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
+               permissions: dict[str, dict[str, str]] | None = None,
+               token_budget: int = 0) -> dict[str, Any]:
     """Open a roundtable with its seats, in speaking order; you chair it.
 
     Seats: acp:<claude|codex|antigravity>/<model> (the agent on the person's own login through ACP), an OpenRouter model id
@@ -249,7 +257,7 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
     seat (a 1-based place in speaking order) gives one to that seat alone, as for a playground body's own endpoint
     and token. Other seats stay text-only. Returns the table's number and the chair token."""
     return await opened(opening, seats, subject, spend, reporter, folder, connection(ctx), topics, host,
-                        synthesizer, seat_mcp, reply_limit, judging, session, permissions)
+                        synthesizer, seat_mcp, reply_limit, judging, session, permissions, token_budget)
 
 
 # The chair's actions on a table already found to be the caller's: the MCP tools check the chair first, the web page
@@ -331,6 +339,30 @@ def reseated(found: dict[str, Any], seat: str) -> dict[str, Any]:
     store.event(number, 'seat_restored', said('event_seat_reseated', seat=held['name']), seat=held['id'])
     runner.spawn(number)
     return status_of(store.discussion(number))
+
+
+@server.tool(annotations=WRITE)
+def budget(discussion: int, token_budget: int, chair: str | None = None,
+           ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
+    """Set total reported tokens per participant per panel and collaboration; zero disables it.
+
+    Counters reset when each panel or collaboration starts, not when this limit changes.
+    Warn at 50% and 80%, request closing statements at 100%, and advance at 120%.
+    """
+    found = chaired(discussion, chair, ctx, 'set its token budget')
+    if type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991:
+        raise ToolError('token_budget is a non-negative whole number; zero disables it.')
+    if found['state'] in ('ending', 'ended'):
+        raise ToolError('This roundtable is ending or ended; its token budget cannot be changed.')
+    if runner.alive(found) and found.get('budget_runner') != found['runner']:
+        raise ToolError('Hold this roundtable, wait until its runner stops, then Continue to load token-budget support.')
+    found = store.change(discussion, snapshot={**render.captured(found), 'token_budget': token_budget})
+    events.publish('map.changed', {'tables': ['roundtables.tables'],
+                                   'kinds': [f'roundtables:control:{discussion}']},
+                   ModuleContext(module='roundtables', folder=Path(found['folder']), surface='mcp'))
+    if found['state'] == 'running':
+        runner.spawn(discussion)
+    return status_of(found)
 
 
 @server.tool(annotations=WRITE)

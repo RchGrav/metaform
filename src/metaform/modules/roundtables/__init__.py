@@ -55,7 +55,7 @@ SHIPS_DISABLED = False  # a person can open a table in any project: the engine s
 
 PACKAGE = resources.files(__name__)
 OPEN_LIMIT = engine.CALL_LIMIT + 30  # seconds `open` waits for its follower's first line: a deadline on one request
-CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner')
+CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner', 'token_budget')
 
 settings.number('roundtables_spend', 2, min=0, max=100, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
@@ -66,13 +66,17 @@ settings.number('roundtables_spend', 2, min=0, max=100, label='Most a table spen
 settings.boolean('roundtables_judging', True, label='Judge discussion novelty with Jev',
                  category='integrations', heading='Roundtables',
                  help='Optional novelty filtering. Off keeps every substantive reply and needs no Jev credential '
-                      'for ACP-only tables. Discussion completion always requires unanimous PASS or End discussion.')
+                      'for ACP-only tables. Discussion ends by unanimous PASS, End discussion or the configured token budget.')
 settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000,
                 label='Seat context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
                 help='Compact before seat context fills. The smallest active seat or judging budget wins.')
 settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000,
                 label='Jev context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
                 help='State plus judging criteria. Conservative headroom under the unconfirmed OpenRouter limits.')
+settings.number('roundtables_token_budget', 0, min=0, max=9007199254740991,
+                label='Tokens per agent per panel or collaboration', category='integrations', heading='Roundtables',
+                help='Total reported input, cached input and output per agent. Fresh counters for each panel and '
+                     'collaboration. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -103,14 +107,15 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone. The engine's synthesis and saved mechanical report supply the result.
 # Version 6 adds only pending stage launches, so session events recover refused work without scanning task history.
-TABLES = Tables(version=6, compatible_from=5, upgrade=pipeline.upgrade, tables=(
+# Version 7 keeps the mutable chair budget outside follower-owned cursors, including older live followers.
+TABLES = Tables(version=7, compatible_from=5, upgrade=pipeline.upgrade, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
         Column('opening', required=True), Column('seats', 'json', required=True), Column('host'),
         Column('synthesizer'), Column('rounds', 'int'), Column('spend', 'real', required=True),
         Column('state', required=True), Column('reason'), Column('discussion', 'int'), Column('chair'),
         Column('context_id'), Column('task_id'), Column('seated', 'json'), Column('follower', 'int'),
-        Column('followed', 'json'), Column('answer'),
+        Column('followed', 'json'), Column('token_budget', 'int'), Column('answer'),
         Column('answered', 'bool', required=True, default=False), Column('created', required=True),
         Column('ended')),
         indexes=(Index(('created',)),)),
@@ -206,6 +211,8 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             **({'reason': row['reason']} if row.get('reason') else {}), 'seats': row['seats'],
             **({'seated': row['seated']} if row.get('seated') else {}),
             'spend': row['spend'], 'reply_limit': followed.get('reply_limit', 512), 'discussion': row.get('discussion'),
+            'token_budget': int(row['token_budget'] if row.get('token_budget') is not None
+                                else followed.get('token_budget') or 0),
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],
@@ -316,6 +323,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
     reply_limit = ctx.nouns.get('reply_limit', 512)
     if type(reply_limit) is not int or reply_limit < 1:
         raise Stop('reply_limit is a positive whole number of characters.', 'metaform roundtables open')
+    token_budget = ctx.nouns.get('token_budget', ctx.setting('roundtables_token_budget'))
+    if type(token_budget) is not int or not 0 <= token_budget <= 9007199254740991:
+        raise Stop('token_budget is a non-negative whole number; zero disables it.', 'metaform roundtables open')
     given = ctx.nouns.get('seats') or ctx.setting('roundtables_seats')
     listed = cast(list[Any], json.loads(given) if isinstance(given, str) else given)
     seats = [seat_of(ctx, str(one)) for one in listed]
@@ -339,8 +349,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
         tx.concern(kind=follow.CHANGE_KIND)
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
                              'seats': seats, **roles, 'spend': spend,
-                             'state': 'opening', 'created': follow.now(),
+                             'state': 'opening', 'created': follow.now(), 'token_budget': token_budget,
                              'followed': {'reply_limit': reply_limit, 'judging': judging,
+                                          'token_budget': token_budget,
                                           'permissions': permissions,
                                           **({'session': held} if held else {}),
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
@@ -367,7 +378,12 @@ def chaired(ctx: Context, tool: str, **more: Any) -> dict[str, Any]:
             current = tx.get('tables', {'table_id': row['table_id']})
             if current is not None:
                 tx.concern(kind=f'roundtables:control:{row["discussion"]}')
-                tx.update('tables', {'table_id': row['table_id']}, {'reason': dict(current).get('reason')})
+                changes: dict[str, Any] = {'reason': dict(current).get('reason')}
+                if tool == 'budget':
+                    changes['token_budget'] = more['token_budget']
+                    changes['followed'] = {**cast(dict[str, Any], dict(current).get('followed') or {}),
+                                           'token_budget': more['token_budget']}
+                tx.update('tables', {'table_id': row['table_id']}, changes)
 
     events.announced(ctx.folder, ctx.surface, announced)
     return {'table': row['table_id'], **{key: answer[key] for key in CHAIR if key in answer}}
@@ -405,6 +421,13 @@ def continued(ctx: Context) -> dict[str, Any]:
 
 def advance(ctx: Context) -> dict[str, Any]:
     return chaired(ctx, 'advance')
+
+
+def set_token_budget(ctx: Context) -> dict[str, Any]:
+    tokens = ctx.nouns['token_budget']
+    if type(tokens) is not int or not 0 <= tokens <= 9007199254740991:
+        raise Stop('token_budget is a non-negative whole number; zero disables it.', 'metaform roundtables budget')
+    return chaired(ctx, 'budget', token_budget=tokens)
 
 
 def reseat(ctx: Context) -> dict[str, Any]:
@@ -595,6 +618,9 @@ MODULE = Module(
                          kind='bool', required=False),
                     Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
                          required=False),
+                    Noun('token_budget', 'Total reported tokens per agent per panel and collaboration; resets each '
+                         'phase. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.',
+                         kind='int', required=False),
                     Noun('permissions', 'Per-agent permission prompts and native ACP mode for the complete session; '
                          'project settings when left out.', kind='json', required=False,
                          schema={'type': 'object', 'additionalProperties': {'type': 'object',
@@ -619,6 +645,10 @@ MODULE = Module(
                                  'synthesis, rankings and summary.', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
+        Verb('budget', set_token_budget, 'Set the per-agent token budget for panels and collaboration without '
+             'resetting the current counters.',
+             nouns=(TABLE, Noun('token_budget', 'Tokens per agent per phase; zero disables the budget.', kind='int')),
+             open_world=True),
         Verb('permit', permit, 'Answer an agent\'s ACP permission request with one of its supplied options.',
              nouns=(TABLE, Noun('request', 'The waiting permission request id.'),
                     Noun('option', 'The option id supplied by the agent.')), surfaces=('cli',),

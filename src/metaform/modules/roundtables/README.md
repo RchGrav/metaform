@@ -55,11 +55,29 @@ documents in the shared session folder. There is no automatic minutes or summary
 ## Settings
 
 - `roundtables_spend`, 2, the person's: the most US dollars one table spends through OpenRouter; `open` may only lower it.
+- `roundtables_token_budget`, 0: reported input, cached input and output tokens per participant per panel and per
+  collaboration. Zero disables the limit. Setup captures this default, and `budget <table> <token_budget>` or the
+  live budget control changes the limit without clearing usage already recorded in the current phase.
+  A runner started before token-budget support must first be held, finish stopping, and be continued to load the
+  new code. Live edits refuse that older active runner rather than claim enforcement it cannot provide.
 - `roundtables_seats`, `claude/opus`, `codex/astra`, `codex/sol`, `claude/fable`, the person's: the seats, in speaking order, of a table opened without any named, as the page's stage opens one. A model is a short name, such as `opus` or `sol`, which means the newest release of its family when the table opens, or an exact value, such as `gpt-6-sol`, which pins one; one the agent does not offer is refused, naming the nearest.
 
 ## Completion and context handoff
 
-Discussion finishes only when every participant voluntarily replies PASS in one complete round, or the person chooses End discussion. Vetoes, failures, skipped turns, round counts and context size never imply PASS. Comments and context handoffs reset prior votes. Resource limits hold with a reason and recovery action. Credit recovery requires explicit Continue. An exhausted table budget can be replaced with `continue <table> spend=<amount>`, within configured caps.
+Discussion finishes when every participant voluntarily replies PASS in one complete round, the person chooses End
+discussion, or any participant reaches 120% of its configured token budget. Vetoes, failures, skipped turns, round
+counts and context size never imply PASS. Comments and context handoffs reset prior votes. Credit recovery requires
+explicit Continue. An exhausted dollar budget can be replaced with `continue <table> spend=<amount>`, within
+configured caps.
+
+With a token budget enabled, the first participant to reach 50% and 80% triggers warnings for everyone. At 100%,
+agents receive closing instructions. At 120%, discussion advances into collaboration, or collaboration advances to
+the submitted next topic without waiting for every DONE. After the final collaboration, scoring follows. Each new
+panel and collaboration starts fresh per-participant counters with the same configured limit. Agents can finish
+earlier through the normal PASS and DONE flow. Usage is counted once per completed physical turn, including PASS
+and carry-forward replies. Cached tokens count once, and reasoning tokens already included in output are not added
+again. Context-window occupancy is not spent usage. Agents that omit usage cannot trigger a measured cap. A long
+turn can overshoot a threshold before its usage report arrives. Saved shared documents survive automatic advancement.
 
 `roundtables_judging` selects the default novelty filter. Setup exposes the same choice for each new table. With judging off, every substantive reply is retained within the existing character reply limit, including repetitions. Synthesis, ranking, explanation and host stages remain unchanged.
 
@@ -73,8 +91,9 @@ Opening with `chain=<number>` runs a session containing that many discussions. A
 on saved materials and the next topic. The page uses this session flow even for one roundtable. During panels and
 collaboration, busy seats are skipped immediately while available seats contribute in a fair rotation. When all seats
 are busy, the runner waits for completion or chair-control events. No timed cycling is used. A skipped seat never
-supplies an implicit PASS or Done. Every participant must explicitly finish collaboration, and `next-topic.md` must
-contain the next topic before another panel opens.
+supplies an implicit PASS or Done. Collaboration normally waits for every participant to finish. Its 120% token cap
+advances without that barrier. `next-topic.md` must contain the next topic before another panel opens. If it is
+missing, the table holds with a clear reason instead of inventing a topic.
 
 After the final collaboration, each agent submits private scorecards. Only aggregate scores are shared and added to
 profiles. Agents then exchange farewells and explicitly finish. The document browser reads their shared session folder.
@@ -102,7 +121,8 @@ The follower hears the table through the engine's own page server, started for i
 - A table spends at most `spend`, at most `roundtables_spend`, through OpenRouter; the engine also holds its own most.
 - Each agent's harness provides its native tools. ACP carries permission requests and the person's selected responses.
   Session prompts describe the work and phase. Metaform sets no Claude-specific tool allowlist or file permission gate.
-- Operational events reach the person, never a seat or Jev.
+- Operational events reach the person. Token-budget instructions also reach seats at their next available turn,
+  outside novelty judging.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
 - The page shows the engine's result directly. The system pipeline assigns preparation tasks. The engine's reporter output is not saved or shown by this module.
 
@@ -151,7 +171,8 @@ stage calls supply `origin`, the source project id. The page's decisions carry b
 bytes and the stage revision. Changed bytes or a stale revision require another review. Comments and revision
 requests remain in the pipeline record. Status and events carry metadata rather than deliverable bodies.
 
-`pipelines`, `intake_links` and `pending_stages` use tables version 6, compatible from 5. Version 6 adds only the
+The module uses tables version 7, compatible from 5. Version 7 adds the chair's mutable token budget independently
+of follower cursors, so older active followers cannot overwrite a live edit. Version 6 adds only the
 current refused stage launches. Successful launches remove them, and stopped or obsolete stages cannot restart.
 Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
 events and follower cursors. Version 3 proposal decisions remain historical evidence; their direct Planner
@@ -173,7 +194,7 @@ Every verb is synchronous. An engine call runs its MCP client on an event loop o
 
 ## Layers
 
-It writes no layer: its tables are at the project's place, version 5. Earlier discussions and events remain intact. The obsolete proposal table is removed.
+It writes no layer: its tables are at the project's place, version 7. Earlier discussions and events remain intact. The obsolete proposal table is removed.
 
 - `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its result topics retained; `answer` and `answered`; `created` and `ended`. Index on `created`.
 - `events`, keyed by `(table_id, seq)`: `kind`, `audience`, `payload` and `at`.

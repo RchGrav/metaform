@@ -138,3 +138,71 @@ def test_completed_discussion_continues_inline_preserving_transcript(run, web, m
     assert page.get_by_text('Saved summary.', exact=True).is_visible()
     assert not problems
     page.close()
+
+
+@pytest.mark.browser
+def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapped, browser):  # noqa: F811
+    run('enable', 'roundtables', cwd=mapped)
+    run('set', '--roundtables-token-budget=12000', '--roundtables-seats=stub/one', cwd=mapped)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    opens, controls = [], []
+    current = {'value': 12000, 'state': 'running'}
+
+    def table(route):
+        if 'table=' not in route.request.url:
+            route.continue_()  # The real project settings supply the setup default.
+        else:
+            route.fulfill(json={'events': [], 'latest': 0, 'notes': [], 'status': {
+                'table': 'budget-fixture', 'topic': 'Keep the phase budget.', 'state': current['state'],
+                'seats': [], 'token_budget': current['value']}})
+
+    def control(route):
+        given = route.request.post_data_json
+        controls.append(given)
+        current.update(value=given['token_budget'], state='held')
+        route.fulfill(json={'table': 'budget-fixture', 'state': 'held', 'token_budget': current['value']})
+
+    page.route('**/api/roundtable?*', table)
+    page.route('**/api/roundtable-open', lambda route: (
+        opens.append(route.request.post_data_json), route.fulfill(json={'table': 'budget-fixture'})))
+    page.route('**/api/roundtable-control', control)
+    page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).openRoundtable(true)")
+    setup = page.locator('.rt-setup')
+    setup_budget = setup.get_by_role('spinbutton', name='Token budget per agent, per phase', exact=True)
+    assert setup_budget.input_value() == '12000'
+    hint = page.locator('#rt-token-budget-hint')
+    assert hint.is_visible()
+    explanation = hint.text_content()
+    assert '0 disables' in explanation
+    assert 'Each panel and collaboration phase starts a fresh count for each agent' in explanation
+    assert '50% or 80% warns' in explanation and '100% asks it to close' in explanation
+    assert '120% forces' in explanation and 'without waiting for everyone to finish' in explanation
+    setup.get_by_role('textbox', name='Your question to the table', exact=True).fill('Keep the phase budget.')
+    with page.expect_response('**/api/roundtable-open'):
+        setup.get_by_role('button', name='Start', exact=True).click()
+    live = page.locator('.rt-budget')
+    live.wait_for()
+    assert len(opens) == 1 and opens[0]['token_budget'] == 12000
+    budget = live.get_by_role('spinbutton', name='Token budget per agent, per phase', exact=True)
+    assert budget.input_value() == '12000'
+    assert 'Changing the limit keeps tokens already counted' in page.locator('#rt-live-budget-hint').text_content()
+    budget.fill('9000')
+    current['value'] = 11000
+    page.evaluate('''async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        stage.tableChange({kinds: ['roundtables', 'roundtables:budget-fixture']});
+    }''')
+    page.wait_for_function('() => document.querySelector(".rt-budget-current").textContent.includes("11,000")')
+    assert budget.input_value() == '9000', 'A status refresh must preserve the unsaved edit.'
+    with page.expect_response('**/api/roundtable-control'):
+        live.get_by_role('button', name='Update budget', exact=True).click()
+    page.get_by_role('button', name='Continue', exact=True).wait_for()
+    assert len(controls) == 1
+    assert {key: controls[0][key] for key in ('project', 'table', 'action', 'token_budget')} == {
+        'project': 'proj', 'table': 'budget-fixture', 'action': 'budget', 'token_budget': 9000}
+    assert live.is_visible() and budget.input_value() == '9000'
+    assert page.locator('.rt-budget-current').text_content() == 'Current: 9,000 tokens'
+    assert not problems
+    page.close()
