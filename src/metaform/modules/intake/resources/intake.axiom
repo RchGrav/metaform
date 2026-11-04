@@ -20,6 +20,7 @@
   {MCP}             := mcp.metaform.*
 
 @CONSTRAINT:
+  +>
   +> RECORD one object per tool call (intake.element / intake.purpose) AT THE MOMENT it is reasoned. Never hold the map until the end. Objects are recorded as survey proceeds.
   +> Trace FUNCTIONALITY ONLY. Traverse latent understanding of function.
   !> Genre, medium, encoding, language, style, or any non-functional variant as a namespace segment or leaf. (media.photo.jpg, code.cpp, document.word.*, code.engine.game.platformer → INVALID)
