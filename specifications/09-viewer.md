@@ -970,3 +970,14 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Build: Resolve the reserved identity from the current project's running dispatch sessions into a browser figure record, without adding a board ticket. Reuse the existing body, movement and sight paths. Keep agent-chosen bodies scoped to their conversation session and keep the person's persisted `web_mascot` selection separate. `/mascot` remains solely person-invoked.
 - Acceptance: Reserved and legacy conversations can embody, come, end their approach, go, look, see and show the map through their eyes. An existing peer conversation retains its own body and mesh identity. No board ticket or automatic picker appears. The person's mascot persists across sessions and pages.
 - Status: confirmed by the requested outcome on code.assistant.navigation#28, 497a84ac8bef4ddcb6a813f0d64198e8.
+
+### VIEW-052 Roundtables explain the live discussion to the chair
+
+- Requirement: The roundtable opens on Breakdown, Haiku's live, contextual synthesis, with mutually exclusive Breakdown and Transcript views and the comment box available for the chair's input.
+- What this means: The chair can understand what the participants mean, why their proposals matter, where they agree or disagree, and what remains open without deciphering shorthand or opening every referenced file.
+- Why: A transcript full of unexplained codes prevents the person from following or steering the discussion. Participants writing their final package does not replace the person's live explanation.
+- How it shows: The synthesis appears by default and updates while the panel speaks. Haiku expands references into plain language and preserves attribution, uncertainty and disagreements. A pending or failed update is visible and retains the last usable synthesis. Selecting a shared note opens that file in a separate, full-size reading window with rendered Markdown and normal scrolling.
+- Build: Reuse the project background lifecycle, saved roundtable events and the shared ACP client and permission relay. Coalesce new turns and keep the synthesis and its cursor outside follower event numbering and participant documents. Ignore unrelated and observer-only changes. Cancel the observer on shutdown or Abort, and reject late writes after deletion. Keep transcript selection and note windows independent of live updates.
+- Acceptance: An already-running follower can supply the synthesis without being restarted. New turns update it without blocking panel turns. Reload restores it by default. Unrelated event bursts perform zero observer reads, and idle observation adds no periodic wakeups. Summary failures cannot stop the panel. Notes open in a readable separate window, and document content cannot execute scripts.
+- Relates to: VIEW-048, VIEW-051, BASE-053.
+- Status: confirmed by the person's roundtable corrections, 2026-11-04.

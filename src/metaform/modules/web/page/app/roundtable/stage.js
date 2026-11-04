@@ -11,7 +11,8 @@
  * the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
- * are the question, the table's state and the whole transcript. After discussion ends, follow-through shows each
+ * are the question, the table's state and Haiku's live explanation; the Transcript button opens the original turns.
+ * After discussion ends, follow-through shows each
  * stage's full output and question. The person decides before the next stage starts unless automated ticket creation
  * was selected. Plan review offers comments,
  * revision and approval. Leaving restores the map while the table continues. Returning restores its stage.
@@ -75,6 +76,7 @@ const CHAIR = {writing: false};
 const BUDGET = {value: 0, dirty: false, setupDirty: false};
 const LINEUP = {project: null, saving: false};
 const LAUNCH = {project: null, agents: new Map()};
+const MINUTES = {project: null, table: null, seq: 0, through: 0, pending: 0, live: false, permissions: new Set()};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -106,14 +108,14 @@ UI.pipeline = h('section', {class: 'rt-pipeline', hidden: true}, h('h3', {}, 'Fo
   UI.revise, UI.yes, UI.approve, UI.no);
 /* The table's notes folder: every file the seats wrote there, listed by name; a click shows its text below. */
 UI.noteList = h('ul', {class: 'rt-list rt-notelist'});
-UI.noteView = h('pre', {class: 'rt-noteview', hidden: true, tabindex: '0', 'aria-label': 'The note'});
+UI.noteFallback = h('p', {class: 'rt-note-fallback', hidden: true});
 /* The notes in a window of their own: opened by the Notes button, moved by its title, closed with its button. */
 UI.notesWin = h('div', {class: 'window movable rt-noteswin', role: 'dialog', 'aria-label': 'Notes', hidden: true},
   h('div', {class: 'bar'}, h('span', {class: 'title'}, 'Notes'),
     h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close', title: 'Close',
       onclick: () => { UI.notesWin.hidden = true; UI.notesButton.setAttribute('aria-pressed', 'false'); }},
     h('i', {class: 'i i-close', 'aria-hidden': 'true'}))),
-  h('div', {class: 'body'}, UI.noteList, UI.noteView));
+  h('div', {class: 'body'}, UI.noteList, UI.noteFallback));
 document.body.append(UI.notesWin);
 movable(UI.notesWin);
 UI.notesButton = h('button', {class: 'btn sm quiet rt-notes-button', type: 'button', 'aria-pressed': 'false',
@@ -136,7 +138,7 @@ UI.board.prepend(UI.boardClose);
 UI.resultsButton = h('button', {class: 'btn sm quiet rt-results-button', type: 'button', 'aria-pressed': 'true',
   title: 'Show or hide the ideas and rankings at the top',
   onclick: () => showBoard(UI.board.classList.contains('closed'))}, 'Results');
-const NOTES = {busy: false, again: false, open: ''};
+const NOTES = {busy: false, again: false};
 /* The notes folder listed again: as the stage starts watching a table and after each turn, a burst read once. */
 async function readNotes() {
   if (NOTES.busy) { NOTES.again = true; return; }
@@ -151,7 +153,7 @@ async function readNotes() {
       if (id !== TABLE.id) return;
       const listed = found.notes || [];
       fill(UI.noteList, ...listed.map(one => h('li', {}, h('button', {type: 'button', class: 'btn sm quiet',
-        'aria-pressed': String(one.path === NOTES.open), onclick: () => viewNote(one.path)},
+        onclick: () => viewNote(one.path)},
         one.path), h('small', {class: 'rt-why'}, ` ${one.bytes} bytes`))));
       UI.notesButton.textContent = listed.length ? `Notes (${listed.length})` : 'Notes';
       if (!listed.length) fill(UI.noteList, h('li', {class: 'rt-why'}, 'No notes yet.'));
@@ -159,15 +161,16 @@ async function readNotes() {
   } catch (error) { toast(error.message); }
   finally { NOTES.busy = false; }
 }
-async function viewNote(path) {
-  if (NOTES.open === path && !UI.noteView.hidden) { NOTES.open = ''; UI.noteView.hidden = true; return; }
-  try {
-    const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
-      encodeURIComponent(TABLE.id)}&note=${encodeURIComponent(path)}`);
-    NOTES.open = path;
-    UI.noteView.textContent = found.text + (found.cut ? '\n\n… (cut at 1 MB)' : '');
-    UI.noteView.hidden = false;
-  } catch (error) { toast(error.message); }
+/* A note opens synchronously from its click, in its own full-size browser reading window. */
+function viewNote(path) {
+  const query = new URLSearchParams({project: S.project, table: TABLE.id, note: path});
+  const url = `/page/roundtable-note.html?${query}`;
+  const name = `metaform-roundtable-note-${encodeURIComponent(JSON.stringify([S.project, TABLE.id, path]))}`;
+  const opened = window.open(url, name, `popup,width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
+  UI.noteFallback.hidden = !!opened;
+  if (opened) { opened.opener = null; opened.focus(); }
+  else fill(UI.noteFallback, 'Your browser blocked the reading window. ',
+    h('a', {href: url, target: '_blank', rel: 'noopener'}, 'Open the note in a new tab'));
 }
 UI.canvas = h('canvas', {class: 'rt-canvas', 'aria-hidden': 'true'});
 UI.seats = h('div', {class: 'rt-seats'});
@@ -208,14 +211,84 @@ UI.budget = h('form', {class: 'rt-budget', hidden: true,
   h('label', {}, 'Token budget per agent, per phase', UI.liveTokenBudget), UI.saveBudget, UI.currentBudget,
   h('small', {id: 'rt-live-budget-hint'}, 'The same limit applies to each panel and collaboration phase. '
     + '0 disables. Changing the limit keeps tokens already counted.'));
-UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
+UI.summaryStatus = h('p', {class: 'rt-summary-status', role: 'status'},
+  'Preparing Haiku’s explanation of the discussion.');
+UI.summaryText = h('div', {class: 'rt-summary-text', 'aria-live': 'polite'});
+UI.liveSummary = h('section', {class: 'rt-live-summary', tabindex: '0', 'aria-label': 'Haiku summary'},
+  h('h3', {}, 'Haiku summary'), UI.summaryStatus, UI.summaryText);
+UI.transcript = h('ol', {class: 'rt-transcript', hidden: true, tabindex: '0', 'aria-label': 'The transcript'});
 UI.permissions = h('div', {class: 'rt-permissions', 'aria-label': 'Agent permission requests', hidden: true});
 const PERMISSIONS = new Map();
-UI.showTranscript = h('button', {class: 'btn sm quiet rt-show-transcript', type: 'button', 'aria-pressed': 'true',
-  title: 'Show or hide every turn', onclick: () => {
-    UI.transcript.hidden = !UI.transcript.hidden;
-    UI.showTranscript.setAttribute('aria-pressed', String(!UI.transcript.hidden));
-  }}, 'Transcript');
+function discussionView(transcript) {
+  UI.transcript.hidden = !transcript;
+  UI.liveSummary.hidden = transcript;
+  UI.showTranscript.setAttribute('aria-pressed', String(transcript));
+  UI.breakdown.setAttribute('aria-pressed', String(!transcript));
+}
+UI.breakdown = h('button', {class: 'btn sm quiet rt-breakdown', type: 'button', 'aria-pressed': 'true',
+  title: 'Show Haiku’s plain-language account', onclick: () => discussionView(false)}, 'Breakdown');
+UI.showTranscript = h('button', {class: 'btn sm quiet rt-show-transcript', type: 'button', 'aria-pressed': 'false',
+  title: 'Show the original turns', onclick: () => discussionView(true)}, 'Transcript');
+/* The owner's live account is independent of the participants' jointly authored documents and the event cursor. */
+function resetMinutes() {
+  for (const request of MINUTES.permissions) permissionIs({request, state: 'answered'});
+  MINUTES.permissions.clear();
+  Object.assign(MINUTES, {project: null, table: null, seq: 0, through: 0, pending: 0, live: false});
+  UI.summaryText.textContent = '';
+  UI.summaryStatus.textContent = 'Preparing Haiku’s explanation of the discussion.';
+}
+function watchMinutes(project, table) {
+  if (MINUTES.project === project && MINUTES.table === table) return;
+  resetMinutes();
+  MINUTES.project = project;
+  MINUTES.table = table;
+}
+function minutesPending(event) {
+  if (!event.text || ['handoff', 'carry', 'pass', 'none'].includes(event.outcome)) return;
+  MINUTES.pending = Math.max(MINUTES.pending, Number(event.seq || 0));
+  UI.summaryStatus.textContent = 'Haiku is preparing an updated explanation of the discussion.';
+}
+function minutesIs(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+  const through = Number(snapshot.through_seq || 0);
+  if (through < MINUTES.through) return;
+  const text = String(snapshot.text || '').trim();
+  if (text) {
+    const box = UI.liveSummary, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+    UI.summaryText.textContent = text;
+    MINUTES.live = true;
+    MINUTES.through = through;
+    if (bottom) box.scrollTop = box.scrollHeight;
+  }
+  const requests = new Set();
+  for (const one of snapshot.permissions || []) {
+    if (!one.request || (one.state && one.state !== 'waiting')) continue;
+    requests.add(one.request);
+    if (!MINUTES.permissions.has(one.request)) permissionIs({...one, state: 'waiting'});
+  }
+  for (const request of MINUTES.permissions) if (!requests.has(request)) permissionIs({request, state: 'answered'});
+  MINUTES.permissions.clear();
+  for (const request of requests) MINUTES.permissions.add(request);
+  UI.summaryStatus.textContent = requests.size ? 'Haiku is waiting for permission to continue.'
+    : snapshot.state === 'error' ? 'Haiku could not update the live summary. The discussion can continue. '
+      + 'Open Transcript for available turns.'
+    : snapshot.state === 'paused' ? 'The live summary is paused. Open Transcript for available turns.'
+    : snapshot.state === 'working' || (MINUTES.pending > through && snapshot.state !== 'idle')
+      ? 'Haiku is preparing an updated explanation of the discussion.'
+    : snapshot.state === 'ready' && text ? 'Live explanation by Haiku.'
+    : 'Preparing Haiku’s explanation of the discussion.';
+}
+/* Older tables kept one attributed explanation per turn. They remain readable until a live account is available. */
+function historicMinutesIs(event) {
+  const text = String(event.text || '').trim(), seq = Number(event.seq || 0);
+  if (MINUTES.live || !text || (seq && seq <= MINUTES.seq)) return;
+  if (seq) MINUTES.seq = seq;
+  const topic = Number(event.topic || 1), who = event.seat || 'Participant';
+  const entry = `Roundtable ${topic} · ${who}${event.vetoed ? ' (vetoed)' : ''}\n${text}`;
+  UI.summaryText.textContent = event.kind === 'running_summary' ? entry
+    : `${UI.summaryText.textContent}${UI.summaryText.textContent ? '\n\n' : ''}${entry}`;
+  UI.summaryStatus.textContent = 'Saved Haiku explanation.';
+}
 /* The harness supplies the request and its choices. The page relays the person's selected option unchanged. */
 function permissionIs(event) {
   const previous = PERMISSIONS.get(event.request);
@@ -254,7 +327,7 @@ UI.grip = h('div', {class: 'rt-grip', role: 'separator', 'aria-orientation': 'ho
 function dragGrip(event) {
   event.preventDefault();
   event.stopPropagation();
-  const pane = UI.transcript;
+  const pane = UI.transcript.hidden ? UI.liveSummary : UI.transcript;
   const grip = event.currentTarget, from = event.clientY, start = pane.getBoundingClientRect().height;
   grip.setPointerCapture(event.pointerId);
   const move = moved => {
@@ -268,8 +341,8 @@ function dragGrip(event) {
   grip.addEventListener('pointercancel', done);
 }
 UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
-  UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
-  UI.permissions, UI.budget, UI.transcript, UI.discussion);
+  UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.breakdown, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
+  UI.permissions, UI.budget, UI.liveSummary, UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -412,14 +485,14 @@ function resetTable() {
   fill(UI.ideas); fill(UI.rankings); fill(UI.results); fill(UI.transcript);
   fill(UI.records, h('h3', {}, 'Saved record'));
   fill(UI.noteList);
-  UI.noteView.textContent = '';
+  fill(UI.noteFallback);
+  UI.noteFallback.hidden = true;
   fill(UI.permissions);
   UI.permissions.hidden = true;
   PERMISSIONS.clear();
-  UI.transcript.hidden = false;
-  UI.showTranscript.setAttribute('aria-pressed', 'true');
-  NOTES.open = '';
-  UI.results.hidden = UI.records.hidden = UI.newTable.hidden = UI.noteView.hidden = UI.notesWin.hidden = true;
+  discussionView(false);
+  resetMinutes();
+  UI.results.hidden = UI.records.hidden = UI.newTable.hidden = UI.notesWin.hidden = true;
   UI.notesButton.textContent = 'Notes';
   UI.notesButton.setAttribute('aria-pressed', 'false');
   Object.assign(PIPELINE, {value: null, reviewed: '', text: '', version: PIPELINE.version + 1, reading: false,
@@ -627,30 +700,42 @@ export function tableChange(payload) {
 async function readTable(whole = false) {
   if (TABLE.busy) { TABLE.again = true; return; }
   TABLE.busy = true;
+  let id = TABLE.id, project = S.project;
   try {
     do {
       TABLE.again = false;
-      const id = TABLE.id;
-      const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+      id = TABLE.id; project = S.project;
+      watchMinutes(project, id);
+      const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}&table=${
         encodeURIComponent(id)}&after=${TABLE.seq}${whole || !SEAT.n ? '&whole=1' : ''}`);
-      if (id !== TABLE.id) return;
+      if (id !== TABLE.id || project !== S.project) {
+        if (TABLE.id) { TABLE.again = true; continue; }
+        return;
+      }
       // State and final results show immediately; speaking turns keep their pacing.
       let wrote = whole;
       for (const event of found.events || []) {
         if (event.kind === 'turn' || event.kind === 'veto' || event.kind === 'end') wrote = true;
-        if (event.kind === 'permission') permissionIs(event);
+        if (event.kind === 'turn' || event.kind === 'veto') minutesPending(event);
+        if (event.kind === 'minutes' || event.kind === 'running_summary') historicMinutesIs(event);
+        else if (event.kind === 'permission') permissionIs(event);
         else if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
         else if (event.kind === 'pipeline') pipelineIs(event.pipeline);
         else TOLD.list.push(event);
       }
       if (found.status) seated(found.status);
+      if (found.live_summary) minutesIs(found.live_summary);
       TABLE.seq = Math.max(TABLE.seq, found.latest || 0);
       tell();
       if (wrote) readNotes();  // a seat writes notes on its turn, so the folder is read again after one
     } while (TABLE.again);
-  } catch (error) { toast(error.message); }
-  finally { TABLE.busy = false; }
+  } catch (error) {
+    if (id === TABLE.id && project === S.project) {
+      UI.summaryStatus.textContent = 'The live summary could not be loaded. Open Transcript for available turns.';
+      toast(error.message);
+    }
+  } finally { TABLE.busy = false; }
 }
 function tell() {
   if (TOLD.timer) return;

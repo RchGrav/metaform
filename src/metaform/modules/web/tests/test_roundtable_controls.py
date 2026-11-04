@@ -130,6 +130,7 @@ def test_completed_discussion_continues_inline_preserving_transcript(run, web, m
         stage.TABLE.kind = 'roundtables:existing';
         await stage.openRoundtable();
     }''')
+    page.get_by_role('button', name='Transcript', exact=True).click()
     page.locator('.rt-transcript').get_by_text('Context handoff completed.').wait_for()
     page.get_by_role('button', name='Continue discussion', exact=True).click()
     page.get_by_role('button', name='Hold', exact=True).wait_for()

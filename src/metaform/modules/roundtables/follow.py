@@ -558,8 +558,12 @@ def archive(ctx: Context, row: dict[str, Any], engine_archive: str | None) -> Pa
     home.mkdir_private(shelf)
     with store.tables(write=False) as tx:
         saved_events = [dict(one) for one in tx.rows('events', {'table_id': table_id}, limit=0).results]
+        summary = tx.get('live_summaries', {'table_id': table_id})
     (shelf / 'table.json').write_text(json.dumps(row, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     (shelf / 'events.json').write_text(json.dumps(saved_events, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if summary is not None:
+        (shelf / 'live-summary.json').write_text(
+            json.dumps(dict(summary), ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if row.get('discussion') is not None:
         from .roundtable import export as engine_export
         from .roundtable import store as engine_store
@@ -586,6 +590,7 @@ def archive(ctx: Context, row: dict[str, Any], engine_archive: str | None) -> Pa
             tx.concern(kind=CHANGE_KIND)
             tx.concern(kind=f'{CHANGE_KIND}:{table_id}')
             tx.delete('events', {'table_id': table_id})
+            tx.delete('live_summaries', {'table_id': table_id})
             tx.delete('tables', {'table_id': table_id})
     events.announced(ctx.folder, ctx.surface, remove)
     return shelf

@@ -147,8 +147,10 @@ class Session:
     def __init__(self, number: int, seat: dict[str, Any], folder: str, servers: list[dict[str, Any]] | None = None,
                  *, reads: str | None = None, notes: str | None = None,
                  permission_event: Callable[[dict[str, Any]], None] | None = None,
-                 permission_settings: dict[str, str] | None = None) -> None:
+                 permission_settings: dict[str, str] | None = None,
+                 command: str | None = None) -> None:
         self.number = number
+        self.command = command
         self.notes = notes
         self.permission_event = permission_event
         self.permission_settings = dict(permission_settings or {})
@@ -337,7 +339,7 @@ class Session:
         self.config = []
         self.modes = {}
         self.tool_kinds.clear()
-        command = shlex.split(config.agents()[self.agent])
+        command = shlex.split(self.command or config.agents()[self.agent])
         logs = config.home() / 'logs'
         logs.mkdir(parents=True, exist_ok=True)
         with (logs / log_name).open('ab') as written:

@@ -1722,7 +1722,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 @media (prefers-reduced-motion: reduce){.mascot-bubble{transition:none}}
 /* The roundtable stage, roundtable/stage.js: the 3D map sinks back behind it, dimmed, pushed away and softly blurred,
  * still drawn every frame; over it the table's state at the top, the seats in their band, and the question, the
- * chair's controls and the transcript at the bottom. The stage stacks at auto, so the word bubbles (z-index 1) are
+ * chair's controls and Haiku's live explanation at the bottom. The stage stacks at auto, so the word bubbles (z-index 1) are
  * drawn over its seats. With reduced motion nothing eases into place (every transition is off, above). */
 #big3d #stage{transition:filter .6s ease,transform .6s ease;transform-origin:50% 45%}
 #big3d.roundtable #stage{filter:brightness(.38) saturate(.6) blur(3px);transform:scale(.86)}
@@ -1762,15 +1762,15 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .rt-leave{margin-left:auto}
 .rt-transcript{margin:0;padding-left:1.6em;height:22vh;min-height:3em;max-height:70vh;overflow:auto;
   display:grid;align-content:start;gap:3px;line-height:1.4}
-.rt-transcript[hidden]{display:none}
+.rt-transcript[hidden],.rt-live-summary[hidden]{display:none}
+.rt-live-summary{height:28vh;min-height:7em;max-height:70vh;overflow:auto;line-height:1.45;overflow-wrap:anywhere}
+.rt-live-summary>h3{margin:0 0 var(--s1);font:600 var(--t-base) var(--sans)}
+.rt-summary-status{margin:0 0 var(--s2);color:var(--muted)}
+.rt-summary-text{max-width:78ch;white-space:pre-wrap;font-size:var(--t-md);line-height:1.5}
 .rt-notelist{list-style:none;padding-left:0}
-.rt-noteview{margin:var(--s2) 0 0;max-height:28vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
-  font:var(--t-sm) var(--mono, monospace);padding:var(--s2);border-radius:var(--r-md, 6px);
-  background:color-mix(in srgb,var(--ground) 60%,transparent)}
-.rt-noteview[hidden],.rt-noteswin[hidden]{display:none}
+.rt-noteswin[hidden],.rt-note-fallback[hidden]{display:none}
 .rt-noteswin{right:var(--s4);top:12vh;width:min(560px,calc(100vw - 2 * var(--s3)));height:60vh;resize:both;overflow:hidden}
 .rt-noteswin > .body{flex:1;color:var(--text)}
-.rt-noteswin .rt-noteview{max-height:none}
 .rt-grip{height:10px;margin:calc(-1 * var(--s2)) calc(-1 * var(--s4)) 0;cursor:row-resize;touch-action:none;
   background:linear-gradient(var(--line-2),var(--line-2)) center/48px 3px no-repeat}
 .rt-grip:hover{background-color:color-mix(in srgb,var(--text) 8%,transparent)}

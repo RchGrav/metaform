@@ -43,9 +43,9 @@ from typing import Any, cast
 
 from metaform import events, outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, node_items, provided
+from metaform.module import Context, Module, Noun, Provides, Stop, Subscription, Verb, context, node_items, provided
 
-from . import engine, follow, pipeline
+from . import engine, follow, live_summary, pipeline
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
 # The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
@@ -77,6 +77,10 @@ settings.number('roundtables_token_budget', 0, min=0, max=9007199254740991,
                 label='Tokens per agent per panel or collaboration', category='integrations', heading='Roundtables',
                 help='Total reported input, cached input and output per agent. Fresh counters for each panel and '
                      'collaboration. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.')
+settings.boolean('roundtables_live_summary', True, label='Explain the live roundtable with Haiku',
+                 category='integrations', heading='Roundtables',
+                 help='A separate Haiku observer explains the live discussion in plain language for you. '
+                      'Participants still create and summarize their own shared documents.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -107,8 +111,8 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone. The engine's synthesis and saved mechanical report supply the result.
 # Version 6 adds only pending stage launches, so session events recover refused work without scanning task history.
-# Version 7 keeps the mutable chair budget outside follower-owned cursors, including older live followers.
-TABLES = Tables(version=7, compatible_from=5, upgrade=pipeline.upgrade, tables=(
+# Versions 7 and 8 keep the mutable budget and live observer outside follower-owned cursors.
+TABLES = Tables(version=8, compatible_from=5, upgrade=pipeline.upgrade, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
         Column('opening', required=True), Column('seats', 'json', required=True), Column('host'),
@@ -134,6 +138,10 @@ TABLES = Tables(version=7, compatible_from=5, upgrade=pipeline.upgrade, tables=(
     Table('pending_stages', place='project', key=('origin', 'table_id'), columns=(
         Column('origin', required=True), Column('table_id', required=True),
         Column('stage', required=True), Column('work_id'))),
+    Table('live_summaries', place='project', key=('table_id',), columns=(
+        Column('table_id', required=True), Column('through_seq', 'int', required=True, default=0),
+        Column('text'), Column('state', required=True, default='idle'), Column('error'), Column('updated'),
+        Column('usage', 'json'), Column('permissions', 'json'))),
 ))
 
 
@@ -213,6 +221,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             'spend': row['spend'], 'reply_limit': followed.get('reply_limit', 512), 'discussion': row.get('discussion'),
             'token_budget': int(row['token_budget'] if row.get('token_budget') is not None
                                 else followed.get('token_budget') or 0),
+            'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],
@@ -437,6 +446,9 @@ def reseat(ctx: Context) -> dict[str, Any]:
 def permit(ctx: Context) -> dict[str, Any]:
     """Relay the person's selected ACP option and wake its waiting agent."""
     row = table_row(ctx)
+    observed = live_summary.answer(ctx, str(row['table_id']), str(ctx.nouns['request']), str(ctx.nouns['option']))
+    if observed is not None:
+        return {'table': row['table_id'], **observed}
     if row.get('discussion') is None:
         raise Stop('The roundtable has not opened.', 'metaform roundtables status')
     number = int(row['discussion'])
@@ -502,7 +514,8 @@ def table_events(ctx: Context) -> dict[str, Any]:
     return {'table': row['table_id'], 'events': [{'seq': one['seq'], 'kind': one['kind'], 'audience': one['audience'],
                                                   'at': one['at'], **cast(dict[str, Any], one['payload'])}
                                                  for one in found],
-            'latest': max((int(one['seq']) for one in found), default=after)}
+            'latest': max((int(one['seq']) for one in found), default=after),
+            'live_summary': live_summary.snapshot(ctx, str(row['table_id']))}
 
 
 def follow_table(ctx: Context) -> dict[str, Any]:
@@ -696,6 +709,7 @@ MODULE = Module(
              nouns=(TABLE,), surfaces=('cli',), open_world=True),
     ),
     tables=TABLES,
+    provides=(Provides('project.background', live_summary.start),),
     subscriptions=(Subscription('intake.completed', pipeline.intake_finished),
                    Subscription('map.changed', pipeline.tasks_changed)),
 )

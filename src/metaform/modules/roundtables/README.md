@@ -64,6 +64,17 @@ documents in the shared session folder. There is no automatic minutes or summary
 
 ## Completion and context handoff
 
+Breakdown, selected by default, is Haiku's plain-language account of the discussion. It explains the question, proposals,
+reasons, disagreements and open decisions so the chair can follow and contribute through the comment box.
+Transcript selects the original agent messages. Exactly one of Breakdown and Transcript is visible. Haiku updates beside the panel, without delaying turns,
+through the same ACP client and permission relay. `roundtables_live_summary` defaults to true. Its saved account
+and cursor live in `live_summaries`, independently of follower events, including for already-running followers.
+Failures stay visible and retain the last readable account. The participants still create and summarize their own
+shared document package during collaboration. The live account does not write those documents.
+
+Notes lists those shared files. Each selected note opens in a separate reading window with rendered Markdown,
+normal scrolling and its own filename. The file list remains available while the document is open.
+
 Discussion finishes when every participant voluntarily replies PASS in one complete round, the person chooses End
 discussion, or any participant reaches 120% of its configured token budget. Vetoes, failures, skipped turns, round
 counts and context size never imply PASS. Comments and context handoffs reset prior votes. Credit recovery requires
@@ -171,7 +182,8 @@ stage calls supply `origin`, the source project id. The page's decisions carry b
 bytes and the stage revision. Changed bytes or a stale revision require another review. Comments and revision
 requests remain in the pipeline record. Status and events carry metadata rather than deliverable bodies.
 
-The module uses tables version 7, compatible from 5. Version 7 adds the chair's mutable token budget independently
+The module uses tables version 8, compatible from 5. Version 8 adds the live observer's account independently of
+participant documents and follower events. Version 7 adds the chair's mutable token budget independently
 of follower cursors, so older active followers cannot overwrite a live edit. Version 6 adds only the
 current refused stage launches. Successful launches remove them, and stopped or obsolete stages cannot restart.
 Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
@@ -194,7 +206,7 @@ Every verb is synchronous. An engine call runs its MCP client on an event loop o
 
 ## Layers
 
-It writes no layer: its tables are at the project's place, version 7. Earlier discussions and events remain intact. The obsolete proposal table is removed.
+It writes no layer: its tables are at the project's place, version 8. Earlier discussions and events remain intact. The obsolete proposal table is removed.
 
 - `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its result topics retained; `answer` and `answered`; `created` and `ended`. Index on `created`.
 - `events`, keyed by `(table_id, seq)`: `kind`, `audience`, `payload` and `at`.

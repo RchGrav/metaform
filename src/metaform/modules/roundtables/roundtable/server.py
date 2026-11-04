@@ -406,9 +406,13 @@ def permit(discussion: int, request: str, option: str) -> dict[str, Any]:
     """Return the person's selected ACP permission option to the waiting agent."""
     from . import permissions
     try:
-        return permissions.answer(discussion, request, option)
+        answer = permissions.answer(discussion, request, option)
     except ValueError as error:
         raise ToolError(str(error)) from None
+    found = table(discussion)
+    events.publish('map.changed', {'tables': ['roundtables.permissions'], 'kinds': [permissions.topic(discussion)]},
+                   ModuleContext(module='roundtables', folder=Path(found['folder']), surface='mcp'))
+    return answer
 
 
 @server.tool(annotations=WRITE)
