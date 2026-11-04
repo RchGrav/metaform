@@ -5,6 +5,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,11 +82,6 @@ def test_every_shipped_module_imports_only_the_public_base():
                         assert alias.name != 'sqlite3', source
                 if isinstance(node, ast.ImportFrom) and node.module == 'sqlite3':
                     raise AssertionError(f'{source} imports sqlite3')
-    for source in MODULES.rglob('*.py'):
-        for node in ast.walk(ast.parse(source.read_text(encoding='utf-8'))):
-            names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else \
-                [node.module or ''] if isinstance(node, ast.ImportFrom) else []
-            assert 'sqlite3' not in names, source
 
 
 @pytest.mark.req('BASE-004')
@@ -123,6 +119,7 @@ def test_stop_needs_its_next_step():
 @pytest.mark.req('BASE-035')
 @pytest.mark.req('BASE-006')
 @pytest.mark.req('BASE-043')
+@pytest.mark.req('CLI-037')
 def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     user_module('scratch', f'''
         import json
@@ -140,9 +137,12 @@ def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     got = json.loads(run('scratch', 'show', 'a', 'count=3', 'b', 'c', '--json').stdout)
     assert got == {'nouns': {'first': 'a', 'count': 3, 'rest': ['b', 'c']}}
     assert json.loads(run('scratch', 'show', 'a', '--json').stdout) == {'nouns': {'first': 'a'}}
-    assert 'scratch show' in run('help', 'commands').stdout
+    index = run('help', 'commands').stdout
+    assert re.search(r'^  scratch +A scratch module\.$', index, re.MULTILINE)
+    assert 'scratch show' not in index and 'scratch local' not in index
     page = run('help', 'scratch').stdout
-    assert 'show' in page and 'local' in page
+    assert re.search(r'^  show <first>.*Show the nouns it received\.$', page, re.MULTILINE)
+    assert re.search(r'^  local +Only on the command line\.$', page, re.MULTILINE)
     assert run('scratch', 'show', '--help').stdout.splitlines()[0] == \
         'Usage: metaform scratch show <first> [count=<int>] [rest...]'
     refused = run('scratch', 'show', ok=False)
@@ -554,6 +554,7 @@ def test_the_example_modules_ship_disabled(module_row):
 
 
 @pytest.mark.req('BASE-016')
+@pytest.mark.req('CLI-037')
 def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module, monkeypatch, capsys):
     import platform
 
@@ -572,7 +573,11 @@ def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module,
     loader.reset()
     assert cli.main(['help', 'commands']) == 0
     listed = capsys.readouterr().out
-    assert 'narrow here' in listed and 'narrow elsewhere' not in listed
+    assert re.search(r'^  narrow +Narrow\.$', listed, re.MULTILINE)
+    assert 'narrow here' not in listed and 'narrow elsewhere' not in listed
+    assert cli.main(['narrow', '--help']) == 0
+    syntax = capsys.readouterr().out
+    assert 'narrow here' in syntax and 'narrow elsewhere' not in syntax
     assert cli.main(['narrow', 'elsewhere']) == 2
     err = capsys.readouterr().err.removeprefix(f'Notice: {harness.NOTICE}\n').splitlines()
     assert err == ['Error: narrow elsewhere runs on plan9.', 'Next: metaform help narrow']
@@ -698,9 +703,14 @@ def test_unloading_cancels_the_modules_tasks_and_calls_stop(home, user_module):
 @pytest.mark.req('BASE-034')
 @pytest.mark.req('BASE-019')
 def test_every_shipped_module_has_a_readme_with_the_template_headings():
-    headings = [line for line in (MODULES / 'template' / 'README.md').read_text(encoding='utf-8').splitlines()
-                if line.startswith('## ')]
-    assert len(headings) >= 15
+    # BASE-034 names these developer sections. Template appendices describe optional capabilities,
+    # so adding an appendix must not require unrelated modules to document a capability they do not use.
+    headings = ('## Purpose', '## Template version', '## Declaration', '## Common base used', '## Prompts',
+                '## Verbs', '## Settings', '## Events', '## Sync and async', '## Layers',
+                '## Lifecycle and cleanup', '## Modules relied on', '## Systems supported',
+                '## Resources owned', '## Installed and direct wheel', '## Demonstration')
+    template = (MODULES / 'template' / 'README.md').read_text(encoding='utf-8').splitlines()
+    assert all(heading in template for heading in headings)
     missing = {}
     for folder in sorted(path for path in MODULES.iterdir() if (path / '__init__.py').is_file()):
         readme = folder / 'README.md'

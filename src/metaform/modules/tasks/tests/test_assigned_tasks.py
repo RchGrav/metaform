@@ -460,4 +460,4 @@ def test_start_begins_a_pair_of_project_agents_as_the_settings_choose_them(assig
     ids = {one['task_id'] for one in started}
     assert len(ids) == 2
     online = Board(ctx.require_store().project_id).workers()
-    assert {worker['agent_id'] for worker in online} >= ids and all(worker['score'] == 100 for worker in online)
+    assert {worker['agent_id'] for worker in online} >= ids and all(worker['score'] is None for worker in online)

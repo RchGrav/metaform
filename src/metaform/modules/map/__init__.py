@@ -69,9 +69,10 @@ from .glossary import item_read as term_read
 from .glossary import items_at as terms_at
 from .guidance import guide
 from .guidance import instructions as tool_instructions
+from .holds import held_work_project
 from .scoped import is_scoped
 from .scoped import resolve as resolve_scoped
-from .storage import DATA, TABLES, runtime_values
+from .storage import DATA, TABLES, runtime_values, validate_hold_reason
 
 SOURCES = 'sources'  # the layer an element's refs go in, naming the code that realizes a part, STORE-025
 
@@ -105,7 +106,6 @@ def _check_board(name: Any, folder: Path) -> list[str] | None:
     wanted = str(name or '').strip()
     if not wanted:
         return None
-    from metaform.context import project_for
     project_id = project_for(folder)
     if project_id is None:
         raise settings.SettingError('--board names a board of a project, and this folder is not in one.',
@@ -2201,6 +2201,7 @@ MODULE = Module(
     items_at=map_items_at,
     item_kinds=('work', 'question', 'message', 'term'),
     provides=(Provides('base.holds', base_holds), Provides('ticket.runtime', TICKET_RUNTIME),
+              Provides('work.held', held_work_project), Provides('work.hold_reason', validate_hold_reason),
               Provides('agent.tool.instructions', tool_instructions)),
     resources=(Resource('metaform://map/construction', 'Map construction guidance',
                         'Read before map construction: operation-specific Canonical Intake grammar and layer boundaries.',

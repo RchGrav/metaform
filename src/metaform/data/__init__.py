@@ -75,6 +75,7 @@ from .records import (
     shown_open,
 )
 from .refs import RESERVED as RESERVED_REF_NAMES
+from .refs import placed, relative, sources_index
 from .session import BASE_VARIABLE, on_base
 from .session import Tx as DataTx
 from .store import Store
@@ -234,6 +235,7 @@ __all__ = [
     'on_base',
     'paged',
     'parse_reference',
+    'placed',
     'plain',
     'private_database',
     'project_work_rows',
@@ -242,6 +244,7 @@ __all__ = [
     'query_reads',
     'reading',
     'reference',
+    'relative',
     'restore_project_work_rows',
     'roots',
     'row_cursor',
@@ -249,4 +252,5 @@ __all__ = [
     'shown_number',
     'shown_open',
     'sliced',
+    'sources_index',
 ]

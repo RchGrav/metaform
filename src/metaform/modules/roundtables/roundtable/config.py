@@ -52,8 +52,8 @@ DEFAULTS: dict[str, Any] = {
     'a2a_tokens': 'ROUNDTABLE_A2A_TOKEN',  # the variables, comma-separated, whose values may call this A2A server
 }
 AGENTS: dict[str, str] = {  # the ACP adapters, at the versions Metaform's dispatch pins
-    'claude': 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1',
-    'codex': 'npx -y @agentclientprotocol/codex-acp@2.2.2',
+    'claude': 'npx -y @agentclientprotocol/claude-agent-acp@0.100.0',
+    'codex': 'npx -y @agentclientprotocol/codex-acp@2.5.0',
     'antigravity': 'metaform dispatch adapter antigravity-acp@1.4.1',
 }
 KEY = 'OPENROUTER_API_KEY'
@@ -113,6 +113,14 @@ def context_budgets() -> dict[str, int]:
 
 
 FLOORS = ('keep_new', 'keep_on_topic')
+
+
+def notes(folder: str, number: int) -> Path:
+    """A table's notes folder, `<project>/docs/roundtables/<number>-notes`, with
+    the full text of each vetoed turn in `vetoed/`. Made on first use."""
+    found = Path(folder) / 'docs' / 'roundtables' / f'{number}-notes'
+    (found / 'vetoed').mkdir(parents=True, exist_ok=True)
+    return found
 
 
 def reports() -> Path:

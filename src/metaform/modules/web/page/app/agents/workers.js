@@ -4,7 +4,7 @@ import {h, fill} from '/page/app/core/dom.js';
 import {S, read} from '/page/app/core/reads.js';
 
 const percent = value => typeof value === 'number' && Number.isFinite(value) ? `${value}%` : '—';
-const points = value => typeof value === 'number' && Number.isFinite(value) ? `${value} pts` : '—';
+const points = value => typeof value === 'number' && Number.isFinite(value) ? `${value} pts` : 'unscored';
 const phrase = task => {
   if (!task) return '—';
   const nodes = Array.isArray(task.nodes) ? task.nodes.join(', ') : '';

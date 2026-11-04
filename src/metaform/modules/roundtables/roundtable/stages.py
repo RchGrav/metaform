@@ -20,9 +20,10 @@ adds a Borda count, labeled derived, which nothing in the protocol uses.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from . import names, seats
 from .prompts import said
@@ -30,6 +31,9 @@ from .store import STAGES
 
 EACH = ('ranking', 'top_three', 'bottom_three')  # the stages every seat answers in its own conversation
 LIMITS = {'top_three': 2048, 'bottom_three': 1024}  # the most characters an explanation keeps
+CATEGORIES = {'Efficient': 10, 'Alert & Aware': 20, 'Thorough': 30, 'Coordination': 40}
+STARS = 5
+BONUS = 5
 TOPICS = ('01_WORLD', '02_OBJECTS', '03_COLLABORATION')  # the Roundtable 2 topics, a table's when open names none
 HOST = 'acp:codex/gpt-6'
 IDEA = re.compile(r'^\s*(?:[-*]\s*)?(?:\*\*)?\s*I(\d+)\s*(?:\*\*)?\s*[.:)\]]\s*(?:\*\*)?\s*(.+?)\s*$', re.IGNORECASE)
@@ -150,3 +154,39 @@ def borda(listed: Sequence[Mapping[str, Any]], rankings: Sequence[Sequence[str] 
                      'last none). The raw rankings are the record; nothing in the protocol depends on this.',
             'rankings_counted': len(counted), 'points': points,
             'order': sorted(ids, key=lambda one: (-points[one], ids.index(one)))}
+
+
+# ----------------------------------------------------------------------------------------------- scorecards
+
+def scorecard(text: str, others: Sequence[str]) -> dict[str, float] | None:
+    """The points a seat's scorecard gives each other seat, by name, read from the JSON object in its reply, stars of
+    five in each category of the agents' scoring and the bonus, weighed as it weighs them; None unless it rates every
+    other seat and only them, with stars from 0 to 5."""
+    start, end = text.find('{'), text.rfind('}')
+    if start < 0 or end <= start:
+        return None
+    try:
+        given: Any = json.loads(text[start:end + 1])
+    except ValueError:
+        return None
+    if not isinstance(given, dict):
+        return None
+    named = {str(key).strip().casefold(): value for key, value in cast(dict[str, Any], given).items()}
+    wanted = {name.casefold(): name for name in others}
+    if set(named) != set(wanted):
+        return None
+    found: dict[str, float] = {}
+    for key, card in named.items():
+        if not isinstance(card, dict):
+            return None
+        stars = cast(dict[str, Any], card)
+        if set(stars) != {*CATEGORIES, 'bonus'} or not isinstance(stars['bonus'], bool):
+            return None
+        values = {name: stars.get(name) for name in CATEGORIES}
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= STARS
+               for value in values.values()):
+            return None
+        found[wanted[key]] = sum(CATEGORIES[name] * float(cast(int | float, values[name])) / STARS
+                                for name in CATEGORIES) + \
+            (BONUS if stars['bonus'] else 0)
+    return found

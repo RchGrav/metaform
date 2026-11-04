@@ -26,6 +26,10 @@ The description is one line saying why a person uses it, not its title again; it
 
 ## Common base used
 
+`metaform.module.module_registry()` returns each discovered module's id, enabled state, source place, summary and
+load problem, including modules that failed to load. `metaform.data.sources_index(store, root)` indexes linked
+source refs. `relative(path, roots)` resolves a path against source roots, and `placed(index, path)` locates its refs.
+
 Each call's `ctx.identity` is a fresh dictionary of transport-supplied IDs. The Paperclip HTTP gateway supplies
 `agent_id`, `issue_id` and `run_id`; missing or blank headers leave those keys out. `context(..., identity=...)`
 copies its input. These IDs carry context, without changing process environment or authority. `ctx.session`

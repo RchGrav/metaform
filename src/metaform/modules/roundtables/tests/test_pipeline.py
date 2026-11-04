@@ -740,13 +740,14 @@ def test_target_session_completion_retries_only_pending_source_pipeline_stage(as
 def test_slot_release_wake_runs_after_the_actual_runner_ledger_is_removed(assigned_pipeline, monkeypatch):
     import asyncio
 
+    from metaform import settings
     from metaform.module import context
     from metaform.modules import dispatch
     from metaform.modules.dispatch import runner
     from metaform.modules.dispatch.recovery import identity
 
     ctx, _, native = assigned_pipeline
-    monkeypatch.setattr(dispatch, 'HELPERS_MOST', 1)
+    settings.put('dispatch_machine_agents', 1, ctx.folder)
     dispatch.ledger().mkdir(parents=True, exist_ok=True)
     entry = dispatch.ledger() / f'{os.getpid()}.json'
     entry.write_text(json.dumps({'pid': os.getpid(), 'born': identity(os.getpid()), 'project': 'source',

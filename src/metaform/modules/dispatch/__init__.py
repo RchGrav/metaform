@@ -95,7 +95,7 @@ from .ticket_merge import pending as integration_pending
 from .ticket_merge import read as integration_read
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
-DEPENDENCIES = ('agent-client-protocol>=0.12.1,<0.13',)
+DEPENDENCIES = ('agent-client-protocol==1.0.0rc2',)
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandbox does not have
 
@@ -232,8 +232,8 @@ PRIVATE = ('port', 'token', 'pid', 'nonce', 'recovery', 'origin')  # what only t
 # and antigravity-acp, read 2026-10-21, so every start runs the same adapter until the person pins another, P013; `dispatch
 # registry` names a newer one. Any other agent of the registry is added by the person and pinned, registry.py.
 AGENTS = {
-    'claude': ('Claude Code', 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1'),
-    'codex': ('Codex', 'npx -y @agentclientprotocol/codex-acp@2.2.2'),
+    'claude': ('Claude Code', 'npx -y @agentclientprotocol/claude-agent-acp@0.100.0'),
+    'codex': ('Codex', 'npx -y @agentclientprotocol/codex-acp@2.5.0'),
     'antigravity': ('Google Antigravity', 'metaform dispatch adapter antigravity-acp@1.4.1'),
 }
 # The oldest Node.js every adapter above runs on, from their packages' engines, read 2026-10-15: claude-agent-acp

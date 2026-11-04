@@ -81,6 +81,7 @@ __all__ = [
     'mcp_server',
     'module_files',
     'module_instructions',
+    'module_registry',
     'node_brief',
     'node_counts',
     'node_items',
@@ -747,6 +748,21 @@ def installed() -> list[Module]:
     """Every module Metaform can load, enabled or not, in module id order: what a setting may name of them."""
     from . import loader
     return sorted((one.module for one in loader.discover() if one.module is not None), key=lambda one: one.id)
+
+
+def module_registry() -> list[dict[str, Any]]:
+    """Every discovered module's state and source, including modules whose declaration failed to load."""
+    from . import home, loader
+    modules: list[dict[str, Any]] = []
+    for item in loader.discover():
+        state = 'error' if item.problem else ('on' if item.enabled else 'off')
+        summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
+        text = item.problem or summary or ''
+        stored = home.module_state(item.id)
+        modules.append({'id': item.id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
+                        'place': item.place, 'summary': '' if state == 'error' else text,
+                        'problem': text if state == 'error' else ''})
+    return modules
 
 
 def instructions(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:

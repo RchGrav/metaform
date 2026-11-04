@@ -16,8 +16,10 @@ it; a later topic opens with the status and its own text, in a context begun aga
 """
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, cast
 
 from . import config, store
@@ -104,6 +106,18 @@ def floors(held: Mapping[str, Any]) -> dict[str, float]:
 def captured(discussion: Mapping[str, Any]) -> dict[str, Any]:
     given = discussion.get('snapshot')
     return cast(dict[str, Any], given) if isinstance(given, dict) else {}
+
+
+def session(discussion: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A session of roundtables' settings, fixed when it opened: its count, folder and the owner's messages."""
+    found = captured(discussion).get('session')
+    return cast(dict[str, Any], found) if isinstance(found, dict) else None
+
+
+def said_done(text: str) -> bool:
+    """Whether a reply says the seat is finished: the word done as its last word."""
+    words = re.findall(r"[A-Za-z']+", text)
+    return bool(words) and words[-1].casefold() == 'done'
 
 
 def judging(discussion: Mapping[str, Any]) -> bool:
@@ -203,9 +217,25 @@ def tidy(text: str) -> str:
 def system(discussion: Mapping[str, Any], names: Sequence[str], name: str) -> str:
     """A seat's system message, fixed for the table's life and first in every request: the table's rules, which
     seat it is among the seats in speaking order, and the opening; at a table with topics the opening first."""
-    return tidy(said('seat_system_topics' if discussion.get('stage') else 'seat_system', opening=discussion['opening'],
-                     rules=rules(names, discussion), seat=name, seats=', '.join(names),
-                     reply_length=said('reply_length', limit=reply_limit(discussion))))
+    text = said('seat_system_topics' if discussion.get('stage') else 'seat_system', opening=discussion['opening'],
+                rules=rules(names, discussion), seat=name, seats=', '.join(names),
+                reply_length=notes_line(discussion) + said('reply_length', limit=reply_limit(discussion)))
+    if session(discussion):
+        row = next((one for one in store.seats(int(discussion['number'])) if one['name'] == name), None)
+        profile = store.profile(f'{row["agent"] or row["kind"]}/{row["model"] or row["id"]}') if row else None
+        text += '\n\n' + said('session_profile',
+                             score='unscored' if not profile or profile['score'] is None
+                             else f'{float(profile["score"]):g}',
+                             ratings=int(profile['ratings']) if profile else 0,
+                             sessions=int(profile['sessions']) if profile else 0)
+    return tidy(text)
+
+
+def notes_line(discussion: Mapping[str, Any]) -> str:
+    """The paragraph before the reply limit naming the table's notes folder; empty for a table with no folder."""
+    if not discussion.get('folder') or discussion.get('number') is None or session(discussion):
+        return ''  # a session's seats are told about its folder in the owner's opening message
+    return said('notes_folder', folder=str(config.notes(str(discussion['folder']), int(discussion['number'])))) + '\n\n'
 
 
 def own(row: Mapping[str, Any]) -> str:
@@ -355,7 +385,17 @@ def record(discussion: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], nam
     for a table with topics, each topic's turns under its heading and then what its stages gave."""
     lines = [rules(names, discussion), said('record_opening', opening=discussion['opening'])]
     lines += by_topic(rows, topics, entry, stages)
-    return said('report', record='\n\n'.join(lines))
+    return said('report', record='\n\n'.join(lines), writing=writing(discussion))
+
+
+def writing(discussion: Mapping[str, Any]) -> str:
+    """How what the owner reads on its own is written, the host's summary and the final report: standalone, with no
+    references, in the project's own writing rules, `docs/taste.md` in its folder when it has one, read each time."""
+    taste = ''
+    if discussion.get('folder'):
+        with contextlib.suppress(OSError, UnicodeDecodeError):
+            taste = (Path(str(discussion['folder'])) / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
+    return said('writing_for_owner', taste=taste or said('taste_default'))
 
 
 def slug(text: str, words: int = 6) -> str:

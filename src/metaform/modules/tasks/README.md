@@ -1,5 +1,7 @@
 # Assigned tasks and project skills
 
+## Purpose
+
 Tasks define assigned work. Skills supply instructions selected as the agent's functional context changes.
 The named tasks are:
 
@@ -11,6 +13,24 @@ The named tasks are:
 | `facilitator` | Author reusable skills or skills attached to a receiving element. | `resources/facilitator.txt` |
 | `architect` | Expand refined plans into technical specifications grounded in the project. | `resources/architect.txt` |
 | `intake` | Analyze a project and record its functional map. | `../intake/resources/intake.xml` |
+
+## Template version
+
+The introducing change did not record a template version. The module uses the current `Module`, `Verb` and table declarations.
+
+## Declaration
+
+`SUPPORTED_OS` names Linux, macOS and Windows. `DEPENDENCIES` is empty. `SHIPS_DISABLED` is false and `REMOTE_AGENT` is true.
+`MODULE` declares task and skill verbs, the task-definition resource, one subscription and two providers.
+`task.lifecycle` exposes assigned execution. `skill.document` resolves project skill resources.
+
+## Common base used
+
+`metaform.module` supplies contexts, verbs, resources and runtime providers. `metaform.data` supplies project records and skill layers.
+`metaform.settings` declares pair choices and automatic worktree merging. `metaform.prompt_files` resolves selected task instructions.
+`metaform.skills` stores reusable skills. `metaform.home` locates registered projects and durable task records.
+
+## Prompts
 
 The user-authored User Agent, Project Agent, Facilitator and Architect prompts are preserved in their resource files.
 Delivery binds `{project}` and the agent's `{name variable}`. The project agent never ends on its own: when work runs
@@ -25,6 +45,10 @@ sections are required, and changes to the authored method remain intact.
 Use `metaform tasks read name=intake` to read it and `metaform tasks assign name=intake text="Map this project."`
 to assign it. Assignment keeps the selected instruction body and supplied input separately. The
 `intake prompt text="..."` reader appends a literal request under `## Intake request` without rewriting the body.
+
+## Verbs
+
+Each CLI verb is also an MCP tool named `tasks_<verb>`.
 
 Use `metaform tasks` with these operations:
 
@@ -156,3 +180,68 @@ and its [stable specification](https://github.com/modelcontextprotocol/ext-skill
 Automatic ticket queues, managed retry/wave/hold-review execution and creator-only stopping are retired.
 A2A and Paperclip expose tickets for agent selection. Issue reports use an explicit User Agent assignment. Native target,
 state, resource and option checks remain shared by all agents.
+
+## Settings
+
+`tasks_agent_1` defaults to Claude and `tasks_agent_2` defaults to Codex.
+Each slot's `_model` and `_effort` settings default to `default`, using that agent's dispatch settings.
+`tasks_full_auto` defaults to false. Its worktree merge behavior is described under Ratings and scores.
+
+## Events
+
+The module subscribes to `map.changed` for native task state and board changes.
+Board updates publish `map.changed` with `tasks.board`, affected agent and ticket identities, and the worktree.
+The event's `wake` flag identifies changes that require agent delivery.
+
+## Sync and async
+
+All declared command and subscription handlers are synchronous.
+Assignments launch through the native transport and return durable task identifiers before that work finishes.
+
+## Layers
+
+Project skills live in the mutable, hideable `skills` layer, owned by `tasks` and tagged `skill`.
+Each instruction retains its document bytes, frontmatter, resources and attachment to an element or functional join.
+
+Project tables use version 4, compatible from 1:
+
+- `assignments`, keyed by task ID, stores instructions, execution state, input requests, native locator and terminal result.
+- `tickets`, keyed by work ID, stores worktree grouping and assigned agents.
+
+The board's SQLite records are separate from these project tables. Their location and lifetime are described above.
+
+## Lifecycle and cleanup
+
+The module declares no start or stop hooks. Dispatch owns native agent processes and their shutdown.
+Task cancellation records the request before passing it to the transport. Terminal task records remain readable.
+Worktrees remain until explicitly removed or closed under the Full Auto setting.
+
+## Modules relied on
+
+Dispatch supplies `task.transport`, available agents and native option choices through providers.
+Intake supplies the selected instructions for the `intake` task.
+Project skill discovery reads existing functional elements and joins through the common data interface.
+
+## Systems supported
+
+Linux, macOS and Windows. Native agent availability depends on the enabled transport and installed adapter.
+
+## Resources owned
+
+The module owns assignment and ticket metadata, project skill records, board records and worktrees created for assignments.
+Reusable skill files live under the Metaform home's skills folder. Dispatch owns agent process resources.
+
+## Installed and direct wheel
+
+Both forms carry the same task instruction resources and use the same project records and providers.
+Execution requires an enabled native transport. Reading definitions and reusable skills does not launch an agent.
+
+## Demonstration
+
+From a registered project folder:
+
+```bash
+metaform tasks list
+metaform tasks read name=project_agent
+metaform tasks board
+```

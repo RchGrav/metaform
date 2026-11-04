@@ -139,7 +139,7 @@ def test_a_rating_names_stars_in_every_category_unless_alone(working):
     with pytest.raises(Stop, match='missing Coordination'):
         working.call('rate', worktree=ticket, reviewer='alice', target='bob',
                      scores={'Efficient': 5, 'Alert & Aware': 5, 'Thorough': 5})
-    assert working.board.ratings(ticket) == [] and working.board.worker('bob')['score'] == 100
+    assert working.board.ratings(ticket) == [] and working.board.worker('bob')['score'] is None
 
 
 def test_native_actor_attribution_overrides_claimed_reviewer(working):
@@ -149,7 +149,7 @@ def test_native_actor_attribution_overrides_claimed_reviewer(working):
     assert result['reviewer'] == 'bob' and result['points'] == 88
     assert working.board.ratings(ticket) == [
         {'worktree': ticket, 'reviewer': 'bob', 'target': 'alice', 'alone': False, 'stars': {**FULL, 'Thorough': 3},
-         'bonus': False, 'points': 88, 'change': -12, 'applied': -12}]
+         'bonus': False, 'points': 88, 'change': 88, 'context': '', 'applied': 88}]
     assert working.board.worker('alice')['score'] == 88
 
 
@@ -405,7 +405,7 @@ def test_a_handoff_starts_a_fresh_agent_in_the_callers_place_and_ends_the_caller
     assert (newcomer['name'], newcomer['agent'], newcomer['cwd']) == ('project_agent', 'codex', str(working.folder))
     assert newcomer['payload']['input'] == 'Handoff: done X, next Y.'
     assert (working.board.round(ticket)['holder'], working.board.round(ticket)['partner']) == (arriving, 'bob')
-    assert (working.board.worker(arriving)['current'], working.board.worker(arriving)['score']) == (ticket, 100)
+    assert (working.board.worker(arriving)['current'], working.board.worker(arriving)['score']) == (ticket, None)
     assert (working.board.worker(leaving)['current'], working.board.worker(leaving)['score']) == ('', 88)
     adapter.finish.assert_called_once()
     assert adapter.finish.call_args.args[1]['task_id'] == leaving

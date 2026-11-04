@@ -100,6 +100,7 @@ from . import (
 HERE = Path(__file__).parent
 STATIC = {'page': (HERE / 'page').resolve(), 'vendor': (HERE / 'vendor').resolve()}
 COOKIE = 'metaform_token'
+NOTE_BYTES = 1024 * 1024  # the most of one roundtable note the stage is sent
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -1508,8 +1509,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             if given.get('hold'):
-                from metaform.modules.map.storage import validate_hold_reason
-                validate_hold_reason(given.get('hold_reason'))
+                map_service(store, 'work.hold_reason')(given.get('hold_reason'))
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
                 written = [store.add_work(targets[0], None, task=text.strip(), held=bool(given.get('held')),
@@ -1835,9 +1835,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def held_work(self, given: dict[str, Any]) -> None:
         """Preview held work and its recorded reasons before the person's bulk release."""
-        from metaform.modules.map.holds import held_work_project
         try:
-            held = held_work_project(opened(given))
+            store = opened(given)
+            held = cast(list[dict[str, Any]], map_service(store, 'work.held')(store))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, {'results': held, 'revision': held_work_revision(held)})
@@ -1848,8 +1848,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'Review held work before releasing it.'})
         try:
             if 'revision' in given:
-                from metaform.modules.map.holds import held_work_project
-                if given['revision'] != held_work_revision(held_work_project(opened(given))):
+                store = opened(given)
+                held = cast(list[dict[str, Any]], map_service(store, 'work.held')(store))
+                if given['revision'] != held_work_revision(held):
                     return self.send(409, {'error': 'Held work changed. Review its reasons again before releasing.'})
             made = module_verb(given, 'map', 'work', {'op': 'unhold_all',
                                **({'hold_preview': given['hold_preview']} if 'hold_preview' in given else {})},
@@ -2357,9 +2358,18 @@ class Handler(BaseHTTPRequestHandler):
                 chassis.refresh_modules()  # roundtables declares the setting once it is loaded
                 if 'roundtables_seats' not in settings.SCHEMA:
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
+                listed: Any = module_verb(given, 'roundtables', 'tables', {})
+                rows: list[dict[str, Any]] = cast(list[dict[str, Any]], listed) if isinstance(listed, list) else \
+                    cast(list[dict[str, Any]], cast(dict[str, Any], listed).get('tables') or []) \
+                    if isinstance(listed, dict) else []
+                running = next((str(one['table']) for one in rows
+                                if one.get('state') in ('opening', 'running', 'held', 'ending', 'continuing')), None)
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder),
-                                       'judging': settings.value('roundtables_judging', folder)})
+                                       'judging': settings.value('roundtables_judging', folder),
+                                       **({'running': running} if running else {})})
             table = {'table': given['table']}
+            if given.get('notes') or given.get('note'):
+                return self.roundtable_notes(given, table)
             if given.get('pipeline'):
                 return self.send(200, module_verb(given, 'roundtables', 'review', table))
             if given.get('file'):
@@ -2383,11 +2393,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
+    def roundtable_notes(self, given: dict[str, str], table: dict[str, str]) -> None:
+        """A table's notes folder, `<project>/docs/roundtables/<number>-notes`: its files listed with their sizes, or,
+        with `note`, one file's text, the first NOTE_BYTES of it. Nothing outside the folder is read."""
+        status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
+        if status.get('discussion') is None:
+            return self.send(200, {'notes': []})
+        _, folder = project_folder(given)
+        notes = (folder / 'docs' / 'roundtables' / f'{int(status["discussion"])}-notes').resolve()
+        if given.get('note'):
+            found = (notes / given['note']).resolve()
+            if not found.is_relative_to(notes) or not found.is_file():
+                return self.send(404, {'error': 'No such note.'})
+            with found.open('rb') as held:
+                data = held.read(NOTE_BYTES + 1)
+            return self.send(200, {'path': given['note'], 'text': data[:NOTE_BYTES].decode('utf-8', 'replace'),
+                                   'cut': len(data) > NOTE_BYTES})
+        listed = sorted(one for one in notes.rglob('*') if one.is_file()) if notes.is_dir() else []
+        return self.send(200, {'notes': [{'path': one.relative_to(notes).as_posix(), 'bytes': one.stat().st_size}
+                                         for one in listed]})
+
     def roundtable_control(self, given: dict[str, Any]) -> None:
         """The person's discussion controls, using the existing table and its stored chair token."""
         action, table = given.get('action'), given.get('table')
-        if action not in ('hold', 'continue', 'comment', 'advance'):
-            return self.send(400, {'error': 'Choose Hold, Continue, Comment or End discussion.'})
+        if action not in ('hold', 'continue', 'comment', 'advance', 'abort', 'permit'):
+            return self.send(400, {'error': 'Choose Hold, Continue, Comment, End discussion, Abort or a permission option.'})
         if not isinstance(table, str) or not table.strip():
             return self.send(400, {'error': 'Choose a roundtable.'})
         nouns = {'table': table}
@@ -2396,6 +2426,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(text, str) or not text.strip():
                 return self.send(400, {'error': 'A comment says something.'})
             nouns['text'] = text.strip()
+        if action == 'permit':
+            request, option = given.get('request'), given.get('option')
+            if not isinstance(request, str) or not request or not isinstance(option, str) or not option:
+                return self.send(400, {'error': 'A permission answer names its request and an agent-supplied option.'})
+            nouns.update(request=request, option=option)
         try:
             found = module_verb(given, 'roundtables', action, nouns)
         except StoreError as error:
@@ -2435,7 +2470,10 @@ class Handler(BaseHTTPRequestHandler):
         if seats is not None and (not isinstance(seats, list) or not all(isinstance(one, str) for one in
                                                                           cast(list[Any], seats))):
             return self.send(400, {'error': 'The seats are a list of seat names, such as claude/opus.'})
-        nouns: dict[str, Any] = {'topic': topic.strip(),
+        chain = given.get('chain')
+        if chain is not None and (type(chain) is not int or not 1 <= chain <= 20):
+            return self.send(400, {'error': 'The number of roundtables is a whole number from 1 to 20.'})
+        nouns: dict[str, Any] = {'topic': topic.strip(), **({'chain': chain} if chain else {}),
                                **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
                                'automate_ticket_creation': automate_ticket_creation,
                                **({'judging': judging} if judging is not None else {}),
@@ -3659,28 +3697,27 @@ def refused(done: subprocess.CompletedProcess[str]) -> Stop:
     return Stop(said['error'], said['next'] or 'metaform config --show')
 
 
+def map_service(store: Store, kind: str) -> Callable[..., Any]:
+    """A map-owned operation shared with the page through its declared provider."""
+    found = chassis.provided(Path(store.project().path), kind)
+    if not found:
+        raise Stop('The map module is off here.', 'metaform enable map')
+    return cast(Callable[..., Any], found[0][1])
+
+
 def configured(folder: Path, *, listing: bool = True) -> dict[str, Any]:
     """Every setting of a folder as `metaform config --show --json` describes it, each with what its declaration adds
     for the settings screen, and every module as `metaform list modules` lists it, with whether it is on and its
     summary or the reason it did not load. Both were read as the command line in the folder, two processes and about
     a second on every page load (2026-10-20); they are read in this process now, which follows a module enabled or
     disabled since this server started as `module_verb` does, `refresh_modules`."""
-    from metaform import loader
     chassis.refresh_modules()
     chassis.surface(folder)  # loads a module enabled since, whose settings describe then knows
     rows = cast(list[dict[str, Any]], json.loads(json.dumps(settings.describe(folder), default=str,
                                                             ensure_ascii=False)))  # as the command line prints them
     for row in rows:
         row.update(declared(row))
-    modules: list[dict[str, Any]] = []
-    for item in loader.discover() if listing else []:
-        state = 'error' if item.problem else ('on' if item.enabled else 'off')
-        summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
-        text = item.problem or summary or ''
-        stored = home.module_state(item.id)
-        modules.append({'id': item.id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
-                        'place': item.place, 'summary': '' if state == 'error' else (text or ''),
-                        'problem': (text or '') if state == 'error' else ''})
+    modules = chassis.module_registry() if listing else []
     return {'folder': str(folder), 'settings': rows, 'modules': modules, 'all_when_empty': list(settings.EMPTY_IS_ALL),
             'categories': [{'name': name, 'title': title, 'about': about} for name, title, about in settings.CATEGORIES]}
 

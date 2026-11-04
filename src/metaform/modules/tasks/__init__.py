@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from metaform import prompt_files, settings, skills
 from metaform.module import (
@@ -100,10 +100,12 @@ def definition(ctx: Context) -> dict[str, Any]:
     if ctx.nouns.get('agent_name'):
         bindings['{name variable}'] = str(ctx.nouns['agent_name'])
     if name == 'intake':
-        from metaform.modules.intake import task_component
+        found = provided(ctx.folder, 'intake.task_component')
+        if not found:
+            raise Stop('The intake module is off here.', 'metaform enable intake')
         own = context('intake', ctx.folder, project=ctx.project, surface=ctx.surface,
                       session=ctx.session, identity=ctx.identity)
-        component = task_component(own, **bindings)
+        component = cast(dict[str, Any], found[0][1](own, **bindings))
     else:
         source = PACKAGE / 'resources' / f'{name}.txt'
         component = prompt_files.resolve_text(f'prompt.tasks:{name}.txt', source.read_bytes().decode('utf-8'),

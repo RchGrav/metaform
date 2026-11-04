@@ -22,8 +22,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from metaform.data import StoreError
-from metaform.data.refs import placed, sources_index
+from metaform.data import StoreError, placed, sources_index
 from metaform.module import Stop
 
 if TYPE_CHECKING:

@@ -49,6 +49,7 @@ from acp.connection import StreamDirection, StreamEvent
 from acp.schema import (
     AcceptElicitationResponse,
     AllowedOutcome,
+    AudioContentBlock,
     AuthCapabilities,
     BooleanConfigOptionCapabilities,
     CancelElicitationResponse,
@@ -62,6 +63,7 @@ from acp.schema import (
     ElicitationUrlCapabilities,
     EnvVariable,
     FileSystemCapabilities,
+    ImageContentBlock,
     Implementation,
     InitializeRequest,
     InitializeResponse,
@@ -71,17 +73,29 @@ from acp.schema import (
     ReadTextFileResponse,
     ReleaseTerminalResponse,
     RequestPermissionResponse,
+    ResourceContentBlock,
     SessionConfigOptionsCapabilities,
     TerminalExitStatus,
     TerminalOutputResponse,
+    TextContentBlock,
     ToolCallUpdate,
     WaitForTerminalExitResponse,
     WriteTextFileResponse,
 )
 
 from metaform import home, prompt_files
-from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord, functional_context
-from metaform.data.refs import placed, relative, sources_index
+from metaform.data import (
+    BASE_VARIABLE,
+    NewerStore,
+    Node,
+    Store,
+    StoreError,
+    WorkRecord,
+    functional_context,
+    placed,
+    relative,
+    sources_index,
+)
 from metaform.module import (
     COMPACTED_KEY,
     Context,
@@ -2656,7 +2670,7 @@ class Session:
             await self.child_note(child, None, 'person', text)
         held['state'] = 'running'
         try:
-            answer = await self.conn.prompt(session_id=child, prompt=[acp.text_block(text)])
+            answer = await self.conn.prompt(session_id=child, prompt=[TextContentBlock(text=text)])
             reason = str(answer.stop_reason)
         except Exception as error:  # noqa: BLE001  the fork's turn ends whatever ended it
             reason = f'error: {error}'
@@ -3805,7 +3819,7 @@ class Session:
             data = None
         finally:
             file.unlink(missing_ok=True)
-        return acp.audio_block(base64.b64encode(data).decode('ascii'), 'audio/wav') if data else None
+        return AudioContentBlock(data=base64.b64encode(data).decode('ascii'), mime_type='audio/wav') if data else None
 
     def picture(self, path: str) -> Any:
         """A frame the person sent with a message as an ACP image block, ContentBlock::Image, beside its text: only for
@@ -3824,7 +3838,7 @@ class Session:
             data = None
         finally:
             file.unlink(missing_ok=True)
-        return acp.image_block(base64.b64encode(data).decode('ascii'), kinds[file.suffix]) if data else None
+        return ImageContentBlock(data=base64.b64encode(data).decode('ascii'), mime_type=kinds[file.suffix]) if data else None
 
     def timer(self, asked: dict[str, Any]) -> dict[str, Any]:
         """The agent's own timers, `dispatch timer`, held by this runner and so never outliving the session they wake:
@@ -4371,8 +4385,8 @@ class Session:
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
                         began_ns = time.time_ns()
-                        blocks: list[Any] = [acp.text_block(text), *beside]
-                        blocks += [acp.resource_link_block(one['name'], one['uri'], title=one.get('title'))
+                        blocks: list[Any] = [TextContentBlock(text=text), *beside]
+                        blocks += [ResourceContentBlock(name=one['name'], uri=one['uri'], title=one.get('title'))
                                    for one in self.attached]  # the hand-off's links, typed, beside its text
                         self.attached = []
                         if not self.prep:

@@ -2,10 +2,10 @@
 JSON-RPC over standard input and output, the standard library only, no model. Every message it reads is logged as one
 JSON line to FAKE_ACP_LOG, with its pid and whether an API key reached it.
 
-It offers modes (default, acceptEdits, plan, as Claude Code does) and a model option (haiku, sonnet, opus), takes
-session/set_mode and session/set_config_option, offers session/load, and answers each prompt with one message: the
-model it runs and how long the prompt was, so every seat's reply differs. Its first turn first asks permission to
-write a file and logs the answer. FAKE_ACP_LONG=1 makes its first reply run over 512 characters. A prompt that holds
+It negotiates ACP v2 or v1, offers mode and model configuration, and supports session/resume. V2 prompts
+acknowledge insertion and complete through idle states. V1 prompts complete through their response. FAKE_ACP_PERMISSION=1 makes
+its first turn ask permission to write a file and log the answer. FAKE_ACP_LONG=1 makes its first reply exceed 512
+characters. A prompt that holds
 "VETO-ME" is answered with a reply holding "veto", which the stub Jev turns down. A prompt that starts with "The
 roundtable has ended" is answered with a Markdown report. A Roundtable 2 ranking is answered with every id it lists,
 in an order of the model's own, and a request to explain a top or bottom three with a sentence.
@@ -25,7 +25,8 @@ LOG = os.environ['FAKE_ACP_LOG']
 WRITING = threading.Lock()
 ANSWERS = {}
 RESULTS = {}
-STATE = {'session': None, 'model': 'sonnet', 'mode': 'default', 'prompts': 0, 'servers': []}
+STATE = {'session': None, 'model': 'sonnet', 'mode': 'default', 'prompts': 0, 'servers': [],
+         'protocol': 2, 'prompt_id': None, 'cancelled': False, 'blocked': None}
 MODELS = json.loads(os.environ['FAKE_ACP_MODELS']) if os.environ.get('FAKE_ACP_MODELS') else [
     {'value': 'haiku', 'name': 'Haiku 5.5'}, {'value': 'sonnet', 'name': 'Sonnet 5.5'},
     {'value': 'opus', 'name': 'Opus 5.5'}]
@@ -43,6 +44,8 @@ def send(message):
 
 
 def update(body):
+    if STATE['protocol'] == 1 and body.get('sessionUpdate') in ('state_update', 'user_message'):
+        return
     send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': STATE['session'], 'update': body}})
 
 
@@ -51,12 +54,16 @@ def request(request_id, method, params):
     ANSWERS[request_id] = event
     send({'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params})
     event.wait()
-    return RESULTS.pop(request_id)
+    return RESULTS.pop(request_id, {'outcome': {'outcome': 'cancelled'}})
 
 
 def options():
-    return [{'id': 'model', 'name': 'Model', 'type': 'select', 'category': 'model', 'currentValue': STATE['model'],
-             'options': MODELS}]
+    key = 'configId' if STATE['protocol'] == 2 else 'id'
+    return [{key: 'model', 'name': 'Model', 'type': 'select', 'category': 'model',
+             'currentValue': STATE['model'], 'options': MODELS},
+            {key: 'mode', 'name': 'Mode', 'type': 'select', 'category': 'mode',
+             'currentValue': STATE['mode'], 'options': [
+                 {'value': 'default', 'name': 'Default'}, {'value': 'plan', 'name': 'Plan'}]}]
 
 
 def modes():
@@ -67,12 +74,19 @@ def modes():
 
 def call_mcp(request_id, call_id, server):
     """One MCP tool call as Codex makes it: the call reported with its server, then permission asked by its id alone."""
-    update({'sessionUpdate': 'tool_call', 'toolCallId': call_id, 'title': f'mcp.{server}.see', 'kind': 'execute',
+    update({'sessionUpdate': 'tool_call_update' if STATE['protocol'] == 2 else 'tool_call', 'toolCallId': call_id, 'title': f'mcp.{server}.see', 'kind': 'execute',
             'status': 'pending', 'rawInput': {'server': server, 'tool': 'see', 'arguments': {}}})
-    return request(request_id, 'session/request_permission', {
-        'sessionId': STATE['session'], 'toolCall': {'toolCallId': call_id, 'kind': 'execute'},
-        'options': [{'optionId': 'approved', 'name': 'Allow', 'kind': 'allow_once'},
-                    {'optionId': 'abort', 'name': 'Deny', 'kind': 'reject_once'}]})
+    update({'sessionUpdate': 'state_update', 'state': 'requires_action'})
+    params = {'sessionId': STATE['session'],
+              'options': [{'optionId': 'approved', 'name': 'Allow', 'kind': 'allow_once'},
+                          {'optionId': 'abort', 'name': 'Deny', 'kind': 'reject_once'}]}
+    if STATE['protocol'] == 2:
+        params.update(title=f'Call {server}', subject={'type': 'tool_call', 'toolCall': {'toolCallId': call_id}})
+    else:
+        params['toolCall'] = {'toolCallId': call_id, 'title': f'Call {server}', 'kind': 'execute'}
+    answer = request(request_id, 'session/request_permission', params)
+    update({'sessionUpdate': 'state_update', 'state': 'running'})
+    return answer
 
 
 def staged(text):
@@ -98,19 +112,39 @@ def staged(text):
 
 def turn(ident, text):
     STATE['prompts'] += 1
+    STATE['prompt_id'], STATE['cancelled'] = ident, False
+    user_id = f'user-{STATE["prompts"]}'
+    update({'sessionUpdate': 'user_message', 'messageId': user_id,
+            'content': [{'type': 'text', 'text': text}]})
+    if STATE['protocol'] == 2:
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'messageId': user_id}})
+    update({'sessionUpdate': 'state_update', 'state': 'running'})
     if STATE['prompts'] == 1 and STATE['servers']:
         log({'mcp_permission': call_mcp(901, 'm1', STATE['servers'][0]['name'])})
         log({'mcp_other': call_mcp(902, 'm2', 'elsewhere')})
-    if STATE['prompts'] == 1:
-        outcome = request(900, 'session/request_permission', {
-            'sessionId': STATE['session'],
-            'toolCall': {'toolCallId': 'w1', 'title': 'Write notes.txt', 'kind': 'edit', 'status': 'pending'},
-            'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
-                        {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]})
+    if STATE['prompts'] == 1 and os.environ.get('FAKE_ACP_PERMISSION') == '1':
+        update({'sessionUpdate': 'state_update', 'state': 'requires_action'})
+        params = {'sessionId': STATE['session'],
+                  'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
+                              {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]}
+        if STATE['protocol'] == 2:
+            params.update(title='Write notes.txt', subject={'type': 'tool_call', 'toolCall': {'toolCallId': 'w1'}})
+        else:
+            params['toolCall'] = {'toolCallId': 'w1', 'title': 'Write notes.txt', 'kind': 'edit'}
+        outcome = request(900, 'session/request_permission', params)
         log({'permission': outcome})
-        update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Let me look first.'}})
-        update({'sessionUpdate': 'tool_call', 'toolCallId': 'r1', 'title': 'Read README', 'kind': 'read',
+        update({'sessionUpdate': 'state_update', 'state': 'running'})
+        update({'sessionUpdate': 'agent_message_chunk', 'messageId': f'pre-{STATE["prompts"]}',
+                'content': {'type': 'text', 'text': 'Let me look first.'}})
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 'r1', 'title': 'Read README', 'kind': 'read',
                 'status': 'completed'})
+    if os.environ.get('FAKE_ACP_BLOCK') == '1':
+        STATE['blocked'] = threading.Event()
+        update({'sessionUpdate': 'tool_call_update' if STATE['protocol'] == 2 else 'tool_call',
+                'toolCallId': 'blocked', 'title': 'Long task', 'kind': 'execute', 'status': 'in_progress'})
+        STATE['blocked'].wait()
+    if STATE['cancelled']:
+        return
     if text.startswith('The roundtable has ended'):
         reply = f'# Report\n\nThe fake {STATE["model"]} read {text.count(chr(10))} lines of the record.'
     elif staged(text) is not None:
@@ -123,10 +157,16 @@ def turn(ident, text):
         veto = ' I only say veto.' if 'VETO-ME' in text else ''
         reply = f'{STATE["model"]} on turn {STATE["prompts"]}: the prompt was {len(text)} characters.{veto}'
     for part in (reply[:len(reply) // 2], reply[len(reply) // 2:]):
-        update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': part}})
-    send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn', 'usage': {
-        'totalTokens': len(text) // 4 + 20, 'inputTokens': len(text) // 4, 'outputTokens': 20,
-        'cachedReadTokens': max(len(text) // 4 - 50, 0) if STATE['prompts'] > 1 else 0, 'cachedWriteTokens': 0}}})
+        update({'sessionUpdate': 'agent_message_chunk', 'messageId': f'reply-{STATE["prompts"]}',
+                'content': {'type': 'text', 'text': part}})
+    usage = {'totalTokens': len(text) // 4 + 20, 'inputTokens': len(text) // 4, 'outputTokens': 20,
+             'cachedReadTokens': max(len(text) // 4 - 50, 0) if STATE['prompts'] > 1 else 0, 'cachedWriteTokens': 0}
+    if STATE['protocol'] == 2:
+        update({'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'end_turn', 'usage': usage})
+    else:
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'stopReason': 'end_turn', 'usage': usage}})
+    STATE['prompt_id'] = None
+
 
 
 def main():
@@ -140,31 +180,63 @@ def main():
                 ANSWERS.pop(ident).set()
             continue
         if method == 'initialize':
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {
-                'protocolVersion': 1, 'agentCapabilities': {
-                    'loadSession': True, **({'mcpCapabilities': {'http': True}}
-                                            if os.environ.get('FAKE_ACP_MCP') == '1' else {})},
-                'agentInfo': {'name': 'fake-agent', 'version': '1.0'}}})
+            requested = message['params']['protocolVersion']
+            if os.environ.get('FAKE_ACP_INIT_ERROR') == '1':
+                send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32000, 'message': 'Authentication required'}})
+                continue
+            if requested == 2 and os.environ.get('FAKE_ACP_UNSUPPORTED_V2') == '1':
+                send({'jsonrpc': '2.0', 'id': ident, 'error': {
+                    'code': -32022, 'message': 'Unsupported protocol version', 'data': {'requested': 2, 'supported': [1]}}})
+                continue
+            selected = min(requested, int(os.environ.get('FAKE_ACP_PROTOCOL', '2')))
+            if os.environ.get('FAKE_ACP_PROTOCOL') == '3':
+                selected = 3
+            if requested == 1:
+                selected = 1
+            STATE['protocol'] = selected
+            if selected == 1 or os.environ.get('FAKE_ACP_LEGACY_INITIALIZE') == '1':
+                initialized = {'protocolVersion': selected, 'agentInfo': {'name': 'fake-agent', 'version': '1.0'},
+                               'agentCapabilities': {'loadSession': True,
+                                   'sessionCapabilities': {'resume': {}, 'close': {}},
+                                   'mcpCapabilities': {'http': os.environ.get('FAKE_ACP_MCP') == '1'}}}
+            else:
+                initialized = {'protocolVersion': selected, 'capabilities': {'session': {
+                    **({'mcp': {'http': {}}} if os.environ.get('FAKE_ACP_MCP') == '1' else {})}},
+                    'info': {'name': 'fake-agent', 'version': '2.0'}}
+            send({'jsonrpc': '2.0', 'id': ident, 'result': initialized})
         elif method == 'session/new':
+            if os.environ.get('FAKE_ACP_SESSION_ERROR') == '1':
+                send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32000, 'message': 'Authentication required'}})
+                continue
             STATE['session'] = f'fake-{os.getpid()}'
             STATE['servers'] = message['params'].get('mcpServers') or []
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': STATE['session'], 'modes': modes(),
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': STATE['session'],
                                                             'configOptions': options()}})
-        elif method == 'session/load':
+        elif method == 'session/resume':
             STATE['session'] = message['params']['sessionId']
-            update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Replayed'}})
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {'modes': modes(), 'configOptions': options()}})
-        elif method == 'session/set_mode':
-            STATE['mode'] = message['params']['modeId']
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
+            update({'sessionUpdate': 'state_update', 'state': 'idle'})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
         elif method == 'session/set_config_option':
-            STATE['model'] = message['params']['value']
+            STATE[message['params']['configId']] = message['params']['value']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
         elif method == 'session/prompt':
             text = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
             threading.Thread(target=turn, args=(ident, text), daemon=True).start()
         elif method == 'session/cancel':
-            pass
+            STATE['cancelled'] = True
+            if STATE['blocked'] is not None:
+                STATE['blocked'].set()
+            if STATE['protocol'] == 1 and STATE['prompt_id'] is not None:
+                send({'jsonrpc': '2.0', 'id': STATE['prompt_id'], 'result': {'stopReason': 'cancelled'}})
+                STATE['prompt_id'] = None
+            for event in list(ANSWERS.values()):
+                event.set()
+            update({'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'cancelled'})
+        elif method == 'session/close':
+            update({'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'cancelled'})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
+        elif method == 'session/list':
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessions': []}})
         else:
             send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32601, 'message': 'Method not found'}})
 

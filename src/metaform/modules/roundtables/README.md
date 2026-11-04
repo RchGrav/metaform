@@ -30,13 +30,18 @@ Nothing. It uses dispatch's `dispatch.seats` and design-intake providers, tasks'
 
 `resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
 
+The `session_*` prompts hold the person's session messages. `minutes_system` and `minutes_turn` explain each contribution
+in plain language. The minutes writer uses an ACP session, like the other agents.
+
 ## Verbs
 
 - `open <topic> [address=] [seats] [host=] [synthesizer=] [judging=] [reply_limit=] [spend=]`, write, open world: open a table on the question, focused on the part at `address` when one is given. `seats` is a JSON list in speaking order, `roundtables_seats` when left out: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's own agents, seated on the engine's ACP client with dispatch's commands (`dispatch_claude`, `dispatch_codex`, `dispatch_antigravity`); any other id is an OpenRouter model. The host is the first seat when none is named, never the engine's own default, which would seat an agent nobody chose. The question is the table's one topic. `reply_limit` sets the maximum characters in each discussion reply, 512 by default. The selected limit ends the opening instructions and each turn prompt; longer replies are truncated before judging. Synthesis, ranking explanations and reports retain their stage-specific limits. Judged tables require `jev` and an OpenRouter credential. ACP-only tables with `judging=false` require neither; when fewer agent slots are free than seats; and when `spend` passes `roundtables_spend`. Returns the table's id.
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
   The GUI exposes Hold, Continue, discussion comments and End discussion beside the transcript. End discussion invokes `advance` immediately at the next gap, without minimum rounds. Comments can be queued while held, without resuming AI turns. They enter at the next gap between turns. Continue resumes the same table. On a completed table, Continue discussion uses its saved host summary with fresh seat contexts, the same visible identity, project and lineup. It appends a topic without removing prior topics or outputs. Plan review comments remain separate.
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
-  Gemini's ACP session uses the table's project folder as its workspace so native file tools can inspect source. Its process still runs in the private seat folder. File writes and terminal requests retain the seat's existing permission restrictions.
+  ACP seats use the project as their workspace. Their harnesses provide file tools and request permissions through ACP.
+- `permit <table> request=<id> option=<id>`, command line or page: return the person's selected option to the waiting
+  ACP request. The page displays the options supplied by the agent. Metaform adds no file or tool permission policy.
 - `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
@@ -61,6 +66,24 @@ Before exhaustion, every participant receives a carry-forward request at twice t
 
 A held runner closes its seats. Comments remain queued or enter without resuming turns. Explicit Continue restarts it. Starting an engine server never resumes other live or held tables.
 
+Opening with `chain=<number>` runs a session containing that many discussions. After each discussion, agents collaborate
+on saved materials and the next topic. Busy seats keep working while available seats contribute. When all seats are
+busy, the runner waits for completion events. A skipped seat never supplies an implicit PASS or Done.
+
+After the final collaboration, each agent submits private scorecards. Only aggregate scores are shared and added to
+profiles. Agents then exchange farewells and explicitly finish. Minutes are saved per discussion in the session folder.
+
+Roundtable agent connections offer ACP v2 and retain ACP v1 support. Each connection uses its negotiated protocol.
+In v2, the prompt response acknowledges insertion and `state_update` reports activity and completion. In v1, the
+prompt response completes the turn. Permission requests use the same ACP relay for every agent.
+
+A peer selecting v1 is reconnected with v1 initialization so its capabilities are advertised correctly. A peer that
+rejects v2 or returns legacy initialization fields gets the same fresh v1 negotiation. Authentication, session and
+runtime failures never change the selected protocol. Cancellation closes active work and outstanding requests.
+
+Initialization checks on 2026-11-04 verified v2 with Claude `0.100.0` and Codex `2.5.0`. Antigravity `1.4.5` returns
+legacy fields when offered v2 and negotiates a valid v1 connection when offered v1.
+
 ## Events
 
 A follower publishes each event of its table on the bus as `roundtables.event`, `{table, seq, kind, audience, ...}`, and writes it to the `events` table in the same transaction as the cursor that says it was told; that write's `map.changed` names the kind `roundtables` and the table's own, `roundtables:<table>`, so a page watching one table reads only for it, and so every other process of the home, the web page's server among them, hears it and reads the one table's events after the seq it holds. Kinds: `turn` and `veto` (a seat's turn, kept or vetoed, with its scores), `stage` (the open topic and its stage), `ideas` (the synthesis), `rankings`, `summary` (the host's), `state`, `seat_lost` and `operational` (the engine's operational events), `end` (with `answered`, `answer`, whether the report was saved, `saved`, the folder of the saved files, and `recorded`, the memory's name, or `unrecorded` and why), and `adopted` (an idea made a ticket, with its `work_id` and `address`). `state`, `seat_lost`, `operational`, `end` and `adopted` have the audience `person`: they are the person's, and nothing of them goes to a seat or Jev.
@@ -71,7 +94,8 @@ The follower hears the table through the engine's own page server, started for i
 
 - Each seat takes one of dispatch's agent slots for as long as its seats run, and a follower that stops ends its table first, through dispatch's own admission gate, so tables and tickets share `dispatch_agents` and `dispatch_machine_agents`. A table needs a slot for every seat when it opens; dispatch off refuses it, since nothing would count them.
 - A table spends at most `spend`, at most `roundtables_spend`, through OpenRouter; the engine also holds its own most.
-- Seats read and change nothing. The engine gives Claude Code only Read, Grep and Glob, runs Codex read-only, offers no file writes or terminals, and refuses every permission a seat asks to write; this module never names an MCP server for a seat. The tables carry no Metaform tool.
+- Each agent's harness provides its native tools. ACP carries permission requests and the person's selected responses.
+  Session prompts describe the work and phase. Metaform sets no Claude-specific tool allowlist or file permission gate.
 - Operational events reach the person, never a seat or Jev.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
 - The page shows the engine's result directly. The system pipeline assigns preparation tasks. The engine's reporter output is not saved or shown by this module.

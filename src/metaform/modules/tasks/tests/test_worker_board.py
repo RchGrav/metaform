@@ -26,7 +26,7 @@ def test_reopen_registration_keeps_names_slots_nodes_score_and_real_context(boar
     assert worker['nodes'] == ['code.Unknown_Name']
     assert worker['context'] == {'used': 50, 'size': 200}
     assert worker['session_id'] == 'native'
-    assert worker['score'] == 100
+    assert worker['score'] is None
     assert reopened.view()[0]['context'] == 25
     assert reopened.path.name == 'board.sqlite' and reopened.path.exists()
 
@@ -91,23 +91,23 @@ def test_ratings_move_scores_by_category_stars_and_bonus_within_the_limits_and_h
     board.set_round('first', 'First', 'a', [], ['code.Exact'], tickets=['t1'])
     board.pair('first', 'b')
     rating = board.rate('first', 'b', 'a', {**FULL, 'Coordination': 4})
-    assert (rating['points'], rating['change']) == (92, -8)
+    assert (rating['points'], rating['change']) == (92, 92)
     assert board.worker('a')['score'] == 92
     board.rate('first', 'b', 'a', FULL, bonus=True)  # the pick made again replaces the first
     assert len(board.ratings('first')) == 1 and board.worker('a')['score'] == 105
     board.rate('first', 'a', None, {}, alone=True)
-    assert board.worker('b')['score'] == 100
+    assert board.worker('b')['score'] is None
     board.complete_round('first')
     board.set_round('second', 'Second', 'a', [], [], tickets=['t2'])
     board.pair('second', 'b')
     board.rate('second', 'b', 'a', {**FULL, 'Thorough': 0})
-    assert board.worker('a')['score'] == 75, 'the bonus never carries a score past 105; the next deduction comes off 105'
+    assert board.worker('a')['score'] == 175, 'each rating adds its points, worth what they are'
     board.complete_round('second')
     peer, = board.view('b')
-    assert peer['agent_id'] == 'a' and peer['name'] == 'Canonical A' and peer['score'] == 75
+    assert peer['agent_id'] == 'a' and peer['name'] == 'Canonical A' and peer['score'] == 175
     assert [past['points'] for past in peer['past']] == [105, 70]
     own_peer, = board.view('a')
-    assert own_peer['agent_id'] == 'b' and own_peer['score'] == 100 and own_peer['past'][0]['points'] is None
+    assert own_peer['agent_id'] == 'b' and own_peer['score'] is None and own_peer['past'][0]['points'] is None
     assert own_peer['context'] is None
 
 
@@ -119,7 +119,7 @@ def test_rating_rejects_stars_outside_the_categories_or_five(board, stars):
     board.set_round('t', 'T', 'a', [], [])
     with pytest.raises(ValueError):
         board.rate('t', 'b', 'a', stars)
-    assert board.worker('a')['score'] == 100
+    assert board.worker('a')['score'] is None
 
 
 def test_outbox_is_durable_deduplicated_and_clear_keeps_database_reopenable(board):
@@ -200,9 +200,9 @@ def test_a_replaced_rating_reverses_only_what_the_limits_let_it_apply(board):
     board.rate('t', 'b', 'a', FULL, bonus=True)
     assert board.worker('a')['score'] == 105
     second = board.rate('t', 'c', 'a', FULL, bonus=True)
-    assert (second['change'], second['applied']) == (5, 0) and board.worker('a')['score'] == 105
+    assert (second['change'], second['applied']) == (105, 105) and board.worker('a')['score'] == 210
     board.rate('t', 'c', 'a', {**FULL, 'Efficient': 0})
-    assert board.worker('a')['score'] == 95
+    assert board.worker('a')['score'] == 195
 
 
 def test_a_ticket_joins_an_open_round_only(board):
@@ -221,12 +221,12 @@ def test_a_score_belongs_to_the_context_and_comes_back_with_its_session(board):
     assert board.worker('a')['score'] == 92
     board.remove('a')  # the agent shut down: its score clears with it
     board.register('a', 'A', 'wa')
-    assert board.worker('a')['score'] == 100, 'a worker with no session id yet is at 100'
+    assert board.worker('a')['score'] is None, 'a worker with no session id yet is unscored'
     board.patch('a', {'session_id': 'first-context'})  # the same context resumed: its score comes back with it
     assert board.worker('a')['score'] == 92
     board.remove('a')
     board.register('a', 'A', 'wa', 'second-context')
-    assert board.worker('a')['score'] == 100, 'a fresh context carries no penalty'
+    assert board.worker('a')['score'] is None, 'a fresh context is unscored'
     board.rate('t', 'b', 'a', FULL, bonus=True)  # the pick made again moves the new context, not the old one
     assert board.worker('a')['score'] == 105
     board.remove('a')
@@ -249,7 +249,7 @@ def test_a_handoff_moves_the_place_and_the_newcomer_starts_fresh(board):
     assert moved == {'leaving': 'a', 'arriving': 'c', 'worktrees': ['one', 'two'], 'current': 'one', 'next': 'two'}
     assert (board.round('one')['holder'], board.round('one')['partner']) == ('c', 'b')
     assert board.round('two')['holder'] == 'c'
-    assert (board.worker('c')['current'], board.worker('c')['next'], board.worker('c')['score']) == ('one', 'two', 100)
+    assert (board.worker('c')['current'], board.worker('c')['next'], board.worker('c')['score']) == ('one', 'two', None)
     assert (board.worker('a')['current'], board.worker('a')['next'], board.worker('a')['score']) == ('', '', 88)
     assert board.worker('b')['waiting_for'] == 'c'
     with pytest.raises(KeyError):

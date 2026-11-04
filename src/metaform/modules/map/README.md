@@ -18,6 +18,12 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration and `Context`, `metaform.settings` for `--raw`, `metaform.data` for every read and write.
 
+### Provides
+
+`work.held`, called with a `Store`, returns held work across its project's bases. `work.hold_reason`, called with a
+proposed reason, validates and returns its nonblank text. The page uses these providers alongside map's existing
+`base.holds`, `ticket.runtime` and `agent.tool.instructions` services.
+
 ## Prompts
 
 `resources/prompts.xml` holds `instructions`, `map is active.`, listed in the instructions agents read under "modules available.", MCP-031.

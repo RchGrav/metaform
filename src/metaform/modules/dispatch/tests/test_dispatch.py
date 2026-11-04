@@ -16,6 +16,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from acp.schema import TextContentBlock
 
 pytestmark = pytest.mark.kind('simulation')
 
@@ -231,8 +232,8 @@ def test_each_agent_has_its_start_command_as_a_setting(run):
     run('enable', 'dispatch')
     loader.get('dispatch')
     # each pinned at the version the ACP Registry lists for claude-acp, codex-acp and antigravity, P013
-    assert settings.SCHEMA['dispatch_claude'].default == 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1'
-    assert settings.SCHEMA['dispatch_codex'].default == 'npx -y @agentclientprotocol/codex-acp@2.2.2'
+    assert settings.SCHEMA['dispatch_claude'].default == 'npx -y @agentclientprotocol/claude-agent-acp@0.100.0'
+    assert settings.SCHEMA['dispatch_codex'].default == 'npx -y @agentclientprotocol/codex-acp@2.5.0'
     assert settings.SCHEMA['dispatch_antigravity'].default == 'metaform dispatch adapter antigravity-acp@1.4.1'
 
 
@@ -3573,7 +3574,6 @@ def served(dispatch, words, body, env=None):
 @pytest.mark.req('BASE-062')
 @pytest.mark.req('BASE-003')
 def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_cancels(dispatch):
-    import acp
 
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
@@ -3591,9 +3591,9 @@ def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_
         names = await until(editor.commands)
         assert {'map_work', 'dispatch_claims'} <= set(names), 'the verbs, named as their MCP tools'
         assert 'dispatch_serve' not in names and 'mcp_serve' not in names, 'no transport'
-        answered = await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('/dispatch_claims')])
+        answered = await conn.prompt(session_id=made.session_id, prompt=[TextContentBlock(text='/dispatch_claims')])
         assert answered.stop_reason == 'end_turn' and 'claims' in editor.said()[-1]
-        await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('What is the alarm for?')])
+        await conn.prompt(session_id=made.session_id, prompt=[TextContentBlock(text='What is the alarm for?')])
         assert 'answers its own commands' in editor.said()[-1], 'free text is told it needs an agent'
         listed = await conn.list_sessions(cwd=str(dispatch.folder))
         assert [(one.session_id, one.title) for one in listed.sessions] == [('page-1', 'claude on Write notes.txt')]
@@ -3604,7 +3604,7 @@ def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_
         await conn.load_session(cwd=str(dispatch.folder), session_id='page-1', mcp_servers=[])
         assert editor.said('user_message_chunk') == ['Write it.'] and editor.said() == ['Written.']
         waiting = asyncio.ensure_future(conn.prompt(session_id=made.session_id, prompt=[
-            acp.text_block(f'/dispatch_wait until=done id={dispatch.id}')]))
+            TextContentBlock(text=f'/dispatch_wait until=done id={dispatch.id}')]))
         await asyncio.sleep(1)
         await conn.cancel(session_id=made.session_id)
         assert (await asyncio.wait_for(waiting, 30)).stop_reason == 'cancelled'
@@ -3614,7 +3614,6 @@ def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_
 @pytest.mark.req('BASE-062')
 @pytest.mark.req('BASE-052')
 def test_serve_passes_an_agent_through_with_metaforms_server_and_records_it_for_the_page(dispatch):
-    import acp
 
     async def body(conn, editor, init):
         assert init.agent_capabilities.session_capabilities.list is not None, 'Metaform lists sessions it can load'
@@ -3623,7 +3622,7 @@ def test_serve_passes_an_agent_through_with_metaforms_server_and_records_it_for_
         assert login['env'] == {'FAKE_LOGIN': 'yes', 'METAFORM_SERVE_LOGIN': '["--login", "now"]'}
         found['login'] = login
         made = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
-        answered = await conn.prompt(session_id=made.session_id, prompt=[acp.text_block('Write notes.txt')])
+        answered = await conn.prompt(session_id=made.session_id, prompt=[TextContentBlock(text='Write notes.txt')])
         assert answered.stop_reason == 'end_turn' and editor.asked == ['Write notes.txt'], 'the editor answers'
         row = await until(lambda: next((one.extra for one in dispatch.items('session')
                                          if one.extra['session_id'] == made.session_id), None))
@@ -3728,7 +3727,6 @@ def test_serve_alone_tells_the_editor_by_notice_marks_its_messages_and_cancels_a
 @pytest.mark.req('BASE-062')
 @pytest.mark.req('BASE-052')
 def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_slot(dispatch, run, monkeypatch):
-    import acp
 
     from metaform.module import context
     from metaform.modules import dispatch as module
@@ -3739,7 +3737,7 @@ def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_s
 
     async def body(conn, editor, init):
         first = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
-        await conn.prompt(session_id=first.session_id, prompt=[acp.text_block('Write notes.txt')])
+        await conn.prompt(session_id=first.session_id, prompt=[TextContentBlock(text='Write notes.txt')])
         second = await conn.new_session(cwd=str(dispatch.folder), mcp_servers=[])
         rows = await until(lambda: [one.extra for one in dispatch.items('session')] if len(
             [one for one in dispatch.items('session') if one.extra['state'] == 'running']) == 2 else None)
@@ -3774,7 +3772,7 @@ def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_s
         await until(lambda: any('Look again' in text and 'From the claude agent:' in text
                                for text in editor.said('user_message_chunk')))
         assert 'Look again' not in editor.said('user_message_chunk')
-        waiting = asyncio.ensure_future(conn.prompt(session_id=second.session_id, prompt=[acp.text_block('Next')]))
+        waiting = asyncio.ensure_future(conn.prompt(session_id=second.session_id, prompt=[TextContentBlock(text='Next')]))
         await asyncio.sleep(1)
         assert len(dispatch.received('session/prompt')) == 3, 'no second prompt beside the turn in flight'
         await conn.cancel(session_id=second.session_id)

@@ -6,7 +6,6 @@ import json
 import math
 import os
 import re
-import sqlite3
 import tempfile
 import uuid
 from collections.abc import Generator
@@ -15,13 +14,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from metaform.data import DataConnection, private_database
+
 # The categories of a peer rating and their weights, as the project agent's instructions set them: five stars of five
 # in each is 100 points, and a rating under five in a category takes its share of the weight from the rated agent's
 # score. The bonus, for improving the final work beyond critiquing it, adds five.
 CATEGORIES = {'Efficient': 10, 'Alert & Aware': 20, 'Thorough': 30, 'Coordination': 40}
 STARS = 5
 BONUS = 5
-START, MOST = 100, 105  # every agent online starts at 100; the bonus can carry it to 105, never past
+# An agent starts unscored; each rating it receives adds its points, worth what they are (the owner, 2026-11-04).
 STATES = ('starting', 'working', 'idle', 'waiting')
 
 
@@ -60,8 +61,10 @@ class Board:
             ''')
 
     @contextmanager
-    def _db(self) -> Generator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path, timeout=5)
+    def _db(self) -> Generator[DataConnection]:
+        db = private_database(self.path)
+        db.isolation_level = 'DEFERRED'
+        db.execute('PRAGMA busy_timeout=5000')
         try:
             with db:
                 yield db
@@ -69,61 +72,56 @@ class Board:
             db.close()
 
     @staticmethod
-    def _worker(db: sqlite3.Connection, agent_id: str) -> dict[str, Any] | None:
+    def _worker(db: DataConnection, agent_id: str) -> dict[str, Any] | None:
         row = db.execute('SELECT data FROM workers WHERE agent_id = ?', (agent_id,)).fetchone()
         return _decoded(row[0]) if row else None
 
     @staticmethod
-    def _round(db: sqlite3.Connection, worktree: str) -> dict[str, Any] | None:
+    def _round(db: DataConnection, worktree: str) -> dict[str, Any] | None:
         row = db.execute('SELECT data FROM rounds WHERE worktree = ?', (worktree,)).fetchone()
         return _decoded(row[0]) if row else None
 
     @staticmethod
-    def _put_worker(db: sqlite3.Connection, worker: dict[str, Any]) -> None:
+    def _put_worker(db: DataConnection, worker: dict[str, Any]) -> None:
         db.execute('INSERT INTO workers VALUES (?, ?) ON CONFLICT(agent_id) DO UPDATE SET data = excluded.data',
                    (worker['agent_id'], _dump(worker)))
 
     @staticmethod
-    def _put_round(db: sqlite3.Connection, round_: dict[str, Any]) -> None:
+    def _put_round(db: DataConnection, round_: dict[str, Any]) -> None:
         db.execute('INSERT INTO rounds VALUES (?, ?) ON CONFLICT(worktree) DO UPDATE SET data = excluded.data',
                    (round_['worktree'], _dump(round_)))
 
     # ------------------------------------------------------------------------------------------ agents online
 
-    # A score belongs to a context, the agent's session: it clears with the agent when it shuts down, since a fresh
-    # agent starting a new context carries no penalty, and comes back when the same session is resumed. The `scores`
-    # table keeps each session's score; a worker row gaining a session id reads it back, and a worker with no session
-    # id yet is at 100 (the owner's rule, 2026-10-25).
+    # A score belongs to a context, the agent's session: it clears with the agent when it shuts down, and comes back
+    # when the same session is resumed. The `scores` table keeps each rated session's score; a worker row gaining a
+    # session id reads it back, and an agent no one has rated yet is unscored, None.
 
     @classmethod
-    def _joined(cls, db: sqlite3.Connection, worker: dict[str, Any], session_id: str) -> None:
-        """The worker row gains a session id: the context's score comes back, or a context not seen before starts its
-        record at 100."""
+    def _joined(cls, db: DataConnection, worker: dict[str, Any], session_id: str) -> None:
+        """The worker row gains a session id: the context's score comes back, or a context not rated yet is
+        unscored."""
         worker['session_id'] = session_id
         row = db.execute('SELECT score FROM scores WHERE session_id = ?', (session_id,)).fetchone()
-        if row is None:  # a context not seen before is fresh: it carries no penalty, whatever the row held
-            worker['score'] = START
-            cls._keep(db, worker)
-        else:
-            worker['score'] = float(row[0])
+        worker['score'] = None if row is None else float(row[0])
 
     @staticmethod
-    def _keep(db: sqlite3.Connection, worker: dict[str, Any]) -> None:
-        """The worker's score written to its context's record, when it has a session."""
-        if worker.get('session_id'):
+    def _keep(db: DataConnection, worker: dict[str, Any]) -> None:
+        """The worker's score written to its context's record, when it has a session and has been rated."""
+        if worker.get('session_id') and worker.get('score') is not None:
             db.execute('INSERT INTO scores VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET score = excluded.score',
-                       (worker['session_id'], float(worker.get('score', START))))
+                       (worker['session_id'], float(worker['score'])))
 
     def register(self, agent_id: str, name: str, work_id: str, session_id: str = '',
                  context: dict[str, Any] | None = None) -> dict[str, Any]:
-        """An agent online, at the starting score until its session names a context with a score of its own; one
-        registered again keeps its work."""
+        """An agent online, unscored until its session names a context with a score of its own; one registered
+        again keeps its work."""
         with self._db() as db:
             old = self._worker(db, agent_id)
             worker: dict[str, Any] = old or {
                 'agent_id': agent_id, 'name': name, 'work_id': work_id, 'session_id': '',
                 'context': context, 'current': '', 'next': '', 'state': 'starting', 'waiting_for': None, 'nodes': [],
-                'score': START}
+                'score': None}
             worker.update(name=name, work_id=work_id)
             if session_id and session_id != worker.get('session_id'):
                 self._joined(db, worker, session_id)
@@ -248,7 +246,7 @@ class Board:
             return round_
 
     @staticmethod
-    def _retire(db: sqlite3.Connection, worktree: str) -> None:
+    def _retire(db: DataConnection, worktree: str) -> None:
         """A closed round of this name set aside as <name>#<n>, with its ratings, so the name's new round starts clean
         and the history each agent is shown stays."""
         taken = db.execute('SELECT COUNT(*) FROM rounds WHERE worktree LIKE ?', (worktree + '#%',)).fetchone()[0]
@@ -315,8 +313,8 @@ class Board:
     def rate(self, worktree: str, reviewer: str, target: str | None, stars: dict[str, Any], *,
              bonus: bool = False, alone: bool = False) -> dict[str, Any]:
         """One reviewer's pick at the close of a worktree: the agent it rates, with stars of five in each category and
-        the bonus, or alone when there was no one to rate. The rated agent's score moves by the points under 100 and
-        the bonus, within 0 and 105. A pick made again replaces the first, and the score moves by the difference."""
+        the bonus, or alone when there was no one to rate. The rated agent's score gains the rating's points. A pick
+        made again replaces the first, and the score moves by the difference."""
         if alone:
             rating: dict[str, Any] = {'worktree': worktree, 'reviewer': reviewer, 'target': None, 'alone': True,
                                       'stars': {}, 'bonus': False, 'points': None, 'change': 0.0}
@@ -338,31 +336,35 @@ class Board:
             given = {name: stars[name] for name in CATEGORIES}
             points = points_of(given, bonus)
             rating = {'worktree': worktree, 'reviewer': reviewer, 'target': target, 'alone': False, 'stars': given,
-                      'bonus': bool(bonus), 'points': points, 'change': points - START}
+                      'bonus': bool(bonus), 'points': points, 'change': points}
         with self._db() as db:
             if self._round(db, worktree) is None:
                 raise KeyError(worktree)
             row = db.execute('SELECT data FROM ratings WHERE worktree = ? AND reviewer = ?',
                              (worktree, reviewer)).fetchone()
             previous = _decoded(row[0]) if row else None
-            if previous and previous.get('target'):
-                self._move(db, str(previous['target']), -float(previous['applied']))
+            if previous and previous.get('target'):  # taken back only from the context it was given to
+                held = self._worker(db, str(previous['target']))
+                if held is not None and held.get('session_id', '') == previous.get('context', ''):
+                    self._move(db, str(previous['target']), -float(previous['applied']))
+            rated = self._worker(db, str(rating['target'])) if rating['target'] else None
+            rating['context'] = str((rated or {}).get('session_id') or '')
             rating['applied'] = self._move(db, str(rating['target']), float(rating['change'])) if rating['target'] else 0.0
             db.execute('INSERT OR REPLACE INTO ratings VALUES (?, ?, ?)', (worktree, reviewer, _dump(rating)))
         return rating
 
     @classmethod
-    def _move(cls, db: sqlite3.Connection, agent_id: str, change: float) -> float:
-        """The agent's score moved by `change` within 0 and 105; what was applied, so a replaced rating reverses
-        exactly that."""
+    def _move(cls, db: DataConnection, agent_id: str, change: float) -> float:
+        """The agent's score moved by `change`, from unscored as from 0; what was applied, so a replaced rating
+        reverses exactly that."""
         worker = cls._worker(db, agent_id)
         if worker is None:
             return 0.0
-        before = float(worker.get('score', START))
-        worker['score'] = max(0.0, min(float(MOST), before + change))
+        before = worker.get('score')
+        worker['score'] = float(before or 0.0) + change
         cls._put_worker(db, worker)
         cls._keep(db, worker)
-        return float(worker['score']) - before
+        return change
 
     def ratings(self, worktree: str) -> list[dict[str, Any]]:
         with self._db() as db:
@@ -456,7 +458,7 @@ class Board:
             occupancy = used / size * 100 if isinstance(used, (int, float)) and \
                 isinstance(size, (int, float)) and size > 0 else None
             result.append({'agent_id': agent_id, 'name': worker['name'], 'state': worker.get('state'),
-                           'score': float(worker.get('score', START)), 'context': occupancy,
+                           'score': None if worker.get('score') is None else float(worker['score']), 'context': occupancy,
                            'complete': progress['checked'] / progress['total'] * 100 if progress['total'] else None,
                            'next': self._summary(next_, agent_id) if next_ else None,
                            'current': self._summary(current, agent_id, worker) if current else None, 'past': past})

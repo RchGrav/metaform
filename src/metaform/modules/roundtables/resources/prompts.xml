@@ -36,25 +36,19 @@ Save <output/> inside your assignment folder. Publish with roundtables_submit ta
      and the joins it receives and provides, each with its purpose and encounter function, as metaform map markdown
      writes them), <memories/> the titles of the memories kept at it, and <question/> the person's question, which is
      also the table's one topic. Edit it here, or save an edit with metaform agents override roundtables:opening. -->
-<opening>A person working on a project brings you a question about one part of it. The part is at the Address <address/>, and here is what the project's functional map holds about it: the element, what it receives and provides, and why.
+<opening>This discussion is about one part of a project. The part is at the address <address/>. The project's functional map holds this about it: the element, what it receives and provides, and why.
 
 <part/>
 
-What has been learned and kept about this part:
+What the project keeps in memory about this part:
 <memories/>
 
 The question: <question/>
 
-You can read the project's files in the folder you are in. You cannot change anything, and nothing you say changes the project; the person reads the table's answer and decides. Build on what the others contribute, add what only you can add, and keep going until the question is answered.</opening>
-<!-- The opening of a table opened with no Address: the person's question alone, which is the table's whole frame,
-     limited to no part and to no project. Sent as the opening above is. Filled: <question/> the person's question,
-     which is also the table's one topic. Edit it here, or save an edit with metaform agents override
-     roundtables:opening_question. -->
-<opening_question>A person brings you a question. It is the whole frame of this discussion: it is not about one part of anything unless it says so, and it may be about something that does not exist yet.
-
-The question: <question/>
-
-You are in the folder of the person's project, and you can read its files when the question touches it. You cannot change anything, and nothing you say changes the project; the person reads the table's report and decides. Build on what the others contribute, add what only you can add, and keep going until the question is answered.</opening_question>
+You can read the project's files in your folder. Your replies do not adjust the project: the owner reads the table's answer and decides. Build on the other seats' contributions, add what only you can add, and continue until the question has an answer.</opening>
+<!-- The opening of a table opened with no Address: the person's question exactly as they wrote it, nothing added.
+     Filled: <question/> the person's question, which is also the table's one topic. -->
+<opening_question><question/></opening_question>
 <!-- The memory a table's follower keeps when the table ends, at the table's Address, or at the project's top element
      for a table about no part, read by every agent that works there later and by the person on the page: what
      happened at the table, one fact to each observation, as the memory prompt asks. Each quoted place is filled with
@@ -95,6 +89,54 @@ The whole debate is in <report/>. Build the idea where the report and this ticke
 <adopted_unsaved>not saved in the project</adopted_unsaved>
 <!-- Put in the opening's <memories/> place when no memory is kept at the part yet. -->
 <no_memories>- None yet.</no_memories>
+<!-- Minutes are written for each substantive turn. The ACP minutes agent reads the files named by the turn,
+     explains it in plain language and preserves its attribution. Each discussion has a minutes file.
+     Filled: <taste/> the project's writing rules, <project/> its folder, <session_folder/> the session's shared folder,
+     <seat/> the speaker, <turn/> the exact turn and <references/> cited record definitions. -->
+<minutes_system>You keep the minutes of a roundtable discussion for the owner, who chairs it and takes part.
+
+Read the project files and session materials that a turn refers to before explaining it. Use the project's functional map when it supplies needed context. Preserve the speaker's meaning, evidence, uncertainty and disagreements. Explain references in the entry itself so the owner can understand it without opening another document. Do not add claims or decisions the speaker did not make.
+
+Write one concise minutes entry for the supplied turn. Use Simplified Technical English for a competent technical adult: short sentences, one idea in each, common words and active voice. Keep the same word for the same thing. Explain needed technical terms. Say what the speaker proposes, the reason, and what remains open. Do not turn a proposal into an agreed decision. Do not repeat earlier entries or write a running summary.
+
+Explain record codes in words rather than repeating requirement numbers, turn numbers, idea numbers, section numbers, hashes or file line numbers. Preserve concrete names and values when they matter to the proposal.
+
+Follow the project's writing rules:
+
+<taste/>
+
+Return only the entry text. The system records the speaker and discussion. Do not write or edit files.</minutes_system>
+<minutes_turn>The project folder is <project/>. The shared session folder is <session_folder/>. Participant materials are there. Existing minutes are in its minutes folder.
+
+The speaker is <seat/>. Their exact turn is:
+
+<turn/>
+
+The project's definitions of any record codes in the turn:
+
+<references/>
+
+Read the referenced evidence, then write this turn's minutes entry.</minutes_turn>
+<minutes_taste_default>Simplified Technical English: lead with the answer; short sentences, one idea each; common words and direct verbs; active voice; one term for one concept; state each point once; give the reasons for decisions; no ceremony or promotion.</minutes_taste_default>
+<minutes_no_references>The turn cites no defined record codes.</minutes_no_references>
+<!-- A session of roundtables, opened from the form with its number of roundtables: the owner's own messages, as
+     the owner wrote them. session_opening opens the session, followed by the project's writing rules and the first
+     topic; session_between opens each collaboration after a roundtable; session_score and session_farewell come
+     after the last. Filled: <total/> the number of roundtables, <submit/> how the next topic is submitted, <index/>
+     the roundtable just finished, <taste/> the writing rules, <topic/> the first topic. -->
+<session_opening>You will be participating in <total/> roundtable discussions, there will be a topic for each roundtable which must be followed or your messages will be vetoed by the system automatically, following the session please take time to discuss and summarize what you believe came out of the session that was most valueable write these up and save them to a file, you can create diagrams code samples, or any material you believe was valueable from the session, minutes will have been kept but this is your own version. Process: At the end of the session you should communicate freely and co-operate, when you are satisfied you have a mutually agreed on set of materials you will then decide upon the topic of the next discussion, decide which of you will write the topic and <submit/>, this will continue until all sessions are finished, at the end of the final session. Work together to organize the folder you are working in.  Notice: At the end you will be scoring each other on your ability to cooperate and the value you brought to this exercise. You will not know who gave you each score and you will see the final ranking at the end including your rank in the line up, additionally this score will be added to your agents identity as part of your profile in future sessions as well as accolades and recognition for your efforts. We ask that you seek to understand the projects context using the map and and any other files in the project you may seek to reference to aid your responses.   Finally.. Thank you for you efforts!
+
+Speak and write in this register:
+
+<taste/></session_opening>
+<session_between>Finished <index/> of <total/> topics.  Once a topic has been set and you are ready to proceed speak the word done.. please take time to discuss and summarize what you believe came out of the session that was most valueable write these up and save them to a file, you can create diagrams, code samples, or any material you believe is valueable to create, minutes will have been kept already and are present as one file per discussion in the minutes folder.  You are asked to co-operate and organize materials in this folder, you get this opportunity after each discussion, when you are satisfied you have a mutually agreed on set of materials you will then decide upon the topic of the next discussion, decide which of you will write the topic and <submit/>, There isnt a rush to finish but we ask that you are efficient.</session_between>
+<session_score>Notice: You must each complete your score cards for each of the other participants. Your answers are anonymous and we will not include your name on the scores or indicate who provided your scores.   Once every other agent has submitted their scores you will be sent a message notifying you of your scores..</session_score>
+<session_farewell>After you have received your scored we invite you to speak offtopic, offer some well wishes to each other or speak freely.. Share congratulations and thanks.   Say Done when you are finished!   From all of us. Thank you for you efforts!</session_farewell>
+<!-- How the next topic is submitted, filled into <submit/> above. <file/> is the file's path. -->
+<session_submit>write it in the file <file/></session_submit>
+<session_first>Roundtable 1 of <total/>. The topic:
+
+<topic/></session_first>
 <!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules><rule why="Each seat is an agent at work; a table the slots cannot hold is refused, and seating fewer is how it opens.">Seat no more agents than the free agent slots dispatch_sessions shows.</rule></rules>
 <counts></counts>

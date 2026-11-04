@@ -29,17 +29,19 @@ kept at the project's level, so a base switch, a clear or a restore never takes 
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import secrets
 import selectors
 import subprocess
 import sys
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import outline, prompt_files, settings
+from metaform import events, outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
 from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, node_items, provided
 
@@ -47,7 +49,7 @@ from . import engine, follow, pipeline
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
 # The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
-DEPENDENCIES = ('mcp>=2.2,<3', 'agent-client-protocol>=0.12.1,<0.13', 'a2a-sdk[http-server]>=1.2.2,<2', 'httpx>=0.28,<1',
+DEPENDENCIES = ('mcp>=2.2,<3', 'agent-client-protocol==1.0.0rc2', 'a2a-sdk[http-server]>=1.2.2,<2', 'httpx>=0.28,<1',
                 'uvicorn>=0.31')
 SHIPS_DISABLED = False  # a person can open a table in any project: the engine ships inside this module
 
@@ -214,7 +216,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
 def started(ctx: Context, table_id: str) -> dict[str, Any]:
     """A follower started detached for the table, and the first line it says: opened, following or refused."""
     log = os.open(engine.folder_log() / 'followers.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    env = {key: value for key, value in os.environ.items() if key not in engine.IDENTITY}
+    env = engine.environment(ctx.folder)
     try:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'roundtables', 'run', table_id,
                                     '--project', str(ctx.project)], cwd=ctx.folder, env=env,
@@ -251,8 +253,33 @@ def started(ctx: Context, table_id: str) -> dict[str, Any]:
     raise Stop(reason, f'metaform roundtables status {table_id}')
 
 
+def session_of(ctx: Context, table_id: str, total: int, topic: str) -> dict[str, Any]:
+    """A session's settings for the engine: its folder in the project, with the minutes folder in it, the owner's
+    messages filled in, and the first roundtable's topic; and its opening, the owner's first message with the
+    project's writing rules."""
+    root = Path(ctx.require_store().project().path)
+    folder = root / 'docs' / 'roundtables' / f'session-{datetime.now(UTC):%Y%m%d}-{table_id}'
+    (folder / 'minutes').mkdir(parents=True, exist_ok=True)
+    submit = prompt_files.required(PACKAGE, 'session_submit', file=str(folder / 'next-topic.md'))
+    taste = ''
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        taste = (root / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
+    return {'total': total, 'folder': str(folder),
+            'opening': prompt_files.required(PACKAGE, 'session_opening', total=str(total), submit=submit,
+                                             taste=taste or prompt_files.required(PACKAGE, 'minutes_taste_default')),
+            'first': prompt_files.required(PACKAGE, 'session_first', total=str(total), topic=topic),
+            'between': prompt_files.required(PACKAGE, 'session_between', index='{index}', total=str(total),
+                                             submit=submit),
+            'score': prompt_files.required(PACKAGE, 'session_score'),
+            'farewell': prompt_files.required(PACKAGE, 'session_farewell')}
+
+
 def open_table(ctx: Context) -> dict[str, Any]:
-    judging = ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
+    total = ctx.nouns.get('chain')
+    if total is not None and (type(total) is not int or total < 1):
+        raise Stop('chain is how many roundtables the session runs, 1 or more.', 'metaform roundtables open')
+    # a session, opened with its number of roundtables: Jev judges only whether each turn keeps to the topic
+    judging = True if total else ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
     if judging and not settings.value('jev', ctx.folder):
         raise Stop('A table sends your question, and the part\'s context when it is about a part, to OpenRouter, where '
                    'Jev judges every turn, and only you allow project text to leave this machine.',
@@ -276,14 +303,16 @@ def open_table(ctx: Context) -> dict[str, Any]:
     roles = {key: seat_of(ctx, str(ctx.nouns[key])) if ctx.nouns.get(key) else None
              for key in ('host', 'synthesizer')}
     roles['host'] = roles['host'] or seats[0]  # never the engine's own default, which seats an agent nobody chose
-    text = opening(ctx, address, topic)
     table_id = secrets.token_hex(4)
+    held = session_of(ctx, table_id, int(total), topic) if total else None
+    text = str(held.pop('opening')) if held else opening(ctx, address, topic)
     with ctx.require_store().tables() as tx:
         tx.concern(kind=follow.CHANGE_KIND)
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
                              'seats': seats, **roles, 'spend': spend,
                              'state': 'opening', 'created': follow.now(),
                              'followed': {'reply_limit': reply_limit, 'judging': judging,
+                                          **({'session': held} if held else {}),
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
                                           'opener': 'person' if ctx.surface == 'web' or (
                                               ctx.surface == 'cli' and not os.environ.get('METAFORM_SESSION')) else 'agent'}})
@@ -343,8 +372,42 @@ def reseat(ctx: Context) -> dict[str, Any]:
     return chaired(ctx, 'reseat', seat=str(ctx.nouns['seat']))
 
 
+def permit(ctx: Context) -> dict[str, Any]:
+    """Relay the person's selected ACP option and wake its waiting agent."""
+    row = table_row(ctx)
+    if row.get('discussion') is None:
+        raise Stop('The roundtable has not opened.', 'metaform roundtables status')
+    number = int(row['discussion'])
+    answer = engine.call(ctx.folder, 'permit', discussion=number,
+                         request=str(ctx.nouns['request']), option=str(ctx.nouns['option']))
+
+    def announced() -> None:
+        with ctx.require_store().tables() as tx:
+            current = tx.get('tables', {'table_id': row['table_id']})
+            if current is not None:
+                tx.concern(kind=f'roundtables:permissions:{number}')
+                # The engine owns the answer. This record announces that exact change through the existing relay.
+                tx.update('tables', {'table_id': row['table_id']}, {'reason': dict(current).get('reason')})
+
+    events.announced(ctx.folder, ctx.surface, announced)
+    return {'table': row['table_id'], **answer}
+
+
 def end(ctx: Context) -> dict[str, Any]:
     return chaired(ctx, 'end')
+
+
+def abort(ctx: Context) -> dict[str, Any]:
+    """The table aborted at once: the engine stops it hard and puts its files aside, no next table of a planning
+    session opens, and the whole run is archived in the Metaform home's backups, its notes, saved record, engine files,
+    row and events, so nothing of it is left in the project, the engine or the page."""
+    row = table_row(ctx)
+    if row['state'] in ('opening', 'refused') or row.get('discussion') is None:
+        shelf = follow.archive(ctx, row, None)
+        return {'table': row['table_id'], 'aborted': True, 'archived': str(shelf)}
+    answer = engine.call(ctx.folder, 'abort', discussion=int(row['discussion']), chair=row['chair'])
+    shelf = follow.archive(ctx, row, cast(str | None, answer.get('archived')))
+    return {'table': row['table_id'], 'state': 'ended', 'aborted': True, 'archived': str(shelf)}
 
 
 def status(ctx: Context) -> dict[str, Any]:
@@ -489,7 +552,10 @@ MODULE = Module(
                          required=False),
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
-                         'board and execution outline without decisions. Default off.', kind='bool', required=False)),
+                         'board and execution outline without decisions. Default off.', kind='bool', required=False),
+                    Noun('chain', 'Run a session of this many roundtables with the same agents: after each, they '
+                                  'collaborate on their materials and submit the next topic; after the last, they '
+                                  'score each other.', kind='int', required=False)),
              switches=('roundtables_spend', 'roundtables_seats', 'roundtables_judging',
                        'roundtables_context_tokens', 'roundtables_judging_context_tokens'), open_world=True),
         Verb('comment', comment, 'As the chair, say something to the table at its next gap between turns.',
@@ -503,6 +569,12 @@ MODULE = Module(
                                  'synthesis, rankings and summary.', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
+        Verb('permit', permit, 'Answer an agent\'s ACP permission request with one of its supplied options.',
+             nouns=(TABLE, Noun('request', 'The waiting permission request id.'),
+                    Noun('option', 'The option id supplied by the agent.')), surfaces=('cli',),
+             open_world=True),
+        Verb('abort', abort, 'As the chair, abort the table at once: ended now, with no report, no further turn and no '
+                             'next table, so nothing more is spent.', nouns=(TABLE,), open_world=True),
         Verb('end', end, 'As the chair, end the table and save its result and transcript.', nouns=(TABLE,),
              open_world=True),
         Verb('status', status, 'A table: its state, seats, spend, topics, answer and saved transcript.',

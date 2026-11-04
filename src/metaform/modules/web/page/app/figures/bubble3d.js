@@ -27,6 +27,8 @@ export const LOOK = {
   most: 140,  // the most characters shown; a longer line is cut at a word with an ellipsis
   width: 340,  // the widest the words run, SVG pixels
   font: 26, lines: 3, lineGap: 1.18,
+  // a roundtable seat's bubble holds its whole turn: more characters, wider, more lines; it grows with its words
+  seat: {most: 900, width: 560, lines: 10},
   family: "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Trebuchet MS', sans-serif",
   padX: 22, padY: 16, minWidth: 90,
   tilt: -4,  // degrees; negative rises to the right
@@ -79,38 +81,40 @@ const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SEEN = new THREE.V
 const MEASURE = document.createElement('canvas').getContext('2d');
 const TURN = LOOK.tilt * Math.PI / 180, COS = Math.cos(TURN), SIN = Math.sin(TURN);
 
-/* The line a bubble shows: the last non-empty line of what the agent said, cut at a word. */
-export function bubbleText(text) {
-  const line = String(text || '').split(/\r?\n/).map(part => part.trim()).filter(Boolean).at(-1) || '';
+/* The line a bubble shows: the last non-empty line of what the agent said, or with `whole` all of it, cut at a word
+ * past `most` characters. */
+export function bubbleText(text, most = LOOK.most, whole = false) {
+  const parts = String(text || '').split(/\r?\n/).map(part => part.trim()).filter(Boolean);
+  const line = whole ? parts.join(' ') : parts.at(-1) || '';
   const flat = line.replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').trim();
-  if (flat.length <= LOOK.most) return flat;
-  const start = flat.slice(0, LOOK.most - 1), word = start.lastIndexOf(' ');
+  if (flat.length <= most) return flat;
+  const start = flat.slice(0, most - 1), word = start.lastIndexOf(' ');
   return `${(word > 40 ? start.slice(0, word) : start).trimEnd()}…`;
 }
 /* The words wrapped to the bubble's width, the font shrinking a step at a time until they fit in `lines`; words that
  * still run past them at the smallest size end the last line kept with an ellipsis, so the cut shows. */
-function wrapped(text) {
+function wrapped(text, width = LOOK.width, most = LOOK.lines) {
   for (let size = LOOK.font; size >= 16; size -= 2) {
     MEASURE.font = `800 ${size}px ${LOOK.family}`;
     const lines = [];
     let line = '';
     for (const word of text.split(' ')) {
       const next = line ? `${line} ${word}` : word;
-      if (!line || MEASURE.measureText(next).width <= LOOK.width) line = next;
+      if (!line || MEASURE.measureText(next).width <= width) line = next;
       else { lines.push(line); line = word; }
     }
     if (line) lines.push(line);
-    if (lines.length <= LOOK.lines || size <= 16) {
-      const kept = lines.length <= LOOK.lines ? lines : cutLast(lines.slice(0, LOOK.lines));
+    if (lines.length <= most || size <= 16) {
+      const kept = lines.length <= most ? lines : cutLast(lines.slice(0, most), width);
       return {size, lines: kept, wide: Math.max(...kept.map(one => MEASURE.measureText(one).width))};
     }
   }
-  return {size: 16, lines: [text], wide: LOOK.width};
+  return {size: 16, lines: [text], wide: width};
 }
 /* The last line ended with an ellipsis, a word at a time taken off, a letter at a time if one word, until it fits. */
-function cutLast(lines) {
+function cutLast(lines, width = LOOK.width) {
   let last = `${lines.at(-1)}…`;
-  while (last.length > 1 && MEASURE.measureText(last).width > LOOK.width) {
+  while (last.length > 1 && MEASURE.measureText(last).width > width) {
     const words = last.slice(0, -1).trimEnd();
     const space = words.lastIndexOf(' ');
     last = `${space > 0 ? words.slice(0, space) : words.slice(0, -1)}…`;
@@ -208,9 +212,9 @@ function take(id) {
   return bubble;
 }
 /* New words: the body laid out for them, its size measured now and its elements written with the frame's writes. */
-function laidOut(bubble, text) {
+function laidOut(bubble, text, seat = false) {
   bubble.text = text;
-  const {size, lines, wide} = wrapped(text);
+  const {size, lines, wide} = seat ? wrapped(text, LOOK.seat.width, LOOK.seat.lines) : wrapped(text);
   bubble.size = size; bubble.lines = lines;
   bubble.w = Math.max(LOOK.minWidth, Math.ceil(wide) + 2 * LOOK.padX);
   bubble.h = Math.ceil(lines.length * size * LOOK.lineGap + 2 * LOOK.padY);
@@ -385,7 +389,7 @@ function heardSeat(seat) {
   bubble ||= take(seat.id);
   bubble.seen = FRAME.n;
   if (seat.lineAt !== bubble.lineAt) bubble.lineAt = seat.lineAt;
-  if (seat.text && seat.text !== bubble.text) laidOut(bubble, seat.text);
+  if (seat.text && seat.text !== bubble.text) laidOut(bubble, seat.text, true);
   bubble.want = seat.want;
   fade(bubble);
   bubble.fixed = false; bubble.mascot = false; bubble.name = seat.name; bubble.clickable = false;

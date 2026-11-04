@@ -1221,7 +1221,8 @@ MODULE = Module(
              surfaces=('cli',), effect='remove', listed=recording, cautioned=_discard_caution),
     ),
     status=status,
-    provides=(Provides('intake.first_run', first_run), Provides('agent.tool.instructions', tool_instructions)),
+    provides=(Provides('intake.first_run', first_run), Provides('intake.task_component', task_component),
+              Provides('agent.tool.instructions', tool_instructions)),
     resources=(
         Resource(PROCEDURE_URI, 'Intake procedure',
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',

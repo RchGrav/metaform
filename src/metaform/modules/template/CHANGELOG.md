@@ -4,6 +4,10 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `metaform.module.module_registry()` exposes discovered module states, sources, summaries and load problems.
+  `metaform.data` exports the existing `sources_index`, `relative` and `placed` helpers for linked source references.
+  Modules use these public services instead of private loader or data imports.
+
 - The consent layer is removed, 2026-10-25: `metaform.caller`, `PersonsDecision`, `Setting.person_only` and `on_persons_word`, `Verb.person_says`, `person_decides` and `page`, `module.agent_caller`, `persons_word`, `persons_word_acted`, `on_persons_word`, `page_vouch` and `page_caller`, `Context.consented`, the mcp module's consent forms and the dispatch runner's consent card and word covers. A `caution` is asked with `--confirm` or `confirm=true` and runs for whoever confirms it. Metaform has no permission system of its own: the harnesses it orchestrates have theirs, and Metaform relays a harness's permission request to the person on the page and nothing more.
 - `DataTx.cleanup(kind, identity)` applies recorded removal rules in the current transaction, including absent owners.
 

@@ -4,6 +4,10 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `metaform.module.module_registry()` exposes discovered module states, sources, summaries and load problems.
+  `metaform.data` exports the existing `sources_index`, `relative` and `placed` helpers for linked source references.
+  Modules use these public services instead of private loader or data imports.
+
 - MCP requires current tool instructions before execution. Ordinary verb guides are generated from declarations;
   optional `Provides('agent.tool.instructions', callable)` components supplement them. The callable receives
   `(ctx: Context, tool: str, op: str | None)` and returns exact named/versioned components. Canonical reads use

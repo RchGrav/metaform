@@ -18,6 +18,11 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration, `Context`, `Status` and `save_report`; `metaform.settings` for `--intake-file`; `metaform.data` for the store writes and the reads `intake_recording` and `layer_graph`.
 
+### Provides
+
+`intake.task_component(ctx, **bindings)` returns the selected intake prompt's exact text and source metadata.
+Assigned tasks use this provider alongside intake's existing `intake.first_run` and `agent.tool.instructions` services.
+
 ## Prompts
 
 `resources/prompts.xml` holds `instructions`, `intake is active.`, listed in the instructions agents read under "modules available.", MCP-031.
