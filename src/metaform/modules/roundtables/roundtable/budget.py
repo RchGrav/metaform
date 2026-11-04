@@ -202,6 +202,19 @@ def record_reply(found: Mapping[str, Any], row: Mapping[str, Any], use: Mapping[
             _evaluate(db, current)
 
 
+def delivered_prompt(found: Mapping[str, Any], position: int, prepared: Prompt) -> None:
+    """Acknowledge notice text at delivery; a closing statement still needs an actual reply."""
+    key = _key(found)
+    if key is None or not prepared.text or not prepared.notice:
+        return
+    with store.connect() as db:
+        store.fence(db, key[0])
+        _initialize(db, found)
+        db.execute('INSERT INTO phase_usage(discussion,topic,phase,position,notice) VALUES (?,?,?,?,?) '
+                   'ON CONFLICT(discussion,topic,phase,position) DO UPDATE SET notice=MAX(notice,excluded.notice)',
+                   (*key, position, prepared.notice))
+
+
 def prompt(found: Mapping[str, Any], position: int) -> Prompt:
     key = _key(found)
     if key is None or not limit(found):
@@ -216,8 +229,6 @@ def prompt(found: Mapping[str, Any], position: int) -> Prompt:
         peak = max((int(row['tokens']) for row in current['participants']), default=0)
         notices = [one for one in current['notices'] if last < int(one['percent']) <= 100
                    and peak * 100 >= limit(found) * int(one['percent'])]
-        if current['closing'] and not own.get('closing') and not any(one['percent'] == 100 for one in notices):
-            notices += [one for one in current['notices'] if one['percent'] == 100]
         return Prompt('\n\n'.join(str(one['text']) for one in notices),
                       max([int(one['percent']) for one in notices], default=last), bool(current['closing']))
 

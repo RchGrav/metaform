@@ -148,9 +148,12 @@ class Session:
                  *, reads: str | None = None, notes: str | None = None,
                  permission_event: Callable[[dict[str, Any]], None] | None = None,
                  permission_settings: dict[str, str] | None = None,
-                 command: str | None = None) -> None:
+                 command: str | None = None,
+                 on_sent: Callable[[], None] | None = None) -> None:
         self.number = number
         self.command = command
+        self.on_sent = on_sent
+        self.prompt_sent = False
         self.notes = notes
         self.permission_event = permission_event
         self.permission_settings = dict(permission_settings or {})
@@ -190,11 +193,17 @@ class Session:
         self.legacy_breaking = True
 
     def stream_event(self, event: StreamEvent) -> None:
-        """Keep newer state fields that a draft SDK schema does not yet describe."""
+        """Record actual outgoing prompt delivery and preserve newer draft state fields."""
         if event.direction == StreamDirection.OUTGOING and event.message.get('method') == 'initialize':
             self.initialize_request = event.message.get('id')
             return
         if event.direction != StreamDirection.INCOMING:
+            if event.direction == StreamDirection.OUTGOING and event.message.get('method') == 'session/prompt':
+                params = cast(dict[str, Any], event.message.get('params') or {})
+                if params.get('sessionId') == self.session_id and self.inflight is not None and not self.prompt_sent:
+                    self.prompt_sent = True
+                    if self.on_sent is not None:
+                        self.on_sent()
             return
         if event.message.get('id') == self.initialize_request and 'result' in event.message:
             value = event.message['result']
@@ -552,6 +561,7 @@ class Session:
 
     async def prompt(self, text: str, seconds: float) -> tuple[str, dict[str, Any]]:
         async with self.prompt_lock:
+            self.prompt_sent = False
             if not self.alive() or self.session_id is None:
                 raise Gone(f'{self.agent} is no longer running')
             self.said, self.order = {}, []
@@ -572,26 +582,26 @@ class Session:
             try:
                 ready, remaining = await self.waiting({asked, ended}, seconds)
                 if asked not in ready:
-                    raise Gone(f'{self.agent} exited with {process.returncode}')
+                    raise Gone(f'{self.agent} exited with {process.returncode}', delivered=self.prompt_sent)
                 response = asked.result()
                 accepted = True
                 if self.protocol == 2:
                     ready, _ = await self.waiting({self.completion, ended}, remaining)
                     if self.completion not in ready:
-                        raise Gone(f'{self.agent} exited with {process.returncode}')
+                        raise Gone(f'{self.agent} exited with {process.returncode}', delivered=self.prompt_sent or accepted)
                     answer = self.completion.result()
                 else:
                     answer = response.model_dump(mode='json', by_alias=True, exclude_none=True)
             except TimeoutError:
                 await self.cancel_turn()
-                raise Late(seconds) from None
+                raise Late(seconds, delivered=self.prompt_sent or accepted) from None
             except asyncio.CancelledError:
                 await self.cancel_turn()
                 raise
             except acp.RequestError as error:
-                raise NoReply(f'{self.agent} failed the turn: {error}', delivered=accepted or self.protocol == 1) from None
+                raise NoReply(f'{self.agent} failed the turn: {error}', delivered=self.prompt_sent or accepted) from None
             except (ConnectionError, OSError) as error:
-                raise Gone(f'{self.agent} closed its connection: {error}') from None
+                raise Gone(f'{self.agent} closed its connection: {error}', delivered=self.prompt_sent or accepted) from None
             finally:
                 asked.cancel()
                 ended.cancel()
@@ -674,7 +684,8 @@ class AcpSeat(Seat):
                        servers_of(self.table, int(self.row['position'])) if self.in_world else [],
                        reads=str(self.table['folder']),
                        notes=self.notes_folder() if self.in_world else None,
-                       permission_settings=permissions.settings_for(self.table, str(self.row['agent'])))
+                       permission_settings=permissions.settings_for(self.table, str(self.row['agent'])),
+                       on_sent=self.delivered)
         await made.start(resume=self.session or None)
         self.session_made, self.session, self.reported = made, made.session_id, made.reported
 

@@ -121,6 +121,17 @@ class Background:
         kept = [one for one in given if one.get('request') != payload['request'] and one.get('state') == 'waiting']
         self.write(table_id, permissions=[*kept, {**payload, 'name': 'Live summary'}])
 
+    def sent(self, table_id: str, through: int) -> None:
+        """Advance the durable inbox at the native send receipt, without publishing from the SDK loop."""
+        def saved() -> None:
+            with self.store.tables() as tx:
+                parent = tx.get('tables', {'table_id': table_id})
+                row = tx.get('live_summaries', {'table_id': table_id})
+                if parent is not None and not aborted(dict(parent)) and row is not None:
+                    tx.update('live_summaries', {'table_id': table_id},
+                              {'through_seq': max(through, int(row['through_seq']))})
+        events.quietly(saved)
+
     def run(self) -> None:
         name = hashlib.sha256(str(self.ctx.project).encode()).hexdigest()[:24]
         lease = home.home() / 'run' / 'roundtables' / f'live-summary-{name}.lock'
@@ -223,7 +234,8 @@ class Background:
             command = engine.environment(self.ctx.folder).get('ROUNDTABLE_AGENT_CLAUDE')
             session = Session(int(row['discussion']), {'position': -4, 'agent': 'claude', 'model': 'haiku'}, str(root),
                               permission_settings=cast(dict[str, str], choices.get('claude') or {}), command=command,
-                              permission_event=lambda payload: self.permission(table_id, payload))
+                              permission_event=lambda payload: self.permission(table_id, payload),
+                              on_sent=lambda: self.sent(table_id, latest))
             await session.start()
             text, used = await session.prompt(f'{system}\n\n{asked}', SUMMARY_WAIT)
             if self.closed.is_set():

@@ -98,6 +98,16 @@ Before exhaustion, every participant receives a carry-forward request at twice t
 
 A held runner closes its seats. Comments remain queued or enter without resuming turns. Explicit Continue restarts it. Starting an engine server never resumes other live or held tables.
 
+Each participant has an ordered inbox checkpointed at the transport's send receipt. Busy participants accumulate
+new contributions while others speak. Inputs that were not sent stay queued. Delivered inputs are not replayed
+after a missing reply, cancellation or Continue. An interrupted collaboration request remains unfinished until its
+reply is saved. Continue asks it to finish and supplies only newly queued contributions. Budget warnings have their
+own delivery receipts; acknowledging a closing instruction does not count as completing the closing reply.
+
+Carry-forward requests use that same inbox. They omit the shared continuation and the participant's own replies
+when those already exist in its conversation. Context estimates count the native conversation's system text once.
+A fresh context receives its original instructions and saved continuation once. Saved notes remain intact.
+
 Opening with `chain=<number>` runs a session containing that many discussions. After each discussion, agents collaborate
 on saved materials and the next topic. The page uses this session flow even for one roundtable. During panels and
 collaboration, busy seats are skipped immediately while available seats contribute in a fair rotation. When all seats

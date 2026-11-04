@@ -608,12 +608,20 @@ class Table:
         for row in store.seats(self.number):
             if health.usable(row):
                 seat = self.seat(row)
-                sizes.append(judge.tokens([seat.system, seat.messages, render.shared(found)]) +
-                             judge.tokens([one for one in self.segment(found) if one['number'] > row['seen']]))
+                unseen = [one for one in self.segment(found) if one['number'] > row['seen']
+                          and not (seat.messages and one['position'] == row['position'] and render.entered(one))]
+                sizes.append(self.seat_context_tokens(seat, [render.shared(found) if not seat.messages else '',
+                                                            unseen]))
         if render.judging(found):
             sizes.append(judge.tokens([found['opening'], render.shared(found), self.segment(found),
                                        render.captured(found).get('criteria')]))
         return max(sizes) + reserve >= self.context_limit(found)
+
+    @staticmethod
+    def seat_context_tokens(seat: Seat, prompt: Any) -> int:
+        """Estimate what is actually in this conversation; session system text is already in its first message."""
+        system = seat.system if seat.system_role or not seat.messages else ''
+        return judge.tokens([system, seat.messages, prompt])
 
     async def handoff(self, found: dict[str, Any]) -> None:
         """Capture every participant's note before one editor compacts history. Failures hold, never finish."""
@@ -640,20 +648,37 @@ class Table:
                 seat = self.seat(row)
                 await self.topical(found, seat)
                 unseen = [one for one in self.segment(found) if one['number'] > int(row['seen'])]
-                prompt = said('carry_forward', limit=2 * render.reply_limit(found),
-                              turns=render.labeled(unseen), continuation=render.shared(found))
+                latest = max([int(one['number']) for one in unseen], default=int(row['seen']))
+                shown = [one for one in unseen if not (seat.messages and one['position'] == row['position'])]
+                retry = seat.extra.get('carry_request') == pending['after']
+                prompt = said('carry_forward_retry' if retry else 'carry_forward',
+                              limit=2 * render.reply_limit(found), turns=render.labeled(shown),
+                              continuation=render.shared(found) if not seat.messages else '')
                 notice = budget.prompt(self.row(), int(row['position']))
                 if notice.text:
                     prompt = notice.text + '\n\n' + prompt
-                if judge.tokens([seat.system, seat.messages, prompt]) + 2048 >= self.context_limit(found):
+                if self.seat_context_tokens(seat, prompt) + 2048 >= self.context_limit(found):
                     raise NoReply('Seat context cannot fit its carry-forward request. '
                                   'Raise the smallest context budget, then Continue, or choose End discussion.')
+                def delivered(delivered_seat: Seat = seat, through: int = latest,
+                              prepared: budget.Prompt = notice) -> None:
+                    delivered_seat.extra['carry_request'] = pending['after']
+                    budget.delivered_prompt(found, delivered_seat.position, prepared)
+                    self.keep(delivered_seat, through)
+                seat.on_delivered = delivered
                 try:
                     reply = await seat.reply(prompt, float(config.value('agent_wait')))
                 except NoReply as error:
-                    self.keep(seat, None)
+                    if error.delivered:
+                        seat.extra['carry_request'] = pending['after']
+                    self.keep(seat, latest if error.delivered else None)
                     self.failing(row, error)
                     raise
+                finally:
+                    seat.on_delivered = None
+                # Delivery happened even if the model's note is empty. Retry only the unfinished instruction.
+                seat.extra['carry_request'] = pending['after']
+                self.keep(seat, latest)
                 if not reply.text.strip():
                     raise NoReply(f'{row["name"]} gave no carry-forward note. Continue to retry.')
                 receipt = f'carry:{pending["after"]}:{row["position"]}'
@@ -661,7 +686,7 @@ class Table:
                 note = store.record(self.number, self.entry(found, row, reply.text, kind='carry',
                                     **{key: value for key, value in reply.use.items() if key in USE}), receipt=receipt)
                 notes.append(note)
-                self.keep(seat, max([one['number'] for one in unseen], default=int(row['seen'])))
+                self.keep(seat, latest)
                 if budget.status(self.row())['forced']:
                     return
             if self.row()['state'] != 'running' or self.row()['advance_asked']:
@@ -733,6 +758,10 @@ class Table:
             if notice.text:
                 view = notice.text + '\n\n' + view
             self.panel_asking.add(int(row['position']))
+            def delivered() -> None:
+                budget.delivered_prompt(found, seat.position, notice)
+                self.keep(seat, latest)
+            seat.on_delivered = delivered
             try:
                 reply = await seat.reply(view, float(config.value('agent_wait')))
             except openrouter.Unpaid as error:  # out of credits: only this seat is out, probed until they are back
@@ -750,6 +779,7 @@ class Table:
                 self.failing(row, error)
                 return True
             finally:
+                seat.on_delivered = None
                 self.panel_asking.discard(int(row['position']))
             self.answering(row)
             original, use = reply.text, reply.use
@@ -1129,9 +1159,11 @@ class Table:
         position = int(row['position'])
         if kind == 'collab':
             current = found if found is not None else self.row()
-            pending = cast(dict[str, Any], row.get('extra') or {}).get('phase_reply')
-            if isinstance(pending, dict) and cast(dict[str, Any], pending).get('topic') == current['topic']:
-                return True
+            extra = cast(dict[str, Any], row.get('extra') or {})
+            for key in ('phase_reply', 'collaboration_request'):
+                pending = extra.get(key)
+                if isinstance(pending, dict) and cast(dict[str, Any], pending).get('topic') == current['topic']:
+                    return True
             if budget.needs_closing(current, position):
                 return True
         mine = [one for one in phase if one['position'] == position and one['kind'] == kind]
@@ -1154,8 +1186,11 @@ class Table:
             shown = [one for one in shown if one['kind'] == 'chair']
         latest = max([int(one['number']) for one in phase], default=int(row['seen']))
         names = [str(one['name']) for one in store.seats(self.number) if int(one['position']) != position]
+        pending = seat.extra.get('collaboration_request')
+        retry = kind == 'collab' and isinstance(pending, dict) and \
+            cast(dict[str, Any], pending).get('topic') == found['topic']
         text = said('phase_turn', turns='\n\n'.join(render.entry(one) for one in shown) or said('nothing_since'),
-                    instruction=said(f'{kind}_instruction', seats=', '.join(names)),
+                    instruction=said('collaboration_retry' if retry else f'{kind}_instruction', seats=', '.join(names)),
                     limit=str(render.reply_limit(found)))
         async def reply() -> tuple[Reply | None, int, str | None]:
             try:
@@ -1169,23 +1204,34 @@ class Table:
                     return made, int(held['seen']), None
                 notice = budget.prompt(self.row(), position) if kind == 'collab' else budget.Prompt()
                 prompt = notice.text + '\n\n' + text if notice.text else text
-                made = await seat.reply(prompt, float(config.value('agent_wait')))
+                def delivered() -> None:
+                    if kind == 'collab':
+                        seat.extra['collaboration_request'] = {'topic': found['topic'], 'notice': notice.notice,
+                                                               'closing': notice.closing}
+                        budget.delivered_prompt(found, position, notice)
+                    self.keep(seat, latest)
+                seat.on_delivered = delivered
+                try:
+                    made = await seat.reply(prompt, float(config.value('agent_wait')))
+                finally:
+                    seat.on_delivered = None
                 if kind == 'collab':
                     receipt = uuid.uuid4().hex
                     seat.extra['phase_reply'] = {'topic': found['topic'], 'text': made.text, 'use': made.use,
                                                  'seen': latest, 'usage_id': receipt, 'notice': notice.notice,
                                                  'closing': notice.closing}
+                    seat.extra['collaboration_request'] = None
                     self.keep(seat, latest)
                     budget.record_reply(found, row, made.use, receipt, notice)
                 return made, latest, None
             except openrouter.Unpaid as error:
                 self.unpaid(error)
-                return None, latest, str(error)
+                return None, int(store.seats(self.number)[position]['seen']), str(error)
             except Interrupted:
-                return None, latest, None
+                return None, int(store.seats(self.number)[position]['seen']), None
             except NoReply as error:
                 self.failing(row, error)
-                return None, latest, error.reason()
+                return None, latest if error.delivered else int(store.seats(self.number)[position]['seen']), error.reason()
         self.working[position] = asyncio.ensure_future(reply())
 
     def harvest(self, found: dict[str, Any], kind: str) -> None:
@@ -1231,6 +1277,7 @@ class Table:
         store.record(self.number, {**self.entry(found, row, text, kind='collab', accepted=True), **use, **cut},
                      receipt=str(held['usage_id']))
         seat.extra['phase_reply'] = None
+        seat.extra['collaboration_request'] = None
         self.keep(seat, int(held['seen']))
         return True
 

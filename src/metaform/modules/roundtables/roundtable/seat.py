@@ -101,6 +101,8 @@ class Seat:
         self.extra: dict[str, Any] = dict(row.get('extra') or {})
         self.paid = paid
         self.system = ''  # the rules, which seat it is, the opening; given by the runner
+        self.on_delivered: Callable[[], None] | None = None
+        self.inflight_prompt: str | None = None
 
     async def open(self) -> None:
         """Make what the seat holds for the life of the table; Gone when it cannot be made."""
@@ -115,14 +117,28 @@ class Seat:
         a kind with no system role."""
         if self.system and not self.system_role and not self.messages:
             text = f'{self.system}\n\n{text}'
+        self.inflight_prompt = text
         try:
-            got = await self.exchange(text, seconds)
-        except NoReply as error:
-            if error.delivered:
-                self.messages.append({'role': 'user', 'content': text})
-            raise
-        self.messages += [{'role': 'user', 'content': text}, {'role': 'assistant', 'content': got.text}]
-        return got
+            try:
+                got = await self.exchange(text, seconds)
+            except NoReply as error:
+                if error.delivered:
+                    self.delivered()
+                raise
+            self.delivered()
+            self.messages.append({'role': 'assistant', 'content': got.text})
+            return got
+        finally:
+            self.inflight_prompt = None
+
+    def delivered(self) -> None:
+        """Keep a prompt once, at its transport's receipt, before waiting for the reply."""
+        if self.inflight_prompt is None:
+            return
+        self.messages.append({'role': 'user', 'content': self.inflight_prompt})
+        self.inflight_prompt = None
+        if self.on_delivered is not None:
+            self.on_delivered()
 
     def settled(self, original: str, kept: str) -> None:
         """The seat's last reply, `original`, replaced in its conversation by `kept`: what entered of it, or the line

@@ -385,6 +385,7 @@ Send your scorecard as one JSON object in your reply. Rate each other participan
 
 Reply in <limit/> characters or fewer.</phase_turn>
 <collab_instruction>Continue the collaboration. Say done when you are finished.</collab_instruction>
+<collaboration_retry>Finish the collaboration request you already received, using the context already delivered. The text above contains only new queued contributions. Say done when you are finished.</collaboration_retry>
 <score_instruction>Send your scorecard for <seats/> as the JSON object described above. Say done after it.</score_instruction>
 <score_received>Your private scorecard was received.</score_received>
 <session_profile>Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.</session_profile>
@@ -398,6 +399,13 @@ At 120%, the panel advances into collaboration without waiting for unanimous PAS
 Finish the current shared documents. Agree on the next topic and write next-topic.md in the shared session folder now.
 Say done if finished. At 120%, collaboration advances without waiting for every DONE. Your shared documents remain available.</budget_closing_collaboration>
 <budget_forced>The <phase/> token limit was reached: <seat/> used <tokens/> tokens against a <limit/>-token budget. Advancing now.</budget_forced>
+<carry_forward_retry>Complete the carry-forward note already requested. Keep the decisions, evidence, disagreements and open questions needed to continue, within <limit/> characters.
+
+New queued contributions since your last delivery:
+
+<turns/>
+
+Use the context you already received. Return only your carry-forward note.</carry_forward_retry>
 <!-- One seat's entry among the host's inputs and in the record. -->
 <stage_entry><seat/>: <text/></stage_entry>
 <!-- A seat's ranking that could not be read, among the host's inputs and in the record. -->

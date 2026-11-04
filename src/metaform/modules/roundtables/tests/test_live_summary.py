@@ -100,6 +100,7 @@ def model(panel, monkeypatch):
             self.asked = asked
             self.loop = asyncio.get_running_loop()
             self.reply = self.loop.create_future()
+            self.kwargs['on_sent']()
             calls.put(self)
             try:
                 return await self.reply
@@ -188,13 +189,13 @@ def test_error_keeps_last_summary_and_only_new_evidence_retries(panel, model):
     first = model.calls.get(timeout=5)
     first.fail()
     result = state(panel, 'error')
-    assert result['text'] == 'Earlier useful account.' and result['through_seq'] == 1
+    assert result['text'] == 'Earlier useful account.' and result['through_seq'] == 2
     assert 'Native agent unavailable' in result['error']
     changed(panel, service)
     record(panel, 3, text='Additional evidence for the proposal.')
     changed(panel, service)
     second = model.calls.get(timeout=5)
-    assert 'The new proposal.' in second.asked and 'Additional evidence' in second.asked
+    assert 'The new proposal.' not in second.asked and 'Additional evidence' in second.asked
     second.answer('The recovered explanation.')
     result = state(panel, 'ready')
     assert result['through_seq'] == 3 and result['error'] is None
@@ -253,11 +254,33 @@ def test_web_successor_waits_for_existing_observer_then_resumes_without_duplicat
     assert model.calls.empty()
     first.close()
     assert call.cancelled.is_set()
+    record(panel, 2, text='New evidence after the successor took ownership.')
+    changed(panel, second)
     resumed = model.calls.get(timeout=5)
+    assert 'New evidence after the successor' in resumed.asked
+    assert 'Opus: Use the existing event bus.' not in resumed.asked
     resumed.answer('The successor explains the saved evidence.')
-    assert state(panel, 'ready')['through_seq'] == 1
+    assert state(panel, 'ready')['through_seq'] == 2
     assert model.calls.empty()
     second.close()
+
+
+def test_restart_after_failed_sent_batch_never_replays_its_source_turns(panel, model):
+    record(panel, 1, text='The already delivered proposal.')
+    first = panel.start()
+    call = model.calls.get(timeout=5)
+    call.fail()
+    failed = state(panel, 'error')
+    assert failed['through_seq'] == 1
+    first.close()
+    second = panel.start()
+    record(panel, 2, text='Only the later evidence may be sent.')
+    changed(panel, second)
+    resumed = model.calls.get(timeout=5)
+    assert 'The already delivered proposal.' not in resumed.asked
+    assert 'Only the later evidence may be sent.' in resumed.asked
+    resumed.answer()
+    assert state(panel, 'ready')['through_seq'] == 2
 
 
 @pytest.mark.parametrize('protocol', [1, 2])
