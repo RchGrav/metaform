@@ -30,6 +30,8 @@ STATE = {'session': None, 'model': 'sonnet', 'mode': 'default', 'prompts': 0, 's
 MODELS = json.loads(os.environ['FAKE_ACP_MODELS']) if os.environ.get('FAKE_ACP_MODELS') else [
     {'value': 'haiku', 'name': 'Haiku 5.5'}, {'value': 'sonnet', 'name': 'Sonnet 5.5'},
     {'value': 'opus', 'name': 'Opus 5.5'}]
+MODES = json.loads(os.environ['FAKE_ACP_MODES']) if os.environ.get('FAKE_ACP_MODES') else [
+    {'value': 'default', 'name': 'Default'}, {'value': 'plan', 'name': 'Plan'}]
 
 
 def log(entry):
@@ -59,17 +61,24 @@ def request(request_id, method, params):
 
 def options():
     key = 'configId' if STATE['protocol'] == 2 else 'id'
-    return [{key: 'model', 'name': 'Model', 'type': 'select', 'category': 'model',
-             'currentValue': STATE['model'], 'options': MODELS},
-            {key: 'mode', 'name': 'Mode', 'type': 'select', 'category': 'mode',
-             'currentValue': STATE['mode'], 'options': [
-                 {'value': 'default', 'name': 'Default'}, {'value': 'plan', 'name': 'Plan'}]}]
+    found = [{key: 'model', 'name': 'Model', 'type': 'select', 'category': 'model',
+              'currentValue': STATE['model'], 'options': MODELS}]
+    if not (STATE['protocol'] == 1 and os.environ.get('FAKE_ACP_LEGACY_MODES') == '1'):
+        found.append({key: 'mode', 'name': 'Mode', 'type': 'select', 'category': 'mode',
+                      'currentValue': STATE['mode'], 'options': MODES})
+    return found
 
 
 def modes():
     return {'currentModeId': STATE['mode'], 'availableModes': [
-        {'id': 'default', 'name': 'Default'}, {'id': 'acceptEdits', 'name': 'Accept edits'},
-        {'id': 'plan', 'name': 'Plan'}]}
+        {'id': one['value'], 'name': one['name']} for one in MODES]}
+
+
+def configured():
+    response = {'configOptions': options()}
+    if STATE['protocol'] == 1 and os.environ.get('FAKE_ACP_LEGACY_MODES') == '1':
+        response['modes'] = modes()
+    return response
 
 
 def call_mcp(request_id, call_id, server):
@@ -123,6 +132,9 @@ def turn(ident, text):
         log({'mcp_permission': call_mcp(901, 'm1', STATE['servers'][0]['name'])})
         log({'mcp_other': call_mcp(902, 'm2', 'elsewhere')})
     if STATE['prompts'] == 1 and os.environ.get('FAKE_ACP_PERMISSION') == '1':
+        update({'sessionUpdate': 'tool_call_update' if STATE['protocol'] == 2 else 'tool_call',
+                'toolCallId': 'w1', 'title': 'Write notes.txt',
+                'kind': os.environ.get('FAKE_ACP_PERMISSION_KIND', 'edit'), 'status': 'pending'})
         update({'sessionUpdate': 'state_update', 'state': 'requires_action'})
         params = {'sessionId': STATE['session'],
                   'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
@@ -130,7 +142,7 @@ def turn(ident, text):
         if STATE['protocol'] == 2:
             params.update(title='Write notes.txt', subject={'type': 'tool_call', 'toolCall': {'toolCallId': 'w1'}})
         else:
-            params['toolCall'] = {'toolCallId': 'w1', 'title': 'Write notes.txt', 'kind': 'edit'}
+            params['toolCall'] = {'toolCallId': 'w1', 'title': 'Write notes.txt'}
         outcome = request(900, 'session/request_permission', params)
         log({'permission': outcome})
         update({'sessionUpdate': 'state_update', 'state': 'running'})
@@ -210,15 +222,17 @@ def main():
                 continue
             STATE['session'] = f'fake-{os.getpid()}'
             STATE['servers'] = message['params'].get('mcpServers') or []
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': STATE['session'],
-                                                            'configOptions': options()}})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': STATE['session'], **configured()}})
         elif method == 'session/resume':
             STATE['session'] = message['params']['sessionId']
             update({'sessionUpdate': 'state_update', 'state': 'idle'})
-            send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
+            send({'jsonrpc': '2.0', 'id': ident, 'result': configured()})
         elif method == 'session/set_config_option':
             STATE[message['params']['configId']] = message['params']['value']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
+        elif method == 'session/set_mode':
+            STATE['mode'] = message['params']['modeId']
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
         elif method == 'session/prompt':
             text = ' '.join(block.get('text', '') for block in message['params'].get('prompt', []))
             threading.Thread(target=turn, args=(ident, text), daemon=True).start()

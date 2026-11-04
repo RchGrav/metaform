@@ -42,6 +42,10 @@ The template changelog version this module started from: the Unreleased contract
 
 The runner also imports `acp`, the SDK, and nothing else outside the standard library.
 
+`dispatch.roundtable_permissions` captures the standard launch prompt policy and native agent mode for roundtable
+setup. `dispatch.permission_choice` exposes the same ACP allow-once selection used by ordinary agent sessions;
+roundtables use these providers rather than defining another permission policy.
+
 ## Work signals
 
 `metaform dispatch signals [id=<work id>] [active=false]` reads BASE-057 signals. The same verb is available as

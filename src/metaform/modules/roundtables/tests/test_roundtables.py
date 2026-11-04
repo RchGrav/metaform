@@ -185,9 +185,9 @@ def test_a_seats_short_name_means_the_newest_release_of_its_family_as_the_table_
 
 
 @pytest.mark.timeout(LIMIT + 60)
-def test_a_fresh_install_with_no_engine_on_path_runs_a_table_whose_seats_speak_in_turn(run, home, table, monkeypatch):
+def test_a_fresh_install_with_no_engine_on_path_runs_a_table_where_every_seat_gets_to_speak(run, home, table, monkeypatch):
     """The engine ships inside the module: with no `roundtable` anywhere on PATH, a table on the question alone opens,
-    its fixture seats speak in their speaking order, and it runs to its answer."""
+    ready seats speak while others start, every participant contributes, and it runs to its answer."""
     folder, _ = table
     monkeypatch.setenv('PATH', os.pathsep.join((str(Path(sys.executable).parent), '/usr/bin', '/bin')))
     assert shutil.which('roundtable') is None, 'no engine on PATH'
@@ -204,7 +204,7 @@ def test_a_fresh_install_with_no_engine_on_path_runs_a_table_whose_seats_speak_i
     status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
     assert status['seated'] == ['Vega', 'Haiku', 'Orion'], status
     spoke = [one['payload']['seat'] for one in heard.events if one['kind'] in ('turn', 'veto')]
-    assert spoke[:3] == status['seated'], spoke
+    assert set(spoke) == set(status['seated']), spoke  # Startup latency must not prevent anyone else speaking.
     assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer'], status
 
 
@@ -591,7 +591,7 @@ def test_session_materials_archive_without_changing_the_checkout(tmp_path, monke
 
 
 @pytest.fixture
-def minutes_follower(table):
+def table_follower(table):
     folder, _ = table
     store = Store('proj', module='roundtables')
     with store.tables() as tx:
@@ -600,71 +600,156 @@ def minutes_follower(table):
     return follow.Follower(Context('roundtables', folder, project='proj', store=store), 'minutes'), folder
 
 
-def test_first_turn_writes_attributed_minutes_for_each_discussion(minutes_follower, monkeypatch):
-    follower, root = minutes_follower
-    (root / 'docs').mkdir()
-    (root / 'docs' / 'taste.md').write_text('Use concrete words.', encoding='utf-8')
-    asked = []
-
-    def translate(folder, system, prompt, number):
-        asked.append((folder, system, prompt, number))
-        return f'Entry {len(asked)}.'
-
-    monkeypatch.setattr(follower, 'haiku', translate)
-    follower.summary_pass(7, [
-        {'n': 1, 'topic': 1, 'seat': 'Alpha', 'outcome': 'kept', 'text': 'Preserve the first decision.'},
-        {'n': 2, 'topic': 1, 'seat': 'Beta', 'outcome': 'pass', 'text': 'PASS'},
-        {'n': 3, 'topic': 2, 'seat': 'Beta', 'outcome': 'vetoed', 'text': 'Keep the disagreement.'},
-    ])
-    notes = root / 'docs' / 'roundtables' / '7-notes' / 'minutes'
-    assert (notes / '01.md').read_text() == '**Alpha**: Entry 1.\n\n'
-    assert (notes / '02.md').read_text() == '**Beta** (vetoed): Entry 2.\n\n'
-    assert len(asked) == 2 and all(one[3] == 7 for one in asked)
-    assert 'Use concrete words.' in asked[0][1]
-    assert 'Preserve the first decision.' in asked[0][2]
-    with follower.store.tables(write=False) as tx:
-        recorded = [dict(one) for one in tx.rows('events', {'table_id': 'minutes'}, limit=0).results]
-    assert [one['kind'] for one in recorded] == ['minutes', 'minutes']
-    assert [one['payload']['topic'] for one in recorded] == [1, 2]
-    assert recorded[1]['payload']['vetoed'] is True
-
-
-def test_minutes_use_acp_and_close_the_session(minutes_follower, monkeypatch):
-    import asyncio
-
-    from metaform.modules.roundtables.roundtable import harness
-    follower, root = minutes_follower
+@pytest.mark.parametrize('state', ['held', 'ended'])
+def test_follower_page_failure_delivers_recovered_state_before_releasing_seats(table_follower, monkeypatch, state):
+    follower, _ = table_follower
     calls = []
 
-    class Session:
-        process = None
+    class Recovery:
+        def changes(self, number):
+            assert number == 7
+            yield {'state': state, 'reason': 'held by its chair.' if state == 'held' else 'ended by its chair.',
+                   'runner': 'running'}
+            yield {'state': state, 'reason': 'held by its chair.' if state == 'held' else 'ended by its chair.',
+                   'runner': 'stopped'}
 
-        def __init__(self, number, seat, folder, **kwargs):
-            calls.append(('created', number, seat, folder, kwargs))
+        def get(self, path, **kwargs):
+            if path.endswith('/turns'):
+                return {'turns': [], 'latest': 0}
+            if path.endswith('/topics'):
+                return {'topics': []}
+            if path.endswith('/download/export.json'):
+                return {'topics': [], 'submissions': []}
+            assert path == '/tables/7'
+            return {'reason': 'ended by its chair.'}
 
-        async def start(self):
-            calls.append(('started',))
+        def close(self):
+            calls.append('closed')
 
-        async def prompt(self, text, seconds):
-            calls.append(('prompt', text, seconds))
-            return '  Explained turn.  ', {}
+    def page(*_args):
+        calls.append('page')
+        if calls == ['page']:
+            raise RuntimeError('The initial page did not start.')
+        return Recovery()
 
-        async def close(self):
-            calls.append(('closed',))
+    monkeypatch.setattr(engine, 'Page', page)
+    monkeypatch.setattr(engine, 'call', lambda _folder, verb, **kwargs: calls.append((verb, kwargs)))
+    follower.followed_to_end(7)
+    with follower.store.tables(write=False) as tx:
+        recorded = [dict(one) for one in tx.rows('events', {'table_id': 'minutes'}, limit=0).results]
+    assert [one['kind'] for one in recorded] == ['operational', 'state', *(['end'] if state == 'ended' else [])]
+    assert recorded[1]['audience'] == 'person'
+    reason = 'held by its chair.' if state == 'held' else 'ended by its chair.'
+    assert recorded[1]['payload'] == {'state': state, 'reason': reason}
+    assert follower.followed['state'] == state
+    assert follower.row()['state'] == state and follower.row()['reason'] == reason
+    assert calls == ['page', ('hold', {'discussion': 7, 'chair': None}), 'page', 'closed']
 
-    monkeypatch.setattr(harness, 'Session', Session)
-    assert asyncio.run(follower.minutes_reply(root, 'Writing rules.', 'Exact turn.', 7)) == 'Explained turn.'
-    assert calls[0][1] == 7 and calls[0][2]['position'] == -4
-    assert calls[2][1] == 'Writing rules.\n\nExact turn.'
-    assert calls[-1] == ('closed',) and follower.summary_session is None
+
+def test_follower_delivers_turns_and_result_without_a_writer_or_generated_documents(table_follower, monkeypatch):
+    from metaform.modules.roundtables.roundtable import harness, openrouter
+    from metaform.modules.web import server
+    from metaform.modules.web.tests.test_web import _Handler
+
+    follower, root = table_follower
+    session = root / 'docs' / 'roundtables' / 'session-authored'
+    session.mkdir(parents=True)
+    (session / 'decisions.md').write_text('Participants agreed to preserve the decision.', encoding='utf-8')
+    follower.followed['session'] = {'folder': str(session), 'total': 1}
+    follower.change(discussion=7)
+    model_requests = []
+
+    def unexpected(*args, **kwargs):
+        model_requests.append((args, kwargs))
+        raise AssertionError('A follower must not request generated minutes or another model response.')
+
+    monkeypatch.delenv('PYTEST_CURRENT_TEST', raising=False)
+    monkeypatch.setattr(harness, 'Session', unexpected)
+    monkeypatch.setattr(openrouter, 'post', unexpected)
+    turns = [
+        {'n': 1, 'topic': 1, 'round': 1, 'seat': 'Alpha', 'outcome': 'kept', 'text': 'Preserve the decision.'},
+        {'n': 2, 'topic': 1, 'round': 1, 'seat': 'Beta', 'outcome': 'vetoed', 'text': 'Keep the disagreement.'},
+    ]
+    topics = [{'number': 1, 'title': 'Decisions', 'host_summary': {'name': 'Alpha', 'text': 'Decision preserved.'}}]
+    permission = {'position': 0, 'request': 'participant-write', 'state': 'waiting', 'name': 'Alpha'}
+
+    class Page:
+        def __init__(self):
+            self.reads = []
+
+        def changes(self, _number):
+            yield {'latest': 2, 'topic': 0, 'stage': 'discussion', 'staged': 1, 'events': 1, 'state': 'running'}
+            yield {'latest': 2, 'topic': 0, 'stage': 'discussion', 'staged': 1, 'events': 1,
+                   'state': 'ended', 'runner': 'stopped'}
+
+        def get(self, path, **kwargs):
+            self.reads.append(path)
+            if path.endswith('/turns'):
+                return {'turns': [one for one in turns if one['n'] > kwargs.get('since', 0)], 'latest': 2}
+            if path.endswith('/topics'):
+                return {'topics': topics}
+            if path.endswith('/download/export.json'):
+                return {'topics': topics, 'turns': turns}
+            assert path == '/tables/7'
+            return {'reason': 'complete', 'events': [
+                {'number': 1, 'kind': 'permission', 'text': json.dumps(permission)}]}
+
+    page = Page()
+    follower.follow(page, 7)
+    pending = getattr(follower, 'summary_thread', None)
+    if pending is not None:
+        pending.join(timeout=5)
+        assert not pending.is_alive()
+    assert model_requests == []
+    with follower.store.tables(write=False) as tx:
+        recorded = [dict(one) for one in tx.rows('events', {'table_id': 'minutes'}, limit=0).results]
+    assert [one['kind'] for one in recorded] == ['turn', 'veto', 'stage', 'summary', 'permission', 'state', 'state', 'end']
+    assert recorded[4]['audience'] == 'person' and recorded[4]['payload'] == permission
+    assert follower.followed['turns'] == 2 and follower.row()['answered'] is True
+    assert not (root / 'docs' / 'roundtables' / '7-notes').exists()
+    assert list(session.iterdir()) == [session / 'decisions.md']
+    saved = root / follower.followed['saved']
+    assert json.loads((saved / 'export.json').read_text())['turns'] == turns
+
+    before = list(page.reads)
+    unchanged = {'latest': 2, 'topic': 0, 'stage': 'discussion', 'staged': 1, 'events': 1, 'state': 'ended'}
+    for _ in range(20):
+        follower.moved(page, 7, unchanged, unchanged)
+    assert page.reads == before, 'Unrelated changes must not reread the table.'
+
+    monkeypatch.setattr(server, 'module_verb', lambda *_args: {'discussion': 7, 'materials': str(session)})
+    monkeypatch.setattr(server, 'project_folder', lambda _given: ('proj', root))
+    handler = _Handler()
+    server.Handler.roundtable_notes(handler, {'project': 'proj', 'note': 'decisions.md'}, {'table': 'minutes'})
+    assert handler.answers == [(200, {'path': 'decisions.md',
+                                      'text': 'Participants agreed to preserve the decision.', 'cut': False})]
 
 
-def test_abort_archives_bridge_records_and_session_materials(minutes_follower, tmp_path):
-    follower, root = minutes_follower
+def test_follower_open_forwards_the_captured_permissions(table_follower, monkeypatch):
+    follower, root = table_follower
+    permissions = {'claude': {'prompts': False, 'mode': 'bypassPermissions'},
+                   'codex': {'prompts': True, 'mode': 'auto-edit'}}
+    follower.followed['permissions'] = permissions
+    follower.change(followed=follower.followed)
+    calls = []
+    monkeypatch.setattr(engine, 'call', lambda project_folder, verb, **kwargs:
+                        calls.append((project_folder, verb, kwargs)) or {'discussion': 7, 'chair': 'chair'})
+    follower.opened(follower.row())
+    assert calls[0][0:2] == (root, 'open')
+    assert calls[0][2]['permissions'] == permissions
+    assert follower.row()['followed']['permissions'] == permissions
+
+
+def test_abort_archives_bridge_records_and_session_materials(table_follower, tmp_path):
+    follower, root = table_follower
     session = root / 'docs' / 'roundtables' / 'session-current'
     session.mkdir(parents=True)
     (session / 'notes.md').write_text('Existing participant work.', encoding='utf-8')
+    legacy = root / 'docs' / 'roundtables' / '7-notes' / 'minutes'
+    legacy.mkdir(parents=True)
+    (legacy / '01.md').write_text('Prior generated minutes.', encoding='utf-8')
     follower.followed['session'] = {'folder': str(session)}
+    follower.change(discussion=7)
     follower.emit('minutes', 'person', text='Saved explanation.', topic=1, seat='Alpha')
     engine_files = tmp_path / 'engine-aborted'
     engine_files.mkdir()
@@ -673,6 +758,7 @@ def test_abort_archives_bridge_records_and_session_materials(minutes_follower, t
     shelf = follow.archive(follower.ctx, row, str(engine_files))
     assert shelf.parent.name == 'roundtables' and shelf.parent.parent.name == 'backups'
     assert (shelf / session.name / 'notes.md').read_text() == 'Existing participant work.'
+    assert (shelf / '7-notes' / 'minutes' / '01.md').read_text() == 'Prior generated minutes.'
     assert (shelf / 'engine' / 'turn.json').is_file()
     assert json.loads((shelf / 'table.json').read_text())['table_id'] == 'minutes'
     assert json.loads((shelf / 'events.json').read_text())[0]['payload']['text'] == 'Saved explanation.'
@@ -681,63 +767,10 @@ def test_abort_archives_bridge_records_and_session_materials(minutes_follower, t
         assert not tx.rows('events', {'table_id': 'minutes'}).results
 
 
-def test_ended_discussion_minutes_permission_reaches_page_without_engine_stream(minutes_follower, monkeypatch):
-    import asyncio
-    import subprocess
+def test_concurrent_follower_events_keep_sequences_cursors_and_publication_together(table_follower, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
 
-    from metaform.modules.roundtables.roundtable import permissions, store
-    follower, root = minutes_follower
-    chosen = [{'kind': 'acp', 'id': 'acp:claude/haiku', 'agent': 'claude', 'model': 'haiku'}]
-    role = {**chosen[0], 'name': 'Haiku'}
-    number = store.opened({'subject': 'Finished discussion', 'opening': 'Write the minutes.', 'folder': str(root),
-                           'chair_key': None, 'chair_token': 'fixture', 'reporter': chosen[0]['id'],
-                           'host': role, 'synthesizer': role, 'rounds': 1, 'spend': 0}, chosen, judging=False)
-    store.change(number, state='ended')
-    follower.change(state='ended', discussion=number)
-    monkeypatch.setenv('FAKE_ACP_PERMISSION', '1')
-    monkeypatch.delenv('FAKE_ACP_MCP', raising=False)
-    published = Context.publish
-    visible = threading.Event()
-    heard = []
-
-    def page_event(ctx, topic, payload):
-        result = published(ctx, topic, payload)
-        if topic == follow.TOPIC and payload.get('kind') == 'permission':
-            heard.append(payload)
-            if payload['state'] == 'waiting':
-                visible.set()
-        return result
-
-    monkeypatch.setattr(Context, 'publish', page_event)
-    with ThreadPoolExecutor(max_workers=1) as worker:
-        future = worker.submit(asyncio.run, follower.minutes_reply(root, 'Writing rules.', 'Explain the turn.', number))
-        try:
-            assert visible.wait(5), 'A minutes permission must reach the page after the engine stream closes.'
-            request = heard[0]['request']
-            command = ('import sys; from metaform.modules.roundtables.roundtable import permissions; '
-                       'from metaform import relay; number=int(sys.argv[1]); '
-                       'permissions.answer(number,sys.argv[2],"allow"); '
-                       'relay.deliver("map.changed",{"kinds":[permissions.topic(number)]})')
-            answered = subprocess.run([sys.executable, '-c', command, str(number), request],
-                                      capture_output=True, text=True, timeout=15, check=False)
-            assert answered.returncode == 0, answered.stderr
-            assert future.result(timeout=5).startswith('haiku on turn 1:')
-        finally:
-            if not future.done():
-                follower.stop_minutes()
-    assert [one['state'] for one in heard] == ['waiting', 'answered']
-    assert all(one['name'] == 'Minutes' and one['position'] == -4 for one in heard)
-    assert permissions.get(number, heard[0]['request'])['chosen'] == 'allow'
-    with follower.store.tables(write=False) as tx:
-        events = [dict(one) for one in tx.rows('events', {'table_id': 'minutes'}, limit=0).results]
-    assert [one['payload']['state'] for one in events] == ['waiting', 'answered']
-
-
-def test_concurrent_follower_events_keep_sequences_cursors_and_publication_together(minutes_follower, monkeypatch):
-    from concurrent.futures import ThreadPoolExecutor
-
-    follower, _ = minutes_follower
+    follower, _ = table_follower
     published = []
     start = threading.Barrier(2)
 
@@ -758,7 +791,7 @@ def test_concurrent_follower_events_keep_sequences_cursors_and_publication_toget
         start.wait(timeout=5)
         for value in range(10):
             follower.followed[f'writer_{writer}'] = value
-            follower.emit('minutes' if writer else 'turn', 'person', writer=writer, value=value)
+            follower.emit('operational' if writer else 'turn', 'person', writer=writer, value=value)
 
     with ThreadPoolExecutor(max_workers=2) as workers:
         list(workers.map(write, (0, 1)))

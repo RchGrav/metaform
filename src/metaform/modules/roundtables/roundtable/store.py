@@ -321,13 +321,16 @@ def submission(number: int, at: int) -> dict[str, Any]:
 
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
            topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None,
-           session: Mapping[str, Any] | None = None) -> int:
+           session: Mapping[str, Any] | None = None,
+           permissions: Mapping[str, Mapping[str, str]] | None = None) -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
 
     names = named(chosen)
     snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
+    if permissions:
+        snapshot['permissions'] = {agent: dict(values) for agent, values in permissions.items()}
     if session:  # a session of roundtables: Jev judges only whether a turn keeps to the topic
         snapshot = {**snapshot, 'session': dict(session)}
         if snapshot.get('floors'):

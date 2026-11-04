@@ -30,8 +30,8 @@ Nothing. It uses dispatch's `dispatch.seats` and design-intake providers, tasks'
 
 `resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
 
-The `session_*` prompts hold the person's session messages. `minutes_system` and `minutes_turn` explain each contribution
-in plain language. The minutes writer uses an ACP session, like the other agents.
+The `session_*` prompts hold the person's session messages. The participating agents jointly author their own
+documents in the shared session folder. There is no automatic minutes or summary writer.
 
 ## Verbs
 
@@ -41,7 +41,10 @@ in plain language. The minutes writer uses an ACP session, like the other agents
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
   ACP seats use the project as their workspace. Their harnesses provide file tools and request permissions through ACP.
 - `permit <table> request=<id> option=<id>`, command line or page: return the person's selected option to the waiting
-  ACP request. The page displays the options supplied by the agent. Metaform adds no file or tool permission policy.
+  ACP request. Requests not covered by the selected standard prompt policy display the options supplied by the agent.
+  Setup shows the same permission controls as an ordinary agent launch, once per selected agent type. The
+  `permissions` object maps agent names to `prompts` and native ACP `mode`; omitted choices use project settings.
+  Choices are captured when the table opens and persist through panels, collaboration, and recovered seat sessions.
 - `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
@@ -67,11 +70,14 @@ Before exhaustion, every participant receives a carry-forward request at twice t
 A held runner closes its seats. Comments remain queued or enter without resuming turns. Explicit Continue restarts it. Starting an engine server never resumes other live or held tables.
 
 Opening with `chain=<number>` runs a session containing that many discussions. After each discussion, agents collaborate
-on saved materials and the next topic. Busy seats keep working while available seats contribute. When all seats are
-busy, the runner waits for completion events. A skipped seat never supplies an implicit PASS or Done.
+on saved materials and the next topic. The page uses this session flow even for one roundtable. During panels and
+collaboration, busy seats are skipped immediately while available seats contribute in a fair rotation. When all seats
+are busy, the runner waits for completion or chair-control events. No timed cycling is used. A skipped seat never
+supplies an implicit PASS or Done. Every participant must explicitly finish collaboration, and `next-topic.md` must
+contain the next topic before another panel opens.
 
 After the final collaboration, each agent submits private scorecards. Only aggregate scores are shared and added to
-profiles. Agents then exchange farewells and explicitly finish. Minutes are saved per discussion in the session folder.
+profiles. Agents then exchange farewells and explicitly finish. The document browser reads their shared session folder.
 
 Roundtable agent connections offer ACP v2 and retain ACP v1 support. Each connection uses its negotiated protocol.
 In v2, the prompt response acknowledges insertion and `state_update` reports activity and completion. In v1, the

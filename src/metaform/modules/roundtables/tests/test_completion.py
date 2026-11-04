@@ -78,7 +78,9 @@ def test_only_unanimous_voluntary_passes_finish_one_full_round(scripted, staged)
     result = asyncio.run(runner.Table(number).run())
     assert result['state'] == 'ended', result
     rows = store.submissions(number)
-    assert len(rows) == 8
+    # A failed attempt does not cover the seat: its real reply is required in that same round.
+    assert len(rows) == 9
+    assert [one['kind'] for one in rows if one['round'] == 2 and one['position'] == 0] == ['none', 'pass']
     assert [one['kind'] for one in rows[-2:]] == ['pass', 'pass']
     assert store.discussion(number)['round'] == 4
     assert store.judgments(number) == []
@@ -262,6 +264,7 @@ def test_follower_error_holds_and_waits_for_seats_to_close(tmp_path, monkeypatch
     follower = object.__new__(follow.Follower)
     follower.ctx = SimpleNamespace(folder=tmp_path)
     follower.table_id = 'fixture'
+    follower.followed = {}
     emitted, observed, closed = [], [], []
     monkeypatch.setattr(follow.Follower, 'row', lambda self: {'chair': 'fixture-chair'})
     monkeypatch.setattr(follow.Follower, 'emit', lambda self, *args, **kw: emitted.append((args, kw)))
@@ -288,3 +291,4 @@ def test_follower_error_holds_and_waits_for_seats_to_close(tmp_path, monkeypatch
     assert observed == ['running', 'stopped'] and len(closed) == 2
     assert not any(args[0] == 'end' for args, _ in emitted)
     assert emitted[0][1]['changes']['state'] == 'held'
+    assert any(args[0] == 'state' and values.get('state') == 'held' for args, values in emitted)

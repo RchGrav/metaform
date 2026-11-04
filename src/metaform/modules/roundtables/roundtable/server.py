@@ -153,7 +153,8 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
                  spend: float | None, reporter: str | None, folder: str | None, chair_key: str | None,
                  topics: list[str] | None = None, host: str | None = None,
                  synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT,
-                 judging: bool | None = None, session: dict[str, Any] | None = None) -> dict[str, Any]:
+                 judging: bool | None = None, session: dict[str, Any] | None = None,
+                 permissions: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
     """A table opened and its runner started, for `open` and the web page alike; ToolError says why it cannot be.
     With topics, the three Roundtable 2 topics unless others are given, it runs the Roundtable 2 protocol, its
     opening the Roundtable 2 opening unless one is given; with `topics=[]` it discusses its opening alone."""
@@ -161,6 +162,12 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
         raise ToolError('judging is true or false.')
     if type(reply_limit) is not int or reply_limit < 1:
         raise ToolError('reply_limit is a positive whole number of characters.')
+    if permissions is not None and (type(permissions) is not dict or any(
+                agent not in config.AGENTS or type(values) is not dict or any(
+                    key not in ('prompts', 'mode') or type(value) is not str or
+                    (key == 'prompts' and value not in ('approve-all', 'approve-reads', 'ask_all'))
+                    for key, value in values.items()) for agent, values in permissions.items())):
+        raise ToolError('permissions maps ACP agent names to their prompts and mode choices.')
     listed = stages.topics_of(topics)
     opening = (opening or '').strip() or (said('rt2_opening') if listed else '')
     if not opening:
@@ -203,7 +210,7 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
                            'chair_key': chair_key, 'chair_token': token, 'reporter': writer,
                            'rounds': 0, 'spend': most_spend if spend is None else spend,
                            **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit, judging,
-                          session)
+                          session, permissions)
     pid = runner.spawn(number)
     found = store.discussion(number)
     return {'discussion': number, 'chair': token, 'a2a': {'context_id': found['context_id'],
@@ -223,7 +230,8 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
                spend: float | None = None, reporter: str | None = None,
                folder: str | None = None, seat_mcp: list[dict[str, Any]] | None = None,
                ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT,
-               judging: bool | None = None, session: dict[str, Any] | None = None) -> dict[str, Any]:
+               judging: bool | None = None, session: dict[str, Any] | None = None,
+               permissions: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
     """Open a roundtable with its seats, in speaking order; you chair it.
 
     Seats: acp:<claude|codex|antigravity>/<model> (the agent on the person's own login through ACP), an OpenRouter model id
@@ -241,7 +249,7 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
     seat (a 1-based place in speaking order) gives one to that seat alone, as for a playground body's own endpoint
     and token. Other seats stay text-only. Returns the table's number and the chair token."""
     return await opened(opening, seats, subject, spend, reporter, folder, connection(ctx), topics, host,
-                        synthesizer, seat_mcp, reply_limit, judging, session)
+                        synthesizer, seat_mcp, reply_limit, judging, session, permissions)
 
 
 # The chair's actions on a table already found to be the caller's: the MCP tools check the chair first, the web page

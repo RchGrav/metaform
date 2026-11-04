@@ -32,6 +32,7 @@ import {$, h, fill, reduced} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {agentName, pickerOptions} from '/page/app/agents/pickers.js';
+import {drawPermissions} from '/page/app/agents/permissions.js';
 import {posted} from '/page/app/intake/intake.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {SEATS, Seated, LOOK, bubbleText} from '/page/app/figures/bubble3d.js';
@@ -72,6 +73,7 @@ const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right:
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 const CHAIR = {writing: false};
 const LINEUP = {project: null, saving: false};
+const LAUNCH = {project: null, agents: new Map()};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -196,31 +198,13 @@ UI.discussion = h('form', {class: 'rt-discussion', hidden: true,
   UI.discussionComment, UI.sendDiscussion,
   h('small', {}, 'Comments enter at the next gap. Hold pauses AI turns. Continue resumes them.'));
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-const MINUTES = {chosen: false, topic: 0};
-/* Each translated turn appends to the minutes. The full transcript remains available. */
-UI.minutes = h('p', {class: 'rt-running', role: 'status', 'aria-live': 'polite', tabindex: '0',
-  'aria-label': 'Discussion minutes', hidden: true});
 UI.permissions = h('div', {class: 'rt-permissions', 'aria-label': 'Agent permission requests', hidden: true});
 const PERMISSIONS = new Map();
 UI.showTranscript = h('button', {class: 'btn sm quiet rt-show-transcript', type: 'button', 'aria-pressed': 'true',
-  title: 'Show or hide every turn above the minutes', onclick: () => {
-    MINUTES.chosen = true;
+  title: 'Show or hide every turn', onclick: () => {
     UI.transcript.hidden = !UI.transcript.hidden;
     UI.showTranscript.setAttribute('aria-pressed', String(!UI.transcript.hidden));
   }}, 'Transcript');
-function minutesIs(event) {
-  if (!event.text) return;
-  const topic = Number(event.topic || 1);
-  const heading = MINUTES.topic !== topic ? `Roundtable ${topic}\n` : '';
-  MINUTES.topic = topic;
-  UI.minutes.textContent += `${UI.minutes.textContent ? '\n\n' : ''}${heading}${event.seat || 'Participant'}${
-    event.vetoed ? ' (vetoed)' : ''}: ${event.text}`;
-  UI.minutes.hidden = false;
-  if (!MINUTES.chosen) {
-    UI.transcript.hidden = true;
-    UI.showTranscript.setAttribute('aria-pressed', 'false');
-  }
-}
 /* The harness supplies the request and its choices. The page relays the person's selected option unchanged. */
 function permissionIs(event) {
   const previous = PERMISSIONS.get(event.request);
@@ -259,7 +243,7 @@ UI.grip = h('div', {class: 'rt-grip', role: 'separator', 'aria-orientation': 'ho
 function dragGrip(event) {
   event.preventDefault();
   event.stopPropagation();
-  const pane = UI.transcript.hidden ? UI.minutes : UI.transcript;
+  const pane = UI.transcript;
   const grip = event.currentTarget, from = event.clientY, start = pane.getBoundingClientRect().height;
   grip.setPointerCapture(event.pointerId);
   const move = moved => {
@@ -274,7 +258,7 @@ function dragGrip(event) {
 }
 UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
   UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
-  UI.permissions, UI.transcript, UI.discussion, UI.minutes);
+  UI.permissions, UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -282,6 +266,7 @@ UI.addSeat = h('button', {type: 'button', class: 'btn sm quiet', onclick: () => 
 UI.saveParticipants = h('button', {type: 'button', class: 'btn sm quiet', onclick: saveParticipants},
   'Save participants');
 UI.where = h('span', {class: 'rt-where'});
+UI.launchPermissions = h('div', {class: 'rt-launch-permissions'});
 UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER, step: 1, value: 512,
   name: 'reply_limit', required: true});
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
@@ -293,6 +278,7 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
   h('h2', {}, 'Roundtable', UI.where), UI.question,
   h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat, UI.saveParticipants,
     h('small', {}, 'Start remembers this browser’s lineup. Save participants sets this project’s defaults.')),
+  UI.launchPermissions,
   h('label', {}, 'Number of roundtables', UI.tables),
   h('small', {}, 'Each roundtable opens the next one when it ends, with the same seats.'),
   h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
@@ -348,6 +334,11 @@ export async function openRoundtable(fresh = false) {
   UI.start.disabled = false;
   UI.question.focus();
   const project = S.project;
+  if (LAUNCH.project !== project) {
+    LAUNCH.project = project;
+    LAUNCH.agents.clear();
+    fill(UI.launchPermissions);
+  }
   try {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}`);
     if (project !== S.project) return;
@@ -358,6 +349,7 @@ export async function openRoundtable(fresh = false) {
       LINEUP.project = project;
       for (const seat of rememberedParticipants(project, found.seats || [])) addSeat(String(seat));
     }
+    drawSetupPermissions();
   } catch (error) { toast(error.message); }
 }
 function showStage() {
@@ -396,15 +388,11 @@ function resetTable() {
   fill(UI.records, h('h3', {}, 'Saved record'));
   fill(UI.noteList);
   UI.noteView.textContent = '';
-  UI.minutes.textContent = '';
-  UI.minutes.hidden = true;
   fill(UI.permissions);
   UI.permissions.hidden = true;
   PERMISSIONS.clear();
   UI.transcript.hidden = false;
   UI.showTranscript.setAttribute('aria-pressed', 'true');
-  MINUTES.chosen = false;
-  MINUTES.topic = 0;
   NOTES.open = '';
   UI.results.hidden = UI.records.hidden = UI.newTable.hidden = UI.noteView.hidden = UI.notesWin.hidden = true;
   UI.notesButton.textContent = 'Notes';
@@ -445,9 +433,11 @@ async function startTable() {
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
-  const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit, ...(tables > 1 ? {chain: tables} : {}),
+  const permissions = chosenPermissions(listed);
+  const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit, chain: tables,
     judging: UI.judging.checked,
     automate_ticket_creation: UI.automate.checked,
+    ...(Object.keys(permissions).length ? {permissions} : {}),
     ...(TABLE.address ? {address: TABLE.address} : {}),
     ...(listed.length ? {seats: listed} : {})});
   UI.start.disabled = false;
@@ -470,14 +460,47 @@ const OFFERED = new Map();  // each agent's model picks, read once each time the
 function addSeat(seat) {
   const [first, ...rest] = seat.replace(/^acp:/, '').split('/');
   const agent = SEAT_AGENTS.includes(first) && rest.length ? first : '';
-  const who = h('select', {'aria-label': 'Agent', onchange: () => modelPicker(row, who.value, '')},
+  const who = h('select', {'aria-label': 'Agent', onchange: () => {
+    modelPicker(row, who.value, '');
+    drawSetupPermissions();
+  }},
     SEAT_AGENTS.map(one => h('option', {value: one, selected: one === agent}, agentName(one))),
     h('option', {value: '', selected: !agent}, 'OpenRouter model'));
   const row = h('li', {class: 'rt-pick'}, who, h('span', {class: 'rt-model'}),
     h('button', {type: 'button', class: 'btn sm quiet', title: 'Remove this seat', 'aria-label': 'Remove this seat',
-      onclick: () => row.remove()}, '×'));
+      onclick: () => { row.remove(); drawSetupPermissions(); }}, '×'));
   UI.seatList.append(row);
   modelPicker(row, agent, agent ? rest.join('/') : seat);
+  drawSetupPermissions();
+}
+/* One standard launch panel per ACP agent, shared by every seat using it. Kept panels retain their choices when
+ * another seat is added; a removed agent or changed project drops its launch choices. OpenRouter has no ACP modes. */
+function drawSetupPermissions() {
+  const project = S.project;
+  if (LAUNCH.project !== project) {
+    LAUNCH.project = project;
+    LAUNCH.agents.clear();
+  }
+  const agents = new Set([...UI.seatList.children].map(row => row.querySelector('select').value).filter(Boolean));
+  for (const agent of LAUNCH.agents.keys()) if (!agents.has(agent)) LAUNCH.agents.delete(agent);
+  for (const agent of agents) {
+    if (LAUNCH.agents.has(agent)) continue;
+    const panel = h('div', {class: 'field permissions', 'data-agent': agent},
+      h('span', {}, `${agentName(agent)} permissions`, h('small', {}, ' · this launch only')),
+      h('div', {class: 'controls'}), h('p', {class: 'hint'}), h('p', {class: 'risk warnline', hidden: true}));
+    const entry = {own: {prompts: '', mode: ''}, panel};
+    LAUNCH.agents.set(agent, entry);
+    drawPermissions(panel, agent, entry.own, () => LAUNCH.project === project && LAUNCH.agents.get(agent) === entry);
+  }
+  fill(UI.launchPermissions, ...[...agents].map(agent => LAUNCH.agents.get(agent).panel));
+}
+function chosenPermissions(seats) {
+  if (LAUNCH.project !== S.project) return {};
+  const agents = new Set(seats.map(seat => seat.replace(/^acp:/, '').split('/')[0]));
+  return Object.fromEntries([...LAUNCH.agents].flatMap(([agent, entry]) => {
+    const own = Object.fromEntries(Object.entries(entry.own).filter(([, value]) => value));
+    return agents.has(agent) && Object.keys(own).length ? [[agent, own]] : [];
+  }));
 }
 async function modelPicker(row, agent, model) {
   const box = row.querySelector('.rt-model');
@@ -583,8 +606,7 @@ async function readTable(whole = false) {
       let wrote = whole;
       for (const event of found.events || []) {
         if (event.kind === 'turn' || event.kind === 'veto' || event.kind === 'end') wrote = true;
-        if (event.kind === 'minutes') minutesIs(event);
-        else if (event.kind === 'permission') permissionIs(event);
+        if (event.kind === 'permission') permissionIs(event);
         else if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
         else if (event.kind === 'pipeline') pipelineIs(event.pipeline);

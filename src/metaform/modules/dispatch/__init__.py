@@ -1890,6 +1890,28 @@ def launch_permissions(ctx: Context, store: Store, agent: str) -> tuple[dict[str
     return given, notices
 
 
+def roundtable_permissions(ctx: Context, agent: str, choices: dict[str, str]) -> dict[str, str]:
+    """Capture the standard launch permissions for one agent for a complete roundtable session."""
+    own = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
+                  nouns=choices, session=ctx.session, identity=ctx.identity)
+    given, _ = launch_permissions(own, ctx.require_store(), agent)
+    mode = given['mode'] or chosen_options(own, agent).get('mode', '')
+    return {'prompts': given['prompts'] or str(own.setting('dispatch_prompts')),
+            'mode': '' if mode == AGENT_DEFAULT else mode}
+
+
+def permission_choice(options: list[dict[str, Any]], how: str, kind: Any) -> str | None:
+    """Select the same ACP permission option as ordinary dispatched sessions, across protocol versions."""
+    from acp.schema import PermissionOption
+
+    from .runner import allowed
+
+    offered = [PermissionOption(option_id=str(one['optionId']), name=str(one['name']), kind='allow_once')
+               for one in options if one.get('kind') == 'allow_once']
+    chosen = allowed(offered, how, kind)
+    return chosen.option_id if chosen is not None else None
+
+
 def keep_launch(store: Store, work_id: str, given: dict[str, str | None]) -> None:
     """Write a launch's permissions over the previous launch's, keeping the ticket's own model and effort."""
     with own_store(store).tables() as tx:
@@ -6242,6 +6264,8 @@ MODULE = Module(
               Provides('dispatch.design_intake_active', design_intake_active),
               Provides('dispatch.seats', seat_slots), Provides('dispatch.models', model_for), Provides('dispatch.agents', agent_choices),
               Provides('dispatch.option_choices', option_choices),
+              Provides('dispatch.roundtable_permissions', roundtable_permissions),
+              Provides('dispatch.permission_choice', permission_choice),
               Provides('work.in_force', fix_in_force), Provides('dispatch.integration', integration_read),
               Provides('dispatch.integration.pending', integration_pending)),
     start=started,

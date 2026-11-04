@@ -47,9 +47,10 @@
 <reply_length/></seat_system_topics>
 <reply_length>Each discussion reply has a maximum of <limit/> characters. Any excess text is truncated.</reply_length>
 <!-- Told to every seat just before the reply limit: the table's notes folder. Replies stay short and in turn; longer work
-     goes in the folder. Claude Code seats can write there and nowhere else; other seats can read it. <folder/> is the
+     goes in the folder. Writes go through each agent's own file tools, and its harness asks the owner when it needs
+     permission. A session's seats are not sent this; the owner's opening message names their folder. <folder/> is the
      folder's path. -->
-<notes_folder>The owner reads along and chairs. Write plainly, and say what each code you cite means. Notes folder: <folder/>. Put longer work there and name the file in your reply. shared.md is for every seat; vetoed/ holds vetoed turns; summary.md is read-only.</notes_folder>
+<notes_folder>The owner reads along and chairs. Write plainly, and say what each code you cite means. Notes folder: <folder/>. Put longer work there and name the file in your reply. shared.md is for every seat; vetoed/ holds vetoed turns.</notes_folder>
 <!-- What a seat receives on its first turn: every turn before its own, and the limit; the rules and the opening are
      in its system message. <turns/> is the turns, one line or entry each, a blank line between; <limit/> the
      selected character limit. -->

@@ -22,8 +22,8 @@ synthesizer names the ideas, every seat ranks them and explains its choices, and
 
 Guardrails. Each seat takes one of dispatch's agent slots, through dispatch's own gate, so a table is refused when
 fewer are free than its seats. A table spends at most `roundtables_spend` US dollars through OpenRouter, a cap only
-the person raises. Seats read the project folder and change nothing: the engine gives them only reading tools, refuses
-every write they ask for, and this module never gives them an MCP server. Operational events, credits, holds and a
+the person raises. Seats use their agents' tools under the permissions selected at setup, through ACP, during both
+discussion and collaboration. Operational events, credits, holds and a
 seat lost, are the person's and never reach a seat or Jev. Judged tables require the person's `jev` setting. ACP-only unjudged tables need no provider credential. The tables and their events are
 kept at the project's level, so a base switch, a clear or a restore never takes them.
 """
@@ -199,7 +199,9 @@ def report_of(ctx: Context, row: dict[str, Any]) -> str | None:
 def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
     followed = cast(dict[str, Any], row.get('followed') or {})  # where its record was saved and its memory kept
     report = report_of(ctx, row)
+    materials = cast(dict[str, Any], followed.get('session') or {}).get('folder')
     return {'table': row['table_id'], **({'address': row['address']} if row.get('address') else {}),
+            **({'materials': materials} if materials else {}),
             'topic': row['topic'], 'state': row['state'],
             **({'reason': row['reason']} if row.get('reason') else {}), 'seats': row['seats'],
             **({'seated': row['seated']} if row.get('seated') else {}),
@@ -254,32 +256,56 @@ def started(ctx: Context, table_id: str) -> dict[str, Any]:
 
 
 def session_of(ctx: Context, table_id: str, total: int, topic: str) -> dict[str, Any]:
-    """A session's settings for the engine: its folder in the project, with the minutes folder in it, the owner's
+    """A session's settings for the engine: its shared documents folder in the project, the owner's
     messages filled in, and the first roundtable's topic; and its opening, the owner's first message with the
     project's writing rules."""
     root = Path(ctx.require_store().project().path)
     folder = root / 'docs' / 'roundtables' / f'session-{datetime.now(UTC):%Y%m%d}-{table_id}'
-    (folder / 'minutes').mkdir(parents=True, exist_ok=True)
+    folder.mkdir(parents=True, exist_ok=True)
     submit = prompt_files.required(PACKAGE, 'session_submit', file=str(folder / 'next-topic.md'))
     taste = ''
     with contextlib.suppress(OSError, UnicodeDecodeError):
         taste = (root / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
     return {'total': total, 'folder': str(folder),
             'opening': prompt_files.required(PACKAGE, 'session_opening', total=str(total), submit=submit,
+                                             session_folder=str(folder),
                                              taste=taste or prompt_files.required(PACKAGE, 'minutes_taste_default')),
             'first': prompt_files.required(PACKAGE, 'session_first', total=str(total), topic=topic),
             'between': prompt_files.required(PACKAGE, 'session_between', index='{index}', total=str(total),
-                                             submit=submit),
+                                             submit=submit, session_folder=str(folder)),
             'score': prompt_files.required(PACKAGE, 'session_score'),
             'farewell': prompt_files.required(PACKAGE, 'session_farewell')}
+
+
+def permission_settings(ctx: Context, given: Any, agents: set[str]) -> dict[str, dict[str, str]]:
+    """Validate per-agent setup choices and capture the ordinary launch defaults once for this session."""
+    if given is not None and not isinstance(given, dict):
+        raise Stop('permissions maps agent names to their prompts and mode choices.', 'metaform help roundtables open')
+    supplied = cast(dict[str, Any], given or {})
+    for agent, values in supplied.items():
+        if agent not in engine.AGENTS or not isinstance(values, dict):
+            raise Stop('permissions names an ACP agent and its prompts and mode choices.',
+                       'metaform help roundtables open')
+        choices = cast(dict[str, Any], values)
+        if any(key not in ('prompts', 'mode') or not isinstance(value, str) for key, value in choices.items()):
+            raise Stop('Each permission choice is prompts or mode, with a text value.',
+                       'metaform help roundtables open')
+    found = provided(ctx.folder, 'dispatch.roundtable_permissions')
+    if not found:
+        if supplied:
+            raise Stop('Dispatch supplies the agent permission controls.', 'metaform enable dispatch')
+        return {}
+    resolve = found[0][1]
+    return {agent: cast(dict[str, str], resolve(ctx, agent, supplied.get(agent) or {}))
+            for agent in sorted(agents | supplied.keys())}
 
 
 def open_table(ctx: Context) -> dict[str, Any]:
     total = ctx.nouns.get('chain')
     if total is not None and (type(total) is not int or total < 1):
         raise Stop('chain is how many roundtables the session runs, 1 or more.', 'metaform roundtables open')
-    # a session, opened with its number of roundtables: Jev judges only whether each turn keeps to the topic
-    judging = True if total else ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
+    # When enabled for a session, Jev judges whether each turn keeps to its panel's topic.
+    judging = ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
     if judging and not settings.value('jev', ctx.folder):
         raise Stop('A table sends your question, and the part\'s context when it is about a part, to OpenRouter, where '
                    'Jev judges every turn, and only you allow project text to leave this machine.',
@@ -303,6 +329,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
     roles = {key: seat_of(ctx, str(ctx.nouns[key])) if ctx.nouns.get(key) else None
              for key in ('host', 'synthesizer')}
     roles['host'] = roles['host'] or seats[0]  # never the engine's own default, which seats an agent nobody chose
+    agents = {one.split('/', 1)[0].removeprefix('acp:') for one in [*seats, *roles.values()]
+              if one and one.startswith('acp:')}
+    permissions = permission_settings(ctx, ctx.nouns.get('permissions'), agents)
     table_id = secrets.token_hex(4)
     held = session_of(ctx, table_id, int(total), topic) if total else None
     text = str(held.pop('opening')) if held else opening(ctx, address, topic)
@@ -312,6 +341,7 @@ def open_table(ctx: Context) -> dict[str, Any]:
                              'seats': seats, **roles, 'spend': spend,
                              'state': 'opening', 'created': follow.now(),
                              'followed': {'reply_limit': reply_limit, 'judging': judging,
+                                          'permissions': permissions,
                                           **({'session': held} if held else {}),
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
                                           'opener': 'person' if ctx.surface == 'web' or (
@@ -331,6 +361,15 @@ def chaired(ctx: Context, tool: str, **more: Any) -> dict[str, Any]:
         raise Stop(f'Roundtable {row["table_id"]} never opened: {row.get("reason") or row["state"]}.',
                    'metaform roundtables open')
     answer = engine.call(ctx.folder, tool, discussion=int(row['discussion']), chair=row['chair'], **more)
+
+    def announced() -> None:
+        with ctx.require_store().tables() as tx:
+            current = tx.get('tables', {'table_id': row['table_id']})
+            if current is not None:
+                tx.concern(kind=f'roundtables:control:{row["discussion"]}')
+                tx.update('tables', {'table_id': row['table_id']}, {'reason': dict(current).get('reason')})
+
+    events.announced(ctx.folder, ctx.surface, announced)
     return {'table': row['table_id'], **{key: answer[key] for key in CHAIR if key in answer}}
 
 
@@ -394,7 +433,13 @@ def permit(ctx: Context) -> dict[str, Any]:
 
 
 def end(ctx: Context) -> dict[str, Any]:
-    return chaired(ctx, 'end')
+    answer = chaired(ctx, 'end')
+    row = table_row(ctx)
+    if row['state'] != 'ended' and not follow.alive(row.get('follower')):
+        watching = started(ctx, str(row['table_id']))
+        if 'refused' in watching:
+            raise Stop(str(watching['refused']), str(watching.get('next') or 'metaform roundtables follow'))
+    return answer
 
 
 def abort(ctx: Context) -> dict[str, Any]:
@@ -550,6 +595,11 @@ MODULE = Module(
                          kind='bool', required=False),
                     Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
                          required=False),
+                    Noun('permissions', 'Per-agent permission prompts and native ACP mode for the complete session; '
+                         'project settings when left out.', kind='json', required=False,
+                         schema={'type': 'object', 'additionalProperties': {'type': 'object',
+                                 'properties': {'prompts': {'type': 'string'}, 'mode': {'type': 'string'}},
+                                 'additionalProperties': False}}),
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
                          'board and execution outline without decisions. Default off.', kind='bool', required=False),

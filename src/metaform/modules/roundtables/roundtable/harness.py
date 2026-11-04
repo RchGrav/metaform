@@ -146,10 +146,12 @@ class Session:
 
     def __init__(self, number: int, seat: dict[str, Any], folder: str, servers: list[dict[str, Any]] | None = None,
                  *, reads: str | None = None, notes: str | None = None,
-                 permission_event: Callable[[dict[str, Any]], None] | None = None) -> None:
+                 permission_event: Callable[[dict[str, Any]], None] | None = None,
+                 permission_settings: dict[str, str] | None = None) -> None:
         self.number = number
         self.notes = notes
         self.permission_event = permission_event
+        self.permission_settings = dict(permission_settings or {})
         self.position = int(seat['position'])
         self.agent = str(seat['agent'])
         self.model = str(seat['model'])
@@ -164,6 +166,8 @@ class Session:
         self.can_close = True
         self.session_id: str | None = None
         self.config: list[dict[str, Any]] = []
+        self.modes: dict[str, Any] = {}
+        self.tool_kinds: dict[str, str | None] = {}
         self.said: dict[str, str] = {}
         self.order: list[str] = []
         self.replaying = False
@@ -217,6 +221,8 @@ class Session:
         if kind == 'config_option_update':
             self.config = [one.model_dump(mode='json', by_alias=True)
                            for one in cast(list[Any], update.config_options or [])]
+        elif kind == 'current_mode_update' and self.protocol == 1:
+            self.modes['currentModeId'] = str(update.current_mode_id)
         elif kind == 'usage_update' and getattr(update, 'cost', None) is not None:
             self.cost = float(update.cost.amount)
         elif kind == 'state_update':
@@ -233,6 +239,10 @@ class Session:
             elif self.foreground_started and self.completion is not None and not self.completion.done():
                 self.completion.set_result(state)
             self.activity_changed.set()
+        if kind in ('tool_call', 'tool_call_update') and 'kind' in update.model_fields_set:
+            value = getattr(update, 'kind', None)
+            if value is not None or self.protocol == 2:
+                self.tool_kinds[str(update.tool_call_id)] = str(value) if value is not None else None
         if self.replaying:
             return
         if self.protocol == 1 and kind in ('tool_call', 'tool_call_update'):
@@ -276,6 +286,13 @@ class Session:
 
     async def permission(self, payload: dict[str, Any]) -> str | None:
         from . import permissions
+        subject = cast(dict[str, Any], payload.get('subject') or {})
+        call = cast(dict[str, Any], subject.get('toolCall') or {}) if subject.get('type') == 'tool_call' else {}
+        kind = call.get('kind') or self.tool_kinds.get(str(call.get('toolCallId') or ''))
+        selected = permissions.choice(self.workspace, str(self.permission_settings.get('prompts') or ''),
+                                      cast(list[dict[str, Any]], payload['options']), kind)
+        if selected is not None:
+            return selected
         self.permission_waits += 1
         self.activity_changed.set()
         try:
@@ -318,6 +335,8 @@ class Session:
         self.background = None
         self.raw_states.clear()
         self.config = []
+        self.modes = {}
+        self.tool_kinds.clear()
         command = shlex.split(config.agents()[self.agent])
         logs = config.home() / 'logs'
         logs.mkdir(parents=True, exist_ok=True)
@@ -426,13 +445,16 @@ class Session:
         options = getattr(made, 'config_options', None)
         if options is not None:
             self.config = [one.model_dump(mode='json', by_alias=True) for one in options]
+        modes = getattr(made, 'modes', None)
+        if self.protocol == 1 and modes is not None:
+            self.modes = modes.model_dump(mode='json', by_alias=True)
 
     def option(self, category: str) -> dict[str, Any] | None:
         return next((one for one in self.config if one.get('category') == category or
                      one.get('configId' if self.protocol == 2 else 'id') == category), None)
 
     async def settle(self) -> None:
-        """Select the requested model through ACP. The agent keeps its advertised permission mode."""
+        """Apply the person's model and permission mode through the negotiated ACP session."""
         model = self.option('model')
         if model is None:
             raise await self.gone(f'{self.agent} offers no model to choose, so it cannot sit as {self.model}')
@@ -448,6 +470,27 @@ class Session:
             except (TimeoutError, acp.RequestError) as error:
                 raise await self.gone(f'{self.agent} did not take the model {value}: {error}') from None
         self.reported = str((self.option('model') or {}).get('currentValue') or value)
+        await self.settle_mode()
+
+    async def settle_mode(self) -> None:
+        mode = str(self.permission_settings.get('mode') or '')
+        if not mode:
+            return
+        option = self.option('mode')
+        offered = [one['value'] for one in choices(option)] if option is not None else [
+            str(one['id']) for one in cast(list[dict[str, Any]], self.modes.get('availableModes') or [])]
+        if mode not in offered:
+            raise await self.gone(f'{self.agent} no longer offers the selected ACP permission mode {mode}; '
+                                  f'it offers {", ".join(offered) or "no permission modes"}.')
+        try:
+            if option is not None:
+                if option.get('currentValue') != mode:
+                    await self.configure(option, mode)
+            elif self.protocol == 1 and self.modes.get('currentModeId') != mode:
+                await asyncio.wait_for(self.conn.set_session_mode(session_id=self.session_id, mode_id=mode), SETTING)
+                self.modes['currentModeId'] = mode
+        except (TimeoutError, acp.RequestError) as error:
+            raise await self.gone(f'{self.agent} did not take the selected ACP permission mode {mode}: {error}') from None
 
     async def configure(self, option: dict[str, Any], value: str) -> None:
         key = 'configId' if self.protocol == 2 else 'id'
@@ -624,10 +667,12 @@ class AcpSeat(Seat):
         if self.session_made is not None:
             self.session_made = None
             raise Gone(f'{self.row["agent"]} exited')
+        from . import permissions
         made = Session(self.number, self.row, seat_folder(self.number, self.position),
                        servers_of(self.table, int(self.row['position'])) if self.in_world else [],
                        reads=str(self.table['folder']),
-                       notes=self.notes_folder() if self.in_world else None)
+                       notes=self.notes_folder() if self.in_world else None,
+                       permission_settings=permissions.settings_for(self.table, str(self.row['agent'])))
         await made.start(resume=self.session or None)
         self.session_made, self.session, self.reported = made, made.session_id, made.reported
 

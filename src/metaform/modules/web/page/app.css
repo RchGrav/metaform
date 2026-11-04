@@ -1652,11 +1652,11 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 #intake .intakesettings .setting{display:flex;flex-direction:column;gap:2px;font-size:var(--t-sm);color:var(--muted)}
 #intake .intakesettings .hint{margin:0;color:var(--muted);font-size:var(--t-sm)}
 #intake .intakesettings .hint:empty{display:none}
-#dispatch .permissions .controls{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3)}
-#dispatch .permissions .setting{display:flex;flex-direction:column;gap:2px;font-size:var(--t-sm);color:var(--muted)}
-#dispatch .permissions .hint{margin:0;color:var(--muted);font-size:var(--t-sm)}
-#dispatch .permissions .hint:empty{display:none}
-#dispatch .permissions .risk{margin:0;padding:var(--s2) var(--s3);border-left:3px solid var(--danger);border-radius:var(--r);background:var(--panel-2);color:var(--text)}
+:is(#dispatch, .rt-setup) .permissions .controls{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3)}
+:is(#dispatch, .rt-setup) .permissions .setting{display:flex;flex-direction:column;gap:2px;font-size:var(--t-sm);color:var(--muted)}
+:is(#dispatch, .rt-setup) .permissions .hint{margin:0;color:var(--muted);font-size:var(--t-sm)}
+:is(#dispatch, .rt-setup) .permissions .hint:empty{display:none}
+:is(#dispatch, .rt-setup) .permissions .risk{margin:0;padding:var(--s2) var(--s3);border-left:3px solid var(--danger);border-radius:var(--r);background:var(--panel-2);color:var(--text)}
 /* The joins' lines hidden, web_flow_edges: only what flows along them shows. */
 #map2d.noedges .edgePaths path,#map2d.noedges .edgeLabels{opacity:0}
 /* The 2D map's choice said a moment at its top right as it is made, `note2d`, then faded. */
@@ -1762,9 +1762,6 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .rt-leave{margin-left:auto}
 .rt-transcript{margin:0;padding-left:1.6em;height:22vh;min-height:3em;max-height:70vh;overflow:auto;
   display:grid;align-content:start;gap:3px;line-height:1.4}
-.rt-running{margin:0;min-height:3em;max-height:70vh;overflow:auto;line-height:1.45;white-space:pre-wrap;
-  overflow-wrap:anywhere}
-.rt-running[hidden]{display:none}
 .rt-transcript[hidden]{display:none}
 .rt-notelist{list-style:none;padding-left:0}
 .rt-noteview{margin:var(--s2) 0 0;max-height:28vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;

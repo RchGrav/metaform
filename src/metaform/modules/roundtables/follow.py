@@ -23,7 +23,6 @@ saved transcript, without waiting for another agent to write a report.
 """
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import os
@@ -36,16 +35,13 @@ import threading
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from metaform import events, home, prompt_files
 from metaform.data import Store
 from metaform.module import Context, Stop, provided
 
 from . import engine
-
-if TYPE_CHECKING:
-    from .roundtable.harness import Session
 
 PACKAGE = resources.files(__name__.rpartition('.')[0])
 TOPIC = 'roundtables.event'
@@ -55,11 +51,6 @@ DONE = ('ended',)
 GONE = 'The engine no longer holds this table.'
 RECORD = 'export.json'  # the table's whole record as the engine exports it, with the Borda count
 REPORT = 'mechanical-report.md'  # the engine's text of the complete record
-SUMMARY_WAIT = 300.0  # seconds one summary pass may take, its reading included
-RECORD_ID = re.compile(r'\b([RD]-\d+(?:\.\d+)?)\b')  # a requirement or decision record the seats cite, R-5.30, D-10
-DEFINED = re.compile(r'\s*(?:[-*]\s+)?\*\*([RD]-\d+(?:\.\d+)?)\*\*:?\s*(.+)')  # **R-5.30** what it says
-DEFINED_ROW = re.compile(r'\s*\|\s*([RD]-\d+(?:\.\d+)?)\s*\|\s*(.+?)\s*\|')  # | D-10 | what it says |
-REFERENCES, REFERENCE_CHARS = 12, 500  # the most records explained in one summary, and of each one's text
 
 
 class Stopped(BaseException):
@@ -120,14 +111,7 @@ class Follower:
         with self.store.tables(write=False) as tx:
             told = list(tx.rows('events', {'table_id': table_id}, limit=0).results)
         self.seq = max((int(one['seq']) for one in told), default=0)
-        self.defined: dict[str, str] | None = None  # the project's record ids and what each says, read once
-        self.telling = threading.RLock()  # one event written at a time, whether by the follower or its summarizer
-        self.summing = threading.Lock()  # guards the turns waiting for the summarizer and whether it runs
-        self.waiting: list[dict[str, Any]] = []
-        self.summarizing = False
-        self.summary_session: Session | None = None
-        self.summary_thread: threading.Thread | None = None
-        self.minutes_stopped = False
+        self.telling = threading.RLock()  # keep event writes, their cursors and publication in sequence
 
     def row(self) -> dict[str, Any] | None:
         with self.store.tables(write=False) as tx:
@@ -179,6 +163,7 @@ class Follower:
                              spend=row['spend'], host=row['host'], synthesizer=row['synthesizer'],
                              reply_limit=self.followed.get('reply_limit', 512),
                              judging=self.followed.get('judging', True),
+                             permissions=self.followed.get('permissions'),
                              folder=str(self.ctx.folder))
         a2a = cast(dict[str, Any], answer.get('a2a') or {})
         changes = {'discussion': int(answer['discussion']), 'chair': str(answer['chair']), 'state': 'running',
@@ -219,7 +204,13 @@ class Follower:
             recovery = engine.Page(self.ctx.folder, engine.folder_log() / f'page-{self.table_id}.log')
             try:
                 # Admission stays reserved until the held runner has closed all participant processes.
+                last: dict[str, Any] = {}
                 for snapshot in recovery.changes(number):
+                    self.moved(recovery, number, last, snapshot)
+                    last = snapshot
+                    if snapshot.get('state') in DONE and (snapshot.get('report') or snapshot.get('runner') == 'stopped'):
+                        self.ended(recovery, number)
+                        break
                     if snapshot.get('state') == 'held' and snapshot.get('runner') == 'stopped':
                         break
             finally:
@@ -286,17 +277,13 @@ class Follower:
     def turns(self, page: engine.Page, number: int) -> None:
         found = cast(dict[str, Any], page.get(f'/tables/{number}/turns', since=int(self.followed.get('turns') or 0)))
         latest = int(found.get('latest') or 0)
-        fresh: list[dict[str, Any]] = []
         for row in cast(list[dict[str, Any]], found.get('turns') or []):
             if int(row['n']) > latest or row.get('outcome') == 'unjudged':
                 continue  # judged later, and told then
             self.followed['turns'] = int(row['n'])
             self.emit('veto' if row.get('outcome') == 'vetoed' else 'turn', **{key: row[key] for key in (
                 'n', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'text', 'truncated') if key in row})
-            fresh.append(row)
         self.followed['turns'] = max(latest, int(self.followed.get('turns') or 0))
-        if fresh:
-            self.summarized(number, fresh)
 
     def unjudged(self, page: engine.Page, number: int) -> None:
         """An ended table's last submission, which Jev never judged: the engine lists it last, unjudged, once the
@@ -339,8 +326,7 @@ class Follower:
             self.followed['events'] = int(one['number'])
             if one.get('kind') == 'permission':
                 payload = json.loads(str(one['text']))
-                if payload.get('position') != -4:  # minutes relay directly even after the engine stream closes
-                    self.emit('permission', 'person', **payload)
+                self.emit('permission', 'person', **payload)
                 continue
             self.emit('seat_lost' if one.get('kind') in SEAT_LOST else 'operational', 'person', what=one.get('kind'),
                       text=one.get('text'), **({'seat': one['seat']} if one.get('seat') else {}))
@@ -350,7 +336,6 @@ class Follower:
         self.unjudged(page, number)
         found = cast(dict[str, Any], page.get(f'/tables/{number}'))
         if str(found.get('reason') or '').lower().startswith('abort'):
-            self.stop_minutes()
             self.change(state='ended', reason=found.get('reason'), follower=None)
             return
         listed = cast(list[dict[str, Any]], cast(dict[str, Any], page.get(f'/tables/{number}/topics'))['topics'])
@@ -406,122 +391,6 @@ class Follower:
             return None, refused.message
         self.followed['recorded'] = entity['name']
         return entity['name'], None
-
-    def references(self, text: str) -> str:
-        """What each record id the turns name says, such as R-5.30 or D-10, as the project's own documents define it,
-        so the summary can explain it in plain words; the documents are read once, on the first summary."""
-        named = sorted(set(RECORD_ID.findall(text)))
-        if not named:
-            return ''
-        if self.defined is None:
-            self.defined = {}
-            root = Path(self.store.project().path)
-            for path in sorted(root.glob('*.md')) + sorted((root / 'docs').glob('**/*.md')):
-                if 'roundtables' in path.parts:
-                    continue
-                with contextlib.suppress(OSError, UnicodeDecodeError):
-                    for line in path.read_text(encoding='utf-8').splitlines():
-                        found = DEFINED.match(line) or DEFINED_ROW.match(line)
-                        if found and found[1] not in self.defined:
-                            self.defined[found[1]] = found[2].strip()[:REFERENCE_CHARS]
-        return '\n'.join(f'- {one}: {self.defined[one]}' for one in named[:REFERENCES] if one in self.defined)
-
-    def summarized(self, number: int, fresh: list[dict[str, Any]]) -> None:
-        """The turns just told handed to the summarizer, which runs beside the follower so the table never waits on
-        it: turns that arrive while it works wait and go into its next pass together, one pass however many came."""
-        if os.environ.get('PYTEST_CURRENT_TEST'):  # a test's table never calls the live model
-            return
-        with self.summing:
-            if self.minutes_stopped:
-                return
-            self.waiting.extend(fresh)
-            if self.summarizing:
-                return
-            self.summarizing = True
-        self.summary_thread = threading.Thread(target=self.summarize, args=(number,), daemon=True)
-        self.summary_thread.start()
-
-    def summarize(self, number: int) -> None:
-        while True:
-            with self.summing:
-                fresh, self.waiting = self.waiting, []
-                if not fresh:
-                    self.summarizing = False
-                    return
-            try:
-                self.summary_pass(number, fresh)
-            except Exception as error:  # noqa: BLE001  minutes failures do not stop participant turns
-                print(f'Table {self.table_id}: minutes were not written: {named(error)}', file=sys.stderr)
-
-    def summary_pass(self, number: int, fresh: list[dict[str, Any]]) -> None:
-        """The minutes: each new turn translated by Haiku into Simplified Technical English a competent technical
-        adult understands, after it has read what the turn refers to, and appended to the roundtable's minutes file,
-        one file per roundtable in the session's minutes folder; each entry told to the page."""
-        root = Path(self.store.project().path)
-        held = cast(dict[str, Any] | None, self.followed.get('session'))
-        minutes = (Path(str(held['folder'])) if held else root / 'docs' / 'roundtables' / f'{number}-notes') / 'minutes'
-        minutes.mkdir(parents=True, exist_ok=True)
-        taste = ''
-        with contextlib.suppress(OSError, UnicodeDecodeError):  # the project's own writing rules, read each pass
-            taste = (root / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
-        system = prompt_files.required(PACKAGE, 'minutes_system',
-                                       taste=taste or prompt_files.required(PACKAGE, 'minutes_taste_default'))
-        for one in fresh:
-            if self.minutes_stopped:
-                return
-            said_ = str(one.get('text') or '').strip()
-            if not said_ or one.get('outcome') in ('pass', 'none'):
-                continue
-            asked = prompt_files.required(PACKAGE, 'minutes_turn', project=str(root), session_folder=str(minutes.parent),
-                                          seat=str(one.get('seat') or ''), turn=said_,
-                                          references=self.references(said_) or
-                                          prompt_files.required(PACKAGE, 'minutes_no_references'))
-            text = self.haiku(root, system, asked, number)
-            if not text or self.minutes_stopped:
-                continue
-            topic = int(one.get('topic') or 1)
-            entry = f'**{one.get("seat")}**{" (vetoed)" if one.get("outcome") == "vetoed" else ""}: {text}'
-            with (minutes / f'{topic:02d}.md').open('a', encoding='utf-8') as written:
-                written.write(entry + '\n\n')
-            self.emit('minutes', 'person', seat=one.get('seat'), topic=topic, text=text,
-                      vetoed=one.get('outcome') == 'vetoed')
-
-    def haiku(self, root: Path, system: str, asked: str, number: int) -> str:
-        """One minutes entry through the same ACP client and permission relay used by every participant."""
-        try:
-            return asyncio.run(self.minutes_reply(root, system, asked, number))
-        except Exception as error:  # noqa: BLE001  provider failures leave participant turns running
-            print(f'Table {self.table_id}: a minutes entry was not written: {named(error)}', file=sys.stderr)
-            return ''
-
-    async def minutes_reply(self, root: Path, system: str, asked: str, number: int) -> str:
-        from .roundtable.harness import Session
-        if self.minutes_stopped:
-            return ''
-        session = Session(number, {'position': -4, 'agent': 'claude', 'model': 'haiku'}, str(root), reads=str(root),
-                          permission_event=lambda payload: self.emit('permission', 'person', **payload))
-        self.summary_session = session
-        try:
-            await session.start()
-            if self.minutes_stopped:
-                return ''
-            text, _ = await session.prompt(f'{system}\n\n{asked}', SUMMARY_WAIT)
-            return text.strip()
-        finally:
-            await session.close()
-            self.summary_session = None
-
-    def stop_minutes(self) -> None:
-        """Abort stops the active ACP process before the session's files are archived."""
-        with self.summing:
-            self.minutes_stopped = True
-            self.waiting.clear()
-            session = self.summary_session
-        process = session.process if session is not None else None
-        if process is not None and process.returncode is None:
-            with contextlib.suppress(ProcessLookupError, OSError):
-                os.killpg(process.pid, signal.SIGKILL)
-
 
 def top_element(store: Store) -> str | None:
     """The project's top element, where a table about no part keeps what it leaves on the map: its DE, else its first
@@ -631,11 +500,6 @@ def run(ctx: Context, table_id: str) -> dict[str, Any]:
         follower.followed_to_end(int((follower.row() or {})['discussion']))
         return {'followed': table_id}
     finally:
-        thread = follower.summary_thread
-        if (follower.row() or {}).get('state') == 'ended' and thread is not None:
-            thread.join()
-        else:
-            follower.stop_minutes()
         release(held)
         with contextlib.suppress(Exception):
             if (follower.row() or {}).get('follower') == os.getpid():

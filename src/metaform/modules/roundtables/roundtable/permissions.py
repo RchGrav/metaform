@@ -1,4 +1,4 @@
-"""Relay ACP permission requests unchanged to the person and wait for their answer.
+"""Apply the person's dispatch policy and relay ACP requests that still need an answer.
 
 The engine and the page run in separate processes. The existing Metaform change
 relay wakes the request after the page stores an answer. No permission decision
@@ -10,10 +10,12 @@ import asyncio
 import json
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 from metaform import events
 from metaform.data import DataConnection
+from metaform.module import provided
 
 from . import store
 
@@ -21,6 +23,24 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS permission_requests(
   discussion INTEGER NOT NULL, request TEXT NOT NULL, payload TEXT NOT NULL,
   state TEXT NOT NULL, chosen TEXT,
   PRIMARY KEY (discussion, request))"""
+
+
+def settings_for(table: dict[str, Any], agent: str) -> dict[str, str]:
+    """The person's captured permission choices, reused by every session for this agent."""
+    snapshot = cast(dict[str, Any], table.get('snapshot') or {})
+    choices = cast(dict[str, Any], snapshot.get('permissions') or {})
+    return dict(cast(dict[str, str], choices.get(agent) or {}))
+
+
+def choice(folder: str, how: str, options: list[dict[str, Any]], kind: Any) -> str | None:
+    """Use dispatch's permission policy for the person's setup choice."""
+    if not how or how == 'ask_all':
+        return None
+    available = provided(Path(folder), 'dispatch.permission_choice')
+    if not available:
+        return None
+    select = cast(Callable[[list[dict[str, Any]], str, Any], str | None], available[0][1])
+    return select(options, how, kind)
 
 
 def topic(number: int) -> str:

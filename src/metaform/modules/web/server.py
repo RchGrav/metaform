@@ -2400,7 +2400,10 @@ class Handler(BaseHTTPRequestHandler):
         if status.get('discussion') is None:
             return self.send(200, {'notes': []})
         _, folder = project_folder(given)
-        notes = (folder / 'docs' / 'roundtables' / f'{int(status["discussion"])}-notes').resolve()
+        notes = (Path(str(status['materials'])) if status.get('materials') else
+                 folder / 'docs' / 'roundtables' / f'{int(status["discussion"])}-notes').resolve()
+        if not notes.is_relative_to(folder.resolve()):
+            return self.send(404, {'error': 'No such documents folder.'})
         if given.get('note'):
             found = (notes / given['note']).resolve()
             if not found.is_relative_to(notes) or not found.is_file():
@@ -2409,7 +2412,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = held.read(NOTE_BYTES + 1)
             return self.send(200, {'path': given['note'], 'text': data[:NOTE_BYTES].decode('utf-8', 'replace'),
                                    'cut': len(data) > NOTE_BYTES})
-        listed = sorted(one for one in notes.rglob('*') if one.is_file()) if notes.is_dir() else []
+        listed = sorted(one for one in notes.rglob('*') if one.is_file() and one.resolve().is_relative_to(notes)) \
+            if notes.is_dir() else []
         return self.send(200, {'notes': [{'path': one.relative_to(notes).as_posix(), 'bytes': one.stat().st_size}
                                          for one in listed]})
 
@@ -2473,9 +2477,13 @@ class Handler(BaseHTTPRequestHandler):
         chain = given.get('chain')
         if chain is not None and (type(chain) is not int or not 1 <= chain <= 20):
             return self.send(400, {'error': 'The number of roundtables is a whole number from 1 to 20.'})
+        permissions = given.get('permissions')
+        if permissions is not None and not isinstance(permissions, dict):
+            return self.send(400, {'error': 'Agent permissions are an object keyed by agent name.'})
         nouns: dict[str, Any] = {'topic': topic.strip(), **({'chain': chain} if chain else {}),
                                **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
                                'automate_ticket_creation': automate_ticket_creation,
+                               **({'permissions': permissions} if permissions is not None else {}),
                                **({'judging': judging} if judging is not None else {}),
                                **({'address': address.strip()} if address and address.strip()
                                                             else {}), **({'seats': seats} if seats else {})}
