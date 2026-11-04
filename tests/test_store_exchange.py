@@ -94,7 +94,7 @@ def test_work_records_are_carried_by_export_and_read_back_on_their_objects_after
     _, inner = filled(store)
     tick = store.element('code.loop.tick')
     missing = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', note='the pin is never released',
-                         task='release the pin', held=True)
+                         task='release the pin', held=True, hold_reason='Waiting for the alarm hardware.')
     broken = store.add_work(Node('join', inner.id), 'broken', task='wire the tone', reviewed=True)
     on_tick = store.add_work(Node('element', tick.id), 'under-construction')
     done = store.finish_work(store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt').id, 'built it')

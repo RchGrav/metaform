@@ -15,40 +15,52 @@
      in speaking order, the limit and what happens to a longer turn, Jev's four questions and the bar, and how a veto is shown. Rules are stated; a seat
      is never told what to say. <seats/> is the seats' short names in speaking order, <limit/> the selected character
      limit, <keep/> the bar (0.83 unless the person changed `keep`). Edit freely; keep the places. -->
-<rules>The rules of this table. The seats, in speaking order: <seats/>. Jev judges every turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping. A turn enters the discussion only at <keep/> or above on all four. A vetoed turn is shown to every seat as one short line naming the questions it failed and its four scores [new, valuable, relevant, keep], such as: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]. A seat with nothing to add may reply PASS alone. Only every participant voluntarily passing in the same full round, or the chair explicitly ending discussion, completes it. Vetoes, errors and skipped turns never count as PASS. Comments and context handoffs reset votes.</rules>
+<rules>Rules of this roundtable:
+- The seats speak in this order: <seats/>.
+- Jev judges each turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping.
+- A turn enters the discussion only when it scores <keep/> or more on all four.
+- Every seat sees a vetoed turn as one line with the failed questions and the four scores [new, valuable, relevant, keep], for example: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88].
+- Reply PASS alone when you have nothing to add.
+- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- A veto, an error or a skipped turn is not a PASS.
+- A chair comment or a context handoff cancels the earlier PASS votes.</rules>
 <!-- A seat's system message, fixed for the table's life: the table's rules, which seat it is, and the opening. Sent
      first in every request of a model through OpenRouter, as a system message; at the head of the first prompt of an
      ACP seat's session, of an A2A seat's conversation and of an outside agent seat's turns. <rules/> is the rules
      above; <seat/> the seat's short name; <seats/> every seat's short name in speaking order; <opening/> the opening
      message as the chair wrote it. -->
-<seat_system><rules/>
+<seat_system>You are participating in a roundtable discussion as <seat/>. The seats, in speaking order: <seats/>.
 
-You are <seat/>. The seats, in speaking order: <seats/>.
+<rules/>
 
 <opening/>
 
 <reply_length/></seat_system>
 <!-- The system message of a seat at a table with topics: the opening first, then the discussion instructions,
      <rules/>, as the Roundtable 2 protocol sends them, then which seat it is. -->
-<seat_system_topics><opening/>
+<seat_system_topics>You are participating in a roundtable discussion as <seat/>. The seats, in speaking order: <seats/>.
+
+<opening/>
 
 <rules/>
 
-You are <seat/>. The seats, in speaking order: <seats/>.
-
 <reply_length/></seat_system_topics>
 <reply_length>Each discussion reply has a maximum of <limit/> characters. Any excess text is truncated.</reply_length>
+<!-- Told to every seat just before the reply limit: the table's notes folder. Replies stay short and in turn; longer work
+     goes in the folder. Claude Code seats can write there and nowhere else; other seats can read it. <folder/> is the
+     folder's path. -->
+<notes_folder>The owner reads along and chairs. Write plainly, and say what each code you cite means. Notes folder: <folder/>. Put longer work there and name the file in your reply. shared.md is for every seat; vetoed/ holds vetoed turns; summary.md is read-only.</notes_folder>
 <!-- What a seat receives on its first turn: every turn before its own, and the limit; the rules and the opening are
      in its system message. <turns/> is the turns, one line or entry each, a blank line between; <limit/> the
      selected character limit. -->
 <seat_first><turns/>
 
-Reply in at most <limit/> characters.</seat_first>
+Reply in <limit/> characters or fewer.</seat_first>
 <!-- What a seat receives on each later turn: only what happened since its last reply, then the limit. When nothing
      happened since, <turns/> is the line <nothing_since>. -->
 <seat_next><turns/>
 
-Reply in at most <limit/> characters.</seat_next>
+Reply in <limit/> characters or fewer.</seat_next>
 <!-- The line that fills <turns/> on a later turn when nothing entered the discussion since that seat's last
      reply, so a seat is never sent an empty turn. -->
 <nothing_since>Nothing has been added since your last reply.</nothing_since>
@@ -150,17 +162,16 @@ The topics organize discussion rather than restrict what can be proposed; ideas 
 All findings from Roundtable 1 may be reconsidered. No architecture or technical direction has been decided. The purpose is open-ended technical debate and discovery.</rt2_opening>
 <!-- The discussion instructions, after the opening on a seat's first turn; also the rules a Roundtable 2 table
      records, shown in its review and its record. -->
-<discussion_start># Discussion instructions
+<discussion_start># How the discussion works
 
-The roundtable discusses three main topics, opened sequentially.
-
-When a topic opens, each participating model may offer ideas, challenge proposals, extend another model's contribution, or introduce alternatives.
-
-Jev evaluates contributions for whether they add context to the discussion. Contributions that are off-topic, simply repeat existing material, or add no new context may be vetoed.
-
-You learn whether your previous contribution was truncated or vetoed only when your next turn arrives. At that turn, you also receive the other models' labeled contributions before replying.
-
-Reply PASS alone only when you voluntarily have nothing further to add. Discussion ends only when every participant replies PASS in the same complete round, or the chair explicitly ends discussion. Vetoes, skipped turns and failures never count as PASS. Comments and context handoffs reset PASS votes. The synthesis, ranking, and explanation stages are prompted separately, when reached.</discussion_start>
+- The roundtable discusses its topics one at a time.
+- On each topic, you may give ideas, challenge proposals, extend another seat's contribution or give alternatives.
+- Jev judges each contribution. Jev vetoes a contribution that is off topic, repeats earlier material or adds no new context.
+- At your next turn, you learn if your last contribution was cut or vetoed, and you get the other seats' contributions.
+- Reply PASS alone only when you have nothing to add.
+- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- A veto, a skipped turn or a failure is not a PASS. A chair comment or a context handoff cancels the earlier PASS votes.
+- The synthesis, ranking and explanation stages come later, each with its own instructions.</discussion_start>
 <!-- The three Roundtable 2 topics, a table's topics when open names none. A topic given at open by one of these
      names (01_WORLD, 02_OBJECTS, 03_COLLABORATION) is its text below; any other topic is the text the chair gave.
      A table keeps each topic's text as it was when the table opened. -->
@@ -198,10 +209,10 @@ Findings and disagreements from Roundtable 1 may be revisited. Alternative inter
 
 <topic/>
 
-Other models' contributions (labeled by model):
+The other seats' contributions so far:
 <turns/>
 
-Contribute to the current topic. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+Contribute to the current topic. If you have nothing to add, reply PASS alone. The table records a pass and does not judge it.
 
 Maximum <limit/> characters. Any excess text is truncated.</topic_first>
 <!-- A seat's first message in a context begun for the topic when it is a stage's prompt, <stage/>, because the
@@ -211,7 +222,7 @@ Maximum <limit/> characters. Any excess text is truncated.</topic_first>
 <stage/></stage_first>
 <!-- A seat's first turn on a later topic: its previous contribution's status, the digest of earlier topics, the
      topic, and what was said on it before the seat's turn. -->
-<topic_open>Previous contribution status:
+<topic_open>Status of your last contribution:
 <status/>
 
 The next topic is open.
@@ -220,25 +231,21 @@ The next topic is open.
 
 <topic/>
 
-Other models' contributions (labeled by model):
+The other seats' contributions so far:
 <turns/>
 
-Contribute to the current topic. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+Contribute to the current topic. If you have nothing to add, reply PASS alone. The table records a pass and does not judge it.
 
 Maximum <limit/> characters. Any excess text is truncated.</topic_open>
 <!-- NEXT_TURN.md: each later turn on the same topic. <status/> is one of the status lines below; <turns/> the other
      seats' contributions since the seat's last turn, each labeled by model. -->
-<next_turn># Subsequent discussion turn
-
-Previous contribution status:
+<next_turn>Status of your last contribution:
 <status/>
 
-Other models' contributions (labeled by model):
+The other seats' contributions since your last turn:
 <turns/>
 
-Continue discussion of the current topic. You may introduce an idea, extend or challenge an existing one, or respond to another participant.
-
-Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+Continue the discussion of the current topic. You may give a new idea, extend or challenge an idea, or answer another seat. If you have nothing to add, reply PASS alone.
 
 Maximum <limit/> characters. Any excess text is truncated.</next_turn>
 <!-- The status of a seat's previous contribution, told only at its next turn. <turn/> is its number; <failed/> the
@@ -270,18 +277,16 @@ Maximum <limit/> characters. Any excess text is truncated.</next_turn>
      The ideas it numbers I1, I2 and on are the ideas every seat ranks. -->
 <synthesis># Topic synthesis
 
-Discussion has ended through unanimous voluntary PASS replies or explicit chair advancement.
+The discussion of this topic has ended.
 
-Summarize the ideas collected in this topic. Identify each distinct idea by name and describe its substance, including alternatives and disagreements raised.
+List each distinct idea from the discussion. For each idea, give a name and its substance, with the alternatives and disagreements about it. Every seat ranks these ideas next.
 
-This summary will be provided to all participating models for ranking.
+Put each idea on its own line, numbered I1, I2 and onward, in this form: I1. Name: its substance.
 
-Give each idea its own line, numbered I1, I2 and on, in the form: I1. Name: its substance.
-
-The current topic:
+The topic:
 <topic/>
 
-The contributions collected (labeled by model):
+The contributions, each labeled with its seat:
 <turns/></synthesis>
 <!-- Why a synthesis could not be read, said when the table holds for it. -->
 <synthesis_unread>no line of its answer began with an id, I1 and on.</synthesis_unread>
@@ -290,13 +295,13 @@ The contributions collected (labeled by model):
 <!-- RANKING.md, to every seat in its own conversation. <ideas/> is one <idea_line> each; <example/> the ids in order. -->
 <ranking># Rank collected ideas
 
-The following ideas were collected for the current topic:
+The ideas from this topic:
 
 <ideas/>
 
-Rank all of the collected ideas from best to worst according to your own technical judgment.
+Rank all the ideas from best to worst, by your own technical judgment.
 
-Submit your complete ordered ranking: every id exactly once, best first, separated by commas, such as <example/>.</ranking>
+Reply with the complete ranking: every id once, best first, separated by commas, for example <example/>.</ranking>
 <!-- The one repair request for a ranking that is not every id exactly once. <problem/> says what was wrong. -->
 <ranking_repair>Your ranking could not be read as every idea ranked exactly once: <problem/>. Reply with the ids alone, every one exactly once, best first, separated by commas: <ids/>.</ranking_repair>
 <ranking_missing>missing <ids/></ranking_missing>
@@ -309,39 +314,80 @@ Submit your complete ordered ranking: every id exactly once, best first, separat
 
 Explain why you ranked your top three ideas above the others.<yours/>
 
-Maximum **2,048 characters total** for this explanation.</top_three>
+Use 2,048 characters or fewer for this explanation.</top_three>
 <bottom_three># Explain your bottom three
 
-Explain why you placed your bottom three ideas at the bottom of your ranking.<yours/>
+Explain why you ranked your bottom three ideas below the others.<yours/>
 
-Maximum **1,024 characters total** for this explanation.</bottom_three>
+Use 1,024 characters or fewer for this explanation.</bottom_three>
 <stage_yours>
 
-Your ranking placed these three there: <ideas/>.</stage_yours>
+Your ranking put these three there: <ideas/>.</stage_yours>
 <!-- HOST_SUMMARY.md, to the host in a fresh request. Each input is one line or entry per seat, labeled by model. -->
 <host_summary># Host summary
 
-The participating models have ranked the named ideas for the current topic and explained their top-three and bottom-three selections.
+Every seat ranked the named ideas of this topic and explained its top three and bottom three.
 
-Summarize the other models' selections, the reasons they provided, the most and least favored ideas, and areas of agreement and disagreement.
+Summarize the seats' rankings and their reasons. Give the most and least favored ideas, and where the seats agree and disagree. Base the summary on the seats' rankings and explanations, not on your own ranking.
 
-Ground the summary in the participating models' selections and explanations rather than replacing them with the host's own rankings.
-
-The current topic:
+The topic:
 <topic/>
 
 The named ideas:
 <ideas/>
 
-Inputs:
-Models' rankings:
+The seats' rankings:
 <rankings/>
 
-Models' top-three explanations:
+The seats' top-three explanations:
 <tops/>
 
-Models' bottom-three explanations:
-<bottoms/></host_summary>
+The seats' bottom-three explanations:
+<bottoms/>
+
+<writing/></host_summary>
+<!-- What the owner reads on its own, the host's summary and the final report, is written to stand alone: render.py
+     `writing` fills <writing/> of host_summary and report with this, <taste/> being the project's own writing rules,
+     docs/taste.md in its folder, or taste_default when it has none. -->
+<writing_for_owner>Write this for the owner of the project. The owner reads it alone, without the discussion, the notes or the project files. It must work as a standalone document.
+
+Do not cite a requirement, decision, turn, idea, ranking id, section, file, line number or commit by its number or name, such as R-5.30, D-10, T5, I23 or §6. Say what the thing is, what it does and why it matters. Explain each technical term in a few words.
+
+Follow the project's writing rules:
+
+<taste/></writing_for_owner>
+<taste_default>Simplified Technical English: lead with the answer; short sentences, one idea each; common words and direct verbs; active voice; one term for one concept; state each point once; give the reasons for decisions; no ceremony or promotion.</taste_default>
+<!-- A session of roundtables, runner.py "a session". The owner's own messages arrive filled in from the module as
+     <message/>: session_between after each roundtable, session_scoring and session_farewell after the last. The rest
+     are the engine's short lines around them, in TASTE. -->
+<session_between><message/></session_between>
+<session_scoring><message/>
+
+Send your scorecard as one JSON object in your reply. Rate each other participant by name: <seats/>. Give stars from 0 to 5 in each category, and a bonus of true or false:
+{"Name": {"Efficient": 5, "Alert &amp; Aware": 5, "Thorough": 5, "Coordination": 5, "bonus": false}}</session_scoring>
+<session_results>Every scorecard is in. The ranking, with the points each participant received in this session and its rating across sessions:
+
+<ranking/></session_results>
+<session_rank><seat/>: <points/> points from <cards/> scorecards; rating <rating/></session_rank>
+<session_farewell><message/></session_farewell>
+<session_topic>Roundtable <index/> of <total/>. The topic:
+
+<topic/></session_topic>
+<session_no_topic>No next topic was submitted. Agree on the topic, and have one of you write it in <file/>. Then each of you say done.</session_no_topic>
+<session_no_topic_end>the session ended: no next topic was submitted.</session_no_topic_end>
+<session_ended>the session is complete: every participant said done.</session_ended>
+<!-- What a seat receives when the baton reaches it after a roundtable: what was said since it last spoke, what the
+     phase asks, and the reply limit. -->
+<phase_turn><turns/>
+
+<instruction/>
+
+Reply in <limit/> characters or fewer.</phase_turn>
+<collab_instruction>Continue the collaboration. Say done when you are finished.</collab_instruction>
+<score_instruction>Send your scorecard for <seats/> as the JSON object described above. Say done after it.</score_instruction>
+<score_received>Your private scorecard was received.</score_received>
+<session_profile>Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.</session_profile>
+<farewell_instruction>Speak freely. Say done when you are finished.</farewell_instruction>
 <!-- One seat's entry among the host's inputs and in the record. -->
 <stage_entry><seat/>: <text/></stage_entry>
 <!-- A seat's ranking that could not be read, among the host's inputs and in the record. -->
@@ -397,6 +443,8 @@ Models' bottom-three explanations:
      <spend/> is that limit and <spent/> what it spent, in US dollars. -->
 <!-- Why a table ends: the chair ended it. -->
 <ended_by_chair>ended by its chair.</ended_by_chair>
+<!-- Why a table ended when its chair aborted it: at once, with no report and nothing further spent. -->
+<aborted_by_chair>aborted by its chair: no report was written.</aborted_by_chair>
 <!-- Why a Roundtable 2 table holds: its synthesizer or its host gave no usable answer. continue asks again. -->
 <held_synthesis>The synthesizer gave no ideas numbered I1 and on: <error/> continue asks it again.</held_synthesis>
 <held_host>The host gave no summary: <error/> continue asks it again.</held_host>
@@ -439,7 +487,11 @@ Each turn's text: roundtable://discussion<discussion/>/submission&lt;number&gt;.
      request holding only it, and its answer is saved as <N>-<subject>.md in the reports folder; when it gives none,
      another seat is asked, then the report_model through OpenRouter. <record/> is the rules, the
      opening, then every turn: one that entered as its text, a veto or a turn with no submission as its short line. -->
-<report>The roundtable has ended. Below is its full record: the rules, the opening, then every turn; only kept turns and comments entered the discussion. Write the final report in Markdown, with no length limit: consolidate what the discussion established, the open questions it left, and the next steps it points to. Credit points to the seats that made them.
+<report>The roundtable has ended. Its full record follows: the rules, the opening and every turn. Only kept turns and chair comments entered the discussion.
+
+Write the final report in Markdown, with no length limit. Give what the discussion established, the open questions it left and the next steps it points to. Name the seat that made each point.
+
+<writing/>
 
 <record/></report>
 <!-- The mechanical report: written from the record alone, by no model, whenever a table ends, as
@@ -515,42 +567,48 @@ The topic has no synthesis.</mechanical_no_ideas>
 <a2a_no_send>A table takes no A2A messages: its chair opens and steers it over MCP, and its seats are sent their turns. Follow a table with SubscribeToTask.</a2a_no_send>
 <a2a_no_cancel>A2A does not end a table: its chair ends it over MCP with end.</a2a_no_cancel>
 <!-- Continuation records bypass novelty filtering. Notes remain attributed and unchanged. -->
-<discussion_unjudged>Discuss the person's question. Offer ideas, evidence, objections and alternatives. Every substantive reply enters without novelty filtering. Reply PASS alone only when you voluntarily have nothing further to add. Discussion finishes only when every participant passes in the same full round, or the chair explicitly ends discussion. Failures and skipped turns never count as PASS. Comments and context handoffs reset votes.</discussion_unjudged>
+<discussion_unjudged># How the discussion works
+
+- Discuss the question. Give ideas, evidence, objections and alternatives.
+- Every reply with substance enters the discussion. No judge filters the replies.
+- Reply PASS alone only when you have nothing to add.
+- The discussion ends when every seat passes in the same full round, or when the chair ends it.
+- A failure or a skipped turn is not a PASS. A chair comment or a context handoff cancels the earlier PASS votes.</discussion_unjudged>
 <why_passes>Every participant voluntarily replied PASS in the same full round.</why_passes>
 <held_empty>No participant is available. Reseat unavailable participants, then Continue.</held_empty>
 <held_spend>The table reached its OpenRouter spending limit of $<spend/>, having spent $<spent/>. Raise its budget, then Continue, or choose End discussion.</held_spend>
 <held_handoff>Context handoff is held: <error/> Existing notes remain saved. Continue retries the unfinished step, or choose End discussion.</held_handoff>
 <carry_forward># Carry-forward note
 
-Before context handoff, write your own carry-forward note. Preserve your position, decisions, evidence references, disagreements and open questions. This note is saved verbatim, outside novelty filtering. This is a handoff note, not a discussion reply or a PASS vote. Maximum <limit/> characters, twice the discussion reply limit.
+Your context resets next. Write your carry-forward note now. Keep your position, decisions, evidence, disagreements and open questions. The table saves this note word for word and does not judge it. This note is not a discussion reply and not a PASS vote. Maximum <limit/> characters, twice the reply limit.
 
-Prior continuation:
+The earlier continuation:
 <continuation/>
 
-Discussion since your last turn:
+The discussion since your last turn:
 <turns/></carry_forward>
 <continuation_editor># Shared continuation
 
-Compact this discussion for fresh seat contexts. Retain the original person instructions, decisions, evidence references, disagreements, unresolved alternatives and open questions. Do not invent consensus. Participant notes remain attached verbatim by code. Do not rewrite or replace them. Return only shared continuation, at most <limit/> estimated tokens.
+Compact this discussion for seats that start with a fresh context. Keep the owner's original instructions, the decisions, the evidence, the disagreements, the open alternatives and the open questions. Do not invent agreement. The code attaches the seats' notes word for word: do not rewrite or replace them. Reply with the shared continuation only, in <limit/> estimated tokens or fewer.
 
-Original person instructions:
+The owner's original instructions:
 <opening/>
 
-Current topic:
+The current topic:
 <topic/>
 
-Prior continuation:
+The earlier continuation:
 <previous/>
 
-Current discussion segment:
+The current part of the discussion:
 <turns/>
 
-Participant notes:
+The seats' notes:
 <notes/></continuation_editor>
 <continuation_context>Shared continuation:
 <summary/>
 
-Verbatim participant carry-forward notes:
+The seats' carry-forward notes, word for word:
 <notes/></continuation_context>
-<handoff_marker>Context handoff completed. Fresh seat contexts receive shared continuation and intact participant notes. PASS votes reset.</handoff_marker>
+<handoff_marker>Context handoff done. Each seat starts a fresh context with the shared continuation and every seat's note. The earlier PASS votes are cancelled.</handoff_marker>
 </prompts>

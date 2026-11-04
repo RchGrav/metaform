@@ -11,7 +11,6 @@ with `metaform.settings`.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import inspect
 import os
@@ -24,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from .errors import PersonsDecision, Stop
+from .errors import Stop
 
 if TYPE_CHECKING:
     from .data import Node, Store, WorkRecord
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     from .relay import Listener
 
 __all__ = [
-    'AgentRoleDefinition',
     'Context',
     'Count',
     'Effect',
@@ -61,7 +59,6 @@ __all__ = [
     'agent_context_collecting',
     'agent_context_epoch',
     'agent_context_session',
-    'agent_role_name',
     'aliases',
     'begin_agent_context_check',
     'call',
@@ -75,7 +72,6 @@ __all__ = [
     'feedback',
     'finish_agent_context_check',
     'first_line',
-    'held_role',
     'instructions',
     'item_read',
     'item_text',
@@ -85,6 +81,7 @@ __all__ = [
     'mcp_server',
     'module_files',
     'module_instructions',
+    'module_registry',
     'node_brief',
     'node_counts',
     'node_items',
@@ -99,7 +96,6 @@ __all__ = [
     'record_agent_context',
     'refresh_modules',
     'request_scope',
-    'resolve_agent_role',
     'result_json',
     'save_report',
     'serve_session',
@@ -170,11 +166,8 @@ class Verb:
     reads both as the tool's annotations, MCP-003, so it can tell a read from a write and a write from a removal.
 
     `task` marks a verb that can take long, such as one that waits on an agent or the network; the MCP server answers
-    it with a task to a client that declares the tasks extension, BASE-030. `task='run'` marks a verb that returns
-    `{'run': <run id>}`, a workflow run record, BASE-051, whose work the server itself advances to its end, such as an
-    agent Metaform starts and steers: that run is the task, followed until it ends. A task only for work the server
-    advances by itself: a host gives the model a task's result only once it ends, so a verb whose result the calling
-    agent must act on, such as workflow's `assign`, declares neither. A cancel stops an `async` verb at its next
+    it with a task to a client that declares the tasks extension, BASE-030. A task only for work the server advances
+    by itself: a host gives the model a task's result only once it ends. A cancel stops an `async` verb at its next
     `await`; a verb run in a thread cannot be stopped, so it finishes and its task completes with its result.
 
     `needs_project` is true for a verb that acts on a project's map or records, the default. Over MCP such a verb is
@@ -186,29 +179,19 @@ class Verb:
     call that changes the state announces the list's change, MCP-004. It is read on every listing, so it reads only
     what is at hand, a file or a row, and never the network; a call to a verb not listed still runs and says why.
 
-    `person_says` marks a verb that is the person's decision, never an agent's, such as one that clears, switches or
-    removes the map or deletes what agents recorded: it runs only on the person's own yes, given at their own terminal
-    with `--confirm`, on the page, in the form their AI tool shows them, or on the consent card a dispatched agent's
-    chat shows them, CLI-011 and MCP-006 (`metaform.caller`). An agent's `confirm` never runs it: its call is refused
-    with the caution, told to ask the person in chat, and given the command the person pastes, and its tool is marked
-    destructive. It needs a `caution`. `page` names the control on the page that does the same, such as "the base
-    picker", so the refusal can send the person there. `cautioned`, given the call's context, says the caution with what the call
-    would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
-    the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
+    `caution` is asked before a verb that removes or replaces something runs: the call goes on with `--confirm` at the
+    command line or `confirm=true` over MCP, whoever makes it. `cautioned`, given the call's context, says the caution
+    with what the call would actually take: the tickets, layers, conversations and agents at work it removes or puts
+    out of view, and the backup it makes; `caution` is the fixed text of the tool's description and the fallback when
+    it fails.
 
     MCP tools are discovered under this verb's declaring module. The module's id and summary publish
     its capability; no separate category registration is required.
 
     `person_details` is what the details say only to the person and the agents that act for them: the person, in the
-    command line's help after `details`, and over MCP the person's own sessions, the system agent and a sentinel, with
+    command line's help after `details`, and over MCP the person's own sessions and the system agent, with
     the tool's guide. An agent at work on a ticket, an intake or a conversation does not act for the person that way,
     so it is not handed what is said to them.
-
-    `person_decides`, given the call's context, says the caution when this one call is the person's decision by what
-    it asks, though the verb is not, such as `map work` releasing a held ticket or `dispatch start` starting one: None
-    when it is not. Such a call runs only with the person's consent, through the same channels as a `person_says`
-    verb, and needs no `--confirm` at their own terminal; any other is refused with the caution and the command the
-    person runs. It reads only the record the call names; a call it cannot read is left to say what is wrong itself.
     """
     name: str
     run: VerbFunction
@@ -224,21 +207,15 @@ class Verb:
     effect: Effect = 'write'
     open_world: bool = False
     # The verb can take long: over MCP, a client that declares the tasks extension gets a task it polls instead of
-    # waiting on the call; every other surface and client waits as for any verb, BASE-030. 'run': the task is the
-    # workflow run the verb returns, which the server advances by itself.
-    task: bool | Literal['run'] = False
+    # waiting on the call; every other surface and client waits as for any verb, BASE-030.
+    task: bool | Literal['session'] = False
     needs_project: bool = True
     reads_layers: bool = False
     listed: Callable[[Path], bool] | None = None
-    person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
-    page: str | None = None
     person_details: str = ''
-    person_decides: Callable[[Context], str | None] | None = None
 
     def __post_init__(self) -> None:
-        if self.person_says and not self.caution:
-            raise ValueError(f'Verb {self.name}: a verb the person decides declares the caution it is asked with.')
         if self.effect not in EFFECTS:
             raise ValueError(f'Verb {self.name}: effect must be one of {", ".join(EFFECTS)}.')
         if not VERB_NAME.fullmatch(self.name):
@@ -247,8 +224,8 @@ class Verb:
             raise ValueError(f'Verb {self.name}: only the last noun may take many words.')
         if not set(self.surfaces) <= set(SURFACES):
             raise ValueError(f'Verb {self.name}: surfaces are cli and mcp.')
-        if self.task not in (False, True, 'run'):
-            raise ValueError(f"Verb {self.name}: task is True, False or 'run'.")
+        if self.task not in (False, True, 'run', 'session'):
+            raise ValueError(f"Verb {self.name}: task is True, False, 'run' or 'session'.")
 
     def usage(self, module: str) -> str:
         from . import settings
@@ -543,28 +520,6 @@ class Provides:
 
 
 @dataclass(frozen=True)
-class AgentRoleDefinition:
-    """Authored responsibility contributed as `Provides('agent.roles', definitions)`.
-
-    Ordered prompt-store identities belong to their owning modules. This name is independent of the execution
-    role in METAFORM_ROLE; declaring a responsibility changes no tool permissions or functional namespace.
-    """
-    name: str
-    purpose: str
-    prompts: tuple[str, ...]
-    specialist: bool = True  # Reusable domain expertise; False for framework/operational responsibilities.
-
-    @property
-    def uri(self) -> str:
-        return f'metaform://{"specialist" if self.specialist else "role"}/{self.name}'
-
-
-def agent_role_name(name: str) -> str:
-    """The registry name carried by a role or specialist identity."""
-    return name.removeprefix('metaform://role/').removeprefix('metaform://specialist/')
-
-
-@dataclass(frozen=True)
 class VoiceEngine:
     """A speech engine a module brings to the voice module, which offers it as a choice beside its own engines.
 
@@ -674,7 +629,6 @@ class Context:
     client: str | None = None  # the MCP client name, supplied by the transport rather than tool arguments
     session: str | None = None  # the agent session the call is made in, MCP-039; None for a person's command line
     identity: dict[str, str] = field(default_factory=dict[str, str])  # transport-supplied IDs, never tool arguments
-    consented: bool = False  # the person said yes to this one call, on its card or their AI tool's form
     context_receipts: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
     def queue_context(self, components: Sequence[dict[str, Any]], epoch: int) -> None:
@@ -785,10 +739,9 @@ async def _await(awaitable: Any) -> Any:
 # composed instructions and the per-call Context. The mcp module serves tools through these alone, MCP-001.
 
 def surface(folder: Path) -> list[Module]:
-    """The loaded modules on this folder's command surface, in module id order, CLI-022, less what is withheld from
-    the session this process serves, `withheld`."""
+    """The loaded modules on this folder's command surface, in module id order, CLI-022."""
     from . import instructions as composed
-    return withheld(composed.surfaced(folder), os.environ.get(WITHHELD, ''))
+    return composed.surfaced(folder)
 
 
 def installed() -> list[Module]:
@@ -797,35 +750,19 @@ def installed() -> list[Module]:
     return sorted((one.module for one in loader.discover() if one.module is not None), key=lambda one: one.id)
 
 
-# What a session's runner withholds from the agent it starts, named in its MCP server's environment: a session that
-# must not lean on earlier conclusions, an intake, is served without the tools that read them, dispatch's
-# dispatch_intake_withheld. Like the session's identity, it describes one session, so no process it starts carries it.
-WITHHELD = 'METAFORM_WITHHELD'
-
-
-def withheld(modules: list[Module], named: str) -> list[Module]:
-    """The modules less what `named` withholds, a comma list of entries: `<module>`, the whole module; `<module>:read`,
-    its verbs that only read; `<module>_<verb>`, one tool. Nothing withheld leaves the list as it is."""
-    entries = {entry.strip() for entry in named.split(',') if entry.strip()}
-    if not entries:
-        return modules
-    import copy
-    kept: list[Module] = []
-    for module in modules:
-        if module.id in entries:
-            continue
-        verbs = tuple(verb for verb in module.verbs
-                      if f'{module.id}_{verb.name}' not in entries
-                      and not (f'{module.id}:read' in entries and verb.effect == 'read'))
-        if len(verbs) == len(module.verbs):
-            kept.append(module)
-            continue
-        # the same module with fewer tools: copied rather than declared again, so its panes, which may run a verb
-        # withheld here, still stand as the module declared them
-        served = copy.copy(module)
-        object.__setattr__(served, 'verbs', verbs)
-        kept.append(served)
-    return kept
+def module_registry() -> list[dict[str, Any]]:
+    """Every discovered module's state and source, including modules whose declaration failed to load."""
+    from . import home, loader
+    modules: list[dict[str, Any]] = []
+    for item in loader.discover():
+        state = 'error' if item.problem else ('on' if item.enabled else 'off')
+        summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
+        text = item.problem or summary or ''
+        stored = home.module_state(item.id)
+        modules.append({'id': item.id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
+                        'place': item.place, 'summary': '' if state == 'error' else text,
+                        'problem': text if state == 'error' else ''})
+    return modules
 
 
 def instructions(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:
@@ -914,16 +851,15 @@ def record_shown(session: str | None, key: str, value: Any) -> Any:
 COMPACTED_KEY = 'pending:compacted'
 
 
-def agent_opening(folder: Path, role: str | None, withheld: str = '') -> str:
-    """What opens every agent's connect message and its first turn after each compaction: a directive line and one
-    link per line to each instruction block that applies to an agent of `role` in `folder` now, as the MCP server
-    serves them, `agent.opening`. `withheld` is what the agent's runner withholds from its server. '' with no module
-    offering it."""
+def agent_opening(folder: Path, task: str | None) -> str:
+    """What opens a dispatched agent's connect message and its first turn after each compaction: a directive line and
+    one link per line to each instruction block that applies in `folder` now to an agent on the task named `task`, None
+    for a session no task names, as the MCP server serves them, `agent.opening`. '' with no module offering it."""
     from . import loader
     for module in loader.enabled():
         for one in module.provides:
             if one.kind == 'agent.opening':
-                return one.value(folder, role, withheld)
+                return one.value(folder, task)
     return ''
 
 
@@ -966,47 +902,6 @@ def caution_of(verb: Verb, ctx: Context) -> str:
     return verb.caution
 
 
-def decided(verb: Verb, ctx: Context) -> str | None:
-    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`; None when it is not,
-    and when the call cannot be read, such as a ticket that is not there, so the call itself says what is wrong."""
-    if verb.person_decides is None or verb.person_says:
-        return None
-    from .data import StoreError
-    try:
-        return verb.person_decides(ctx)
-    except (Stop, StoreError):
-        return None
-
-
-def agent_caller() -> str | None:
-    """Why this process does not carry the person's consent, None when it does: it runs at the person's own
-    terminal with no agent above it, or the web server ran it for a write from its own page. No other process acts for
-    the person, whatever its environment or its parents say. See `metaform.caller`."""
-    from . import caller
-    return caller.unconsented()
-
-
-def persons_decision(caution: str, command: str, page: str | None = None) -> PersonsDecision:
-    """The refusal an agent gets for what is the person's decision: the caution, that it is theirs, and the command
-    the person runs, `command`, with the page's control `page` when there is one."""
-    from . import caller
-    return caller.persons_decision(caution, command, page)
-
-
-def page_vouched() -> bool:
-    """Whether the web server ran this process for a write from its own page, which carries the person's consent.
-    See `metaform.caller`."""
-    from . import caller
-    return caller.vouched()
-
-
-def dispatched() -> str | None:
-    """Why this process is known to run for an agent a Metaform dispatch runner started, in a few words; None when
-    nothing says so. See `metaform.caller`."""
-    from . import caller
-    return caller.dispatched()
-
-
 def current_os() -> str:
     """The system this process runs on, as `Module.supported_os` names it: linux, macos or windows."""
     from .module_metadata import current_os as running
@@ -1018,127 +913,6 @@ def noted(result: Any, notices: list[tuple[str, str]]) -> Any:
     object. See `metaform.results`."""
     from . import results
     return results.noted(result, notices)
-
-
-def skills_deployed(client_name: str) -> bool:
-    """Whether the MCP client of this name has the current discoverable skills on disk, BASE-059. See
-    `metaform.install`."""
-    from . import install
-    return install.skills_deployed(client_name)
-
-
-def persons_word(folder: Path, what: str, project: str | None = None,
-                 tickets: Sequence[str] = ()) -> dict[str, Any] | None:
-    """The person's own message this call acts on, when the caller is the person's own system agent, dispatched, and
-    its runner says either the turn in flight came from a message the person typed in its chat on the page (with the
-    key the server gave that page) or at their own terminal, or every one of `tickets` is in the work it started,
-    released, ordered or added to wait on others on such a message earlier (`'covered': True`), until that work is
-    done or the person stops it: `{'id', 'text', 'at'}`. None otherwise: any other turn and tickets, any other agent,
-    or a caller no runner started. The runner keeps it, in its memory and in the project's store, where only it writes
-    it; each enabled module's `Provides('person.word', ask)`, `ask(store, what, tickets)`, asks it (dispatch's). What
-    the person's word lets the agent do is the reversible work of orchestration (`on_persons_word`); what cannot be
-    undone still waits on a card."""
-    return _word(folder, what, project, tickets)[0]
-
-
-def _word(folder: Path, what: str, project: str | None, tickets: Sequence[str]) -> tuple[dict[str, Any] | None, bool]:
-    """`persons_word`, with whether the person stopped the work every one of `tickets` was in: a provider answers
-    `{'stopped': True}` for that, which is no word."""
-    from . import caller
-    if caller.dispatched() is None:
-        return None, False
-    from .data import Store
-    try:
-        named = project_for(folder, project)
-    except Exception:  # noqa: BLE001  no project here: no runner to ask, so no word
-        return None, False
-    if named is None:
-        return None, False
-    stopped = False
-    for _, ask in provided(folder, 'person.word'):
-        try:
-            found = ask(Store(named), what, tuple(tickets))
-        except Exception:  # noqa: BLE001  a runner that cannot be asked gives no word
-            found = None
-        if isinstance(found, dict) and set(cast(dict[str, Any], found)) == {'stopped'}:
-            stopped = stopped or cast(dict[str, Any], found)['stopped'] is True
-        elif isinstance(found, dict):
-            return cast(dict[str, Any], found), False
-    return None, stopped
-
-
-def persons_word_acted(folder: Path, word: dict[str, Any], said: str, project: str | None = None,
-                       tickets: Sequence[str] = (), widen: bool = True) -> None:
-    """Record, in the chat of the system agent whose turn the person's message `word` started, what it did on that
-    word, `said`, so the person sees what their agent did and why: each enabled module's
-    `Provides('person.word.acted', record)`, `record(store, word, said, tickets, widen)`. With `widen`, `tickets` (the
-    tickets started, released or ordered) become part of the work that word covers in later turns, with the tickets
-    the plan's order joins to them; a stop passes `widen=False`. A record that cannot be written is let go; the call's
-    result says the same."""
-    from .data import Store
-    try:
-        named = project_for(folder, project)
-    except Exception:  # noqa: BLE001
-        return
-    if named is None:
-        return
-    for _, record in provided(folder, 'person.word.acted'):
-        with contextlib.suppress(Exception):  # the action is done; its record is the thread's, the result says it
-            record(Store(named), word, said, tuple(tickets), widen)
-
-
-def on_persons_word(ctx: Context, what: str, tickets: Sequence[str] = ()) -> dict[str, Any] | None:
-    """Guard one of the person's reversible orchestration actions, such as starting or stopping an agent, releasing a
-    held ticket or setting an order between tickets, against an agent's own momentum: a call from the page, from the
-    person's own terminal, or from an AI tool run outside dispatch goes on as before (None); a dispatched agent's call
-    goes on only for the person's own system agent, in a turn the person's message started, or when `tickets` are all
-    in work it started, released or ordered on such a message, and the word is returned so the caller records what it
-    did on it (`persons_word_acted`); any other dispatched agent's call is refused, saying what would allow it and how
-    the person does it. What cannot be undone is not guarded here: it stays `person_says`."""
-    if ctx.surface not in ('mcp', 'cli'):
-        return None  # the page is the person's
-    if ctx.surface == 'cli' and agent_caller() is None:
-        return None  # at the person's own terminal, or run by the web server for their page
-    from . import caller, settings
-    if caller.dispatched() is None:
-        return None  # the person's own AI tool, run outside dispatch
-    if ctx.consented:
-        return None  # the person's yes on this call's card is their word for it
-    word, stopped = _word(ctx.folder, what, ctx.project, tickets)
-    if word is not None:
-        return word
-    # Permission to act without asking does not erase actual user-request provenance:
-    # dispatch persists it so required descendants can run with Full Auto off.
-    if not settings.value('agents_ask_first', ctx.folder):
-        return None
-    said, step = settings.asking(ctx.folder)
-    many = len(tickets) > 1
-    if tickets and stopped:
-        why = (f'This turn was not started by their message, and the person stopped the work ticket'
-               f'{"s" if many else ""} {", ".join(tickets)} {"are" if many else "is"} in: their earlier word no '
-               'longer covers it, and only their own word starts it again.')
-    elif tickets:
-        why = (f'This turn was not started by their message, and ticket{"s" if many else ""} {", ".join(tickets)} '
-               f'{"are" if many else "is"} in no work their word started.')
-    else:
-        why = 'This turn was not started by their message.'
-    allows = settings.WORD_COVERS if tickets else f'Their own system agent acts on it {settings.WORD_TURN}.'
-    raise PersonsDecision(f'{what} needs the person\'s word. {allows} {why} {said}', f'{step}use its control on the page')
-
-
-def page_vouch() -> Any:
-    """A new secret for a web server, `metaform.caller.Vouch`: the commands it runs for a person it judged carry its
-    `environment()`, so they act as the person whoever started the server; `close()` when the server ends."""
-    from . import caller
-    return caller.Vouch()
-
-
-def page_caller(client: tuple[str, int], local: tuple[str, int], served: Path) -> str | None:
-    """Why the process at the other end of a connection to the web server acts for an agent of the home `served`, None
-    when it does not or cannot be found, such as a browser on another system. `client` is the connection's far end,
-    `local` the server's. See `metaform.caller.peer_agent`."""
-    from . import caller
-    return caller.peer_agent(caller.peer_pid(client, local), served)
 
 
 def base_holds(project_id: str, base_id: str) -> dict[str, int]:
@@ -1159,18 +933,6 @@ def base_holds(project_id: str, base_id: str) -> dict[str, int]:
         for kind, number in got.items():
             found[kind] = found.get(kind, 0) + int(number)
     return found
-
-
-def held_role(ctx: Context) -> str | None:
-    """The role of the agent this call runs for, when the person's `roles_without_authority` holds it back from
-    writing tickets and steering agents; None when the call may, MAP-050 and BASE-052. The page is the person's and is
-    never held. The role is read from this process's environment, which the runner sets on its agent and that agent's
-    MCP server and every spawner clears: a guard against an agent's mistakes, not a boundary, since an agent can change
-    its own environment."""
-    if ctx.surface not in ('mcp', 'cli'):
-        return None
-    role = os.environ.get('METAFORM_ROLE')
-    return role if role and role != 'none' and role in (ctx.setting('roles_without_authority') or ()) else None
 
 
 def mcp_server(folder: Path) -> list[str] | None:
@@ -1311,22 +1073,11 @@ def provided(folder: Path, kind: str) -> list[tuple[str, Any]]:
 
 
 def _agent_context_service(folder: Path, project: str | None = None) -> tuple[Context, Any] | None:
-    found = provided(folder, 'agent.role')
+    found = provided(folder, 'agent.context')
     if len(found) > 1:
-        raise Stop(f'Multiple agent.role services: {", ".join(owner for owner, _ in found)}.',
+        raise Stop(f'Multiple agent.context services: {", ".join(owner for owner, _ in found)}.',
                    'select the intended module provider')
     return (context(found[0][0], folder, project=project), found[0][1]) if found else None
-
-
-def resolve_agent_role(folder: Path, name: str, *, project: str | None = None,
-                       bindings: dict[str, str] | None = None) -> dict[str, Any]:
-    """Resolve an authored role through the enabled provider, without binding an agent or recording delivery."""
-    service = _agent_context_service(folder, project)
-    if service is None:
-        return {'name': name, 'provider': None, 'components': [], 'missing': False,
-                'problems': ['No enabled agent.role resolution service.']}
-    ctx, given = service
-    return cast(dict[str, Any], given.resolve(ctx, name, bindings=bindings))
 
 
 def prepare_agent_context(folder: Path, session: str | None, components: Sequence[dict[str, Any]], *,

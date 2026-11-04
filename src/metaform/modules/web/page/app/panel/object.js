@@ -63,14 +63,13 @@ function stateSelect(current, redraw, target, key) {
     title: 'The state of this part: a stage on its way to existing, or broken. Built draws nothing',
     onchange: writeState}, ...STATES.map(([value, text]) => h('option', {value, selected: (current || 'built') === value}, text)));
 }
-/* Raise an issue, the person says what is wrong in their words; a sentinel investigates and brings
- * proposals to the chat; what they choose becomes held tickets. The only way work on an issue begins. */
+/* Raise an issue: the person says what is wrong in their words, and an agent takes it up in the chat. */
 function issueForm(key) {
   const issue = h('div', {class: 'issue', hidden: true},
     h('textarea', {rows: 4, placeholder: 'What is wrong, what you expected, and how to make it happen.',
       'aria-label': 'What is wrong'}),
     h('div', {class: 'issueacts'}, h('button', {class: 'btn sm primary send', type: 'button',
-      onclick: event => sendIssue(event, issue, key)}, 'Send to the sentinel'), h('span', {class: 'pickhost'})));
+      onclick: event => sendIssue(event, issue, key)}, 'Send'), h('span', {class: 'pickhost'})));
   return issue;
 }
 async function sendIssue(event, issue, key) {
@@ -84,10 +83,10 @@ async function sendIssue(event, issue, key) {
   issue.hidden = true;
   if (started.conversation) DOCK.mine = started.work_id;
   const queued = started.state === 'queued' ? (Array.isArray(started.waiting_on)
-    ? 'Queued: this part is in use, so the sentinel starts when that work is done.'
-    : 'Queued: every agent slot is in use, so the sentinel starts when one is free.') : STANDBY;
-  openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, queued, started.session_id,
-    'sentinel');
+    ? 'Queued: this part is in use, so the agent starts when that work is done.'
+    : 'Queued: every agent slot is in use, so the agent starts when one is free.') : STANDBY;
+  openHelpdesk(started.work_id, `the issue on ${calledOf(key) || 'this node'}`, queued, started.session_id,
+    'conversation');
 }
 /* Roundtable, code.interface.graphical#131: a table of agents debates the person's question about this part on the
  * 3D map's stage, T. */
@@ -96,16 +95,16 @@ const roundtableButton = () => h('button', {class: 'btn sm roundtablebtn', type:
   onclick: () => openRoundtable()}, 'Roundtable');
 function raiseButton(issue) {
   const raise = h('button', {class: 'btn sm raise', type: 'button', 'aria-expanded': 'false',
-    title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',
+    title: 'Say what is wrong with this part; an agent takes it up in the chat',
     onclick: () => toggleIssue(issue, raise)}, 'Raise an issue');
   return raise;
 }
 function toggleIssue(issue, raise) {
   issue.hidden = !issue.hidden;
   raise.setAttribute('aria-expanded', String(!issue.hidden));
-  // the one picker of the issue form, moved into this form: the agent the sentinel starts with
+  // the one picker of the issue form, moved into this form: the agent that takes the issue up
   if (!issue.hidden) {
-    issue.querySelector('.pickhost').append(summonPicker('raise', {label: 'Agent for the sentinel'}));
+    issue.querySelector('.pickhost').append(summonPicker('raise', {label: 'Agent'}));
     issue.querySelector('textarea').focus();
   }
 }

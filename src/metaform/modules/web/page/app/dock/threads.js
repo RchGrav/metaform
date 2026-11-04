@@ -1,4 +1,4 @@
-/* The chat's threads: their sources and tabs, proposals, the thread bar, subagents, spend, and a ticket's status,
+/* The chat's threads: their sources and tabs, the thread bar, subagents, spend, and a ticket's status,
  * cancel and interrupt. */
 import '/page/app/dock/embody.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
@@ -12,7 +12,6 @@ import {wake3d} from '/page/app/map3d/graph3d.js';
 import {select, MERGE} from '/page/app/selection/select.js';
 import {DOCK, SOURCES, STANDBY, sourceOf, sourceChip, dockState, clockOf} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {stayedOff} from '/page/app/dock/send.js';
 import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
@@ -20,7 +19,7 @@ import {narrowPage} from '/page/app/dock/place.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel, readSessionHistory} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
-import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
+import {notificationState, taskSummary} from '/page/app/session/tasks.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
@@ -65,41 +64,6 @@ function focusThread(chat) {
   const ticket = chat.source === 'system' || isIntake(chat.target) ? null : ticketOf(chat.target);
   const key = ticket ? ticketNode(ticket) : null;
   if (key && (S.elements.has(key) || joinOf(key))) select(key, true);
-}
-/* A sentinel's proposals in its chat, VIEW-045: each with its grounds, its disruption and how much of the map its
- * reach reserves, its benefit and trade-off, a link to its own explanation when it made one, Show on the map, which
- * paints its reach white, and Choose, which tells the sentinel. */
-export function drawProposals() {
-  const box = $('#helpdesk .proposals'), given = (D.proposals || {})[DOCK.target] || [];
-  box.hidden = !given.length;
-  const total = S.elements.size;
-  fill(box, given.map((one, index) => proposalRow(one, index, total)));
-}
-function proposalRow(one, index, total) {
-  const reach = idsAt(one.reach), on = reach.length && reach.every(id => INUSE.preview.has(id));
-  const link = /^https?:\/\//.test(one.view || '')
-    ? h('a', {href: one.view, target: '_blank', rel: 'noopener noreferrer'}, 'Its explanation') : null;
-  const showReach = () => {
-    INUSE.preview = new Set(on ? [] : reach);
-    paintInUse(); drawProposals();
-  };
-  const choose = async () => {
-    const text = `I choose proposal ${index + 1}: ${one.title}.`;
-    if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text})) {
-      INUSE.preview = new Set(); paintInUse(); drawHelpdesk();
-    }
-  };
-  return h('div', {class: 'proposal'},
-    h('b', {}, `${index + 1}. ${one.title}`),
-    one.grounds ? h('p', {}, h('small', {}, 'Grounds '), one.grounds) : null,
-    h('p', {class: 'disruption'}, h('small', {}, 'Disruption '), `Reserves ${reach.length} of ${total} parts`,
-      one.disruption ? ` · ${one.disruption}` : ''),
-    one.benefit ? h('p', {}, h('small', {}, 'Benefit '), one.benefit) : null,
-    one.tradeoff ? h('p', {}, h('small', {}, 'Trade-off '), one.tradeoff) : null,
-    h('div', {class: 'acts'}, link,
-      h('button', {type: 'button', class: on ? 'reach on' : 'reach', disabled: !reach.length, onclick: showReach},
-        on ? 'Hide from the map' : 'Show on the map'),
-      h('button', {type: 'button', class: 'choose', onclick: choose}, 'Choose')));
 }
 /* The tabs: My agent first and pinned, the person's own system agent, then each other agent's thread with its close ×.
  * The strip shows whenever another agent's thread is open, so there is always a way back to My agent. */
@@ -216,7 +180,7 @@ function runningRow(session) {
   const chat = DOCK.chats.find(one => one.session === session.session_id), work = session.work_id;
   return listRow(`s:${session.session_id}`, {on: Boolean(DOCK.chat) && DOCK.chat === chat,
     source: chat?.source || sourceOf(work), glyph: ticketOf(work) && !isIntake(work) ? glyphOf(work) : null,
-    name: [nameOf(session) || agentName(session.agent), assignmentSummary(D.states?.[session.session_id])]
+    name: [nameOf(session) || agentName(session.agent), taskSummary(D.states?.[session.session_id])]
       .filter(Boolean).join(' · '),
     status: listState(session), ...taskOf(work, session), session: session.session_id,
     open: () => {  // the thread open at the click, which a row kept since it was drawn may not know of
@@ -292,7 +256,7 @@ export function drawAgentSessions() {
   }
   const row = forget => session => ({key: session.session_id,
     text: JSON.stringify([session.state, session.how, agentLabel(session), glyphOf(session.work_id),
-      sessionTask(session), assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
+      sessionTask(session), taskSummary(D.states?.[session.session_id]), times[session.session_id],
       signalsOf.get(session.session_id) || null]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
@@ -330,7 +294,7 @@ function sessionRow(session, forget = false) {
   return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
     h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
     h('div', {class: 'details'}, h('b', {}, label), h('span', {class: 'task'}, task),
-      assignmentSummary(state) ? h('span', {class: 'meta responsibility'}, assignmentSummary(state)) : null,
+      taskSummary(state) ? h('span', {class: 'meta responsibility'}, taskSummary(state)) : null,
       notification ? h('span', {class: 'meta'}, 'Project messages') : !ended ? h('span', {class: 'meta'}, 'Running')
         : at ? h('time', {datetime: at, title: `${how} ${new Date(at).toLocaleString()}`}, `${word} ${clockOf(at, true)}`)
         : h('span', {class: 'meta', title: how}, stopped ? 'Stopped · time unavailable' : word)),
@@ -414,7 +378,7 @@ async function stopThread(event) {
     const stopped = await wrote('/api/dispatch-stop', {work_id: work, session: sessionId});
     if (!stopped) return;
     rememberStop(sessionId, new Date().toISOString());
-    toast(`${name} stopped. Resume its session below or in the Agents menu.${stayedOff(stopped)}`);
+    toast(`${name} stopped. Resume its session below or in the Agents menu.`);
     await renderAgents();
     await drawHelpdesk();
   } catch (error) { toast(error.message); }

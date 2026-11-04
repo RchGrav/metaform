@@ -246,6 +246,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance: The authored lexicalization script is unchanged and every owner placeholder is filled; CLI and MCP prepare the same text in body, knowledge, footer order; both context and whole modes preserve select/mask and existing visibility semantics; saving the prepared text keeps its exact wording and older versions. Protected by workflow tests and the prompt-store and MCP tests.
 - Relates to: MAP-005, MAP-012, LAYER-007, LAYER-008, LAYER-015, LAYER-016.
 - Status: confirmed as design; lexicalization script served 2026-10-04, versioned saving and configurable context assembly built 2026-10-05 as reversible mechanisms under ticket `222c468afadd42a980a42bbf140e8441`. The agent supplies inference, as it interprets the authored script.
+- Amendment, 2026-10-25, the owner's decision in session: the workflow module and everything Axiom were removed, `src/metaform/modules/workflow`, the Axiom libs and packaged skill folders under `src/metaform/skills`, the `task='run'` kind of MCP task, the page's Runs pane and the task editor's workflow picker, and the runner's workflow hooks. This record describes what was built and no longer exists in the code.
 
 ### LAYER-018 Knowledge layers are written through one read-write tool
 
@@ -325,6 +326,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance: Belongs to the workflow module's spec.
 - Relates to: LAYER-014, BASE-035, BASE-046.
 - Status: confirmed as design, 2026-09-26 and 2026-09-27. Its reason is open, D103; running it is workflow module work, deferred with D44.
+- Amendment, 2026-10-25, the owner's decision in session: the workflow module was removed; this record is design with no build.
 
 ### LAYER-024 An operation prompt takes the intake's seven-section shape
 - Requirement: A prompt an operation runs on the metaform, such as a critic's or a knowledge layer's, takes the shape of the Canonical Intake's sections, Purpose, Core Concepts, Namespace Rules, Method, Goal, Constraints and Completion Condition, and only the conditions change per operation.
@@ -391,6 +393,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance: Open. Recommended: a workflow layer's `.metaform` file is written from the stored workflow and reads back as the same workflow element and prompt requirements; turning the layer off leaves a project's metaform reads unchanged.
 - Relates to: LAYER-007, LAYER-010, LAYER-016, LAYER-020, LAYER-025, MAP-055, MAP-056, BASE-051.
 - Status: confirmed, 2026-10-03, from the owner's workflow design. The Metaform-wide workflow store is recommended.
+- Amendment, 2026-10-25, the owner's decision in session: the workflow module and everything Axiom were removed, `src/metaform/modules/workflow`, the Axiom libs and packaged skill folders under `src/metaform/skills`, the `task='run'` kind of MCP task, the page's Runs pane and the task editor's workflow picker, and the runner's workflow hooks. This record describes what was built and no longer exists in the code.
 
 ### LAYER-028 A layer's name is a namespace root, so a layer's work on an element has its own address
 
@@ -432,6 +435,7 @@ The receiver, purpose and encounter structure itself, element identity and subty
 - Acceptance: `test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed`.
 - Relates to: VIEW-045, VIEW-044, BASE-052, LAYER-006, LAYER-007.
 - Status: decided 2026-10-08, design notes section 2 and change order 4.1; built 2026-10-09. Open: the claim as a layer in the layer list; the claim checker, whether it also reports claims drawn too narrow, whether it narrows a claim or brings the person a finding, and when it runs.
+- Amendment, 2026-10-25, the owner's decision in session: the sentinel role is removed, with its proposals table, the `propose` verb, the `sentinel` start noun, its role prompt and the proposals in the chat. `raise` remains and assigns the issue to a user-agent conversation at the node; work claims remain, LAYER-029.
 ## Open questions
 
 1. Answered: the module declares mutable and hideable for each layer it creates, D12.

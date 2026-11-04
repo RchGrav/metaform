@@ -10,7 +10,7 @@ import {select} from '/page/app/selection/select.js';
 import {dated, linked} from '/page/app/board/refs.js';
 import {wrote} from '/page/app/board/history.js';
 import {confirmAct} from '/page/app/core/controls.js';
-import {ticketOf, ticketPart, PROMPT_WORDS} from '/page/app/agents/dispatch.js';
+import {D, ticketOf, ticketPart, PROMPT_WORDS} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 
 /* ---------- an agent's session as ACP gives it, VIEW-039 and BASE-052 ----------
@@ -22,11 +22,14 @@ export function clip(text, most) {
   const said = String(text ?? '');
   return said.length > most ? said.slice(0, most - 1).trimEnd() + '…' : said;
 }
-export const isIntake = workId => String(workId || '').startsWith('intake-');
+export const isIntake = (workId, session = null) => {
+  const known = session || D.sessions.findLast(one => one.work_id === workId);
+  return known?.task_name ? known.task_name === 'intake' : String(workId || '').startsWith('intake-');
+};
 /* Whether a work id is a helper's, one the system agent started with a brief, dispatch helper: it is never a ticket. */
 export const isHelper = workId => String(workId || '').startsWith('helper-');
 /* Whether a session is the person's own system agent, by what its runner says it is, `role`, and for a session from
- * before roles were kept, by what it is about: never an intake agent or a sentinel, which are about the system too, so
+ * before roles were kept, by what it is about: never an intake agent, which is about the system too, so
  * My agent never opens the intake and the intake is never called "your system agent" (UX review round 2, 2026-10-17,
  * combined F3). `state` is the session's state line, `workId` its work id. */
 export const isSystemState = (state, workId) => Boolean(state)
@@ -266,46 +269,31 @@ export function elicitationCard(line, work, tag, agent) {
     const done = await wrote('/api/dispatch-permit', {work_id: work, request: data.request, option: answer});
     if (!done) { for (const control of controls) control.disabled = false; return; }
     card.classList.replace('waiting', 'answered');
-    const said = done.action === 'decline' ? 'Declined by you.' : data.consent ? 'Allowed once by you.'
+    const said = done.action === 'decline' ? 'Declined by you.'
       : data.secret ? 'Answered by you.' : `${answer}: answered by you.`;
     fill(acts, h('p', {class: 'said'}, h('i', {class: 'i i-check', 'aria-hidden': 'true'}), said));
   };
   const decline = h('button', {type: 'button', class: 'btn sm danger',
     title: 'Do not answer; the agent goes on without it', onclick: () => send('decline')}, 'Decline');
-  const acts = data.consent ? consentActs(data.consent, send, decline) : data.url ? pageActs(data, send, decline)
+  const acts = data.url ? pageActs(data, send, decline)
     : questions.length === 1 && (questions[0].choices || []).length && !questions[0].many
       ? choiceActs(questions[0], fields, send, decline)
       : formActs(fields, questions, data, send, decline);
-  const said = state === 'answered' ? (data.consent ? 'Allowed once.'
-    : data.secret || !data.answer ? 'Answered.' : `${data.answer}: answered.`)
+  const said = state === 'answered' ? (data.secret || !data.answer ? 'Answered.' : `${data.answer}: answered.`)
     : (Object.hasOwn(ELICITATION_SAID, state) ? ELICITATION_SAID[state] : '') || state;
   const waiting = state === 'waiting', settled = state === 'answered' || state === 'completed';
   const card = h(tag, {class: `permission elicitation ${state}`, 'data-request': data.request},
     h('div', {class: 'ask'}, h('span', {class: 'eyebrow'}, waiting ? 'Waiting for your answer' : 'Question'),
-      h('b', {}, data.consent ? `${asker} asks for your consent`
-        : data.url ? `${asker} asks you to open a page` : `${asker} asks`)),
+      h('b', {}, data.url ? `${asker} asks you to open a page` : `${asker} asks`)),
     h('p', {class: 'why'}, ...linked(data.message || '')),
     data.problem && waiting ? h('p', {class: 'hint'}, `The last answer could not be read: ${data.problem}.`) : null,
     data.deadline && waiting
-      ? h('p', {class: 'hint'}, data.consent  // unanswered, a consent card is closed and its call refused
-        ? `Unanswered by ${dated(data.deadline)}, it is closed and nothing runs.`
-        : `It goes on without your answer at ${dated(data.deadline)}.`) : null,
+      ? h('p', {class: 'hint'}, `It goes on without your answer at ${dated(data.deadline)}.`) : null,
     data.secret && waiting
       ? h('p', {class: 'hint'}, 'It asks for a secret: the answer is kept out of the thread.') : null,
     waiting ? acts
       : h('p', {class: 'said'}, h('i', {class: `i ${settled ? 'i-check' : 'i-close'}`, 'aria-hidden': 'true'}), said));
   return card;
-}
-/* A call of the agent's that is the person's decision, a consent card: the command it stands for, and Allow, which
- * runs it once, and Decline. The caution is the card's message. It is answered here alone, never at the map's node,
- * where agents write (UX review, person-consent F5). */
-function consentActs(consent, send, decline) {
-  return h('div', {class: 'answers', role: 'group', 'aria-label': 'Give or refuse your consent'},
-    h('div', {class: 'address'}, h('p', {class: 'host'}, 'It runs, as if you ran it yourself:'),
-      h('code', {class: 'url'}, consent.command || consent.tool || '')),
-    h('button', {type: 'button', class: 'btn sm primary', title: 'You consent: it runs this once',
-      onclick: () => send('accept')}, 'Allow once'),
-    decline);
 }
 /* A page to open: its host, a warning when the host is written in another script, its full address, the link, and
  * Accept and Decline. */
@@ -316,7 +304,7 @@ function pageActs(data, send, decline) {
     h('a', {class: 'btn sm', href: data.url, target: '_blank', rel: 'noopener noreferrer',
       title: 'Open the page in a new tab; nothing opens it but you'},
     h('i', {class: 'i i-globe', 'aria-hidden': 'true'}), 'Open the page'),
-    h('button', {type: 'button', class: 'btn sm primary', title: 'You consent: say so to the agent',
+    h('button', {type: 'button', class: 'btn sm primary', title: 'Say yes to the agent',
       onclick: () => send('accept')}, 'Accept'),
     decline);
   acts.prepend(h('div', {class: 'address'}, h('p', {class: 'host'}, 'Host: ', h('b', {}, host || 'none')),

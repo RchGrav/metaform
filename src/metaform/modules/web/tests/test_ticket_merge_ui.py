@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from metaform import settings
 from metaform.data import Node, Store
 from metaform.module import context
 from metaform.modules.dispatch.tests.test_merge import git
@@ -24,7 +23,7 @@ def repository(run, mapped):  # noqa: F811
     git(mapped, 'add', 'README.md')
     git(mapped, 'commit', '-qm', 'Base')
     run('enable', 'dispatch')
-    run('set', '--dispatch-worktrees', '--dispatch-test-command=true', '--no-dispatch-autostart', cwd=mapped)
+    run('set', '--dispatch-worktrees', '--dispatch-test-command=true', cwd=mapped)
     return mapped
 
 
@@ -84,7 +83,7 @@ def test_merge_requires_saved_verified_implementation_not_branch_or_idle_worker(
 
 
 @pytest.mark.parametrize('already_done', [False, True])
-def test_merge_with_full_auto_off_integrates_locally_preserves_shared_edits_cleans_and_finishes(
+def test_explicit_merge_integrates_locally_preserves_shared_edits_cleans_and_finishes(
         run, web, repository, browser, already_done, monkeypatch):  # noqa: F811
     with monkeypatch.context() as clock:
         if already_done:
@@ -120,7 +119,6 @@ def test_merge_with_full_auto_off_integrates_locally_preserves_shared_edits_clea
         assert current.done and current.resolution == 'Implementation verified.'
         if already_done:
             assert current.done == previous_done
-        assert settings.value('dispatch_autostart', repository) is False
         page.locator('#ticketDetail button[type=submit]').click()
         page.wait_for_function('() => document.querySelector("#ticketDetail .ticket-main [role=status]")'
                                '.textContent === "Saved."')

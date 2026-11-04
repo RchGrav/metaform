@@ -38,30 +38,30 @@ REMOTE_AGENT = False  # the person's own connection; a remote agent has no use f
 G = 'global'
 LABEL = re.compile(r'^(?!-)[a-z0-9-]{1,63}(?<!-)$')  # a DNS label, as the broker names instances
 CAPABILITIES = ('read', 'write', 'dispatch')
-settings.text('cloud_url', 'https://metaform.ing', scope=G, person_only=True, label='Cloud broker',
+settings.text('cloud_url', 'https://metaform.ing', scope=G, label='Cloud broker',
               help='The broker this machine signs in to and dials, https://metaform.ing unless you run your own.',
               details='Its authorization server signs this machine in (metaform cloud login) and carries AI tools\' '
                       'MCP requests to it over the tunnel (metaform cloud connect). Changing it means logging in '
                       'again.')
-settings.text('cloud_instance', 'default', scope=G, person_only=True, label='Cloud instance name',
+settings.text('cloud_instance', 'default', scope=G, label='Cloud instance name',
               help='The name this machine has in your account: default is reached at https://metaform.ing/mcp, any '
                    'other name at https://metaform.ing/mcp/<name>.',
               details='Lowercase letters, digits and hyphens. Give each machine its own name; a second machine '
                       'connecting under the same name takes the first one\'s place. AI tools approved for one name '
                       'cannot reach another.')
-settings.choice('cloud_capability', list(CAPABILITIES), 'write', scope=G, person_only=True,
+settings.choice('cloud_capability', list(CAPABILITIES), 'write', scope=G,
                 label='What cloud AI tools may do here',
                 help='The most an AI tool reaching this machine through the broker may do: read, write (memories, '
                      'tickets, terms), or dispatch (start agents with shells and file writes).',
                 details='This machine\'s own ceiling, whatever the AI tool was granted at sign-in: each request is held '
                         'to the scopes both allow, and a tool needing more is refused with insufficient_scope. '
                         'dispatch starts agents on this machine, so raise it only if you want that from a cloud chat.')
-settings.choice('cloud_audit', ['names', 'full'], 'names', scope=G, person_only=True, label='Cloud audit detail',
+settings.choice('cloud_audit', ['names', 'full'], 'names', scope=G, label='Cloud audit detail',
                 help='What the local record of cloud calls keeps: names (the tool or resource called, never its '
                      'arguments) or full (the arguments too).',
                 details='The record is <home>/cloud/audit.jsonl on this machine only, readable by you alone; '
                         'metaform cloud audit reads it. Results are never written.')
-settings.boolean('cloud_autoconnect', False, scope=G, person_only=True, label='Connect with the web GUI',
+settings.boolean('cloud_autoconnect', False, scope=G, label='Connect with the web GUI',
                  help='Start metaform cloud connect when metaform web start starts the page, once this machine is '
                       'logged in.',
                  details='It runs detached beside the page and stops when you stop it or the account signs out.')

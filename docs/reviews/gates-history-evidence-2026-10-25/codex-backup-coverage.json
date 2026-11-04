@@ -1,0 +1,20 @@
+{
+  "files": [
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/rollout-2025-07-10T21-33-26-8cba09be-4a60-4610-adbc-7b2857862ffd.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/rollout-2025-07-10T21-36-51-20a50ed3-1083-491f-a618-18cbc2f02ffa.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/rollout-2025-07-10T21-29-01-3c2f8cdc-f97d-4377-9b96-77a835eba522.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/rollout-2025-07-10T21-36-30-2e35d98a-e141-4813-ba17-3e1f7e6d4178.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/08/31/rollout-2025-08-31T21-00-42-d92413c7-b585-402d-b0f0-44b20d637468.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/06/rollout-2025-09-06T04-35-33-9ce7143c-c40a-427c-8869-d17c945092af.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/17/rollout-2025-09-17T11-06-39-35f5161f-39ab-4fda-ba40-8d27aef68292.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/05/rollout-2025-09-05T13-36-13-b8b000da-e408-47a7-b2de-3699f1faa534.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/04/rollout-2025-09-04T17-51-54-39f0b105-be9c-49d6-9d19-41cea607593a.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/04/rollout-2025-09-04T17-52-22-4ac9ccd0-d9a0-4ab1-b06d-a83f2b9216a6.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/04/rollout-2025-09-04T23-30-06-179d70cb-3100-46d8-9b2d-df72f9480807.jsonl",
+    "/home/rich/.codex/backups/orphan-rollouts-20260629-112008/2025/09/04/rollout-2025-09-04T23-32-47-9f707d2a-2dc6-42f8-99f8-d671da7a13b4.jsonl"
+  ],
+  "recent_dated_records": [],
+  "malformed_lines": 0,
+  "latest_dated_record": "2025-09-17 11:06:39.696000+00:00",
+  "debug_database_excluded": "Damaged debug logging database is not a canonical user-message store."
+}

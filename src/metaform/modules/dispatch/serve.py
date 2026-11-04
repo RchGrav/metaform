@@ -57,11 +57,24 @@ from metaform.module import (
     surface,
 )
 
-from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, origin, prompt, runner_of, sessions
+from . import (
+    AGENTS,
+    REPLY_LIMIT,
+    SERVED,
+    anchor,
+    argv,
+    end_group,
+    from_agent,
+    group_options,
+    origin,
+    prompt,
+    runner_of,
+    sessions,
+)
 from . import proxy as layers
 from .signals import add_line, concerning, mark_peer
 
-settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default', person_only=True,
+settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default',
                 label='Editor agent',
                 help='The agent an editor reaches through metaform dispatch serve when no command follows --: default '
                      'is the dispatch_agent setting, none is Metaform alone, answering its own commands.',
@@ -1027,7 +1040,7 @@ class Served:
     def shown(self, session: Session, text: str, by: str) -> None:
         """A page message shown in the editor as a message of its own; one another agent sent says so, as the thread
         does: an agent's message is never shown as the person's, BASE-052."""
-        self.say(session.session_id, f'From the {by} agent: {text}' if by else text, 'user_message_chunk')
+        self.say(session.session_id, from_agent(by, text) if by else text, 'user_message_chunk')
 
     async def steered(self, session: Session, text: str, by: str) -> None:
         """A page message sent to the agent as the editor would send it, in its own turn after any turn in flight."""
@@ -1514,7 +1527,7 @@ class Record:
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
                 sent = str(asked.get('broadcast') or '')  # one message of a broadcast, kept under its id
                 self.later(lambda: self.said('message' if by else 'person',
-                                             f'From the {by} agent: {text}' if by else text,
+                                             from_agent(by, text) if by else text,
                                              f'broadcast:{sent}' if sent else None))
                 steered = await self.served.steer(session, text)  # into the turn in flight, as the runner does
                 if steered is False:

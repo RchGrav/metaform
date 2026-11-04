@@ -110,11 +110,8 @@ Unchanged content is reused. Receipts establish delivery, not comprehension.
 A verb that can take long declares `task=True`: an AI tool that declares the
 MCP tasks extension is answered with a task it polls, BASE-030. hello's `wait`
 shows it. A cancel stops an `async` verb at its next `await`; a verb run in a
-thread finishes, and its task completes with its result. A verb returning
-`{'run': <run id>}`, a workflow run record the server itself advances to its
-end, declares `task='run'`: the run is the task until it ends. A task only for
-work the server advances by itself: a verb whose result the calling agent must
-act on, such as workflow's `assign`, declares neither.
+thread finishes, and its task completes with its result. A task only for work
+the server advances by itself.
 
 A module adds tools to the web GUI's toolbar with `toolbar=`, `ToolbarItem`s,
 and panes to its workspace with `panes=`, `Pane`s, both of `metaform.module`.
@@ -149,16 +146,12 @@ Any module-owned wording belongs in its resources/prompts.xml.
 """
 from __future__ import annotations
 
-from metaform.module import AgentRoleDefinition, Module, Pane, Provides, ToolbarItem
+from metaform.module import Module, Pane, ToolbarItem
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
-
-# Domain expertise uses definition.uri under metaform://specialist/; specialist=False uses metaform://role/.
-# Tasks stay in assignments; prompt-store source names and full instruction bodies stay with their owner.
-ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(
     id='template',
@@ -187,5 +180,4 @@ MODULE = Module(
         Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
              resource='resources/pane.md', area='right'),
     ),
-    provides=(Provides('agent.roles', ROLE_DEFINITIONS),),
 )

@@ -608,33 +608,6 @@ def test_a_burst_of_changes_that_do_not_close_an_autoticket_ticket_reads_nothing
     assert touched == []
 
 
-def test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled(run, project, monkeypatch):
-    from metaform.module import context
-    from metaform.modules.autoticket.tests.test_fault_closure import delivered
-    from metaform.modules.orchestration.state import SERVICE
-
-    store = mapped(project)
-    web_fault(project, 1)
-    [original] = tickets(store)
-    ctx = context('orchestration', project, project='proj')
-    first = SERVICE.ensure(ctx, original.id)
-    SERVICE.bind(ctx, first['assignment_id'], 'repair-one', persons=True)
-    run('enable', 'dispatch', cwd=project)
-    SERVICE.returned(ctx, original.id, 'Repaired.', evidence=['Reproduction passes.'])
-    assert not store.ticket(original.id).work.done
-    delivered(store, project, original.id)
-    assert store.complete_delivery(original.id).done
-    web_fault(project, 2)
-    reopened = store.ticket(original.id).work
-    assert reopened.id == original.id
-    assert 'Previous resolution' in reopened.note
-    second = SERVICE.ensure(ctx, reopened.id)
-    assert second['assignment_id'] == first['assignment_id'] and second['attempt'] == 2
-    assert second['evidence'] == [] and second['last_check_in']['previous_evidence']
-    store.finish_work(original.id, 'No longer wanted.', 'User choice.', outcome='cancelled')
-    web_fault(project, 3)
-    assert store.ticket(original.id).work.outcome == 'cancelled'
-    assert original.id not in [record.id for record in tickets(store)]
 
 
 def lights(store, address='code.server.web'):

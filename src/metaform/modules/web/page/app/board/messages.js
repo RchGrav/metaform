@@ -67,7 +67,7 @@ export async function menu(id, x = null, y = null) {
     item('history', 'Work history', () => history(id), {count: tickets.length}),
     item('chat', 'Chat about this', () => talkAbout(nodeTalk(id), calledOf(id) || 'this node')),
     item('raise', 'Raise an issue', () => raiseIssue(id),
-      {title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals'}),
+      {title: 'Say what is wrong with this part; an agent takes it up in the chat'}),
     item('task', 'Add Task', () => giveWork(id)),
     item('element', 'Add Element', () => addElement(id)),
     item('agent', 'Start agent', () => startWindow(`Start an agent · ${calledOf(id)}`, ready), {count: ready.length}));

@@ -1,5 +1,5 @@
 /* Ticket inspection is pinned to its project/base, including every save after another tab or project opens. The
- * ticket's words are written on the left; beside them the node it is at, the specialist working it, whose prompt opens
+ * ticket's words are written on the left; beside them the node it is at, the agent working it, whose prompt opens
  * on a click, and the node's joins, drawn as a small graph that opens whole on a click. */
 import {h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
@@ -8,50 +8,10 @@ import {wrote, movable, COLUMN_NAMES} from '/page/app/board/history.js';
 import {holdReason} from '/page/app/board/holds.js';
 import {ticketIntegration} from '/page/app/board/integration.js';
 import {diagramOf, svgOf, enlargeDiagram} from '/page/app/session/text.js';
-import {authoredRole} from '/page/app/session/orchestration.js';
 
 const DETAIL = {box: null, body: null, ref: null, reload: null, serial: 0};
-const ROLE = {box: null, title: null, body: null, serial: 0};
-
-const roleName = uri => authoredRole({authored_role_uri: uri});
 const closeButton = close => h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close',
   title: 'Close (Escape)', onclick: close}, h('i', {class: 'i i-close', 'aria-hidden': 'true'}));
-
-/* The prompt the specialist role is sent, read when the person asks for it, in the ticket's own project. */
-async function specialistPrompt(role, scope) {
-  const serial = ++ROLE.serial;
-  if (!ROLE.box) {
-    const close = () => { ROLE.box.hidden = true; };
-    ROLE.title = h('span', {class: 'title'});
-    ROLE.body = h('div', {class: 'body'});
-    ROLE.box = h('section', {id: 'specialistPrompt', class: 'window', role: 'dialog', 'aria-label': 'Specialist prompt',
-      hidden: true}, h('div', {class: 'bar'}, ROLE.title, closeButton(close)), ROLE.body);
-    document.body.append(ROLE.box);
-    movable(ROLE.box);
-    overlay(ROLE.box, {kind: 'window', close});
-  }
-  ROLE.title.textContent = `Specialist · ${roleName(role)}`;
-  fill(ROLE.body, h('p', {}, 'Loading the prompt…'));
-  ROLE.box.hidden = false;
-  try {
-    const found = await read('agent-role', {...scope, name: role});
-    if (serial !== ROLE.serial) return;
-    const problems = found.problems || [];
-    fill(ROLE.body, found.purpose ? h('p', {class: 'purpose'}, found.purpose) : null,
-      problems.length ? h('p', {role: 'alert'}, problems.join(' ')) : null,
-      found.text ? h('pre', {class: 'prompt', tabindex: '0'}, found.text) : null);
-  } catch (error) {
-    if (serial === ROLE.serial) fill(ROLE.body, h('p', {role: 'alert'}, error.message));
-  }
-}
-
-/* Who works the ticket: the specialist's name, a button to its prompt, or how one is being chosen. */
-function specialist(routing, scope) {
-  if (!routing) return h('p', {class: 'quiet'}, 'No specialist assigned.');
-  if (!routing.role) return h('p', {class: 'quiet'}, routing.reason || routing.state || 'Choosing a specialist.');
-  return h('button', {class: 'specialist', type: 'button', title: 'Read the prompt this specialist is sent',
-    onclick: () => specialistPrompt(routing.role, scope)}, roleName(routing.role));
-}
 
 /* The node's joins as a small graph; a click opens it whole in a window of its own. */
 function graphThumb(functionality, serial) {
@@ -137,7 +97,6 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
         boardColumn.textContent = ` · ${COLUMN_NAMES[found.ticket.column] || ''}`;
       }),
       holdReason(ticket),
-      h('section', {}, h('h4', {}, 'Specialist'), specialist(data.routing, scope)),
       h('section', {}, h('h4', {}, 'Graph'), graphThumb(functionality, serial), ...joinList(functionality))));
   } catch (error) {
     if (serial === DETAIL.serial) fill(DETAIL.body, h('p', {role: 'alert'}, error.message));

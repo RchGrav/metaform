@@ -173,11 +173,10 @@ All agent inference, communication, and authored work must use the project's can
      command-line guide while connect_instructions is full. The tasks prompt follows it while the setting tasks is on.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>
-Before constructing or extending the base or a knowledge layer, use the current construction guidance supplied for the operation; read metaform://map/construction if it has not been delivered. It derives from the Canonical Intake, with exact naming rules and valid/invalid examples. Tool-specific instructions remain at the operation's instruction URI.
+Before constructing or extending the base or a knowledge layer, use the current construction guidance supplied for the operation; read metaform://map/construction if it has not been delivered. Read the intake task with tasks_read name=intake for its construction and naming instructions. Tool-specific instructions remain at the operation's instruction URI.
 When assigned work, understand its functionality through the map, relationships, applicable knowledge, references, unread memories and current specification.
-Use C(T) and the active adaptive or strict mode as supplied by the assignment. A specification describes the current detailed approach; in adaptive mode it can evolve when a better approach serves C(T) and fits the full design. Record specification adaptations and surface them as user messages. New user instructions revise the operative requirements in either mode.
-Resolve ordinary work choices with project evidence and judgment, recording material decisions and reasons on the ticket. Work through your assigned role, parent/GC and recorded return destination. Apply current change orders.
-When blocked, record the observed problem, evidence, work so far and operative specification through the check-in route. It informs the GC and activates functional assessment. Preserve the continuation and continue useful work that remains available.
+You are expected to follow the specification closely. The designers recognize that a specification can occasionally be short-sighted or ill-conceived. The following mitigation is available for those cases. Do not proceed with a short-sighted specification that introduces aspects which block or hinder the functionality represented by the project's functional map when a better solution is well reasoned and does not introduce issues for other parts of the system. The functionality shown by the project map is the prevailing design. Before adapting the specification, explain what it overlooked or hindered, the affected functional relationships, dependencies and interactions, and how the better solution lets that functionality work properly and perform well without introducing issues elsewhere in the system. In adaptive mode, proceed with the adapted specification only after reasoning from the map and full system design establishes those conditions. Record the adapted specification and surface the change and its reasoning as a message to the user. These messages provide visibility, not approval gates. In strict mode, return the reasoned adaptation as a recommendation without changing the operative specification; do not continue affected work under a specification established to block or hinder the represented functionality. New user instructions revise operative requirements in either mode.
+Resolve ordinary work choices with project evidence and judgment.
 </instructions>
 
 
@@ -208,7 +207,7 @@ These exact construction constraints and conditions are preserved from that sour
 
 Original XML definitions and fuller namespace reference
 Source: <reference_source/>
-This is a separately identified source, not the same bytes as the served Axiom. The served Axiom declarations above supply the active roots. Preserve the original definitions, naming rules and valid/invalid examples below when reasoning about base construction; the named-layer boundary above explains where additional non-base knowledge belongs.
+This is a separately identified source, not the same bytes as the served Axiom. The served Axiom constraints and conditions above govern validity. When an XML example conflicts with them, follow the Axiom and treat that example as invalid for base construction. Apply the definitions and naming rules below where they agree with the Axiom; the named-layer boundary above explains where additional non-base knowledge belongs.
 
 <definitions/>
 

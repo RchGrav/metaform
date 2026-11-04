@@ -66,11 +66,9 @@ from metaform.data import (
     query_reads,
 )
 from metaform.module import (
-    AgentRoleDefinition,
     Context,
     Module,
     Noun,
-    Provides,
     Status,
     Stop,
     Subscription,
@@ -423,8 +421,7 @@ MODULE = Module(
         Verb('basedemo', basedemo, 'Show the shared home, project, layer and query services.', effect='read'),
         Verb('base-restore', base_restore, 'Restore a clear backup through the public base.',
              nouns=(Noun('name', 'The backup name, newest when omitted.', required=False),),
-             caution="This restores the selected project's clear backup, backing up what it holds now.", effect='remove',
-             person_says=True),  # the person's decision: an agent's confirm never runs it, CLI-011
+             caution="This restores the selected project's clear backup, backing up what it holds now.", effect='remove'),
         Verb('base-remove', base_remove, "Remove the selected empty project's registration through the public base.",
              caution="This removes the selected empty project's registration, keeping its files and backups.", effect='remove'),
         Verb('history', history, 'List the names greeted so far.', effect='read'),
@@ -479,8 +476,5 @@ MODULE = Module(
     data=Data(operations={'count_visit': Operation(count_visit, write=True)}),
     node_read=node_read,
     work_read=work_read,
-    provides=(Provides('agent.roles', (
-        AgentRoleDefinition('hello.greeter', 'Welcome an assigned visitor and return the greeting.',
-                            ('prompt.hello:role_greeter',)),
-    )),),
+
 )

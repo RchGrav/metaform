@@ -111,9 +111,9 @@ the playground's second property.
 
 ### What this replaces
 
-`ask_page` reads `METAFORM_WORK` and `METAFORM_ROLE` out of the process environment
-(`web/__init__.py:595`). Those two reads are the implicit caller in its clearest form: the ticket and
-the role come from whatever the process was started with, so two actors in one process is an
+`ask_page` reads `METAFORM_WORK` and `METAFORM_TASK_NAME` out of the process environment
+(`web/__init__.py`). Those two reads are the implicit caller in its clearest form: the ticket and
+the task name come from whatever the process was started with, so two actors in one process is an
 environment write. Under this model `work` is the resolved actor instance's `task` and `role` follows
 from its `agent_definition`, both read from the row rather than the environment. The environment
 keeps exactly one job: seeding the **session binding** when a dispatch run starts. It is a default,

@@ -1,0 +1,89 @@
+{
+  "scope": "Local schema and reference-semantics checks; not an implementation integration test",
+  "tests": [
+    {
+      "test": "All five application JSON Schemas are well formed",
+      "status": "passed"
+    },
+    {
+      "test": "Complete matrix example validates",
+      "status": "passed"
+    },
+    {
+      "test": "JSON-RPC resource text round-trips to the same matrix",
+      "status": "passed"
+    },
+    {
+      "test": "Resource result includes current resultType and cache fields",
+      "status": "passed"
+    },
+    {
+      "test": "A 63-zone matrix is structurally invalid",
+      "status": "passed"
+    },
+    {
+      "test": "Negative finite depth is structurally invalid",
+      "status": "passed"
+    },
+    {
+      "test": "Matrix status/depth agreement",
+      "status": "passed"
+    },
+    {
+      "test": "Unknown depth is null, not fabricated clear distance",
+      "status": "passed"
+    },
+    {
+      "test": "Cross-field status/depth mismatch is reported",
+      "status": "passed"
+    },
+    {
+      "test": "64 oblique ray hits normalize to one-meter axial wall",
+      "status": "passed"
+    },
+    {
+      "test": "Dynamic mask/select restoration is branch-local; empty differs from unspecified",
+      "status": "passed"
+    },
+    {
+      "test": "Materialized ancestry includes self and more than thirty hops",
+      "status": "passed"
+    },
+    {
+      "test": "Movement changes discovery, not loaded skills; successor starts fresh",
+      "status": "passed"
+    },
+    {
+      "test": "Journal preserves crossing and clearing; replay deduplicates event IDs",
+      "status": "passed"
+    },
+    {
+      "test": "Skill manifest digest matches actual UTF-8 bytes",
+      "status": "passed"
+    },
+    {
+      "test": "Supplied Hermes correction contains five Blocks and fifteen explicit members",
+      "status": "passed"
+    }
+  ],
+  "hermes_correction_structure": {
+    "blocks": 5,
+    "members_per_block": {
+      "BLOCK_001": 6,
+      "BLOCK_002": 2,
+      "BLOCK_003": 2,
+      "BLOCK_004": 2,
+      "BLOCK_005": 3
+    },
+    "unique_member_addresses": 15
+  },
+  "not_executed": [
+    "LadybugDB DDL or Cypher execution",
+    "MCP server/client interoperability",
+    "ACP harness execution",
+    "Bevy integration",
+    "physical sensor calibration or motor control",
+    "inference-amortization benchmark"
+  ],
+  "environment_note": "Ladybug driver was absent. Package installation failed because the runtime could not resolve the package server."
+}

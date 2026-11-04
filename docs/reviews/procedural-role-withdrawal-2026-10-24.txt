@@ -1,0 +1,109 @@
+Procedural role withdrawal, 2026-10-24
+
+Request: Completely remove investigator, requirements, interviewer, specialist,
+implementer, verifier, reviewer, integrator, designer, synthesizer, dogfood and release.
+Checkpoint: 261a1cb7172159b4354308a423028a86ffc179f3
+Branch: remove/unapproved-procedural-roles
+
+Implemented:
+- Removed the twelve agent.roles registrations and their complete shipped XML duties.
+- Removed automatic generic Specialist duty injection from generated role resolution
+  and publication. No replacement role identities or aliases were introduced.
+- Updated live dispatch/decomposition instructions that referenced deleted roles.
+- Agents store v5 removes the twelve live cached registrations and strips retired
+  shared-duty references from retained definitions and cached provider metadata.
+  This runs once on upgrade; it is not a permanent role-name permission blacklist.
+  Table layout remains compatible. Definition history and delivery receipts remain.
+- Updated dependent lifecycle fixtures to use retained responsibilities, resource
+  checks, developer documentation and the agents schema snapshot.
+
+Local application:
+- Upgraded only this project's agents module store, after a private SQLite backup.
+- Twelve cached registrations removed. Each requested role resolves as missing.
+- The 39 generated domain definitions remain. Historical definitions, receipts,
+  delivered-text records, sent turns and context counts were preserved.
+- No targeted roles appear in the project's assignment/routing/session role columns.
+  One already-published role request retains implementer as historical evidence.
+- Prompt-store history, map data, assignment snapshots and running conversations
+  were not erased or rewritten. Running services were not restarted.
+- ~/.metaform/modules and project .metaform/modules were absent during inventory;
+  current provider resolution exposes none of the removed identities.
+
+Evidence:
+- Role withdrawal, authored-role delivery and specialist namespace checks:
+  49 passed in 40.54s in the current shared checkout, serially in an isolated home.
+- Related lifecycle checks: 125 passed; two stale removed-role fixtures corrected.
+- Focused fixture recheck: 6 passed, including commission and routine-fix guidance.
+- Changed Python files: ruff passed.
+- Agents schema snapshot equals the current agents declaration (v5).
+- Live data removal and preservation observations are appended below.
+
+Existing check limitations, not repaired as part of this request:
+- test_roundtable_authority.py:144 expects metaform://role/alarm_roundtable_verifier
+  for generated domain expertise. The original checkpoint contains the same
+  expectation; implementation returns metaform://specialist/alarm_roundtable_verifier.
+- The global module-schema guard remains behind dispatch, map, memory,
+  orchestration and roundtables. Those modules and their snapshot entries were
+  already inconsistent at the checkpoint. Only the agents snapshot was aligned.
+- Browser/ACP subprocess suites were not run. No model-driven validation or
+  autonomous review workflows were launched.
+
+Concurrent work:
+A separate change removes role_creator and adds a Facilitator compatibility alias.
+Those edits, the viewer changes and pre-existing docs/README.md edits are excluded
+from this commit. The working checkout includes those concurrent edits; the role
+file tests above exercised the combined checkout. No instruction files changed.
+
+Local cleanup result:
+{
+  "database": "/home/rich/.metaform/projects/-home-rich-metaform-001/modules/agents.sqlite3",
+  "backup": "/home/rich/.metaform/backups/role-withdrawal-20261024T083532Z/agents.sqlite3",
+  "before": {
+    "definitions": 39,
+    "definition_history": 39,
+    "receipts": 28617,
+    "delivered_text": 19420,
+    "sent": 3419,
+    "contexts": 770,
+    "role_sources": 62
+  },
+  "after": {
+    "definitions": 39,
+    "definition_history": 39,
+    "receipts": 28617,
+    "delivered_text": 19420,
+    "sent": 3419,
+    "contexts": 770,
+    "role_sources": 50
+  },
+  "removed": [
+    "investigator",
+    "requirements",
+    "interviewer",
+    "specialist",
+    "implementer",
+    "verifier",
+    "reviewer",
+    "integrator",
+    "designer",
+    "synthesizer",
+    "dogfood",
+    "release"
+  ],
+  "all_removed_names_unavailable": true,
+  "remaining_procedural_roles": [
+    "roundtable_follow_through",
+    "triage",
+    "gc",
+    "functionality",
+    "planner",
+    "decomposer",
+    "harsh_critic",
+    "architect",
+    "researcher",
+    "facilitator"
+  ],
+  "remaining_specialists": 39,
+  "historical_prompt_store_and_assignment_snapshots": "untouched",
+  "running_sessions": "not restarted or rewritten"
+}

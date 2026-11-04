@@ -8,10 +8,10 @@ artifacts/swarm-2026-10-11/PAPERCLIP-INTEGRATION.md.
 Each Paperclip issue this module knows is a row of its `links` table, tied to one ticket, a work record at an Address.
 `works` says which side does the work and so which side's state the other follows:
   paperclip  a Paperclip agent works it, sent there by `send` or linked by `link`; the ticket stays in doing, taken
-             by Paperclip, so dispatch never starts an agent on it too; `sync` closes it when the issue closes, and
+             by Paperclip; `sync` closes it when the issue closes, and
              cancels the issue when the person cancels the ticket;
   metaform   Paperclip assigned the issue to a Metaform agent and `heartbeat` took it, run by Paperclip's process
-             adapter; the ticket goes to To do and dispatch's autostart is asked to start it, the issue carries an
+             adapter; the ticket goes to To do for agents to select, and the issue carries an
              external_service monitor so Paperclip wakes the agent to check rather than reading the run as stuck,
              comments cross in as messages at the Address, the ticket's questions cross out as question cards whose
              answers come back as replies, and `sync` reports the ticket's end on the issue.
@@ -96,26 +96,25 @@ PROMPTS = resources.files(__name__)
 OPENER: Opener | None = None  # what opens each request to Paperclip; urlopen when None, an in-memory server in tests
 STREAM: Stream | None = None  # what opens Paperclip's live events; a WebSocket when None, a fake in tests
 
-# Where Metaform calls out to and which agents it hands work to are the person's to decide, never an agent's over MCP,
-# CLI-011, so every setting here is person_only; the token itself is never a setting.
-settings.text('paperclip_url', 'http://localhost:3100', person_only=True, label='Paperclip URL',
+# Where Metaform calls out to and which agents it hands work to; the token itself is never a setting.
+settings.text('paperclip_url', 'http://localhost:3100', label='Paperclip URL',
               help='The Paperclip server this project works with, its origin as Paperclip writes PAPERCLIP_API_URL.',
               details='During a Paperclip heartbeat the PAPERCLIP_API_URL Paperclip injects is used instead, since '
                       'the run token works only with the server that issued it.')
-settings.text('paperclip_token_env', 'PAPERCLIP_API_KEY', person_only=True, label='Paperclip token variable',
+settings.text('paperclip_token_env', 'PAPERCLIP_API_KEY', label='Paperclip token variable',
               help='The environment variable holding the bearer token for Paperclip: an agent key, a board key, or '
                    'the run token Paperclip injects during a heartbeat.',
               details='The token is read from the environment on each call and never stored by Metaform. A server '
                       'in local_trusted mode needs none.')
-settings.text('paperclip_company', '', person_only=True, label='Paperclip company',
+settings.text('paperclip_company', '', label='Paperclip company',
               help='The Paperclip company id issues are sent to and read from. Empty uses PAPERCLIP_COMPANY_ID.')
-settings.text('paperclip_assignee', '', person_only=True, label='Paperclip assignee',
+settings.text('paperclip_assignee', '', label='Paperclip assignee',
               help='The Paperclip agent send assigns a ticket to, by id or by the short name Paperclip shows in its '
-                   'URL. Empty lets Jev choose among the company\'s agents when Jev is on, else sends it unassigned.')
-settings.text('paperclip_project', '', person_only=True, label='Paperclip project',
+                   'URL. Empty sends the issue to Paperclip\'s backlog unassigned.')
+settings.text('paperclip_project', '', label='Paperclip project',
               help='The Paperclip project id send files issues under, whose workspace sets the folder its agents '
                    'work in. Empty files them under none.')
-settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True, label='Paperclip check minutes',
+settings.number('paperclip_check_minutes', 10, min=1, max=1440, label='Paperclip check minutes',
                 help='How often Paperclip wakes the Metaform agent to check an issue a Metaform agent is working.',
                 details='Each issue heartbeat takes carries an issue monitor of kind external_service, so Paperclip '
                         'reads it as held by an outside service rather than as a stuck run, and wakes the agent this '
@@ -125,12 +124,6 @@ settings.number('paperclip_check_minutes', 10, min=1, max=1440, person_only=True
 # Jev's choice of an Address for an issue that names none is the decision point paperclip.route, named in the chassis's
 # jev_decisions like every other: settings cleanup 2026-10-15 folded the separate switch paperclip_jev_route into it.
 ROUTE_DECISION = 'paperclip.route'
-settings.boolean('paperclip_agents_may_send', False, person_only=True, label='Agents may send to Paperclip',
-                 help='Let an agent send a ticket to Paperclip over MCP, as the person can from the command line.',
-                 details='Off, the default: only the person hands work to Paperclip, whose agents spend from its '
-                         'budgets. On: a Metaform agent may delegate a ticket to a Paperclip agent with '
-                         'paperclip_send.')
-
 TABLES = Tables(version=2, compatible_from=1, tables=(
     # One row per Paperclip issue tied to a ticket. In the metaform beside the work records, so a clear of the
     # metaform drops the links with the tickets they tie, STORE-045. `comments_seen` is the last comment read from the
@@ -191,7 +184,7 @@ def _on_surface(ctx: Context, module_id: str) -> bool:
 
 def _verb(ctx: Context, module_id: str, name: str, arguments: dict[str, Any]) -> Any:
     """Run another module's declared verb on this folder's surface as the command line runs it, its arguments checked
-    as the command line checks them, so that module's own rules hold: dispatch's cancel, stop, sessions and autostart,
+    as the command line checks them, so that module's own rules hold: dispatch's cancel, stop and sessions,
     and map's reply. The same composition of the public base as mcp/a2a.py `_verb`."""
     found = next((one for one in surface(ctx.folder) if one.id == module_id), None)
     verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
@@ -420,35 +413,17 @@ def brief(ctx: Context) -> str:
     return found if found.endswith('\n') else found + '\n'
 
 
-def _chosen_assignee(ctx: Context, client: Client, company: str, record: WorkRecord, address: str,
-                     title: str) -> tuple[str | None, str | None]:
-    """The Paperclip agent a ticket is sent to, and the Jev decision that chose it: the one named, else the setting,
-    else Jev's sure choice among the company's agents when Jev is on (choose_agent, kept at the ticket's Address),
-    else none, which sends the issue to Paperclip's backlog."""
+def _named_assignee(ctx: Context, client: Client, company: str) -> str | None:
+    """The Paperclip agent a ticket is sent to: the one the `assignee` noun names, else the setting
+    `paperclip_assignee`, else none, which sends the issue to Paperclip's backlog unassigned. Nothing chooses an
+    assignee for the person."""
     named = str(ctx.nouns.get('assignee') or ctx.setting('paperclip_assignee') or '')
-    if named:
-        return _agent(client, company, named), None
-    try:
-        agents = _objects(client.agents(company))
-    except PaperclipError:
-        return None, None
-    offered = {str(one['id']): ', '.join(str(one[key]) for key in ('name', 'title', 'role', 'adapterType',
-                                                                    'capabilities') if one.get(key))
-               for one in agents if one.get('id') and one.get('status') not in ('terminated', 'pending_approval')}
-    decision = jev.choose_agent(ctx.folder, {'id': record.id, 'title': title, 'task': record.task or '',
-                                             'address': address}, offered)
-    if decision is None or not decision.sure:
-        return None, None
-    chosen = str(cast(Mapping[str, Any], decision.answer).get('agent') or '')
-    return (chosen, decision.item) if chosen in offered else (None, None)
+    return _agent(client, company, named) if named else None
 
 
 def send(ctx: Context) -> dict[str, Any]:
     """Send an open ticket to Paperclip as an issue for its agents to work; the ticket follows the issue."""
     store = ctx.require_store()
-    if ctx.surface == 'mcp' and not ctx.setting('paperclip_agents_may_send'):
-        raise Stop('Only the person sends tickets to Paperclip here: paperclip_agents_may_send is off.',
-                   'ask the person to run metaform paperclip send, or metaform set --paperclip-agents-may-send true')
     work_id = str(ctx.nouns['id'])
     held = _link_of_work(store, work_id)
     if held is not None:
@@ -464,7 +439,7 @@ def send(ctx: Context) -> dict[str, Any]:
         or f'Ticket {work_id}'
     client = _client(ctx)
     company = _company(ctx)
-    assignee, chose = _chosen_assignee(ctx, client, company, record, address, title)
+    assignee = _named_assignee(ctx, client, company)
     fields: dict[str, Any] = {
         'title': title[:240],
         'description': '\n\n'.join(part for part in (record.task, record.note) if part),
@@ -475,8 +450,8 @@ def send(ctx: Context) -> dict[str, Any]:
         fields['assigneeAgentId'] = assignee
     if ctx.setting('paperclip_project'):
         fields['projectId'] = str(ctx.setting('paperclip_project'))
-    # Reserved before the issue exists, so dispatch's autostart cannot take the ticket while it is being sent; given
-    # back to its column when the issue cannot be made, and the idempotency key replays the issue on a retry.
+    # Reserve before the issue exists so other agents see that this ticket is being sent. Restore its column if
+    # the issue cannot be made; the idempotency key replays the issue on a retry.
     column = record.column
     try:
         store.take_work(work_id, by='paperclip')
@@ -493,8 +468,6 @@ def send(ctx: Context) -> dict[str, Any]:
         raise
     _write_document(client, row['issue_id'], address, work_id)
     shown = _shown(row)
-    if chose:
-        shown['assignee_chosen'] = chose
     shown['next'] = _follows(ctx, _ensure_watcher(store, ctx.folder))
     return shown
 
@@ -1221,16 +1194,6 @@ def _routed(ctx: Context, store: Store, issue: Mapping[str, Any], name: str) -> 
     return str(found.answer), (kept.item if kept is not None else None)
 
 
-def _autostarts(ctx: Context) -> bool:
-    """Whether dispatch is on this folder's surface with Autostart on, so heartbeat asks it to start what it took."""
-    if not _on_surface(ctx, 'dispatch'):
-        return False
-    try:
-        return bool(settings.value('dispatch_autostart', ctx.folder))
-    except KeyError:
-        return False
-
-
 def _assigned(client: Client, company: str, agent: str) -> list[dict[str, Any]]:
     """The issues assigned to this agent in todo or in_progress, from the compact inbox Paperclip's heartbeat
     procedure prefers (skills/paperclip/SKILL.md, Step 3), or for a board caller the company's issue list."""
@@ -1255,8 +1218,8 @@ def _unrouted(store: Store, client: Client, issue_id: str, name: str) -> None:
 def heartbeat(ctx: Context) -> dict[str, Any]:
     """One Paperclip heartbeat of an agent whose adapter is `process` running this command: sync every link, then take
     each issue assigned to this agent whose metaform document names an Address, or whose Address Jev chooses, as a
-    ticket there in To do, with a comment and a monitor on the issue, and ask dispatch's autostart to start them when
-    Autostart is on. An issue no Address is found for gets one comment saying what to add."""
+    ticket there in To do, with a comment and a monitor on the issue. Tickets remain available for agents to select.
+    An issue no Address is found for gets one comment saying what to add."""
     store = ctx.require_store()
     agent = os.environ.get('PAPERCLIP_AGENT_ID')
     if not agent:
@@ -1266,7 +1229,6 @@ def heartbeat(ctx: Context) -> dict[str, Any]:
     client, company = _client(ctx), _company(ctx)
     reported = sync(ctx)
     inbox = _call('list the assigned issues', _assigned, client, company, agent)
-    starts = _autostarts(ctx)
     taken: list[dict[str, Any]] = []
     left: list[dict[str, str]] = []
     for listed in inbox:
@@ -1308,31 +1270,17 @@ def heartbeat(ctx: Context) -> dict[str, Any]:
         try:
             _write_document(client, issue_id, address, record.id)
             _note(store, client, issue_id, _said('taken', ticket=reference, address=address,
-                                                 state=_said('taken_state/started' if starts else 'taken_state/waiting'),
+                                                 state='',
                                                  minutes=str(ctx.setting('paperclip_check_minutes'))))
             _watch(ctx, client, {**issue, **checked, 'id': issue_id}, reference)
-            _comments_in(store, client, row)  # what was said on the issue before, for the agent dispatch starts
+            _comments_in(store, client, row)  # preserve the issue discussion for agents reading the ticket
         except (Stop, PaperclipError) as error:
             left.append({'issue': name, 'why': f'taken, but {getattr(error, "message", None) or error}'})
         shown = _shown(row)
         if chose:
             shown['address_chosen'] = chose
         taken.append(shown)
-    result: dict[str, Any] = {'reported': reported, 'taken': taken, 'left': left}
-    if taken:
-        result['dispatch'] = _start(ctx) if starts else 'waiting: dispatch_autostart is off, so the tickets wait in ' \
-                                                        'To do for the person'
-    return result
-
-
-def _start(ctx: Context) -> Any:
-    """Ask dispatch's autostart to start the waiting tickets, through its declared verb, as A2A does; it starts none
-    past its slots or its budget, and says so."""
-    try:
-        started = _object(_verb(ctx, 'dispatch', 'autostart', {}))
-    except Stop as error:
-        return f'not started: {error.message}'
-    return {key: started[key] for key in ('started', 'budget') if started.get(key) is not None}
+    return {'reported': reported, 'taken': taken, 'left': left}
 
 
 def links(ctx: Context) -> list[dict[str, Any]]:
@@ -1389,7 +1337,7 @@ MODULE = Module(
     summary='Work Paperclip issues as tickets at Addresses, and send tickets to Paperclip\'s agents.',
     purpose='Ties Paperclip issues to tickets at Addresses in the map, both ways: Paperclip\'s agents read the brief '
             'of the Address their issue works on, tickets are sent to Paperclip\'s agents, and an agent Paperclip '
-            'runs with the process adapter hands its issues to dispatch, with comments, questions and answers '
+            'runs with the process adapter creates project tickets, with comments, questions and answers '
             'crossing between the issue and the Address.',
     details='Enable map and paperclip, set paperclip_url and paperclip_company, and put a Paperclip token in the '
             'variable paperclip_token_env names. status checks the connection and prints the process-adapter '
@@ -1416,7 +1364,6 @@ MODULE = Module(
                     Noun('assignee', 'The Paperclip agent, by id or short name; paperclip_assignee when omitted, '
                                      'else Jev\'s choice when Jev is on.', required=False)),
              switches=('paperclip_assignee', 'paperclip_project'),
-             details='Over MCP only when the person has turned on paperclip_agents_may_send.',
              open_world=True),
         Verb('sync', sync, 'Bring linked issues and tickets together: ends, comments, questions and answers.',
              surfaces=('cli',), open_world=True),
@@ -1425,12 +1372,11 @@ MODULE = Module(
                      'and last beat are kept in the Metaform home, run/paperclip/<project>.json, and its log beside.',
              surfaces=('cli',), open_world=True),
         Verb('heartbeat', heartbeat, 'Run one Paperclip heartbeat: sync, then take the assigned issues as tickets at '
-                                     'their Addresses for dispatch.',
+                                     'their Addresses for agents to select.',
              details='Paperclip runs it as the command of an agent with the process adapter, set as status prints it: '
                      'command the absolute path of metaform, args paperclip and heartbeat, cwd the project folder. '
                      'Paperclip injects PAPERCLIP_AGENT_ID, PAPERCLIP_COMPANY_ID, PAPERCLIP_API_URL, '
-                     'PAPERCLIP_API_KEY and PAPERCLIP_RUN_ID. With dispatch_autostart on it asks dispatch to start the '
-                     'tickets it took; off, they wait in To do for the person.',
+                     'PAPERCLIP_API_KEY and PAPERCLIP_RUN_ID. Tickets stay in To do for agents to select.',
              surfaces=('cli',), open_world=True),
     ),
     subscriptions=(Subscription('web.started', web_started),),

@@ -10,9 +10,9 @@ protocol onto what already exists:
   Address extension, P005. A message with no contextId is answered as A2A allows, with a task and a context of
   Metaform's own in `input_required`, offering the Addresses whose words fit the work; the client's reply on that task
   names one and the ticket opens there. A contextId that is neither is refused, as A2A requires.
-- A ticket starts only when the person's `dispatch_autostart` is on, through dispatch's own `autostart`.
+- Inbound tickets stay available for agents to select. Receiving a ticket starts no agent.
 - A2A sees only what A2A made: the tickets its messages opened and the questions it asked. Any other id, the
-  person's own tickets and workflow runs among them, is not found, as A2A asks of a task its client cannot reach.
+  person's own tickets among them, is not found, as A2A asks of a task its client cannot reach.
 - A task's state is the one status vocabulary of work, `metaform.data.status`, converted by its own `a2a`, read fresh
   from the ticket's work record and its dispatch record. A wait on Metaform's person, whom the client cannot reach,
   is working with `waitingOn` in the extension's metadata; input-required is only the question the client answers.
@@ -361,7 +361,7 @@ class Waiter:
 
 HUBS: weakref.WeakSet[Changes] = weakref.WeakSet()
 # What a ticket's task is read from, A2A's `read`: its ticket, steps and questions, dispatch's sessions and signals,
-# the A2A records, and the settings that say whether a ticket starts by itself.
+# the A2A records, and the protocol settings.
 TASK_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work', 'dispatch'})
 TASK_PREFIXES = ('dispatch.', 'mcp.a2a_')
 
@@ -417,20 +417,10 @@ def _stamp(text: str | None) -> datetime | None:
         return None
 
 
-def _starts(folder: Path) -> bool:
-    """Whether a new ticket starts by itself: dispatch is on the folder's surface and the person's Autostart is on."""
-    if not any(module.id == 'dispatch' for module in surface(folder)):
-        return False
-    try:
-        return bool(settings.value('dispatch_autostart', folder))
-    except KeyError:
-        return False
-
-
 def _verb(folder: Path, project: str, module_id: str, name: str, arguments: dict[str, Any]) -> Any:
     """Run a module's declared verb on the project folder's surface as a tool call runs it, its arguments checked as
     the command line checks them, on the surface `a2a`. A2A calls only `map work op=add` with what `_meta` lets
-    through, dispatch's `autostart` and `cancel`, and workflow's `cancel`: none of them lets the sender choose an
+    through, and dispatch's `cancel`: neither lets the sender choose an
     agent or answer for the person."""
     found = next((one for one in surface(folder) if one.id == module_id), None)
     verb = next((one for one in found.verbs if one.name == name), None) if found is not None else None
@@ -502,7 +492,7 @@ def _dict(value: Any) -> dict[str, Any]:
 Said = tuple[status.State, str | None, str]
 
 
-def ticket_state(work: WorkRecord, kept: dict[str, Any], starts: bool) -> Said:
+def ticket_state(work: WorkRecord, kept: dict[str, Any]) -> Said:
     """A ticket in the status vocabulary of work. Done ends as its work record says, completed, cancelled or failed,
     P232. Otherwise it is the status dispatch gives the ticket, its `ticket_work_status`, when dispatch keeps anything
     on it: an agent waiting on the person to log it in, or to answer its permission or question, stopped with the
@@ -522,7 +512,7 @@ def ticket_state(work: WorkRecord, kept: dict[str, Any], starts: bool) -> Said:
     if given == 'submitted':
         if reason == 'held' or _dict(kept.get('map')).get('hold'):
             return 'submitted', None, 'a2a_held'
-        return 'submitted', None, 'a2a_queued' if starts else 'a2a_waiting'
+        return 'submitted', None, 'a2a_queued'
     raised = {str(_dict(one).get('signal')) for one in cast(list[Any], dispatch.get('signals') or [])}
     for signal, why in WAITS.items():
         if signal in raised:
@@ -535,7 +525,7 @@ def ticket_state(work: WorkRecord, kept: dict[str, Any], starts: bool) -> Said:
         return 'running', None, 'a2a_working'
     if work.held or _dict(kept.get('map')).get('hold'):
         return 'submitted', None, 'a2a_held'
-    return 'submitted', None, 'a2a_queued' if starts else 'a2a_waiting'
+    return 'submitted', None, 'a2a_queued'
 
 
 def ticket_task(project: str, folder: Path, work: WorkRecord, history_length: int | None = None, *,
@@ -549,7 +539,7 @@ def ticket_task(project: str, folder: Path, work: WorkRecord, history_length: in
     sent = sent or (None if task_id else records.sent(project, work.id))
     own = task_id or work.id
     context_id = context_id or (sent.context_id if sent else (work.address or work.receiver_address or ''))
-    state, why, said_by = ticket_state(work, kept, _starts(folder) if not work.taken and not work.done else False)
+    state, why, said_by = ticket_state(work, kept)
     item = str(mapped.get('item') or work.id)
     title = str(mapped.get('title') or first_line(work.task, 0) or '')
     steps = prompt('a2a_steps', done=str(work.steps_done), planned=str(work.steps)) if work.steps else ''
@@ -604,7 +594,7 @@ def _offered(candidates: list[dict[str, str]]) -> str:
 
 def read(project: str, folder: Path, task_id: str, history_length: int | None = None) -> Read | None:
     """A task A2A made, by its id: a question Metaform asked, read as its ticket once one opened, or a ticket a
-    message opened. None for any other id, so the person's own tickets and workflow runs stay out of A2A's reach,
+    message opened. None for any other id, so the person's own tickets stay out of A2A's reach,
     A2A 1.0 section 3.3.2."""
     asked = records.asked(project, task_id)
     if asked is not None:
@@ -874,7 +864,7 @@ class Pushes:
 
 
 class Tickets(RequestHandler):
-    """The A2A request handler: every operation of the specification's section 3.1 on tickets and workflow runs."""
+    """The A2A request handler: every operation of the specification's section 3.1 on tickets."""
 
     def __init__(self, folder: Path, port: int, pushes: Pushes, exposed: Exposure | None = None) -> None:
         self.exposed = exposed
@@ -1051,8 +1041,7 @@ class Tickets(RequestHandler):
 
     def _open(self, project: str, folder: Path, address: str, text: str, meta: dict[str, str], message_id: str,
               caller: str | None) -> str:
-        """Open a ticket at an Address the map holds, titled from the metadata or the text's first line, and start it
-        when the person's Autostart is on; returns its work id."""
+        """Open a ticket at an Address the map holds, titled from metadata or the text's first line; return its id."""
         title = meta.get('title') or first_line(text) or (first_line(text, 0) or '')[:120].rstrip()
         arguments: dict[str, Any] = {'op': 'add', 'address': address, 'title': title, 'task': text,
                                      'note': prompt('a2a_note', caller=caller or prompt('a2a_caller'),
@@ -1062,12 +1051,6 @@ class Tickets(RequestHandler):
         added: Any = _verb(folder, project, 'map', 'work', arguments)
         work_id = str(_dict(added).get('id') or getattr(added, 'id', ''))
         events.announce(folder, 'a2a')
-        if _starts(folder):
-            try:
-                _verb(folder, project, 'dispatch', 'autostart', {})
-                events.announce(folder, 'a2a')
-            except Stop as stop:  # the ticket is open; it starts when the person or the page next starts tickets
-                log.warning('A2A ticket %s was not started: %s', work_id, stop)
         return work_id
 
     def _ask(self, project: str, message: Message, text: str, meta: dict[str, str], caller: str | None,
@@ -1157,12 +1140,9 @@ class Tickets(RequestHandler):
     @checked
     async def on_message_send(self, params: SendMessageRequest, context: ServerCallContext) -> Task | Message:
         """Make the task; then, unless the client asked to return at once, wait as A2A asks for it to end or need
-        input, at most `mcp_a2a_wait` seconds, which the card states, and not at all for a ticket nothing will start
-        by itself."""
+        input, at most `mcp_a2a_wait` seconds, which the card states."""
         project, folder, found = await self._send(params, context)
         wait = 0 if params.configuration.return_immediately else int(settings.value('mcp_a2a_wait', folder))
-        if wait and found.state == 'submitted' and not await _off(_starts, folder):
-            wait = 0
         length = params.configuration.history_length if params.configuration.HasField('history_length') else None
         with anyio.move_on_after(wait), self.changes.waiting(project, found.work_id) as waiter:
             while wait and not found.ended and not found.interrupted:

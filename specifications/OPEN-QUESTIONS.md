@@ -132,7 +132,7 @@ Amendment, 2026-10-09: join is the general bond held in an element, and every jo
 
 **D2. Subtypes.** A subtype never has its own purpose. A part with its own purpose is not sharing the join, so it is its own element.
 
-**D9. C(T).** The theory behind how Metaform works. It describes no mechanism and no stored field.
+**D9. Functional identity.** The preprint formula describes the theory behind Metaform, not a mechanism or stored field. Specifications and agent instructions state the functional relationships directly. Specification adaptation requires reasoning from the project map that the current specification overlooks or blocks represented functionality.
 
 **D26. A directly run wheel's data.** The normal data folder, ~/.metaform, the same as the installed copy. Corrected, 2026-10-03: a directly run wheel uses the normal data folder, ~/.metaform, as the installed copy does, since a separate folder would raise how to merge the two. BASE-025.
 

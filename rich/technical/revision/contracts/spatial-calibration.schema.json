@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:metaform:schema:spatial-calibration:1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "calibration_id",
+    "source_id",
+    "frame_id",
+    "body_frame_id",
+    "axes",
+    "rays",
+    "native_to_canonical",
+    "sensor_to_body",
+    "sample_model",
+    "native_distance_convention",
+    "quality_mapping_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "metaform.spatial.calibration/1"
+    },
+    "calibration_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "frame_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body_frame_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "axes": {
+      "const": "x-right,y-down,z-forward"
+    },
+    "rays": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "native_to_canonical": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 63
+      }
+    },
+    "sensor_to_body": {
+      "type": "object",
+      "required": [
+        "translation_m",
+        "rotation_xyzw"
+      ],
+      "properties": {
+        "translation_m": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "rotation_xyzw": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "sample_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "native_distance_convention": {
+      "type": "string",
+      "minLength": 1
+    },
+    "quality_mapping_ref": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

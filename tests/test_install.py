@@ -210,17 +210,13 @@ def test_without_a_terminal_or_names_nothing_changes_and_both_forms_are_named(ru
 @pytest.mark.req('MCP-016')
 @pytest.mark.req('MCP-021')
 def test_install_claude_touches_only_claude_and_shared_skills(run, machine, home):
-    from metaform import skills as registry
     before = tree(machine['user'])
     out = run('install', 'claude', cwd=machine['folder'], env=machine['env']).stdout
     assert calls(machine['bin'], 'claude')[-1] == ['mcp', 'add', '--transport', 'stdio', '--scope', 'user',
                                                    'metaform', '--', *entry(machine['wheel'])]
     assert calls(machine['bin'], 'codex') == []
     changed = {name for name, data in tree(machine['user']).items() if before.get(name) != data}
-    native = {str(Path('.claude/skills') / skill.name / relative)
-              for skill in registry.catalog() if skill.discover
-              for relative in registry.deployment_files(skill)}
-    assert changed == native | {
+    assert changed == {
         str(Path('.claude/skills/metaform/SKILL.md')), str(Path('.agents/skills/metaform/SKILL.md')),
         str(Path('.claude/skills/metaform-node/SKILL.md')),
         str(Path('.claude/CLAUDE.md')), str(Path('.claude/settings.json'))}

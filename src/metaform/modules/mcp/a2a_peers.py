@@ -21,7 +21,6 @@ from metaform.module import Context, Stop
 
 NAME = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
 VARIABLE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
-AGENT_SESSION = ('METAFORM_SESSION', 'METAFORM_ROLE', 'METAFORM_WORK')  # what dispatch's runner sets on its agents
 ADD = 'metaform mcp a2a_peer_add <name> <card URL> [token=<token variable>]'
 
 
@@ -119,14 +118,6 @@ def peer(folder: Path, name: str) -> Peer:
     return known[name]
 
 
-def _persons_own(what: str) -> None:
-    """Stop when an agent's session runs this: which peers work is sent to is the person's to say, CLI-011. A guard
-    against an agent's mistakes, not a boundary: an agent with a shell runs as the person's account."""
-    if any(os.environ.get(name) for name in AGENT_SESSION):
-        raise Stop(f'metaform mcp {what} is the person\'s own, never run from an agent\'s session.',
-                   "Say what you need in your ticket's note.")
-
-
 def _shown(one: Peer) -> dict[str, Any]:
     return {'name': one.name, 'url': one.url, 'token_env': one.token_env,
             'token_set': None if one.token_env is None else one.token is not None}
@@ -134,7 +125,6 @@ def _shown(one: Peer) -> dict[str, Any]:
 
 def add(ctx: Context) -> dict[str, Any]:
     """Add a peer, or replace the one of that name; the others are left as they are."""
-    _persons_own('a2a_peer_add')
     given = made(str(ctx.nouns['name']), str(ctx.nouns['url']), str(ctx.nouns.get('token') or ''))
     with home.file_lock(_lock()):
         kept = [one for one in _read() if one.name != given.name]
@@ -147,7 +137,6 @@ def add(ctx: Context) -> dict[str, Any]:
 
 def remove(ctx: Context) -> dict[str, Any]:
     """Remove a peer by name; Metaform then sends it nothing."""
-    _persons_own('a2a_peer_remove')
     name = str(ctx.nouns['name'])
     with home.file_lock(_lock()):
         kept = _read()

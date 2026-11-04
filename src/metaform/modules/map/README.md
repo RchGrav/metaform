@@ -18,6 +18,12 @@ Started from template 0.2.0.
 
 `metaform.module` for the declaration and `Context`, `metaform.settings` for `--raw`, `metaform.data` for every read and write.
 
+### Provides
+
+`work.held`, called with a `Store`, returns held work across its project's bases. `work.hold_reason`, called with a
+proposed reason, validates and returns its nonblank text. The page uses these providers alongside map's existing
+`base.holds`, `ticket.runtime` and `agent.tool.instructions` services.
+
 ## Prompts
 
 `resources/prompts.xml` holds `instructions`, `map is active.`, listed in the instructions agents read under "modules available.", MCP-031.
@@ -28,7 +34,7 @@ Started from template 0.2.0.
 running sessions through dispatch. Empty `name=` clears the first board. Named boards are removed. The map stays.
 `boards op=restore name=<board> backup=<stamp>` inserts original tickets with their numbers, steps, links and
 settings. Existing ticket ids are skipped. Later work stays. `metaform list backups` lists wipe stamps beside clear
-backups. Wipe backups are kept permanently. Wipe and restore are person_only, refused over MCP. The page's Boards
+backups. Wipe backups are kept permanently. The page's Boards
 select offers Wipe this board and Restore for each backup.
 
 `markdown` writes the map, or with `address=` the part around one address, as a short Markdown document: each element's name, address, role and paths, from the sources layer, and each join's receiver, the elements it holds, its ef and its purpose, MAP-052, and `file=` writes the document to a file. It is a command only and never a tool.
@@ -39,7 +45,7 @@ Start with `roots`: the map's entry, the CQU and the DE with the joins they rece
 
 Move a ticket to another node with `work op=edit id=<work id> node=<address>`, or name its destination join by `receiver` and `provider`. Its id, ownership, progress, completion and reference links are kept; `links=` edits those references explicitly. Move an existing question or message with `messages op=move id=<message id> node=<address>`, with `provider` and `address` as in `ask` and `tell`; its suggestions, answer and closed state are kept. These operations carry records to a better-addressed functionality without changing element identity, MAP-015. Without `op`, `messages` still lists them.
 
-`add-base`, `activate` and `collapse` each change which base is the project's active map, so each carries a caution: the active map changes for every agent and the page of that project, and the previous base is kept, `map activate <its name>` switching back. Each is the person's decision (`person_says`, CLI-011, UX review round 1): it runs on the person's own `--confirm` on their command line, the page, or their yes to the form their AI tool shows them, never on an agent's `confirm`, and an agent is told the command the person runs. Its caution names what the active base holds that leaves view: open tickets, knowledge layers and agents at work (the conversations with agents are the project's and stay); `remove-base`'s names what the removed base holds and that no command brings it back. The map counts its tickets and layers for those cautions and for a clear's with `Provides('base.holds', base_holds)`. The result of a switch names the agents at work on the base left, which stay on it with their tickets, and the open tickets that stay with it (UX review round 1, 2026-10-17).
+`add-base`, `activate` and `collapse` each change which base is the project's active map, so each carries a caution: the active map changes for every agent and the page of that project, and the previous base is kept, `map activate <its name>` switching back. Each carries a caution and runs with `--confirm` or `confirm=true`. Its caution names what the active base holds that leaves view: open tickets, knowledge layers and agents at work (the conversations with agents are the project's and stay); `remove-base`'s names what the removed base holds and that no command brings it back. The map counts its tickets and layers for those cautions and for a clear's with `Provides('base.holds', base_holds)`. The result of a switch names the agents at work on the base left, which stay on it with their tickets, and the open tickets that stay with it (UX review round 1, 2026-10-17).
 
 `collapse <name> [project=<id>]` writes the current functional map into a new metaform with one finished `intake` layer and makes it active, LAYER-026. Each current element and join appears once with its original identity, giving subsequent refinements a fresh base. The old metaform keeps its history and attachments whole; `activate <old-name>` switches back. A taken name gets the next free suffix, such as `-2`, with a notice. An intake still building must be finished first. Knowledge, memory, sources and tickets currently stay with the old metaform, and the result says so; knowledge/memory and ticket carryover await D111's remaining answers.
 
@@ -64,7 +70,7 @@ not predate the current completion, so reopening does not allow an older resolut
 
 Put a stopped agent's ticket back with `work op=move id=<work id> column=todo`; its ownership is cleared and its progress log is kept. Assignment already uses `work op=edit id=<work id> glyph=<name>`, or `work op=distribute agents=<n>` for several agents; the dispatch module starts the assigned tickets. A later take starts a new taken age.
 
-Ticket writes, task-bearing knowledge writes and condition/kind edits honor the explicitly configured `roles_without_authority` list, which is empty by default. The setting does not change functional meaning or schema validation. Actual user answers to permission requests still belong to the user-facing surface.
+Ticket writes, task-bearing knowledge writes and condition/kind edits have no role-based authority filter. Graph/schema invariants and explicit ticket eligibility still apply. Actual native permission responses retain their transport handling.
 
 `work op=add` accepts a no-task `unbuilt` or `under-construction` stage, using the DAO's `shown_open` contract. Such a record is visible on its node, has `is_work=false`, and is excluded from executable work and autostart. A task makes executable work; a trouble, broken or missing marker can start from its note. Empty built/ok records and notes without work or a visible stage remain invalid. New records announce kind `filed` on `map.changed`.
 
@@ -72,7 +78,7 @@ Before constructing or extending the base or a knowledge layer, read `metaform:/
 
 Set a ticket's Eligible agents with `work op=add ... eligible='["claude"]'` or `work op=edit id=<work id> eligible='["claude", "codex"]'`. An empty list restores Any agent, which is the default for existing and new tickets. The map module keeps the list in `"map.eligible"`, keyed by `work_id`, and shows it under `map` on ticket reads. Dispatch and direct `op=take` claims honor it. A direct MCP claim uses the initialized client name, while a CLI claim uses the first word of `by`. Unidentified agents cannot claim restricted tickets. Moving a card to Doing remains a person's action.
 
-A ticket can wait on others: `work op=edit id=<work id> after_work='["<work id>", ...]'` (each an id or an `<address>#<n>`), and `after_work='[]'` waits on none. The map module keeps the list in `"map.after"`, keyed by `work_id`, and shows it under `map` on ticket reads; dispatch starts no such ticket by itself, and `dispatch start` refuses it, while any of them is open. A held ticket (`held=true`, the Backlog) waits for release: autostart and Start all never start it. Holds require an explicit user or deliberate agent action with a fresh `hold_reason` recorded on the ticket. Creation never adds a hold because of source, role, feedback, filing or review state. Autostart controls automatic starts. Reason-based unholding needs no person approval, including with `agents_ask_first` on. Explicit start and stop authority remain unchanged. A ticket's change says its kind on `map.changed`: `note` for its note, title or links alone, `step` for its plan and steps, `ticket` for the rest. A ticket done also says `done` beside `ticket`, heard by dispatch's plan report (code.dispatcher.agent#10).
+A ticket can wait on others: `work op=edit id=<work id> after_work='["<work id>", ...]'` (each an id or an `<address>#<n>`), and `after_work='[]'` waits on none. The map module keeps the list in `"map.after"`, keyed by `work_id`, and shows it under `map` on ticket reads; dispatch starts no such ticket by itself, and `dispatch start` refuses it, while any of them is open. A held ticket (`held=true`, the Backlog) waits for release: autostart and Start all never start it. Holds require an explicit user or deliberate agent action with a fresh `hold_reason` recorded on the ticket. Creation never adds a hold because of source, role, feedback, filing or review state. Autostart controls automatic starts. Reason-based unholding needs no person approval. Explicit start and stop authority remain unchanged. A ticket's change says its kind on `map.changed`: `note` for its note, title or links alone, `step` for its plan and steps, `ticket` for the rest. A ticket done also says `done` beside `ticket`, heard by dispatch's plan report (code.dispatcher.agent#10).
 
 ## A layer at a scope: `<scope>@<layer>`
 
@@ -159,7 +165,7 @@ General notes and previous reasons never substitute for a new explanation. `work
 `hold_history`; release preserves it. `work op=unhold_all` releases open executable work across project boards
 and bases, leaves prerequisites intact, excludes reserved conversations and closed work, and returns changed count.
 Board previews recorded explanations before confirmation and rejects a stale preview. Ordinary reason-based
-unholding needs no approval, including with `agents_ask_first` on. Autostart controls automatic starts.
+unholding needs no approval. Autostart controls automatic starts.
 
 
 Work request provenance lives in `work_sources`, separate from the current task. Add or edit with

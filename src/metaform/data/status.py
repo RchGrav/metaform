@@ -1,6 +1,6 @@
 """One status vocabulary for work at a node, mapped to the MCP Tasks and A2A task states.
 
-Workflow runs are its only user today, BASE-051; tickets and agent sessions are to report the same states next, so
+Tickets and agent sessions report these states, so
 the person, an orchestrator and the agents read one set, and any of them is offered as an MCP task or an A2A task by
 a lookup in this module alone.
 

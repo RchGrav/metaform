@@ -360,21 +360,17 @@ def test_a_new_intake_is_named_for_what_it_is_for(run, project, tmp_path, home):
 
 
 @pytest.mark.req('LAYER-025')
-def test_an_agent_never_starts_a_new_map_on_a_mapped_project_and_its_update_refines_the_map_in_use(
+def test_an_agents_unnamed_intake_update_refines_the_map_in_use(
         run, project, tmp_path):
-    """Refinement first (2026-10-17): on a project with a map, intake start name= is the person's decision, so an
-    agent's is refused with the refine call; with no name its update is a verification pass on the map in use, which
-    grows it under the same rules as map refine, each version carrying its reason and author."""
+    """With no name an agent's update is a verification pass on the map in use, which grows under the same
+    rules as map refine, each version carrying its reason and author."""
     submit(run, project, FIXTURE, tmp_path)
-    agent = {'METAFORM_ROLE': 'worker', 'METAFORM_WORK': 'w9'}
-    refused = run('intake', 'start', 'name=feature-x', cwd=project, env=agent, ok=False)
-    assert refused.returncode != 0 and 'map refine' in refused.stdout + refused.stderr
-    assert [base.name for base in metaform_home.bases('timer')] == ['main']
+    agent = {'METAFORM_SESSION': 'worker-session', 'METAFORM_WORK': 'w9'}
     run('intake', 'start', cwd=project, env=agent)
     run('intake', 'element', 'code.alarm.snooze', 'role=SE', 'name=snooze', 'name_length=2', cwd=project, env=agent)
     snooze = Store('timer').element('code.alarm.snooze')
     [added] = Store('timer').history(snooze.id).results
-    assert (snooze.layer, added.reason, added.by) == ('base', 'intake verification pass', 'work w9')
+    assert (snooze.layer, added.reason, added.by) == ('base', 'intake verification pass', 'work w9 session worker-session')
     assert [base.name for base in metaform_home.bases('timer')] == ['main']
 
 
@@ -568,10 +564,11 @@ def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, pr
 
 
 @pytest.mark.req('MCP-009')
-def test_a_dispatched_agent_is_never_given_the_first_run_onboarding(run, project, monkeypatch):
+@pytest.mark.parametrize('identity', ['METAFORM_SESSION', 'METAFORM_ROLE'])
+def test_a_dispatched_agent_is_never_given_the_first_run_onboarding(run, project, monkeypatch, identity):
     """An agent a dispatch runner started has its work as its first turn: the onboarding, which asks an agent to
     handle the intake first, is not in what it reads, BASE-052."""
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv(identity, 'worker')
     assert onboarding() not in run('help', 'agents', cwd=project).stdout
 
 

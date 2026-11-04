@@ -96,8 +96,7 @@ def _field_words(group: str) -> dict[str, str]:
 
 ELEMENT_WORDS, PURPOSE_WORDS = _field_words('element'), _field_words('purpose')
 
-# person_only: the file decides what every intake agent is told to do, so an agent never chooses it.
-settings.text('intake_file', '', person_only=True,
+settings.text('intake_file', '',
               help='An intake file to serve instead of the Canonical Intake. Empty means the Canonical Intake.')
 
 
@@ -143,7 +142,10 @@ def procedure_component(ctx: Context) -> dict[str, Any]:
     """
     source, text, digest = _procedure(ctx)
     project = ctx.require_store().project()
-    component = prompt_files.component('prompt.intake:procedure', text.replace('{prompt}', '', 1).rstrip('\n'),
+    body = text.replace('{prompt}', '', 1).rstrip('\n')
+    if body.strip() and SCHEMA_URI not in text:
+        body += '\n\n' + prompt_files.required(resources.files(__name__), 'schema_pointer') + '\n'
+    component = prompt_files.component('prompt.intake:procedure', body,
         version_id='intake-source:' + digest,
         bindings={'project': project.project_id, 'target_type': project.target_type,
                   'target_value': project.target_value, 'prompt': ''})
@@ -154,6 +156,11 @@ def procedure_component(ctx: Context) -> dict[str, Any]:
     if '{prompt}' not in text:
         component['read'] = {'uri': PROCEDURE_URI}
     return component
+
+
+def task_component(ctx: Context, **_bindings: str) -> dict[str, Any]:
+    """Share the canonical procedure with assigned tasks, retaining its project bindings and source identity."""
+    return procedure_component(ctx)
 
 
 def tool_instructions(ctx: Context, tool: str, op: str | None) -> list[dict[str, Any]]:
@@ -1488,7 +1495,7 @@ def _mapped_elsewhere(store: Store) -> str | None:
 
 def status(ctx: Context) -> Status:
     here = resources.files(__name__)
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
+    if os.environ.get('METAFORM_SESSION') or os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
         # An agent a dispatch runner started has its work, given as its first turn: the intake's onboarding, which
         # asks an agent to handle it first, is for the person's own agent, never for one dispatched, BASE-052.
         if ctx.store is None:
@@ -1592,7 +1599,6 @@ MODULE = Module(
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False)),
-             person_decides=new_map_decision,
              person_details='A web GUI that runs follows the intake live.'),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
                                  'fields given.',
@@ -1637,11 +1643,11 @@ MODULE = Module(
         Verb('discard', discard, 'Discard the intake left unfinished: its layer and the parts it recorded are removed, '
                                  'and a base opened for it alone goes too, a copy kept.',
              caution='Discarding the unfinished intake removes every part it recorded; it is not undone.',
-             surfaces=('cli',), effect='remove', listed=recording, person_says=True, cautioned=_discard_caution,
-             page="the intake's Discard"),
+             surfaces=('cli',), effect='remove', listed=recording, cautioned=_discard_caution),
     ),
     status=status,
-    provides=(Provides('intake.first_run', first_run), Provides('agent.tool.instructions', tool_instructions)),
+    provides=(Provides('intake.first_run', first_run), Provides('intake.task_component', task_component),
+              Provides('agent.tool.instructions', tool_instructions)),
     resources=(
         Resource(PROCEDURE_URI, 'Intake procedure',
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',

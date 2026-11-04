@@ -1,4 +1,5 @@
 import sys
+
 from playwright.sync_api import sync_playwright
 
 # usage: .venv/bin/python -I scripts/page_smoke.py URL [CSS_SELECTOR_TO_CLICK]

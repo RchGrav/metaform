@@ -17,20 +17,6 @@ def test_every_authored_prompt_has_a_purpose_comment_above_it(home):
     assert [entry.key for entry in authored if not entry.purpose] == []
 
 
-@pytest.mark.req('BASE-059')
-def test_moved_skills_and_shared_libraries_remain_source_editable(home, tmp_path):
-    entries = {entry.key: entry for entry in prompt_review.catalog()}
-    assert entries['prompt.skills:metaform-tools'].source.parts[-3:] == ('skills', 'resources', 'prompts.xml')
-    found = entries['prompt.skill.sentinel']
-    assert found.source.name == 'procedure.axiom' and found.purpose
-    copy = tmp_path / 'procedure.axiom'
-    copy.write_text(found.text, encoding='utf-8')
-    entry = dataclasses.replace(found, source=copy)
-    changed = found.text + '\n# Reviewed revision.'
-    assert prompt_review.save_edit(entry, changed) == copy
-    assert copy.read_text(encoding='utf-8').strip() == changed
-
-
 def test_a_saved_edit_writes_a_packet_naming_where_the_text_lives_and_what_replaces_it(home, tmp_path):
     found = next(entry for entry in prompt_review.catalog() if entry.key == 'prompt.chassis:work_reminder')
     # A copy of its file, so the shipped one is never written, and read-only, so the edit cannot be written into it.

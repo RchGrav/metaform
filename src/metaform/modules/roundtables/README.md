@@ -1,6 +1,6 @@
 # roundtables
 
-Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through fresh role assignments.
+Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through assigned tasks. The system controls stage progression without a coordinator agent.
 
 ## Purpose
 
@@ -20,15 +20,18 @@ None of its own. The web page's roundtable stage (web, `page/app/roundtable/stag
 
 ## Common base used
 
-`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats`, `orchestration.transport` and the `orchestration` provider. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
+`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats` and design-intake providers, plus `task.lifecycle`. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
 
 ### Provides
 
-Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, orchestration's `orchestration` provider, and memory's `memory.record`.
+Nothing. It uses dispatch's `dispatch.seats` and design-intake providers, tasks' `task.lifecycle`, and memory's `memory.record`.
 
 ## Prompts
 
 `resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
+
+The `session_*` prompts hold the person's session messages. `minutes_system` and `minutes_turn` explain each contribution
+in plain language. The minutes writer uses an ACP session, like the other agents.
 
 ## Verbs
 
@@ -36,7 +39,9 @@ Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, orch
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
   The GUI exposes Hold, Continue, discussion comments and End discussion beside the transcript. End discussion invokes `advance` immediately at the next gap, without minimum rounds. Comments can be queued while held, without resuming AI turns. They enter at the next gap between turns. Continue resumes the same table. On a completed table, Continue discussion uses its saved host summary with fresh seat contexts, the same visible identity, project and lineup. It appends a topic without removing prior topics or outputs. Plan review comments remain separate.
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
-  Gemini's ACP session uses the table's project folder as its workspace so native file tools can inspect source. Its process still runs in the private seat folder. File writes and terminal requests retain the seat's existing permission restrictions.
+  ACP seats use the project as their workspace. Their harnesses provide file tools and request permissions through ACP.
+- `permit <table> request=<id> option=<id>`, command line or page: return the person's selected option to the waiting
+  ACP request. The page displays the options supplied by the agent. Metaform adds no file or tool permission policy.
 - `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
@@ -61,6 +66,24 @@ Before exhaustion, every participant receives a carry-forward request at twice t
 
 A held runner closes its seats. Comments remain queued or enter without resuming turns. Explicit Continue restarts it. Starting an engine server never resumes other live or held tables.
 
+Opening with `chain=<number>` runs a session containing that many discussions. After each discussion, agents collaborate
+on saved materials and the next topic. Busy seats keep working while available seats contribute. When all seats are
+busy, the runner waits for completion events. A skipped seat never supplies an implicit PASS or Done.
+
+After the final collaboration, each agent submits private scorecards. Only aggregate scores are shared and added to
+profiles. Agents then exchange farewells and explicitly finish. Minutes are saved per discussion in the session folder.
+
+Roundtable agent connections offer ACP v2 and retain ACP v1 support. Each connection uses its negotiated protocol.
+In v2, the prompt response acknowledges insertion and `state_update` reports activity and completion. In v1, the
+prompt response completes the turn. Permission requests use the same ACP relay for every agent.
+
+A peer selecting v1 is reconnected with v1 initialization so its capabilities are advertised correctly. A peer that
+rejects v2 or returns legacy initialization fields gets the same fresh v1 negotiation. Authentication, session and
+runtime failures never change the selected protocol. Cancellation closes active work and outstanding requests.
+
+Initialization checks on 2026-11-04 verified v2 with Claude `0.100.0` and Codex `2.5.0`. Antigravity `1.4.5` returns
+legacy fields when offered v2 and negotiates a valid v1 connection when offered v1.
+
 ## Events
 
 A follower publishes each event of its table on the bus as `roundtables.event`, `{table, seq, kind, audience, ...}`, and writes it to the `events` table in the same transaction as the cursor that says it was told; that write's `map.changed` names the kind `roundtables` and the table's own, `roundtables:<table>`, so a page watching one table reads only for it, and so every other process of the home, the web page's server among them, hears it and reads the one table's events after the seq it holds. Kinds: `turn` and `veto` (a seat's turn, kept or vetoed, with its scores), `stage` (the open topic and its stage), `ideas` (the synthesis), `rankings`, `summary` (the host's), `state`, `seat_lost` and `operational` (the engine's operational events), `end` (with `answered`, `answer`, whether the report was saved, `saved`, the folder of the saved files, and `recorded`, the memory's name, or `unrecorded` and why), and `adopted` (an idea made a ticket, with its `work_id` and `address`). `state`, `seat_lost`, `operational`, `end` and `adopted` have the audience `person`: they are the person's, and nothing of them goes to a seat or Jev.
@@ -71,10 +94,11 @@ The follower hears the table through the engine's own page server, started for i
 
 - Each seat takes one of dispatch's agent slots for as long as its seats run, and a follower that stops ends its table first, through dispatch's own admission gate, so tables and tickets share `dispatch_agents` and `dispatch_machine_agents`. A table needs a slot for every seat when it opens; dispatch off refuses it, since nothing would count them.
 - A table spends at most `spend`, at most `roundtables_spend`, through OpenRouter; the engine also holds its own most.
-- Seats read and change nothing. The engine gives Claude Code only Read, Grep and Glob, runs Codex read-only, offers no file writes or terminals, and refuses every permission a seat asks to write; this module never names an MCP server for a seat. The tables carry no Metaform tool.
+- Each agent's harness provides its native tools. ACP carries permission requests and the person's selected responses.
+  Session prompts describe the work and phase. Metaform sets no Claude-specific tool allowlist or file permission gate.
 - Operational events reach the person, never a seat or Jev.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
-- The page shows the engine's result directly. A separate Planner prepares the proposal; the system agent receives only the saved reference. The engine's reporter output is not saved or shown by this module.
+- The page shows the engine's result directly. The system pipeline assigns preparation tasks. The engine's reporter output is not saved or shown by this module.
 
 ## What a table leaves in the project
 
@@ -86,9 +110,8 @@ When a table ends, its follower saves the record and keeps its outcome as a memo
 
 ## Follow-through
 
-After a table ends, its saved result stays on the page. Its seats are released before one fresh
-`roundtable_follow_through` assignment receives the complete table record. The system agent receives one
-`roundtable_result` inbox line containing the table id and saved export path. That reference never starts a turn.
+After a table ends, its saved result stays on the page and its seats are released before preparation starts.
+The system pipeline controls progression. It starts no coordinator or presentation agent.
 Both direct and guided tables enter this same preparation flow. Preparation tickets attach to the source map
 at the table's functional Address or its top element.
 
@@ -102,13 +125,18 @@ Each output stays available with its question. Only the person's current decisio
    Only approval starts Decomposer.
 6. Decomposer -> a system-written execution outline containing the board and every ticket's id, title,
    stored completion dependencies and full expected outcome.
-7. Execution outline -> person approval -> Facilitator. Facilitator assigns specialists, receives their work,
-   submits completed work to Harsh Critic and assigns any concrete corrective tickets for another review.
+7. Execution outline -> person approval -> facilitation of the approved board through current project agent
+   tasks, paired contributions, registered worksheets and peer review.
 
 A no stops the pipeline. Preparation tickets do not authorize implementation. Decomposer creates its fresh
-board inactive and its tickets held until the outline is approved. Existing dispatch admission, budgets,
-stops and capacity govern every fresh role. Outline approval carries execution consent into specialist claims on
-that board, including when Full Auto is off. Other boards retain their own start controls. Intake uses its authored role rather than a replacement prompt.
+board inactive and its tickets held until the outline is approved. Dispatch admission, stops and capacity apply to every assigned task. Stage labels describe work, not privileges.
+Launch requests grant no ownership of agents. Intake uses its existing authored task instructions.
+Task request keys prevent duplicate launches when a reply is lost. Launch failures remain attached to the same
+stage ticket. Native session events retry launches refused before startup, including when a slot becomes free.
+A running task is reused on recovery, and a new attempt receives a new key after an ended task.
+Cancelled tasks stop their pipeline. Retries retain the original stage request time, so a later user halt
+still prevents their launch. A crash between ticket creation and its reservation can leave an unlaunched
+ticket because those stores commit separately. Missing reserved tickets remain errors and are never recreated.
 
 `roundtables follow-through <table>` prepares or recovers a handoff. `roundtables review <table>` reads the full
 current output. `roundtables submit` publishes an assigned stage file from its worktree into the source project's
@@ -117,7 +145,9 @@ stage calls supply `origin`, the source project id. The page's decisions carry b
 bytes and the stage revision. Changed bytes or a stale revision require another review. Comments and revision
 requests remain in the pipeline record. Status and events carry metadata rather than deliverable bodies.
 
-`pipelines` and `intake_links` use tables version 5, compatible from 5. Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
+`pipelines`, `intake_links` and `pending_stages` use tables version 6, compatible from 5. Version 6 adds only the
+current refused stage launches. Successful launches remove them, and stopped or obsolete stages cannot restart.
+Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
 events and follower cursors. Version 3 proposal decisions remain historical evidence; their direct Planner
 route is removed. Recovered tables begin at the roundtable decision rather than inheriting execution approval.
 

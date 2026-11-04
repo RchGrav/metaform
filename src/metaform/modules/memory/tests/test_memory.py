@@ -1177,12 +1177,10 @@ def test_a_locked_memory_is_read_by_every_agent_and_changed_by_none_until_the_pe
     assert shown['locked']['by'] == 'person'
     read = json.loads(run('map', 'item', 'code.manager.route#1', '--json', cwd=mapped).stdout)
     assert read['locked']['by'] == 'person' and 'LOCKED' in read['body']
-    # only the person locks and unlocks: never an MCP tool, and refused under an agent's role
+    # lock and unlock are command-line verbs, never MCP tools
     from metaform.modules.memory import MODULE
     assert {verb.name: verb.surfaces for verb in MODULE.verbs if verb.name in ('lock', 'unlock')} == {
         'lock': ('cli',), 'unlock': ('cli',)}
-    agent = run('memory', 'unlock', 'route ejection', cwd=mapped, env={'METAFORM_ROLE': 'worker'}, ok=False)
-    assert 'Only the person locks and unlocks a memory' in agent.stderr
     mj(run, 'unlock', 'route ejection', cwd=mapped)
     assert mj(run, 'delete_entities', J(['route ejection']), cwd=mapped)['message'] == 'Entities deleted successfully'
 

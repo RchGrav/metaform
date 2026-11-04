@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `connect_directive`, the line the connect message opens with before the links to the instruction blocks the server serves (`metaform://rules`, `metaform://metaform`, `metaform://memory`, `metaform://firstrun`, `metaform://role/<role>`, `metaform://<project>`); `connect_rules`, served at `metaform://rules`; the role block's lines; `instructions` and `instructions_tools`; the `glossary` served alone at `metaform://metaform`; `project_glossary_absent`, the note `metaform://<project>` gives while the map module is off; the `module_index` heading of `metaform://modules` and `module_tools`, the guidance for loading one module; the forms the person is shown, `consent_caution`, `consent_go` and `consent_settings`, and `consent_declined`, what the agent is told when the person says no; `view_selected`, the line a view tells the agent about the node the person selected, `view_unbuilt`, and `view_read`, the one text line of a view's read; `view_show` and `view_state`, the descriptions of a view's own tools, and `view_shown` and `view_absent`, what `view_show` answers; and `task_working`, a task's status while its tool runs.
+`resources/prompts.xml` holds `connect_directive`, the line the connect message opens with before the links to the instruction blocks the server serves (`metaform://rules`, `metaform://metaform`, `metaform://memory`, `metaform://firstrun`, `metaform://task/<name>`, `metaform://<project>`); `connect_rules`, served at `metaform://rules`; the task block's lines (`connect_use` for the person's own session, `task_intake` for the intake task, then `connect_catalog`, `connect_compaction` or `connect_unkeyed`, and `connect_here`); `instructions` and `instructions_tools`; the `glossary` served alone at `metaform://metaform`; `project_glossary_absent`, the note `metaform://<project>` gives while the map module is off; the `module_index` heading of `metaform://modules` and `module_tools`, the guidance for loading one module; the forms the person is shown, `consent_caution`, `consent_go` and `consent_settings`, and `consent_declined`, what the agent is told when the person says no; `view_selected`, the line a view tells the agent about the node the person selected, `view_unbuilt`, and `view_read`, the one text line of a view's read; `view_show` and `view_state`, the descriptions of a view's own tools, and `view_shown` and `view_absent`, what `view_show` answers; and `task_working`, a task's status while its tool runs.
 
 ## Verbs
 
@@ -36,23 +36,22 @@ schemas and context epochs require current delivery. A receipt proves delivery,
 not comprehension. Discovery, guide reads and tools without specific instructions
 remain reachable. These prerequisites apply to MCP, not arbitrary CLI or file writes.
 
-`metaform_skills` is always available, including when workflow is disabled or
-omitted from the build. `op=list` lists discoverable skills, `op=load name=`
-accepts a name or `logic.skill.<name>` Address and returns its procedure with
-current libraries, and `op=read name= path=` reads a skill file. `all=true` on
-list includes internal skills for administrative inspection. Sentinel and
-workflow-evaluator are internal, so ordinary discovery never lists them.
+Reusable skills use the official `io.modelcontextprotocol/skills` extension (SEP-2640).
+`skills/list` and `skills/get` return frontmatter, canonical URIs and complete
+SHA-256/size manifests. `resources/read` returns one requested file, preserving
+UTF-8 text or base64 binary bytes. Discovery does not include instruction bodies
+or append a skill index to the connect message. Known internal and graph skills
+remain directly addressable without appearing in listings.
 
-The connect message appends a compact skill index when the connecting harness
-has no current, completed native deployment record. `skill_index=auto` is the
-default. `on` forces the index and `off` omits it. The installer deploys
-discoverable folders and their current libraries to native discovery harnesses
-and records their contents. Unknown clients and stale deployment records keep
-the index, so missing native discovery does not hide available procedures.
+Authored reusable skills are stored in the Metaform home's `skills/` directory.
+Project skills stay in the map's skill layer, the layer `skills`, inline in the receiving
+element's `joins` or attached directly to a functional join, at
+`skill://skills/<node>/<name>/SKILL.md`. Both use the same
+SKILL.md document format. See the [Skills specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx).
 
 `serve`: runs the server over stdio until the host closes it, or with `--http` over Streamable HTTP at `http://127.0.0.1:<mcp_port>/mcp` until it is stopped. It is never itself a tool. Beside the module tools it always serves the chassis tools `metaform_set`, `metaform_feedback`, `metaform_list_reports`, `metaform_read_report`, `metaform_instructions` and `metaform_register`, which narrowing never hides, and while the chassis is on the folder's command surface, `metaform_add_origin`, `metaform_list_origins`, `metaform_add_variant`, `metaform_list_variants`, `metaform_extract`, `metaform_prompts`, `metaform_prompt`, `metaform_save_prompt` and `metaform_clear_project`, the history, prompt and clear commands as tools. `metaform_clear_project` removes the project's bases and reports, as `metaform clear project` does; a backup is made first, and `metaform restore project` brings it back. It is `destructiveHint` true, and it is the person's decision: it takes no `confirm` and runs only on the person's yes in a form their AI tool shows; without it, and always for a dispatched agent, it says what it would remove, each base with what it holds and the backup made first, and the command the person runs (UX review round 1, CLI-011).
 
-Consent, CLI-011 and MCP-006: a call with a caution, and an agent asking to change a setting only the person sets, are put to the person where their AI tool shows forms (MCP elicitation) and `mcp_consent` is `ask`, the default. On the 2026-07-28 wire the call answers `input_required` with the form, and the client calls again with the person's answer and the state it was given, which the SDK seals and binds to the call and its arguments; each answer counts once. On the 2025 handshake the server sends `elicitation/create` while the call waits. The form carries the caution with one box to tick, and each setting as a field with its choices, the agent's value filled in and its help as the reason it is the person's. A dispatched agent's calls are never put to a form. Where none can be shown, `confirm=true` and the refusal of a person-only setting stand, except for a verb declared `person_says` and `metaform_clear_project`: those are the person's decision, run only on their answer to the form, and refused otherwise with the caution and the command the person runs (`PersonsDecision`, whose next step is never turned into a tool call). Their tools are `destructiveHint` true and take no `confirm`.
+A call with a caution, `metaform_clear_project` among them, explains what it would do and runs with `confirm=true`, whoever makes it (MCP-006). The consent forms and cards of 2026-10-17 were removed on 2026-10-25: Metaform has no permission system of its own: the harnesses it orchestrates have theirs, and Metaform relays a harness's permission request to the person on the page and nothing more.
 
 Tasks, BASE-030: a verb declared `task=True`, such as `hello_wait`, called by a client that declares `io.modelcontextprotocol/tasks` on the request, is answered at once with a task while the verb runs on in the server, its status in the vocabulary of `metaform.data.status`. The task is written to the project's `tool_tasks` table before the call is answered, and kept for a day, its `ttlMs`; each task names the server process that runs it, its id and start time, so a client polling after that server stopped, a relay's replacement or an HTTP restart, is told the task failed rather than that it does not exist; nothing marks a task alive on a clock. `tasks/get` gives its status and, once it is done, the tool's result. `tasks/cancel`, from any server of the project, asks the verb to stop: the cancel's `map.changed` names the `mcp.tool_tasks` table and the kind `task`, and the server running the task, which listens only while it runs one, reads only its own tasks then; as the extension's cooperative cancellation has it: the task reads cancelled once the verb has stopped, which an `async` verb does at its next `await`, and completed with its result when the verb finished first, as a verb run in a thread always does, so a task never reads cancelled while its effect still lands. A verb declared `task='run'` returns a workflow run the server itself advances to its end, and answers with that run as the task, by its run id: `tasks/get` maps the run's status through `metaform.data.status`, a run paused on the person asks its question as a form under a key of that one pause, `tasks/update` takes the person's answer through the workflow module's `answer`, and `tasks/cancel` cancels the run through its `cancel`. No shipped verb declares it yet: a task is only for work the server advances by itself, since a host gives the model a task's result only once it ends, so `workflow_assign`, whose run id the calling agent must act on, answers as any tool does. A folder that is no project's answers without a task. A client that does not declare the extension gets no task, and `tasks/*` answer it -32021.
 
@@ -108,11 +107,11 @@ Manual returns the ordinary schema error, leaving restart to the host, and serve
 Unchanged code never starts a replacement. A host pinned to an old wheel must select a newer package source.
 The `set` tool stores any setting for the server's folder.
 
-`mcp_consent`, person only, `ask` by default or `confirm`, is how a call that needs the person's yes is confirmed; see Consent above. `mcp_apps`, on by default, offers the map, node, trace and glossary views to AI tools that show MCP Apps; `mcp_apps_offer`, `declared` by default, offers them only to AI tools that declare the extension, and `always` to every AI tool, for a host that shows them without declaring it, such as the specification's basic-host. A verb declared `task=True` or `task='run'` is always answered with a task to AI tools that declare the tasks extension; others get the result as before (`mcp_tasks` was removed in the settings cleanup, 2026-10-15). An exposed server checks tokens at `oauth.DEFAULT_INTROSPECTION`, the Node's authorization server on loopback (`mcp_introspection` was removed then too).
+`mcp_apps`, on by default, offers the map, node, trace and glossary views to AI tools that show MCP Apps; `mcp_apps_offer`, `declared` by default, offers them only to AI tools that declare the extension, and `always` to every AI tool, for a host that shows them without declaring it, such as the specification's basic-host. A verb declared `task=True` or `task='run'` is always answered with a task to AI tools that declare the tasks extension; others get the result as before (`mcp_tasks` was removed in the settings cleanup, 2026-10-15). An exposed server checks tokens at `oauth.DEFAULT_INTROSPECTION`, the Node's authorization server on loopback (`mcp_introspection` was removed then too).
 
 ## A2A
 
-While `mcp_a2a` is on (global, person-only, on by default), `metaform mcp serve --http` also serves A2A 1.0 on the
+While `mcp_a2a` is on (global, on by default), `metaform mcp serve --http` also serves A2A 1.0 on the
 same port, built on the official `a2a-sdk`, `a2a.py`. Other agents send Metaform work as tickets:
 
 - `GET /.well-known/agent-card.json` is the public Agent Card. It names no project. Its one skill is the ticket, since
@@ -136,7 +135,7 @@ same port, built on the official `a2a-sdk`, `a2a.py`. Other agents send Metaform
   send waits up to `mcp_a2a_wait` seconds (30 by default) for the task to end or need input, and not at all while
   nothing starts tickets by itself.
 - A2A sees only what A2A made: the tickets its messages opened and its questions. `GetTask`, `CancelTask`,
-  `SubscribeToTask` and the push configuration calls answer any other id, the person's own tickets and workflow runs
+  `SubscribeToTask` and the push configuration calls answer any other id, the person's own tickets
   among them, as not found, and `ListTasks` leaves them out, as A2A 1.0 sections 3.1.4 and 3.3.2 ask.
 - A task's state is the one status vocabulary of work, `metaform.data.status`, converted by its `a2a`. A ticket is
   submitted while it waits, working once an agent takes it, completed with its resolution as an artifact, or canceled
@@ -155,7 +154,7 @@ same port, built on the official `a2a-sdk`, `a2a.py`. Other agents send Metaform
   naming only other tickets or sessions, or only an agent's thread lines, wakes nothing; one naming neither wakes it
   when it wrote a ticket, a question, dispatch's tables, the A2A records or settings, or did not say what it wrote.
   Nothing reads on a clock.
-- Push notifications go only to webhooks the person lists in `mcp_a2a_webhooks` (global, person-only), matched by
+- Push notifications go only to webhooks the person lists in `mcp_a2a_webhooks` (global), matched by
   scheme, host, port and path; with none listed the card offers no push. Configurations are kept in the project's
   database, `a2a_push`; a push watch follows its task through input-required to its end, and is watched again after
   a restart.

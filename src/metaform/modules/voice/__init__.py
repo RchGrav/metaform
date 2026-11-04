@@ -72,9 +72,8 @@ def _check_url(value: Any, folder: Path) -> list[str] | None:
         ['voice_endpoint_url is an http(s) URL ending in /audio/transcriptions, or empty.']
 
 
-# Where the person's audio goes is the person's own choice, so the settings that send it anywhere are person_only:
-# an agent over MCP cannot point the microphone at another service, CLI-011.
-settings.choice('voice_engine', _listeners, 'auto', scope='global', person_only=True,
+# Where the person's audio goes.
+settings.choice('voice_engine', _listeners, 'auto', scope='global',
                 help='Who turns your speech into text: auto, browser, server, an engine a module brings, endpoint, '
                      'browser-speech or off.',
                 details='auto runs Whisper on this machine\'s server when the voice extra is installed and it has '
@@ -105,7 +104,7 @@ settings.choice('voice_language', ['auto', *LANGUAGES], 'auto', scope='global', 
 settings.choice('voice_send', ['review', 'auto'], 'review', scope='global',
                 help='After you speak: review leaves the text in the box for Enter; auto sends it after a pause.',
                 label='Send what you said', heading='Listening')
-settings.choice('voice_send_audio', ['never', 'accepted'], 'never', scope='global', person_only=True,
+settings.choice('voice_send_audio', ['never', 'accepted'], 'never', scope='global',
                 help='Send your recorded voice itself to a chat agent too: never, or when the agent accepts audio.',
                 details='accepted sends the recording beside its transcript as an ACP audio block, only to an agent '
                         'whose session declares that it takes audio. The transcript is in the thread either way.',
@@ -116,15 +115,15 @@ settings.choice('voice_device', ['auto', 'cuda', 'cpu'], 'auto', scope='global',
 settings.number('voice_max_seconds', 120, min=5, max=600, scope='global',
                 help='The longest utterance heard at once, in seconds; anything longer is refused.',
                 label='Longest recording', category='advanced')
-settings.text('voice_endpoint_url', '', scope='global', person_only=True, check=_check_url,
+settings.text('voice_endpoint_url', '', scope='global', check=_check_url,
               help='Your own OpenAI-compatible transcription URL, for voice_engine endpoint. It receives your audio.',
               details='Such as http://127.0.0.1:8000/v1/audio/transcriptions for a Whisper server of your own, or '
                       'https://api.openai.com/v1/audio/transcriptions for a service, which then receives your audio.',
               label='Transcription endpoint', category='advanced', heading='Your endpoint')
-settings.text('voice_endpoint_model', 'whisper-1', scope='global', person_only=True,
+settings.text('voice_endpoint_model', 'whisper-1', scope='global',
               help='The model name sent to your transcription endpoint.',
               label='Endpoint model', category='advanced', heading='Your endpoint')
-settings.text('voice_endpoint_key_env', '', scope='global', person_only=True,
+settings.text('voice_endpoint_key_env', '', scope='global',
               help='The environment variable that holds your endpoint\'s key, such as OPENAI_API_KEY; empty sends none.',
               details='The key is read from the environment of the process that serves the page and sent only to '
                       'voice_endpoint_url; it is never stored by Metaform or shown to the page.',
@@ -141,7 +140,7 @@ def _check_voices(value: Any, folder: Path) -> list[str] | None:
 
 # Speech out: the agent the person talks to, their mascot, answers aloud. The browser's own voices run on the device;
 # ElevenLabs only where its key is in the server's environment, and it receives the text spoken.
-settings.choice('voice_tts', _speakers, 'browser', scope='global', person_only=True,
+settings.choice('voice_tts', _speakers, 'browser', scope='global',
                 help="Who speaks the agent's replies: browser (your system's own voices), an engine a module brings, "
                      'or off.',
                 details='browser speaks with the voices your system has, on the device. An engine a module brings, '
@@ -155,7 +154,7 @@ settings.items('voice_voices', [], scope='global', exclusive='=', check=_check_v
                details='The voice is the name of one of your browser\'s voices. A character not named speaks with a '
                        'voice chosen for it, at its own pitch and pace. An engine a module brings has its own voices.',
                label='Browser voice for each character', heading='Speaking')
-settings.boolean('voice_wake', False, scope='global', person_only=True,
+settings.boolean('voice_wake', False, scope='global',
                  help="Listen hands-free for the wake phrase; what follows it goes to your system agent.",
                  details='On, the page keeps the microphone open and shows that it listens. Each pause-bounded stretch '
                          'of speech has only its first seconds heard, on this device, for the phrase; nothing else is '

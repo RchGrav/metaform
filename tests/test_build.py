@@ -135,28 +135,6 @@ def test_a_build_carries_only_the_enabled_modules_and_their_dependencies(run, ho
     assert '__main__.py' in names
     entry = zipfile.ZipFile(wheel).read(next(name for name in names if name.endswith('entry_points.txt'))).decode()
     assert 'metaform = metaform.cli:main' in entry and 'map = metaform.modules.map' in entry
-    # Native skill distribution remains chassis-owned when workflow is physically absent from the wheel.
-    script = '''
-import sys
-from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-from metaform import install, skills
-assert skills.load('prompt.skill.write-workflow')['libs']
-root = Path.home() / '.cursor' / 'skills'
-tool = install.Tool('cursor', 'Cursor', lambda: True, 'test', lambda: None, lambda: root)
-install.tools = lambda: {'cursor': tool}
-install.install(['cursor'], lambda line: None)
-assert install.skills_deployed('cursor')
-assert (root / 'write-workflow' / 'references' / 'procedure.axiom').is_file()
-assert 'metaform.modules.workflow' not in sys.modules
-install.uninstall(['cursor'], lambda line: None)
-assert not any(path.is_file() for path in root.rglob('*'))
-'''
-    env = {**plain_env(), 'METAFORM_HOME': str(tmp_path / 'wheel-home'), 'METAFORM_WHEEL': '',
-           'HOME': str(tmp_path / 'wheel-user'), 'USERPROFILE': str(tmp_path / 'wheel-user')}
-    done = subprocess.run([sys.executable, '-I', '-c', script, str(wheel)], cwd=tmp_path, env=env,
-                          capture_output=True, text=True, encoding='utf-8', check=False)
-    assert done.returncode == 0, done.stdout + done.stderr
 
 
 @pytest.mark.req('BASE-042')

@@ -1279,7 +1279,7 @@ def holds_of(project_id: str, base_id: str) -> dict[str, int]:
 def switch_caution(project_id: str, target: str | None = None) -> str:
     """What making another base the active map takes out of view, said before it does, STORE-041 and BASE-013: what
     the active base holds, and the command that switches back. A switch to `target` when it is the active base
-    already takes nothing, and says so (UX review, person-consent F6)."""
+    already takes nothing, and says so."""
     active = active_base(project_id)
     if active is not None and target is not None and active.name == target:
         return f'{target} is already the active map of {project_id}; nothing changes.'
@@ -1622,7 +1622,7 @@ class Restored:
 
 def restore_caution(project_id: str, name: str | None = None) -> str:
     """What a restore of `name`, or of the newest backup a clear made, would bring back and what it replaces, read
-    from the backups and the bases there are now, said before it runs (UX review, person-consent F2)."""
+    from the backups and the bases there are now, said before it runs."""
     known = backups(project_id)
     chosen = next((one for one in known if one.name == name or name is None and one.made_by != 'restore'), None)
     if chosen is None:

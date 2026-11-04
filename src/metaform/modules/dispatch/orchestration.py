@@ -1,395 +1,22 @@
-"""Dispatch's transport for recorded orchestration transitions.
-
-Every managed adapter, including a resumed caller, enters the existing admission gate. Waiting parents end their
-adapter before the runner releases its lease; the next transition is drained after that release. A durable message
-is accepted by a recipient's normal-turn queue, and its thread records the later ACP handoff separately.
-"""
+"""Peer delivery metadata and project notifications retained after organizational execution was retired."""
 from __future__ import annotations
 
 import hashlib
 import json
 import time
 from collections import Counter
-from dataclasses import replace
-from datetime import datetime
-from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files
 from metaform.data import Store, StoreError
-from metaform.module import Context, Stop, provided
+from metaform.module import Context
 
-SUSPENDED = 'orchestration suspended'
 UPDATES = 'conversation-orchestration-updates'
 PLAN_UPDATE = 'plan_report'  # the kind of project update that says a plan's last ticket is done, code.dispatcher.agent#10
 
 
-def service(ctx: Context) -> Any:
-    found = provided(ctx.folder, 'orchestration')
-    return found[0][1] if found else None
-
-
-def assignment(ctx: Context, work_id: str | None = None, session_id: str | None = None) -> dict[str, Any] | None:
-    owner = service(ctx)
-    return owner.assignment(ctx, work_id=work_id, session_id=session_id) if owner is not None else None
-
-
-def drain(ctx: Context, work_ids: list[str] | None = None) -> list[dict[str, Any]]:
-    with home.registry_scope(fresh=True):
-        owner = service(ctx)
-        return events.announced(ctx.folder, ctx.surface, owner.drain, ctx, work_ids)[0] if owner is not None else []
-
-
-def render(ctx: Context, name: str, bindings: dict[str, str]) -> dict[str, str] | None:
-    """Owner-supplied fill values also used when an authored role resolves dispatch's selected PM prompt."""
-    if name != 'prompt.dispatch:system':
-        return None
-    from . import mascot_line
-    return {'project': str(ctx.project or ''), 'mascot': mascot_line(ctx.folder), **bindings}
-
-
-def _lock(ctx: Context, ident: str) -> Path:
-    digest = hashlib.sha256(f'{ctx.project}:{ident}'.encode()).hexdigest()
-    folder = home.home() / 'run' / 'dispatch' / 'orchestration'
-    home.mkdir_private(folder)
-    return folder / f'{digest}.lock'
-
-
-def _row(ctx: Context, held: dict[str, Any], *, verify: bool = True) -> dict[str, Any] | None:
-    from . import own_store, sessions, verified
-    rows = sessions(ctx.require_store(), str(held['work_id']), verify=verify)
-    found = next((row for row in reversed(rows) if row['session_id'] == held.get('owner_session_id')), None)
-    if found is not None or not held.get('owner_session_id'):
-        return found
-    # A delayed return retains its original assignment route even after this ACP
-    # conversation moved to another card of the same explicit workstream.
-    with own_store(ctx.require_store()).tables(write=False) as tx:
-        row = tx.get('agent_sessions', {'session_id': held['owner_session_id']})
-    owner = service(ctx)
-    current = owner.assignment(ctx, session_id=str(held['owner_session_id'])) if owner else None
-    if row is None or current is None or not hasattr(owner, 'episode_context'):
-        return None
-    before: dict[str, Any] = owner.episode_context(ctx, held) or {}
-    after: dict[str, Any] = owner.episode_context(ctx, current) or {}
-    if not before.get('episode_id') or before.get('episode_id') != after.get('episode_id'):
-        return None
-    checked = verified(ctx.require_store(), [row]) if verify else [row]
-    return checked[0] if checked else None
-
-
-def episode_row(ctx: Context, held: dict[str, Any], owner: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
-    """An explicitly related workstream offers continuity, subject to actual adapter/workspace state."""
-    from . import own_store, runtime_settings, session_state, verified
-    stream: dict[str, Any] = (owner.episode_context(ctx, held)
-                              if owner is not None and hasattr(owner, 'episode_context') else None) or {}
-    previous: dict[str, Any] = stream.get('previous_assignment') or {}
-    if stream.get('fresh_context') or not stream.get('session_id') or previous.get('stop') \
-            or previous.get('authored_role_uri') != held.get('authored_role_uri'):
-        return None, stream
-    with own_store(ctx.require_store()).tables(write=False) as tx:
-        saved = tx.get('agent_sessions', {'session_id': str(stream['session_id'])})
-    rows = verified(ctx.require_store(), [saved]) if saved is not None else []
-    row = next((one for one in rows if one['session_id'] == stream['session_id']), None)
-    if row is None:
-        return None, stream
-    if row['state'] == 'running':
-        return row, stream
-    before = runtime_settings(ctx, str(previous['work_id']))
-    after = runtime_settings(ctx, str(held['work_id']))
-    if any(after.get(field) and before.get(field) != after.get(field) for field in ('agent', 'model', 'effort')):
-        return None, stream
-    state = session_state(ctx.require_store(), str(row['session_id'])) or {}
-    cwd = state.get('cwd')
-    if not cwd or not Path(str(cwd)).is_dir():
-        return None, stream
-    return row, stream
-
-
-def identity(ctx: Context) -> tuple[dict[str, Any], dict[str, Any]]:
-    """An agent's actual registered sender identity; role prose and tool arguments cannot supply it."""
-    from .peering import caller, side
-    record, row = caller(ctx.require_store())
-    return row, side(ctx, record, row)
-
-
-def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any], dict[str, Any]]:
-    owner = service(ctx)
-    row, sender = identity(ctx)
-    held = owner.assignment(ctx, session_id=str(row['session_id'])) if owner is not None else None
-    if not held or held['gc_assignment_id'] != held['assignment_id'] or (team and held['team_id'] != team):
-        raise Stop('Only the recorded delivery owner can direct its own workers.', 'metaform orchestration team')
-    return owner, held, sender
-
-
 class Transport:
-    """The orchestration module uses this provider instead of importing dispatch internals."""
-
-    def runtime_catalog(self, ctx: Context, work_id: str) -> dict[str, Any]:
-        """Installed, eligible adapters and their advertised model descriptions and thinking levels; a model's short
-        name, such as sol, is a choice too and means its family's newest release when the session starts.
-
-        Reading a catalog starts no process and sends no prompt. Missing options remain empty so the assignment
-        owner can request an options-only prime before choosing.
-        """
-        from . import agent_choices, catalog_rows, found_command, option_key, short_names
-        eligible = cast(list[str], self.runtime_settings(ctx, work_id).get('eligible') or [])
-        rows = catalog_rows(ctx.require_store())
-        result: dict[str, Any] = {}
-        for agent in agent_choices():
-            if eligible and agent not in eligible or found_command(ctx, agent) is None:
-                continue
-            models: dict[str, str] = {}
-            efforts: list[str] = []
-            for option in cast(list[dict[str, Any]], (rows.get(agent) or {}).get('settings') or []):
-                key = option_key(option)
-                for choice in cast(list[dict[str, Any]], option.get('options') or []):
-                    value = choice.get('value')
-                    if not isinstance(value, str) or not value.strip():
-                        continue
-                    if key == 'model':
-                        models[value] = ': '.join(str(part) for part in
-                                                 (choice.get('name'), choice.get('description')) if part) or value
-                    elif key == 'thought_level':
-                        efforts.append(value)
-                if key == 'model':  # a short name first, such as sol, which means its family's newest release now
-                    models = {**{short: f'newest {short}, now {value}: {models.get(value, value)}'
-                                 for short, value in short_names(option).items() if short != value}, **models}
-            result[agent] = {'models': models, 'efforts': efforts}
-        return result
-
-    def runtime_settings(self, ctx: Context, work_id: str) -> dict[str, Any]:
-        """The saved ticket choice, carrying pre-existing manual tune values until it is saved in the map."""
-        from . import runtime_settings
-        return runtime_settings(ctx, work_id)
-
-    def keep_runtime(self, ctx: Context, work_id: str, choice: dict[str, Any]) -> dict[str, Any]:
-        """Keep an assignment's validated choice while preserving the person's existing ticket overrides."""
-        from . import keep_runtime
-        catalog = self.runtime_catalog(ctx, work_id)
-        with ctx.require_store().atomic():
-            return keep_runtime(ctx, work_id, choice, catalog)
-
-    def edit_runtime(self, ctx: Context, work_id: str, given: dict[str, Any]) -> dict[str, Any]:
-        """Card edits share dispatch tune's validation and authority."""
-        from . import edit_runtime
-        return edit_runtime(ctx, work_id, given)
-
-    def guard_claim(self, ctx: Context, work_id: str) -> None:
-        from . import person_asks, starts_held
-        caution = starts_held(replace(ctx, nouns={'id': work_id}))
-        if caution and not (ctx.consented or person_asks(ctx)):
-            raise Stop(caution, f'metaform dispatch start {work_id}')
-
-    def launch(self, ctx: Context, held: dict[str, Any], transition_id: str, *, retry: bool = False,
-               asked: int | None = None) -> dict[str, Any]:
-        from . import (
-            admit,
-            agent_named,
-            given_back_reservation,
-            glyph_of,
-            keep_launch,
-            launches,
-            persons_start,
-            resume_spawn,
-            run_of,
-            session_state,
-            sessions,
-            start_runner,
-            startable,
-            ticket,
-        )
-        store = ctx.require_store()
-        work = str(held['work_id'])
-        # a delivery the person started, or their system agent on their word, is no automatic start: Full Auto off
-        # does not hold its launches; a halt still refuses them as it does every start
-        auto = retry or not persons_start(ctx, recorded=bool(held.get('persons_start')))
-        if held.get('stop'):
-            return {'state': 'stopped'}
-        record = store.ticket(work).work
-        if record.done:
-            return {'state': 'completed', 'work_id': work}
-        if auto:
-            base = store.bound_base()
-            with Store(store.project_id, module='map', base=base.id if base else None).tables(write=False) as tx:
-                placement = tx.get('ticket_settings', {'work_id': work})
-            if record.held or placement is not None and placement.get('hold'):
-                return {'state': 'queued', 'problem': 'The ticket is held.'}
-        # A delivery whose specialist role is still being made waits for its publication, which owns the start: a
-        # runner started here only read that state and ended at once, SUSPENDED, and the launch left pending started
-        # another on every pass of the agent starter (783 runner starts on one ticket, 2026-10-20).
-        owner = service(ctx)
-        if owner is not None and not owner.assessment_launch_allowed(ctx, held):
-            return {'state': 'queued', 'problem': 'Automatic assessments are disabled.'}
-        status = owner.routing_status(ctx, work) if owner is not None else None
-        if status and status.get('state') == 'creating':
-            return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}
-        if owner is not None and hasattr(owner, 'inherit_runtime'):
-            owner.inherit_runtime(ctx, held)
-        if owner is not None and hasattr(owner, 'prepare_runtime') and not owner.prepare_runtime(ctx, held):
-            return {'state': 'queued', 'problem': 'The Facilitator is choosing the ticket runtime.'}
-        # A launch counts the runners it started in its delivery, `attempts`. Past dispatch_retries starts with no
-        # session made, the delivery is handed to the person with a signal and started no more: the system stops its
-        # own loop and says why, rather than start a runner on every pass (2026-10-20).
-        previous = cast(dict[str, Any], cast(dict[str, Any], held.get('continuation') or {}).get('delivery') or {})
-        attempts = int(previous.get('attempts') or 0)
-        if attempts > int(ctx.setting('dispatch_retries')) and not previous.get('session_id'):
-            from .signals import publish
-            reason = (f'{attempts} runners were started on this delivery and none made a session'
-                      + (f' (the last said: {previous["problem"]})' if previous.get('problem') else ''))
-            publish(ctx, 'handed-over', work_id=work, key=f'launch:{transition_id}',
-                    reason=f'{reason}. It waits for you.', next=f'metaform dispatch start {work}')
-            return {'state': 'failed', 'problem': reason, 'attempts': attempts}
-        created = held.get('continuation', {}).get('created')
-        if asked is None:
-            if isinstance(created, str):
-                asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)
-            elif isinstance(created, (int, float)):
-                asked = int(float(created) * 1_000_000_000)
-            else:
-                asked = time.time_ns()
-        stream: dict[str, Any] = (owner.episode_context(ctx, held)
-                                  if owner is not None and hasattr(owner, 'episode_context') else None) or {}
-        with home.file_lock(_lock(ctx, str((stream or {}).get('episode_id') or held['assignment_id']))):
-            workstream = {one['work_id'] for one in stream.get('work', [])} | {work}
-            running = next((one for one in launches() if one.get('project') == ctx.project and
-                            one.get('work_id') in workstream), None)
-            if running is not None and running.get('work_id') != work:
-                return {'state': 'queued', 'reason': 'A related episode continuation is already starting.'}
-            row = _row(ctx, held)
-            retained, stream = episode_row(ctx, held, owner)
-            if stream.get('fresh_context'):
-                row = None
-            if retained is not None and retained['work_id'] != work:
-                if retained['state'] == 'running':
-                    return {'state': 'queued', 'reason': 'The related episode is executing its current contribution.'}
-                row = retained
-            if running is not None:
-                if row and row['state'] == 'running':
-                    return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner'),
-                            'reused': True}
-                return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid'],
-                        'attempts': attempts, 'reused': True}
-            runtime = self.runtime_settings(ctx, work)
-            agent = agent_named(str(runtime.get('agent') or (row or {}).get('agent') or ctx.setting('dispatch_agent')))
-            if row is not None and row.get('agent') != agent:
-                row = None  # a changed ticket agent starts its own adapter instead of resuming another agent's session
-            launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
-            words = [f'assignment={held["assignment_id"]}']
-            if retry:
-                run = run_of(store, str(held.get('owner_session_id') or ''))
-                if run:
-                    words.append(f'run={run}')
-            if row is not None and row['work_id'] != work:
-                words.append(f'episode_previous_work={row["work_id"]}')
-            checked_sessions = sessions(store, work if glyph_of(launch_ctx, ticket(store, work)) is None else None)
-            if row is not None and ctx.setting('dispatch_resume_chats'):
-                kept = session_state(store, str(row['session_id'])) or {}
-                capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
-                if (capabilities.get('resume') or capabilities.get('load')) and row['work_id'] != work \
-                        and Path(str(kept.get('cwd') or '')).resolve() != Path(store.project().path).resolve():
-                    from .merge import episode_workspace
-                    workspace = episode_workspace(store.project().path, work, str(kept.get('cwd') or ''),
-                                                  str(row['work_id']))
-                    if workspace is None:
-                        capabilities = {}  # preserve that workspace and reconstruct in the card's normal one
-                    else:
-                        words += [f'episode_source_candidate={workspace["source_candidate"]}',
-                                  f'episode_source_branch={workspace["source_branch"]}',
-                                  f'episode_workspace_base={workspace["baseline"]}']
-                if capabilities.get('resume') or capabilities.get('load'):
-                    # A worker resumed in place goes on only with the ticket its session's own. A review finding
-                    # reopens a done ticket into To do, untaken, so the session takes it back before its runner
-                    # starts; a ticket another holder took since goes on through a new session below.
-                    by = f'{agent} {row["session_id"]}'
-                    with store.atomic():
-                        record = ticket(store, work)
-                        if record.done:
-                            return {'state': 'completed', 'work_id': work}
-                        took = not record.taken
-                        if took:
-                            startable(launch_ctx, store, record, agent, checked_sessions=checked_sessions)
-                            store.take_work(work, by=by)
-                    if took or record.taken_by == by:
-                        try:
-                            made = resume_spawn(store, work, agent,
-                                                [*words, f'resume={row["session_id"]}', 'retry=true'],
-                                                'orchestration', ctx=launch_ctx, asked=asked, auto=auto)
-                        except (Stop, OSError):
-                            if took:
-                                given_back_reservation(store, work, by)
-                            raise
-                        return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
-            # Disabled or unavailable context retention starts fresh with retained work and the current brief.
-            # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
-            admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=auto)
-            reservation = f'dispatch starting {transition_id}'
-            with store.atomic():
-                record = ticket(store, work)
-                if record.done:
-                    return {'state': 'completed', 'work_id': work}
-                previous = record.taken_by
-                if record.taken:
-                    store.move_work(work, 'todo', kept=True)
-                    record = ticket(store, work)
-                startable(launch_ctx, store, record, agent, checked_sessions=checked_sessions)
-                store.take_work(work, by=reservation)
-            keep_launch(store, work, {'prompts': None, 'mode': None})
-            if retry:
-                words.append('retry=true')
-            try:
-                made = start_runner(launch_ctx, store, work, agent, [*words, f'reservation={reservation}'],
-                                    'orchestration', reservation=reservation, asked=asked, auto=auto)
-            except (Stop, OSError):
-                # Capacity can change between the optimistic check and the locked gate. Ownership survives it.
-                with store.atomic():
-                    current = ticket(store, work)
-                    if previous and not current.taken and not current.done:
-                        store.take_work(work, by=previous)
-                raise
-            return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
-
-    def suspend(self, ctx: Context, held: dict[str, Any], reason: str) -> dict[str, Any]:
-        from . import tell
-        row = _row(ctx, held)
-        if row is None or row['state'] != 'running':
-            return {'state': 'suspended'}
-        told = tell(row, 'suspend', assignment=held['assignment_id'], reason=reason)
-        # Accepted means shutdown is queued. The gate keeps counting the process until its adapter has ended.
-        return {'state': 'queued', 'accepted': bool(told.get('accepted')), **told}
-
-    def send(self, ctx: Context, held: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
-        from . import held_ticket, sessions, tell
-        from .peering import side
-        if not actionable(ctx, envelope, recipient=held):
-            return {'state': 'completed', 'accepted': True, 'record_only': True}
-        row = _row(ctx, held)
-        if row is None or row['state'] != 'running':
-            return {'state': 'queued', 'reason': 'The recipient will read this after its recorded continuation.'}
-        sender = dict(envelope.get('from') or {})
-        if not sender and envelope.get('sender_assignment_id'):
-            owner = service(ctx)
-            source = owner.assignment(ctx, assignment_id=envelope['sender_assignment_id']) if owner else None
-            if source:
-                rows = sessions(ctx.require_store(), source['work_id'], verify=False)
-                actual = next((one for one in reversed(rows)
-                               if one['session_id'] == envelope.get('sender_session_id')), None)
-                if actual:
-                    sender = side(ctx, held_ticket(ctx.require_store(), source['work_id']), actual)
-        sender.setdefault('agent', 'orchestration')
-        sender.setdefault('session_id', '')
-        body = envelope.get('text') or envelope.get('body') or envelope.get('summary')
-        if body is None:
-            raise ValueError('An agent message requires a message body.')
-        # Keep message identity and routing, never assignment snapshots, context or reports.
-        line = {**{key: envelope[key] for key in MESSAGE_FIELDS if key in envelope},
-                'assignment_id': held['assignment_id'],
-                'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
-                'text': str(body), 'at': envelope.get('at') or home.now(),
-                'kind': envelope.get('kind') or 'continuation',
-                'to': [{'work_id': row['work_id'], 'session_id': row['session_id'], 'agent': row['agent'],
-                        'assignment_id': held['assignment_id'], 'state': 'queued'}]}
-        told = tell(row, 'note', line=line, deliver=True)
-        return {'state': 'queued', 'accepted': bool(told.get('noted')), 'session_id': row['session_id'], **told}
+    """Persist user notifications without executing organizational assignments."""
 
     def notify_user(self, ctx: Context, message: dict[str, Any] | str, change_id: str) -> dict[str, Any]:
         """Publish an actual message in the existing Chat surface, whether or not a PM adapter is connected.
@@ -470,111 +97,21 @@ MESSAGE_FIELDS = ('work_id', 'assignment_id', 'sender_assignment_id', 'sender_se
                   'decision', 'board', 'epoch', 'table', 'record', 'withdrawn', 'resolved', 'superseded', 'cancelled')
 
 
-INACTIVE = frozenset(('returned', 'delivered', 'failed', 'stopped', 'superseded', 'transferred', 'completed',
-                      'resolved', 'withdrawn', 'cancelled'))
-
-
 def actionable(ctx: Context, envelope: dict[str, Any], *, session_id: str | None = None,
                recipient: dict[str, Any] | None = None) -> bool:
-    """Allow only current requests and owned continuations. Routine metadata causes no ownership reads."""
-    kind = str(envelope.get('kind') or '')
+    """Wake for authored peer messages and directions, without organizational ownership checks.
+
+    Peer producers authenticate their caller before recording the envelope. Project status and completion metadata
+    remain readable records and do not independently request another model turn.
+    """
     if any(envelope.get(key) for key in ('withdrawn', 'resolved', 'superseded', 'cancelled')) or \
             envelope.get('state') in ('withdrawn', 'resolved', 'superseded', 'cancelled', 'stopped'):
         return False
+    kind = str(envelope.get('kind') or '')
     if kind == 'user_direction':
         return True
     sender = cast(dict[str, Any], envelope.get('from') or {})
-    if kind == 'board':
-        if sender.get('agent') != 'metaform':
-            return False
-        from . import held_ticket
-        if str(envelope.get('board') or '').startswith('start-fault:'):
-            work = held_ticket(ctx.require_store(), str(sender.get('work_id') or ''))
-            return work is not None and not work.done
-        if envelope.get('actionable') is not True:
-            return False
-        tickets = cast(list[dict[str, Any]], envelope.get('tickets') or [])
-        work_ids = [str(one.get('work_id') or '') for one in tickets]
-        if sender.get('work_id'):
-            work_ids.append(str(sender['work_id']))
-        return any(not work.done for ident in work_ids
-                   if (work := held_ticket(ctx.require_store(), ident)) is not None)
-    question = kind == 'question' and envelope.get('ask') is True
-    if not question and kind not in ('result', 'role_publication', 'blocked', 'change_order', 'recommendation',
-                                     'gc_broadcast'):
-        return False
-    owner = service(ctx)
-    target = recipient or (owner.assignment(ctx, session_id=session_id) if owner and session_id else None)
-    if recipient is None and owner and session_id and target and not target.get('stop'):
-        addressed = envelope.get('assignment_id')
-        if addressed and addressed != target['assignment_id'] and hasattr(owner, 'episode_context'):
-            original = owner.assignment(ctx, assignment_id=str(addressed))
-            if original and original.get('owner_session_id') == session_id:
-                before: dict[str, Any] = owner.episode_context(ctx, original) or {}
-                after: dict[str, Any] = owner.episode_context(ctx, target) or {}
-                if before.get('episode_id') and before.get('episode_id') == after.get('episode_id'):
-                    target = original
-    if target and (target.get('stop') or target.get('state') in INACTIVE):
-        return False
-    from . import held_ticket
-    if target:
-        work = held_ticket(ctx.require_store(), str(target.get('work_id') or ''))
-        if work is not None and work.done:
-            return False
-    source_ctx, source_owner = ctx, owner
-    if question and sender.get('project') and sender['project'] != ctx.project:
-        from .peering import destination
-        source_ctx = destination(ctx, sender['project'], sender.get('base'))
-        source_owner = service(source_ctx)
-    source_id = envelope.get('sender_assignment_id') or sender.get('assignment_id')
-    source = source_owner.assignment(source_ctx, assignment_id=str(source_id)) if source_owner and source_id else None
-    if question:
-        if source:
-            work = held_ticket(source_ctx.require_store(), str(source.get('work_id') or ''))
-            if work is not None and work.done:
-                return False
-            return not source.get('stop') and source.get('state') not in INACTIVE and \
-                source.get('owner_session_id') == sender.get('session_id')
-        # Unmanaged conversations may ask questions while that exact sender still runs.
-        from .signals import own_store
-        if not sender.get('session_id'):
-            return False
-        with own_store(source_ctx.require_store()).tables(write=False) as tx:
-            row = tx.get('agent_sessions', {'session_id': sender['session_id']})
-        if not row or row['state'] != 'running' or row['work_id'] != sender.get('work_id'):
-            return False
-        work = held_ticket(source_ctx.require_store(), str(row['work_id']))
-        return work is None or not work.done
-    if not target or not source or source.get('stop'):
-        return False
-    if session_id and target.get('owner_session_id') != session_id:
-        return False
-    if kind == 'recommendation':
-        # Strict-mode advice does not become an operative direction. Its recorded responsible
-        # caller still receives the proposal from its own contributor or independent assessment.
-        return bool(envelope.get('change_id')) and target['assignment_id'] in (
-            source.get('reviewed_assignment_id'), source.get('gc_assignment_id'), source.get('assignment_id'))
-    if kind == 'change_order':
-        directions = cast(list[dict[str, Any]], target.get('pending_direction') or [])
-        return any(one.get('change_id') == envelope.get('change_id') and one.get('change_id')
-                   and not one.get('superseded') for one in directions)
-    if kind == 'gc_broadcast':
-        return source.get('state') not in INACTIVE and target.get('gc_assignment_id') == source['assignment_id']
-    if kind == 'blocked':
-        return source.get('state') == 'blocked' and source.get('gc_assignment_id') == target['assignment_id']
-    # Results follow the recorded immediate caller and its handoff successors, never a project-wide recipient.
-    route = cast(dict[str, Any], source.get('return_to') or {})
-    if route.get('session_id') and route['session_id'] == target.get('owner_session_id'):
-        return source.get('state') in ('returned', 'delivered', 'failed')
-    parent_id = route.get('assignment_id')
-    seen: set[str] = set()
-    while parent_id and parent_id not in seen:
-        if parent_id == target['assignment_id']:
-            return source.get('state') in ('returned', 'delivered', 'failed')
-        seen.add(parent_id)
-        parent = owner.assignment(ctx, assignment_id=parent_id)
-        parent_id = parent.get('successor_assignment_id') if parent and not parent.get('stop') else None
-    return False
+    return kind in ('peer', 'message', 'note', 'question', 'invitation', 'direction') and bool(sender.get('session_id'))
 
 
 def delivery_metadata(held: dict[str, Any]) -> dict[str, Any]:
@@ -622,8 +159,8 @@ def inbox_status(held: dict[str, Any]) -> str:
 
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
-    """A question or recommendation may need a turn only after current ownership checks."""
-    return ask or update == 'specification_recommendation'
+    """Explicit questions request a reply. Status updates alone require no agent turn."""
+    return ask
 
 
 def user_updates(ctx: Context) -> list[str]:
@@ -644,54 +181,6 @@ def carried_updates(ctx: Context, idents: list[str]) -> None:
             if tx.get('session_lines', {'session_id': UPDATES, 'name': f'notification:{ident}'}) is not None:
                 add_line(tx, UPDATES, UPDATES, f'carried:{ident}', 'carried',
                          json.dumps({'runner': ctx.session, 'at': home.now()}))
-
-
-def broadcast(ctx: Context, text: str, team: str | None = None) -> dict[str, Any]:
-    from . import BROADCASTS
-    from .signals import own_store
-    owner, gc, sender = owned_gc(ctx, team)
-    ident = hashlib.sha256(f'{gc["assignment_id"]}:{time.time_ns()}'.encode()).hexdigest()[:16]
-    recipients: list[dict[str, Any]] = []
-    for member in owner.members(ctx, gc['team_id']):
-        if (member['assignment_id'] == gc['assignment_id'] or member.get('stop')
-                or member['state'] in ('returned', 'delivered', 'failed', 'stopped', 'transferred')):
-            continue
-        event = owner.queue_message(ctx, member['assignment_id'],
-            {'id': ident, 'kind': 'gc_broadcast', 'from': sender, 'text': text, 'team_id': gc['team_id']},
-            key=ident)
-        recipients.append({'work_id': member['work_id'], 'assignment_id': member['assignment_id'],
-                           'session_id': member.get('owner_session_id'), 'transition_id': event['transition_id'],
-                           'state': 'queued', 'steered': False})
-    line = {'id': ident, 'text': text, 'from': sender, 'at': home.now(), 'team_id': gc['team_id'],
-            'recipients': recipients}
-    with own_store(ctx.require_store()).tables() as tx:
-        tx.insert('session_lines', {'session_id': BROADCASTS, 'work_id': BROADCASTS, 'name': f'broadcast:{ident}',
-            'kind': 'broadcast', 'text': json.dumps(line, ensure_ascii=False), 'seq': time.time_ns() // 1_000_000})
-    drain(ctx, [str(one['work_id']) for one in recipients])
-    return {'sent': ident, 'team_id': gc['team_id'], 'recipients': recipients, 'steered': False}
-
-
-def transitions_changed(payload: dict[str, Any]) -> bool:
-    """Recognize transition writes even when an aggregate includes a write with no named concerns.
-
-    The event bus deliberately omits all concerns when any write in a command leaves them unspecified. A public
-    delegation can create work and transition rows in that same command. The owning table still proves that a
-    drain is relevant; unrelated table events must cause no orchestration reads.
-    """
-    tables: Any = payload.get('tables') or []
-    tables = [tables] if isinstance(tables, str) else tables
-    kinds: list[Any] = payload.get('kinds') or []
-    return (not kinds and 'orchestration.transitions' in tables) or any(str(kind) in (
-            'orchestration.launch', 'orchestration.return', 'orchestration.direction', 'orchestration.change',
-            'orchestration.stop', 'orchestration.suspend', 'orchestration.send', 'orchestration.user_message',
-            'orchestration.publish', 'orchestration.assessment') for kind in kinds)
-
-
-def changed(payload: dict[str, Any], ctx: Context) -> None:
-    """Only orchestration transitions trigger a drain; per-assignment locks and runner leases deduplicate starts."""
-    if payload.get('project') != ctx.project or not transitions_changed(payload):
-        return
-    drain(ctx, payload.get('work_ids'))
 
 
 def plan_changed(payload: dict[str, Any], ctx: Context) -> None:
@@ -743,11 +232,6 @@ def plan_members(tied: dict[str, set[str]], work_id: str) -> set[str]:
                 found.add(other)
                 reach.append(other)
     return found
-
-
-def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, Any]:
-    owner = service(ctx)
-    return owner.context(ctx, work_id=work, session_id=session) or {} if owner is not None else {}
 
 
 def snapshots(sent: list[prompt_files.Sent]) -> list[dict[str, Any]]:

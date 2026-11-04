@@ -1,0 +1,102 @@
+[
+  {
+    "file": "gates-history-review-2026-10-25.md",
+    "bytes": 8757,
+    "sha256": "372e311ad6a98abf7d66d7b8d5cd1e735f39a52e2fa88e9b7f4c275d7e0e53b2"
+  },
+  {
+    "file": "gates-user-contexts-2026-10-25.md",
+    "bytes": 89438,
+    "sha256": "8e9d3f4ec14845254ab0e0a83f3ec146e0bd52c1352253b142d37dd43488f40b"
+  },
+  {
+    "file": "gates-project-contexts-2026-10-25.md",
+    "bytes": 1297568,
+    "sha256": "ae981732d4ef0d07ecae149c0ddc0f56a5eb787ecf71a655ccf08666220d0947"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/claude-coverage.json",
+    "bytes": 8744,
+    "sha256": "a3d9bc12a70958c5d981677ff25bd0124427240540e2e117fff7de9e0ab29186"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/codex-backup-coverage.json",
+    "bytes": 1956,
+    "sha256": "c2b24d83d9832964cd362f2208257f9c1f063fd42ef2091659f1ffa6d700605d"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/codex-coverage.json",
+    "bytes": 56252,
+    "sha256": "93ad3ea199d01395d66601a06702d21e1c4ad6bbd7cd22d80b87fd7ae234605c"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/count-summary.json",
+    "bytes": 2073,
+    "sha256": "adb78b0dae32467d2c096d6e4ea0a180be3dd027ab64c297de3f1306b01bb19b"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-archive-matches.jsonl.gz",
+    "bytes": 31903,
+    "sha256": "a4d10ec3113fb5dac9b3e1cdfd0d5c75a4e21b3d1c980e0c779b57a9fd1c01f7"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-archive-summary.json",
+    "bytes": 286664,
+    "sha256": "5bdeb806564fd5c86e1c37d027b3ab04d2b5046f55ca67c45a66d6534738ebb7"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-code-timeline.json",
+    "bytes": 34406,
+    "sha256": "44a1862de775ba1ec3047c243ff9b5ed883c95c14bdd84879eb5ff42379daad2"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-contexts.jsonl.gz",
+    "bytes": 336945,
+    "sha256": "72091eb9abd2e9c3167d7504e53172bf86aef7c5f8c482b04365fa80cc06ff16"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-conversation-coverage.json",
+    "bytes": 14369,
+    "sha256": "8c99641be86517ce1051b686949d524306824bc4d1bc1941a968a5776dbe68a1"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-file-matches.jsonl.gz",
+    "bytes": 317939,
+    "sha256": "b832db7f075db94a34cf2341425b59565774eded9a9b68421ec08f55994725f5"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-file-summary.json",
+    "bytes": 3368,
+    "sha256": "b07e59f2cbe3f241144c30471d45cd17a0a929eda643a2b07bc613561ac0db55"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-git-matches.jsonl.gz",
+    "bytes": 110867,
+    "sha256": "0d8df96e90f593190cfadb7cc55767fac916543e855bdb0761aee7d7c90c61b2"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/metaform-worktree-matches.jsonl.gz",
+    "bytes": 7905132,
+    "sha256": "84a7397a820ef0fda98427e9d9770fb4d9d696b2d4da6e8f97bbef929b80c696"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/tempo-vivi-file-archive-database-matches.jsonl.gz",
+    "bytes": 888772,
+    "sha256": "d999851b78feabd8896b5acaeb3a7203e335d1738cc85c8e863dacc939a61208"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/tempo-vivi-summary.json",
+    "bytes": 759102,
+    "sha256": "f8425c3a52544b8f3a4e44e5495c760e190aa4544fc2db03c0a782e2c4e3330a"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/user-mentions.csv",
+    "bytes": 233769,
+    "sha256": "514f36b2a5a6d782e335e9bda4c42985235d4dfada4612a5e17ec93438d56bb3"
+  },
+  {
+    "file": "gates-history-evidence-2026-10-25/user-messages.jsonl",
+    "bytes": 405376,
+    "sha256": "22c257be10ad6560eeadd624381b4061d2b9df05e27357116116148cec56002d"
+  }
+]

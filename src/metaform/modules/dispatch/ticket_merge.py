@@ -28,7 +28,6 @@ def eligible(store: Store, record: WorkRecord, row: dict[str, Any]) -> bool:
 
 def unavailable(ctx: Context, store: Store, work_id: str, *, check_launches: bool = False) -> str:
     from . import holding, launches, sessions
-    from .orchestration import assignment
     found = sessions(store, work_id, verify=False)
     if any(one.get('state') == 'running' for one in found):
         return 'An agent still owns this ticket. End its session before merging or cleaning its worktree.'
@@ -38,8 +37,7 @@ def unavailable(ctx: Context, store: Store, work_id: str, *, check_launches: boo
     record = store.ticket(work_id).work
     if str(record.taken_by or '').startswith('dispatch starting '):
         return 'An agent is starting on this ticket.'
-    held = assignment(ctx, work_id=work_id)
-    if held and held.get('stop') or found and str(found[-1].get('how') or '').startswith('stopped by '):
+    if found and str(found[-1].get('how') or '').startswith('stopped by '):
         return 'This ticket was explicitly stopped. Resume it before merging or cleaning its worktree.'
     return ''
 

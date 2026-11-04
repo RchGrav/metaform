@@ -42,12 +42,6 @@
   :ELSE -> CORRECT
 </instructions>
 
-<!-- The message the web GUI sends the agent whose workflow run waited on the person, once the person has answered it
-     in the Runs pane with "Tell its agent to resume" ticked. <run/> is the run's id. Sent as the person's message to
-     the agent working the ticket that paused the run, through metaform dispatch message, since nothing starts again by
-     itself. Empty sends nothing and leaves telling the agent to the person. -->
-<resume_run>Run <run/> is answered; resume it with metaform workflow resume run=<run/></resume_run>
-
 <!-- The mascots' personas: who each character is when it is the person's mascot, web_mascot, one element for each
      character of page/agent-glyphs, persona_<character>. Never pushed: dispatch's sentence to the person's system agent
      names the persona of the character the person chose, persona_<character> in this file, and the agent reads it when

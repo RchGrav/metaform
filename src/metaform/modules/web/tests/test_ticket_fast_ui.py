@@ -5,7 +5,12 @@ from metaform import settings
 from metaform.data import Store
 from metaform.modules.web.tests.test_hold_controls import board_page
 from metaform.modules.web.tests.test_ticket_detail import (  # noqa: F401
-    browser, mapped, post, threaded, ticket, web,
+    browser,
+    mapped,
+    post,
+    threaded,
+    ticket,
+    web,
 )
 
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.browser, pytest.mark.req('BASE-066')]

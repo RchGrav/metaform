@@ -52,8 +52,7 @@ FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals,
 reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
 its output and releases it, and logs every answer as `client`. FAKE_ACP_WRITES=<a,b,...> makes its first turn read and
 then write each of those files, from its folder, through fs/*, logging the answers as `writes`.
-FAKE_ACP_INTAKE=1 makes its first turn read a review file and call a memory tool, wait up to 30 s for a steer, then
-call intake_element and log `intake_recorded`.
+FAKE_ACP_INTAKE=1 makes its first turn call intake_element and log `intake_recorded`.
 FAKE_ACP_INFO=1 writes, in one write with its session/new answer and after it, a session_info_update giving the
 session a title and its last activity; FAKE_ACP_SILENT=<seconds> makes a hold turn fall silent that long, say one word,
 and fall silent again.
@@ -208,16 +207,10 @@ def first_turn(prompt_id, text):
                         'write': [request(820 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
                                                                             'content': 'written\n'})
                                   for at, path in enumerate(paths)]}})
-    if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake that reaches for earlier conclusions, then is steered
-        for ident, title, raw in (('i1', 'Read artifacts/review-notes.md', {'path': 'artifacts/review-notes.md'}),
-                                  ('i2', 'mcp__metaform__memory_read_graph', {})):
-            update({'sessionUpdate': 'tool_call', 'toolCallId': ident, 'title': title, 'kind': 'read',
-                    'status': 'pending', 'rawInput': raw})
-            update({'sessionUpdate': 'tool_call_update', 'toolCallId': ident, 'status': 'completed'})
-        STEERED.wait(30)
-        update({'sessionUpdate': 'tool_call', 'toolCallId': 'i3', 'title': 'mcp__metaform__intake_element',
+    if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake: its first turn records one element
+        update({'sessionUpdate': 'tool_call', 'toolCallId': 'i1', 'title': 'mcp__metaform__intake_element',
                 'kind': 'other', 'status': 'pending', 'rawInput': {'address': 'code.engine'}})
-        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 'i3', 'status': 'completed'})
+        update({'sessionUpdate': 'tool_call_update', 'toolCallId': 'i1', 'status': 'completed'})
         log({'intake_recorded': True})
     if os.environ.get('FAKE_ACP_SUBAGENT') == '1':  # the native subagent session shape of claude-agent-acp
         update({'sessionUpdate': 'subagent_spawned', 'subagentSessionId': 'child-1', 'name': 'Explorer',
@@ -440,7 +433,7 @@ def main():
         message = json.loads(line)
         log({'crlf': line.endswith(b'\r\n'), 'message': message, 'secret': os.environ.get('FAKE_SECRET'),
              'argv': sys.argv, 'filtering': os.environ.get('DISABLE_MCP_CONFIG_FILTERING'),
-             'role': os.environ.get('METAFORM_ROLE'), 'runner': os.environ.get('METAFORM_SESSION')})
+             'task': os.environ.get('METAFORM_TASK_NAME'), 'runner': os.environ.get('METAFORM_SESSION')})
         method, ident = message.get('method'), message.get('id')
         if method is None:
             if ident in ANSWERS:
@@ -491,7 +484,6 @@ def main():
         elif method == '_session/steering':
             outcome = 'injected' if ACTIVE_TURN[0] else 'promptRequired'
             log({'steered': message['params']['prompt'][0]['text'], 'outcome': outcome})
-            STEERED.set()
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'outcome': outcome}})
         elif method == 'session/new':
             if os.environ.get('FAKE_ACP_START_FAIL') == '1':
@@ -630,7 +622,6 @@ def turn_of(work, *args):
 
 
 ACTIVE_TURN = [False]
-STEERED = threading.Event()  # a steer reached the turn, FAKE_ACP_INTAKE waits for it
 NOTICES = [False]  # the client advertised ACP's session notices
 COMPACTION = [False]  # the client advertised ACP's session compaction
 # ACP's terminal login, offered to an editor that can run one: the editor runs this agent again with these arguments

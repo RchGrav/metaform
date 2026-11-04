@@ -1,0 +1,68 @@
+{
+  "window": {
+    "start_utc": "2026-04-25T04:00:00Z",
+    "end_utc": "2026-10-26T01:03:14Z",
+    "timezone": "America/New_York"
+  },
+  "counts": {
+    "all_available_confirmed_messages": 55,
+    "all_available_occurrences": 78,
+    "three_project_messages": 49,
+    "three_project_occurrences": 71,
+    "before_current_request_messages": 47,
+    "before_current_request_occurrences": 67,
+    "direct_messages": 38,
+    "direct_occurrences": 49,
+    "before_current_direct_messages": 36,
+    "before_current_direct_occurrences": 45,
+    "quoted_messages": 11,
+    "quoted_occurrences": 22,
+    "other_project_messages": 6,
+    "other_project_occurrences": 7
+  },
+  "project_counts": {
+    "Metaform": {
+      "messages": 31,
+      "occurrences": 50
+    },
+    "Tempo": {
+      "messages": 15,
+      "occurrences": 18
+    },
+    "Vivi": {
+      "messages": 4,
+      "occurrences": 4
+    }
+  },
+  "monthly_message_counts": {
+    "2026-07": 5,
+    "2026-08": 13,
+    "2026-09": 3,
+    "2026-10": 28
+  },
+  "overlap_note": "One Claude message is associated with both Tempo and Vivi; project rows therefore overlap.",
+  "redactions": 0,
+  "corroborated_claude_aliases": [
+    {
+      "claude_record": "claude:f9f108ee-6be4-4f62-8526-be5ad54c8f0f:8ed22fe6-613b-4240-b17e-281719bfc745",
+      "message_id": "8ed22fe6-613b-4240-b17e-281719bfc745",
+      "source_event": "metaform:c25cb700f402e0cc5633835c",
+      "counted_as_new": false
+    },
+    {
+      "claude_record": "claude:ff30c0b5-60ed-455c-8b88-ef9de78d7a60:3f279cee-b7d7-47e5-88d2-5d11284726d6",
+      "message_id": "3f279cee-b7d7-47e5-88d2-5d11284726d6",
+      "source_event": "metaform:broadcast:578263516620062c",
+      "counted_as_new": false
+    }
+  ],
+  "excluded_uncertain_metaform_records": [
+    {
+      "provider": "Metaform",
+      "evidence_id": "metaform:a03e19c8bb4f1b077fb81c73",
+      "reason": "uncertain",
+      "timestamp": null
+    }
+  ],
+  "coverage_note": "Verified minimums from available records; missing older session histories and144missingClaudepastes prevent complete six-month coverage."
+}

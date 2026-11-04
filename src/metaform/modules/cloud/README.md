@@ -90,7 +90,7 @@ settings; `metaform.home` for the home's `cloud/` folder.
 
 ## Settings
 
-All global and person-only, so no agent can change them over MCP:
+All global:
 
 - `cloud_url` (`https://metaform.ing`): the broker; plain `http` is accepted only for a broker on this machine.
 - `cloud_instance` (`default`): this machine's name in the account.
@@ -122,7 +122,7 @@ it loads.
 ## Modules relied on
 
 mcp: the tunnel serves `mcp.server.http_app` and checks the broker's assertions with `mcp.oauth.Asserted`, so the
-mcp module's scope gate, person-only refusals and tools apply as they do over HTTP. The broker's side is the node
+mcp module's scope gate and tools apply as they do over HTTP. The broker's side is the node
 module's broker role (`node/broker.py`), which reads this module's wire format, `frames.py`.
 
 ## Systems supported

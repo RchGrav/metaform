@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/subscriptions/acknowledged",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/subscriptionId": "sub-front"
+    },
+    "notifications": {
+      "toolsListChanged": true,
+      "resourcesListChanged": true,
+      "resourceSubscriptions": [
+        "resource://spatial/tof/matrix_8x8",
+        "resource://metaform/events",
+        "resource://metaform/skills/catalog"
+      ]
+    }
+  }
+}

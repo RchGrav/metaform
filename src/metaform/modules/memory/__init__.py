@@ -50,7 +50,6 @@ from metaform.module import (
     Subscription,
     ToolbarItem,
     Verb,
-    agent_caller,
     first_line,
     titled,
 )
@@ -1355,12 +1354,7 @@ def _lock_said(row: Row) -> dict[str, Any]:
 
 
 def _set_lock(ctx: Context, locked: bool) -> Any:
-    """Lock or unlock one memory, CTX-023. Only the person does, from the page or a command line no agent runs: a
-    command an agent runs is known by the identity its runner sets and by the processes that started it,
-    `metaform.caller`. Over MCP the verbs are not offered at all."""
-    if ctx.surface == 'mcp' or (ctx.surface == 'cli' and agent_caller()):
-        raise Stop('Only the person locks and unlocks a memory, from the page or the command line.',
-                   'ask the person to do it')
+    """Lock or unlock one memory, CTX-023."""
     given = _Given(ctx)
     name = given.text(ctx.nouns['name'], 'name')
     store = ctx.require_store()

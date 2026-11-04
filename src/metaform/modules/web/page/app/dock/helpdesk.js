@@ -11,7 +11,7 @@ import {EASE} from '/page/app/camera/fly3d.js';
 import {asked} from '/page/app/selection/select.js';
 import {DOCK, clockOf, STANDBY, UPDATES_ONLY, DOCKMOTION, dockGoingAway, paintAvatar, embodyRows,
   dockState} from '/page/app/dock/embody.js';
-import {showChat, drawProposals, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
+import {showChat, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
   chatActivity, drawAgentSessions} from '/page/app/dock/threads.js';
 import {queuedRows, deliverQueued, startFailed} from '/page/app/dock/send.js';
 import {messagesOf} from '/page/app/board/messages.js';
@@ -20,7 +20,7 @@ import {agentName, summonAgent, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemState} from '/page/app/session/tools.js';
 import {galleryRows, threadRows} from '/page/app/session/apps.js';
 import {drawPlan, drawSession} from '/page/app/session/text.js';
-import {notificationState, drawAssignment} from '/page/app/session/orchestration.js';
+import {notificationState, drawTask} from '/page/app/session/tasks.js';
 import {SESSIONPOP} from '/page/app/session/settings.js';
 import {openIntakeChat} from '/page/app/intake/intake.js';
 import {chatDocked} from '/page/app/workspace/workspace.js';
@@ -53,9 +53,8 @@ export async function drawHelpdesk(trouble) {
   sayWhere(notification);
   drawAsked(target, session, lines);
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
-  drawProposals();
   drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
-  drawAssignment($('#helpdesk .assignmentbox'), state, agentAt);
+  drawTask($('#helpdesk .assignmentbox'), state, agentAt);
   drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;

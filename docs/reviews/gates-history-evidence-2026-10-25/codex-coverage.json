@@ -1,0 +1,1517 @@
+{
+  "range_start": "2026-04-25T04:00:00Z",
+  "range_end": "2026-10-26T01:03:14Z",
+  "roots": [
+    "/home/rich/.codex/sessions",
+    "/home/rich/.codex/archived_sessions"
+  ],
+  "all_rollout_files": 5086,
+  "all_rollout_bytes": 12547473409,
+  "matched_rollout_files": 3802,
+  "matched_rollout_bytes": 10387934320,
+  "note": "rg exact-word case-insensitive gates search selected files before parsing. Files predating range were not excluded because sessions can resume later. Only user events within requested event timestamps are exported. Other role records and compactions do not become human evidence.",
+  "all_rollout_file_dates": {
+    "2026-04-25": 25,
+    "2026-04-29": 61,
+    "2026-04-30": 9,
+    "2026-05-05": 1,
+    "2026-06-23": 40,
+    "2026-06-24": 42,
+    "2026-06-25": 1,
+    "2026-06-29": 25,
+    "2026-06-30": 7,
+    "2026-07-01": 3,
+    "2026-07-09": 10,
+    "2026-07-10": 2,
+    "2026-07-11": 63,
+    "2026-07-12": 8,
+    "2026-07-13": 2,
+    "2026-07-15": 11,
+    "2026-07-18": 6,
+    "2026-07-19": 9,
+    "2026-07-20": 68,
+    "2026-07-22": 18,
+    "2026-07-23": 13,
+    "2026-07-24": 1,
+    "2026-07-28": 14,
+    "2026-07-29": 43,
+    "2026-07-30": 91,
+    "2026-07-31": 14,
+    "2026-08-04": 11,
+    "2026-08-06": 2,
+    "2026-08-18": 11,
+    "2026-08-19": 10,
+    "2026-08-26": 8,
+    "2026-08-27": 3,
+    "2026-09-07": 22,
+    "2026-09-08": 38,
+    "2026-09-09": 52,
+    "2026-09-10": 54,
+    "2026-09-11": 44,
+    "2026-09-12": 3,
+    "2026-09-13": 5,
+    "2026-09-15": 8,
+    "2026-09-16": 19,
+    "2026-09-18": 55,
+    "2026-09-19": 1,
+    "2026-09-21": 6,
+    "2026-09-22": 48,
+    "2026-09-29": 13,
+    "2026-09-30": 21,
+    "2026-10-01": 21,
+    "2026-10-02": 9,
+    "2026-10-03": 75,
+    "2026-10-04": 26,
+    "2026-10-05": 308,
+    "2026-10-06": 1631,
+    "2026-10-09": 12,
+    "2026-10-10": 15,
+    "2026-10-11": 4,
+    "2026-10-12": 73,
+    "2026-10-13": 10,
+    "2026-10-14": 50,
+    "2026-10-15": 4,
+    "2026-10-16": 58,
+    "2026-10-17": 21,
+    "2026-10-18": 3,
+    "2026-10-19": 165,
+    "2026-10-20": 75,
+    "2026-10-21": 308,
+    "2026-10-22": 212,
+    "2026-10-23": 53,
+    "2026-10-24": 22,
+    "2026-10-25": 8
+  },
+  "counts": {
+    "parsed_message_records": 361655,
+    "gates_user_record_all_dates": 3526,
+    "gates_user_record_outside_range": 212,
+    "same_item_id_duplicate_records": 20583,
+    "response_item_mirrors_dropped": 158,
+    "same_event_across_file_mirrors_dropped": 171
+  },
+  "exported_candidates": 2927,
+  "classifications": {
+    "genuine_user_input_corroborated_cli_history": 25,
+    "excluded_skill_body_injection": 9,
+    "excluded_programmatic_or_forwarded_assignment": 22,
+    "excluded_subagent_assignment_or_forward": 19,
+    "excluded_programmatic_or_forwarded_copy": 6,
+    "excluded_instruction_injection": 2061,
+    "excluded_guardian_transcript_copy": 735,
+    "excluded_programmatic_or_forwarded_startup": 1,
+    "excluded_programmatic_assignment": 37,
+    "genuine_user_input_corroborated_native_projection": 6,
+    "excluded_forwarded_copy_of_confirmed_user_input": 4,
+    "excluded_internal_goal_or_continuation_copy": 2
+  },
+  "candidate_dates": {
+    "2026-04-25": 14,
+    "2026-04-29": 2,
+    "2026-04-30": 4,
+    "2026-06-23": 3,
+    "2026-06-24": 5,
+    "2026-06-30": 12,
+    "2026-07-01": 1,
+    "2026-07-09": 1,
+    "2026-07-11": 4,
+    "2026-07-13": 1,
+    "2026-07-15": 8,
+    "2026-07-16": 2,
+    "2026-07-20": 43,
+    "2026-08-04": 13,
+    "2026-09-07": 7,
+    "2026-09-08": 18,
+    "2026-09-09": 12,
+    "2026-09-10": 12,
+    "2026-09-11": 22,
+    "2026-09-12": 1,
+    "2026-09-13": 2,
+    "2026-09-14": 1,
+    "2026-09-15": 1,
+    "2026-09-16": 3,
+    "2026-09-18": 1,
+    "2026-09-29": 11,
+    "2026-09-30": 2,
+    "2026-10-03": 61,
+    "2026-10-04": 7,
+    "2026-10-05": 311,
+    "2026-10-06": 2216,
+    "2026-10-09": 9,
+    "2026-10-10": 12,
+    "2026-10-11": 4,
+    "2026-10-12": 26,
+    "2026-10-13": 4,
+    "2026-10-14": 22,
+    "2026-10-15": 2,
+    "2026-10-16": 8,
+    "2026-10-19": 1,
+    "2026-10-21": 22,
+    "2026-10-22": 18,
+    "2026-10-23": 32,
+    "2026-10-24": 19,
+    "2026-10-25": 1,
+    "2026-10-26": 4
+  },
+  "candidate_months": {
+    "2026-04": 20,
+    "2026-06": 20,
+    "2026-07": 60,
+    "2026-08": 13,
+    "2026-09": 93,
+    "2026-10": 2779
+  },
+  "earliest_candidate": "2026-04-25T08:30:34.430Z",
+  "latest_candidate": "2026-10-26T01:02:33.268Z",
+  "read_or_parse_errors": [],
+  "output": "/tmp/gates-user-codex-rollouts.jsonl",
+  "months_without_candidates": [
+    "2026-05"
+  ],
+  "date_gap_caution": "No candidate in a month means no exact-word gates user record was found in available rollouts, not proof the user said nothing about gates. Some historical sessions may not be present.",
+  "retained_human_or_uncertain_candidates": [
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/04/25/rollout-2026-04-25T04-17-04-019dc3b6-b93f-78e3-ba6b-2478b4c51151.jsonl",
+      "line": 7,
+      "timestamp": "2026-04-25T08:30:34.430Z",
+      "rollout_timestamp": null,
+      "sessionid": "019dc3b6-b93f-78e3-ba6b-2478b4c51151",
+      "cwd": "/home/rich/thrust",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 162,
+      "gates_occurrences": 1,
+      "event_id": null,
+      "canonical_event_id": null,
+      "turn_id": null,
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        0
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/07/09/rollout-2026-07-09T10-57-54-019f4762-a395-7920-9f5d-b2a95061b042.jsonl",
+      "line": 5054,
+      "timestamp": "2026-07-09T21:05:41.325Z",
+      "rollout_timestamp": null,
+      "sessionid": "019f4762-a395-7920-9f5d-b2a95061b042",
+      "cwd": "/home/rich/ccl-min/c3lab",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 337,
+      "gates_occurrences": 1,
+      "event_id": null,
+      "canonical_event_id": null,
+      "turn_id": "019f48b3-59a2-7f80-807b-3994bfd97ddb",
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        1
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/07/11/rollout-2026-07-11T10-14-14-019f5187-623b-7bb1-95fc-9f03b3176759.jsonl",
+      "line": 8219,
+      "timestamp": "2026-07-13T08:17:37.658Z",
+      "rollout_timestamp": null,
+      "sessionid": "019f5187-623b-7bb1-95fc-9f03b3176759",
+      "cwd": "/home/rich/mgm-luci-realtime-archive",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 3836,
+      "gates_occurrences": 1,
+      "event_id": null,
+      "canonical_event_id": null,
+      "turn_id": "019f5a8c-8348-7433-a8b2-1b8bc5bb1026",
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        2
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/07/11/rollout-2026-07-11T10-14-14-019f5187-623b-7bb1-95fc-9f03b3176759.jsonl",
+      "line": 17557,
+      "timestamp": "2026-07-16T09:57:14.095Z",
+      "rollout_timestamp": null,
+      "sessionid": "019f5187-623b-7bb1-95fc-9f03b3176759",
+      "cwd": "/home/rich/mgm-luci-realtime-archive",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 743,
+      "gates_occurrences": 1,
+      "event_id": null,
+      "canonical_event_id": null,
+      "turn_id": "019f6a5b-e00c-7602-972c-2ba13a137ffe",
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        3
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/07/19/rollout-2026-07-19T13-10-26-019f7b5b-91b1-7952-bf3a-d81da2874fe6.jsonl",
+      "line": 2158,
+      "timestamp": "2026-07-20T00:54:22.990Z",
+      "rollout_timestamp": null,
+      "sessionid": "019f7b5b-91b1-7952-bf3a-d81da2874fe6",
+      "cwd": "/home/rich/mgm-luci-realtime-archive",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 2630,
+      "gates_occurrences": 1,
+      "event_id": null,
+      "canonical_event_id": null,
+      "turn_id": "019f7d04-513f-7703-bfef-d98368b0a099",
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        4
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/08/04/rollout-2026-08-04T02-01-57-019fcb5d-4cf2-7783-be73-141c7f60463b.jsonl",
+      "line": 212,
+      "timestamp": "2026-08-04T06:13:42.412Z",
+      "rollout_timestamp": null,
+      "sessionid": "019fcb5d-4cf2-7783-be73-141c7f60463b",
+      "cwd": "/home/rich/tempo",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 116,
+      "gates_occurrences": 1,
+      "event_id": "msg_019fcb68-0f8c-73b3-8f31-feeb1a01307b",
+      "canonical_event_id": null,
+      "turn_id": "4883fe71-c345-43fb-a69b-03e6d4c300eb",
+      "timestamp_basis": "rollout_record_timestamp_no_original_metadata",
+      "cli_history_indices": [
+        5
+      ],
+      "native_database_indices": []
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/09/07/rollout-2026-09-07T15-58-13-01a07d73-24f2-7a22-acac-70ed989b9034.jsonl",
+      "line": 4502,
+      "timestamp": "2026-09-08T06:54:21.228869Z",
+      "rollout_timestamp": "2026-09-08T06:54:21.230Z",
+      "sessionid": "01a07d73-24f2-7a22-acac-70ed989b9034",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 557,
+      "gates_occurrences": 4,
+      "event_id": "msg_01a07fcb-da2c-7003-91ac-53c261350b92",
+      "canonical_event_id": "01a07fcb-da2e-75f1-a0c4-5b633883f38d",
+      "turn_id": "01a07fcb-d920-7bd3-b4a0-2fd89102328f",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        6
+      ],
+      "native_database_indices": [
+        0
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/09/09/rollout-2026-09-09T10-52-57-01a086a8-613a-7510-bb93-ea358de57a36.jsonl",
+      "line": 2929,
+      "timestamp": "2026-09-10T08:52:00.220183Z",
+      "rollout_timestamp": "2026-09-10T08:52:00.223Z",
+      "sessionid": "01a086a8-613a-7510-bb93-ea358de57a36",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 70,
+      "gates_occurrences": 2,
+      "event_id": "msg_01a08a84-485c-73d1-8eec-9356cd2ba8f4",
+      "canonical_event_id": "01a08a84-485f-75c2-9eaa-72da1ad64c51",
+      "turn_id": "01a08a84-47c6-7b42-84ae-5a8cffb07903",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        7
+      ],
+      "native_database_indices": [
+        1
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/09/15/rollout-2026-09-15T17-55-00-01a0a710-ef19-7400-b782-adecd499abb3.jsonl",
+      "line": 1202,
+      "timestamp": "2026-09-16T05:44:07.458713Z",
+      "rollout_timestamp": "2026-09-16T05:44:07.460Z",
+      "sessionid": "01a0a710-ef19-7400-b782-adecd499abb3",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 472,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a0a8be-6e22-7370-a7cb-fa9a097ab9dc",
+      "canonical_event_id": "01a0a8be-6e24-7a70-8baa-2d5a26d4b0a9",
+      "turn_id": "01a0a8be-6dc7-7790-8fbb-38833aacfbd1",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        8
+      ],
+      "native_database_indices": [
+        3
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+      "line": 1219,
+      "timestamp": "2026-10-21T16:06:21.751160Z",
+      "rollout_timestamp": "2026-10-21T16:06:21.753Z",
+      "sessionid": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 37,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a15f36-af37-78e1-9c59-423cd284b5ab",
+      "canonical_event_id": "01a15f36-af37-78e1-9c59-424608fbf5f8",
+      "turn_id": "01a15f36-aedd-71e3-b321-27312f888c2b",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        21
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+      "line": 2070,
+      "timestamp": "2026-10-21T16:46:44.038361Z",
+      "rollout_timestamp": "2026-10-21T16:46:44.041Z",
+      "sessionid": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 580,
+      "gates_occurrences": 5,
+      "event_id": "msg_01a15f5b-a546-7b22-913d-d801ee490e9d",
+      "canonical_event_id": "01a15f5b-a546-7b22-913d-d818798cc98f",
+      "turn_id": "01a15f5b-a4da-7713-bb8d-c8473f1f85cf",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        22
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+      "line": 2824,
+      "timestamp": "2026-10-21T17:30:15.009446Z",
+      "rollout_timestamp": "2026-10-21T17:30:15.013Z",
+      "sessionid": "01a15f0f-cd5c-7b63-b1ac-7849aefda24c",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 30,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a15f83-7c61-7d70-bc84-0d18ebe90565",
+      "canonical_event_id": "01a15f83-7c61-7d70-bc84-0d2991cfffe3",
+      "turn_id": "01a15f83-7bc3-73e0-a33a-e0d51456defd",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        23
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T13-19-05-01a15f79-433f-7882-88af-e48e292e0b4e.jsonl",
+      "line": 664,
+      "timestamp": "2026-10-21T17:59:16.481904Z",
+      "rollout_timestamp": "2026-10-21T17:59:16.484Z",
+      "sessionid": "01a15f79-433f-7882-88af-e48e292e0b4e",
+      "cwd": "/home/rich/metaform/.worktrees/a67d39d14a8f",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 63,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a15f9e-0f01-7a62-b19d-4d4cb96a042f",
+      "canonical_event_id": "01a15f9e-0f01-7a62-b19d-4d552a148b6e",
+      "turn_id": "01a15f9e-0ebe-7250-a140-5616aa417b90",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        34
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T21-35-40-01a1613f-e6c9-75e2-aae8-8777daf38ea5.jsonl",
+      "line": 660,
+      "timestamp": "2026-10-22T02:35:53.589847Z",
+      "rollout_timestamp": "2026-10-22T02:35:53.592Z",
+      "sessionid": "01a1613f-e6c9-75e2-aae8-8777daf38ea5",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 186,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16177-0975-7570-b3ba-9a2a601a5185",
+      "canonical_event_id": "01a16177-0975-7570-b3ba-9a36ba6c1b83",
+      "turn_id": "01a16177-0928-7f83-90f5-5c34efc37c48",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        38
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T23-22-24-01a161a1-9ef8-7841-9fba-ab0122aba1f6.jsonl",
+      "line": 300,
+      "timestamp": "2026-10-22T03:30:35.408060Z",
+      "rollout_timestamp": "2026-10-22T03:30:35.410Z",
+      "sessionid": "01a161a1-9ef8-7841-9fba-ab0122aba1f6",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_native_projection",
+      "confidence": 0.99,
+      "wordcount": 16,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a161a9-1d10-7b52-909b-73cc2ba10996",
+      "canonical_event_id": "01a161a9-1d10-7b52-909b-73d2e20e7b50",
+      "turn_id": "01a161a9-1cce-7d33-b444-f859a53776d2",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [],
+      "native_database_indices": [
+        39
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+      "line": 2604,
+      "timestamp": "2026-10-23T05:22:55.787117Z",
+      "rollout_timestamp": "2026-10-23T05:22:55.789Z",
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 342,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16736-52ab-77e0-95f0-3d5c24016b4c",
+      "canonical_event_id": "01a16736-52ab-77e0-95f0-3d64d2dc43a5",
+      "turn_id": "01a16736-5274-7281-88be-e2501d43e1d2",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        9
+      ],
+      "native_database_indices": [
+        44
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+      "line": 4821,
+      "timestamp": "2026-10-23T14:40:20.881796Z",
+      "rollout_timestamp": "2026-10-23T14:40:20.883Z",
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 48,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16934-a791-77f3-9e65-0e24429e8267",
+      "canonical_event_id": "01a16934-a791-77f3-9e65-0e3a8b14ed3c",
+      "turn_id": "01a1692f-f698-7743-8706-f3e12e04bbf4",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        10
+      ],
+      "native_database_indices": [
+        45
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+      "line": 8417,
+      "timestamp": "2026-10-23T20:44:22.111284Z",
+      "rollout_timestamp": "2026-10-23T20:44:22.112Z",
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 52,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16a81-ecdf-7b93-9884-089c6dd933d3",
+      "canonical_event_id": "01a16a81-ecdf-7b93-9884-08a944107941",
+      "turn_id": "01a16a81-ecba-78f1-a721-12787790af20",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        11
+      ],
+      "native_database_indices": [
+        46
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 130,
+      "timestamp": "2026-10-24T06:38:21.794195Z",
+      "rollout_timestamp": "2026-10-24T06:38:21.795Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 122,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16ca1-be62-7670-8774-efb4b7f10016",
+      "canonical_event_id": "01a16ca1-be62-7670-8774-efcaf4282472",
+      "turn_id": "01a16ca1-be3e-77d0-a789-7d010e0727cf",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        12
+      ],
+      "native_database_indices": [
+        70
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 1161,
+      "timestamp": "2026-10-24T08:08:09.227177Z",
+      "rollout_timestamp": "2026-10-24T08:08:09.228Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 43,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16cf3-f30b-7c42-80b1-f55c6c195ac9",
+      "canonical_event_id": "01a16cf3-f30b-7c42-80b1-f560f373db13",
+      "turn_id": "01a16cf3-f285-78c2-b90e-3d59fba9a7ae",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        13
+      ],
+      "native_database_indices": [
+        71
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 776,
+      "timestamp": "2026-10-24T09:00:41.632615Z",
+      "rollout_timestamp": "2026-10-24T09:00:41.634Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 74,
+      "gates_occurrences": 3,
+      "event_id": "msg_01a16d24-0d20-7022-b2e8-322580f25fde",
+      "canonical_event_id": "01a16d24-0d20-7022-b2e8-3238f2f71239",
+      "turn_id": "01a16d24-0ca8-7690-a9aa-71a7f0276207",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        14
+      ],
+      "native_database_indices": [
+        76
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 2222,
+      "timestamp": "2026-10-24T09:30:14.299757Z",
+      "rollout_timestamp": "2026-10-24T09:30:14.302Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 45,
+      "gates_occurrences": 2,
+      "event_id": "msg_01a16d3f-199b-7e40-9b43-d17d305a0267",
+      "canonical_event_id": "01a16d3f-199b-7e40-9b43-d18d7b037688",
+      "turn_id": "01a16d3c-9daf-7d11-a4b0-3898a95cb601",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        15
+      ],
+      "native_database_indices": [
+        72
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 2297,
+      "timestamp": "2026-10-24T09:39:09.309773Z",
+      "rollout_timestamp": "2026-10-24T09:39:09.312Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 1256,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16d47-437d-72c1-96d9-296064a6fd1b",
+      "canonical_event_id": "01a16d47-437d-72c1-96d9-29749c3af7c5",
+      "turn_id": "01a16d47-4302-7702-9505-f3df9c4d02a4",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        16
+      ],
+      "native_database_indices": [
+        73
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 911,
+      "timestamp": "2026-10-24T12:18:18.157617Z",
+      "rollout_timestamp": "2026-10-24T12:18:18.159Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 1371,
+      "gates_occurrences": 5,
+      "event_id": "msg_01a16dd8-f7ad-7332-999b-21c66b756c6e",
+      "canonical_event_id": "01a16dd8-f7ad-7332-999b-21d091ad922f",
+      "turn_id": "01a16dd8-f676-7d63-a20c-5595d6c0e5d6",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        18
+      ],
+      "native_database_indices": [
+        77
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 1127,
+      "timestamp": "2026-10-24T12:27:58.143004Z",
+      "rollout_timestamp": "2026-10-24T12:27:58.145Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 23,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16de1-d13f-7ca2-9b17-e3c25c3b8fce",
+      "canonical_event_id": "01a16de1-d13f-7ca2-9b17-e3dc8acb219c",
+      "turn_id": "01a16de1-d0b9-7870-a874-70b4da22e3f1",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        20
+      ],
+      "native_database_indices": [
+        78
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 4246,
+      "timestamp": "2026-10-24T12:36:18.037274Z",
+      "rollout_timestamp": "2026-10-24T12:36:18.039Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 9,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16de9-71f5-7f12-8f27-3bd89c6ed6e7",
+      "canonical_event_id": "01a16de9-71f5-7f12-8f27-3bef0d85d98a",
+      "turn_id": "01a16de9-7163-76e3-b997-fa8f584fea42",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        21
+      ],
+      "native_database_indices": [
+        74
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+      "line": 4288,
+      "timestamp": "2026-10-24T12:45:02.141214Z",
+      "rollout_timestamp": "2026-10-24T12:45:02.143Z",
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "cwd": "/home/rich/mgm-main",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 564,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a16df1-713d-7e63-b4d5-115dc23466cc",
+      "canonical_event_id": "01a16df1-713d-7e63-b4d5-1166359759f7",
+      "turn_id": "01a16df1-70a5-7630-8e2f-cfa3e4edeb2d",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        22
+      ],
+      "native_database_indices": [
+        75
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 3045,
+      "timestamp": "2026-10-26T00:52:55.226501Z",
+      "rollout_timestamp": "2026-10-26T00:52:55.228Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 7,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a175b2-333a-7e50-b940-38b6c4ff4068",
+      "canonical_event_id": "01a175b2-333a-7e50-b940-38c44c4a8349",
+      "turn_id": "01a175b2-3267-7b81-bfae-513d5cab979f",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        23
+      ],
+      "native_database_indices": [
+        79
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 3085,
+      "timestamp": "2026-10-26T00:58:48.492633Z",
+      "rollout_timestamp": "2026-10-26T00:58:48.494Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 54,
+      "gates_occurrences": 1,
+      "event_id": "msg_01a175b7-972c-7a52-9c66-5a8d6e256721",
+      "canonical_event_id": "01a175b7-972c-7a52-9c66-5a947798a1ed",
+      "turn_id": "01a175b7-96ea-75d3-a6ad-ae24c5d22ed6",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        24
+      ],
+      "native_database_indices": [
+        80
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 3099,
+      "timestamp": "2026-10-26T01:02:25.871090Z",
+      "rollout_timestamp": "2026-10-26T01:02:25.873Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 59,
+      "gates_occurrences": 2,
+      "event_id": "msg_01a175ba-e84f-7881-805c-7d0e18433b80",
+      "canonical_event_id": "01a175ba-e84f-7881-805c-7d1a758d25de",
+      "turn_id": "01a175ba-e80d-7663-b91b-a59127bc748f",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        25
+      ],
+      "native_database_indices": [
+        81,
+        82
+      ]
+    },
+    {
+      "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+      "line": 3107,
+      "timestamp": "2026-10-26T01:02:33.266408Z",
+      "rollout_timestamp": "2026-10-26T01:02:33.268Z",
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "cwd": "/home/rich/metaform",
+      "classification": "genuine_user_input_corroborated_cli_history",
+      "confidence": 0.99,
+      "wordcount": 59,
+      "gates_occurrences": 2,
+      "event_id": "msg_01a175bb-0532-7ac3-977e-e76941c84eed",
+      "canonical_event_id": "01a175bb-0532-7ac3-977e-e77c23979e97",
+      "turn_id": "01a175bb-0504-7ab2-8a2b-16fc8b9ca366",
+      "timestamp_basis": "original_user_message_create_time",
+      "cli_history_indices": [
+        26
+      ],
+      "native_database_indices": [
+        81,
+        82
+      ]
+    }
+  ],
+  "genuine_candidate_months": {
+    "2026-04": 8,
+    "2026-06": 1,
+    "2026-07": 57,
+    "2026-08": 1,
+    "2026-09": 3,
+    "2026-10": 37
+  },
+  "months_without_genuine_candidates": [
+    "2026-05"
+  ],
+  "dedup_policy": "Same source event IDs, or same original turn ID plus text in old no-ID snapshots, are collapsed only within the original session. Identical texts with different event IDs/turn IDs remain separate, including the two requests7seconds apart.",
+  "classification_policy": "Known instruction/skill injection, internal goal continuations, Guardian transcript copies and subagent/programmatic assignments are exported but excluded from genuine-user evidence. A structured September task remains ambiguous. Worktree cwd alone never disqualifies a message.",
+  "retained_human_candidates": 31,
+  "same_original_turn_snapshot_replays_collapsed": 51,
+  "cli_history_crosscheck": [
+    {
+      "history_index": 0,
+      "sessionid": "019dc3b6-b93f-78e3-ba6b-2478b4c51151",
+      "history_timestamp": "2026-04-25T08:30:33+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/04/25/rollout-2026-04-25T04-17-04-019dc3b6-b93f-78e3-ba6b-2478b4c51151.jsonl",
+          "line": 7,
+          "timestamp": "2026-04-25T08:30:34.430Z",
+          "event_id": null,
+          "turn_id": null,
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 1,
+      "sessionid": "019f4762-a395-7920-9f5d-b2a95061b042",
+      "history_timestamp": "2026-07-09T21:05:41+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/07/09/rollout-2026-07-09T10-57-54-019f4762-a395-7920-9f5d-b2a95061b042.jsonl",
+          "line": 5054,
+          "timestamp": "2026-07-09T21:05:41.325Z",
+          "event_id": null,
+          "turn_id": "019f48b3-59a2-7f80-807b-3994bfd97ddb",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 2,
+      "sessionid": "019f5187-623b-7bb1-95fc-9f03b3176759",
+      "history_timestamp": "2026-07-13T08:16:25+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/07/11/rollout-2026-07-11T10-14-14-019f5187-623b-7bb1-95fc-9f03b3176759.jsonl",
+          "line": 8219,
+          "timestamp": "2026-07-13T08:17:37.658Z",
+          "event_id": null,
+          "turn_id": "019f5a8c-8348-7433-a8b2-1b8bc5bb1026",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 3,
+      "sessionid": "019f5187-623b-7bb1-95fc-9f03b3176759",
+      "history_timestamp": "2026-07-16T09:57:13+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/07/11/rollout-2026-07-11T10-14-14-019f5187-623b-7bb1-95fc-9f03b3176759.jsonl",
+          "line": 17557,
+          "timestamp": "2026-07-16T09:57:14.095Z",
+          "event_id": null,
+          "turn_id": "019f6a5b-e00c-7602-972c-2ba13a137ffe",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 4,
+      "sessionid": "019f7b5b-91b1-7952-bf3a-d81da2874fe6",
+      "history_timestamp": "2026-07-20T00:54:22+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/07/19/rollout-2026-07-19T13-10-26-019f7b5b-91b1-7952-bf3a-d81da2874fe6.jsonl",
+          "line": 2158,
+          "timestamp": "2026-07-20T00:54:22.990Z",
+          "event_id": null,
+          "turn_id": "019f7d04-513f-7703-bfef-d98368b0a099",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 5,
+      "sessionid": "019fcb5d-4cf2-7783-be73-141c7f60463b",
+      "history_timestamp": "2026-08-04T06:13:03+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/08/04/rollout-2026-08-04T02-01-57-019fcb5d-4cf2-7783-be73-141c7f60463b.jsonl",
+          "line": 212,
+          "timestamp": "2026-08-04T06:13:42.412Z",
+          "event_id": "msg_019fcb68-0f8c-73b3-8f31-feeb1a01307b",
+          "turn_id": "4883fe71-c345-43fb-a69b-03e6d4c300eb",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 6,
+      "sessionid": "01a07d73-24f2-7a22-acac-70ed989b9034",
+      "history_timestamp": "2026-09-08T06:54:21+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/09/07/rollout-2026-09-07T15-58-13-01a07d73-24f2-7a22-acac-70ed989b9034.jsonl",
+          "line": 4502,
+          "timestamp": "2026-09-08T06:54:21.228869Z",
+          "event_id": "msg_01a07fcb-da2c-7003-91ac-53c261350b92",
+          "turn_id": "01a07fcb-d920-7bd3-b4a0-2fd89102328f",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 7,
+      "sessionid": "01a086a8-613a-7510-bb93-ea358de57a36",
+      "history_timestamp": "2026-09-10T08:52:00+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/09/09/rollout-2026-09-09T10-52-57-01a086a8-613a-7510-bb93-ea358de57a36.jsonl",
+          "line": 2929,
+          "timestamp": "2026-09-10T08:52:00.220183Z",
+          "event_id": "msg_01a08a84-485c-73d1-8eec-9356cd2ba8f4",
+          "turn_id": "01a08a84-47c6-7b42-84ae-5a8cffb07903",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 8,
+      "sessionid": "01a0a710-ef19-7400-b782-adecd499abb3",
+      "history_timestamp": "2026-09-16T05:44:07+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/09/15/rollout-2026-09-15T17-55-00-01a0a710-ef19-7400-b782-adecd499abb3.jsonl",
+          "line": 1202,
+          "timestamp": "2026-09-16T05:44:07.458713Z",
+          "event_id": "msg_01a0a8be-6e22-7370-a7cb-fa9a097ab9dc",
+          "turn_id": "01a0a8be-6dc7-7790-8fbb-38833aacfbd1",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 9,
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "history_timestamp": "2026-10-23T05:22:55+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+          "line": 2604,
+          "timestamp": "2026-10-23T05:22:55.787117Z",
+          "event_id": "msg_01a16736-52ab-77e0-95f0-3d5c24016b4c",
+          "turn_id": "01a16736-5274-7281-88be-e2501d43e1d2",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 10,
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "history_timestamp": "2026-10-23T14:40:20+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+          "line": 4821,
+          "timestamp": "2026-10-23T14:40:20.881796Z",
+          "event_id": "msg_01a16934-a791-77f3-9e65-0e24429e8267",
+          "turn_id": "01a1692f-f698-7743-8706-f3e12e04bbf4",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 11,
+      "sessionid": "01a166ff-4311-7601-a105-928a0504e626",
+      "history_timestamp": "2026-10-23T20:44:22+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/23/rollout-2026-10-23T00-22-47-01a166ff-4311-7601-a105-928a0504e626.jsonl",
+          "line": 8417,
+          "timestamp": "2026-10-23T20:44:22.111284Z",
+          "event_id": "msg_01a16a81-ecdf-7b93-9884-089c6dd933d3",
+          "turn_id": "01a16a81-ecba-78f1-a721-12787790af20",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 12,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T06:38:21+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 130,
+          "timestamp": "2026-10-24T06:38:21.794195Z",
+          "event_id": "msg_01a16ca1-be62-7670-8774-efb4b7f10016",
+          "turn_id": "01a16ca1-be3e-77d0-a789-7d010e0727cf",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 13,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T08:08:09+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 1161,
+          "timestamp": "2026-10-24T08:08:09.227177Z",
+          "event_id": "msg_01a16cf3-f30b-7c42-80b1-f55c6c195ac9",
+          "turn_id": "01a16cf3-f285-78c2-b90e-3d59fba9a7ae",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 14,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-24T09:00:41+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 776,
+          "timestamp": "2026-10-24T09:00:41.632615Z",
+          "event_id": "msg_01a16d24-0d20-7022-b2e8-322580f25fde",
+          "turn_id": "01a16d24-0ca8-7690-a9aa-71a7f0276207",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 15,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T09:30:14+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 2222,
+          "timestamp": "2026-10-24T09:30:14.299757Z",
+          "event_id": "msg_01a16d3f-199b-7e40-9b43-d17d305a0267",
+          "turn_id": "01a16d3c-9daf-7d11-a4b0-3898a95cb601",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 16,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T09:39:09+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 2297,
+          "timestamp": "2026-10-24T09:39:09.309773Z",
+          "event_id": "msg_01a16d47-437d-72c1-96d9-296064a6fd1b",
+          "turn_id": "01a16d47-4302-7702-9505-f3df9c4d02a4",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 17,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-24T09:54:45+00:00",
+      "matched": false,
+      "matches": []
+    },
+    {
+      "history_index": 18,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-24T12:18:18+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 911,
+          "timestamp": "2026-10-24T12:18:18.157617Z",
+          "event_id": "msg_01a16dd8-f7ad-7332-999b-21c66b756c6e",
+          "turn_id": "01a16dd8-f676-7d63-a20c-5595d6c0e5d6",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 19,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-24T12:21:32+00:00",
+      "matched": false,
+      "matches": []
+    },
+    {
+      "history_index": 20,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-24T12:27:58+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 1127,
+          "timestamp": "2026-10-24T12:27:58.143004Z",
+          "event_id": "msg_01a16de1-d13f-7ca2-9b17-e3c25c3b8fce",
+          "turn_id": "01a16de1-d0b9-7870-a874-70b4da22e3f1",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 21,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T12:36:18+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 4246,
+          "timestamp": "2026-10-24T12:36:18.037274Z",
+          "event_id": "msg_01a16de9-71f5-7f12-8f27-3bd89c6ed6e7",
+          "turn_id": "01a16de9-7163-76e3-b997-fa8f584fea42",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 22,
+      "sessionid": "01a16c8c-6d40-71f0-8b45-9abe6cfbfd90",
+      "history_timestamp": "2026-10-24T12:45:02+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T02-15-04-01a16c8c-6d40-71f0-8b45-9abe6cfbfd90.jsonl",
+          "line": 4288,
+          "timestamp": "2026-10-24T12:45:02.141214Z",
+          "event_id": "msg_01a16df1-713d-7e63-b4d5-115dc23466cc",
+          "turn_id": "01a16df1-70a5-7630-8e2f-cfa3e4edeb2d",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 23,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-26T00:52:55+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 3045,
+          "timestamp": "2026-10-26T00:52:55.226501Z",
+          "event_id": "msg_01a175b2-333a-7e50-b940-38b6c4ff4068",
+          "turn_id": "01a175b2-3267-7b81-bfae-513d5cab979f",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 24,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-26T00:58:48+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 3085,
+          "timestamp": "2026-10-26T00:58:48.492633Z",
+          "event_id": "msg_01a175b7-972c-7a52-9c66-5a8d6e256721",
+          "turn_id": "01a175b7-96ea-75d3-a6ad-ae24c5d22ed6",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 25,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-26T01:02:25+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 3099,
+          "timestamp": "2026-10-26T01:02:25.871090Z",
+          "event_id": "msg_01a175ba-e84f-7881-805c-7d0e18433b80",
+          "turn_id": "01a175ba-e80d-7663-b91b-a59127bc748f",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    },
+    {
+      "history_index": 26,
+      "sessionid": "01a16cf6-d7f1-7123-9a98-eeed2746c08a",
+      "history_timestamp": "2026-10-26T01:02:33+00:00",
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/24/rollout-2026-10-24T04-11-18-01a16cf6-d7f1-7123-9a98-eeed2746c08a.jsonl",
+          "line": 3107,
+          "timestamp": "2026-10-26T01:02:33.266408Z",
+          "event_id": "msg_01a175bb-0532-7ac3-977e-e76941c84eed",
+          "turn_id": "01a175bb-0504-7ab2-8a2b-16fc8b9ca366",
+          "classification": "genuine_user_input_corroborated_cli_history"
+        }
+      ]
+    }
+  ],
+  "native_confirmed_input_crosscheck": [
+    {
+      "database_index": 21,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "line": 1219,
+          "timestamp": "2026-10-21T16:06:21.751160Z",
+          "event_id": "msg_01a15f36-af37-78e1-9c59-423cd284b5ab",
+          "canonical_event_id": "01a15f36-af37-78e1-9c59-424608fbf5f8",
+          "turn_id": "01a15f36-aedd-71e3-b321-27312f888c2b",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    },
+    {
+      "database_index": 22,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "line": 2070,
+          "timestamp": "2026-10-21T16:46:44.038361Z",
+          "event_id": "msg_01a15f5b-a546-7b22-913d-d801ee490e9d",
+          "canonical_event_id": "01a15f5b-a546-7b22-913d-d818798cc98f",
+          "turn_id": "01a15f5b-a4da-7713-bb8d-c8473f1f85cf",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    },
+    {
+      "database_index": 23,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T11-23-53-01a15f0f-cd5c-7b63-b1ac-7849aefda24c.jsonl",
+          "line": 2824,
+          "timestamp": "2026-10-21T17:30:15.009446Z",
+          "event_id": "msg_01a15f83-7c61-7d70-bc84-0d18ebe90565",
+          "canonical_event_id": "01a15f83-7c61-7d70-bc84-0d2991cfffe3",
+          "turn_id": "01a15f83-7bc3-73e0-a33a-e0d51456defd",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    },
+    {
+      "database_index": 34,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T13-19-05-01a15f79-433f-7882-88af-e48e292e0b4e.jsonl",
+          "line": 664,
+          "timestamp": "2026-10-21T17:59:16.481904Z",
+          "event_id": "msg_01a15f9e-0f01-7a62-b19d-4d4cb96a042f",
+          "canonical_event_id": "01a15f9e-0f01-7a62-b19d-4d552a148b6e",
+          "turn_id": "01a15f9e-0ebe-7250-a140-5616aa417b90",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    },
+    {
+      "database_index": 38,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T21-35-40-01a1613f-e6c9-75e2-aae8-8777daf38ea5.jsonl",
+          "line": 660,
+          "timestamp": "2026-10-22T02:35:53.589847Z",
+          "event_id": "msg_01a16177-0975-7570-b3ba-9a2a601a5185",
+          "canonical_event_id": "01a16177-0975-7570-b3ba-9a36ba6c1b83",
+          "turn_id": "01a16177-0928-7f83-90f5-5c34efc37c48",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    },
+    {
+      "database_index": 39,
+      "matched": true,
+      "matches": [
+        {
+          "sourcefile": "/home/rich/.codex/sessions/2026/10/21/rollout-2026-10-21T23-22-24-01a161a1-9ef8-7841-9fba-ab0122aba1f6.jsonl",
+          "line": 300,
+          "timestamp": "2026-10-22T03:30:35.408060Z",
+          "event_id": "msg_01a161a9-1d10-7b52-909b-73cc2ba10996",
+          "canonical_event_id": "01a161a9-1d10-7b52-909b-73d2e20e7b50",
+          "turn_id": "01a161a9-1cce-7d33-b444-f859a53776d2",
+          "classification": "genuine_user_input_corroborated_native_projection"
+        }
+      ]
+    }
+  ],
+  "additional_candidates_not_in_cli_history_or_confirmed_native_inputs": [],
+  "all_rollout_file_months_within_window": {
+    "2026-04": 95,
+    "2026-05": 1,
+    "2026-06": 115,
+    "2026-07": 376,
+    "2026-08": 45,
+    "2026-09": 389,
+    "2026-10": 3163
+  },
+  "retained_human_gate_word_occurrences": 48,
+  "months_with_retained_human_events": {
+    "2026-04": 1,
+    "2026-07": 4,
+    "2026-08": 1,
+    "2026-09": 3,
+    "2026-10": 22
+  },
+  "months_without_retained_human_events": [
+    "2026-05",
+    "2026-06"
+  ],
+  "root_inventory": {
+    "/home/rich/.codex/sessions": {
+      "files": 5070,
+      "bytes": 12547729574
+    },
+    "/home/rich/.codex/archived_sessions": {
+      "files": 16,
+      "bytes": 342942
+    }
+  },
+  "root_inventory_recorded_at": "2026-10-26T01:16:06.600049+00:00",
+  "live_file_growth_note": "Active rollout files grew during this read-only investigation. Initial byte totals and later per-root inventory were observed at different moments.",
+  "counter_scope_note": "parsed_message_records and same_item_id_duplicate_records include both user and assistant message records. Other gate-specific counters concern user-role records.",
+  "cli_history_unrepresented_explanation": {
+    "17": "Removal-checklist request appears in CLI history and later tool output, but no standalone original user event remains in available rollouts. Preserve history evidence.",
+    "19": "The /goal command is preserved by CLI history; rollout includes generated goal-state copies, not a standalone original slash-command user event. Preserve history evidence."
+  },
+  "coverage_caution": "Available rollouts are not a complete guarantee of historical utterances. Missing file creation dates do not establish no messages, because sessions resume and snapshots replay older messages. No exact-word May user gate message was found in this corpus.",
+  "dates_without_new_rollout_files": [
+    "2026-04-26",
+    "2026-04-27",
+    "2026-04-28",
+    "2026-05-01",
+    "2026-05-02",
+    "2026-05-03",
+    "2026-05-04",
+    "2026-05-06",
+    "2026-05-07",
+    "2026-05-08",
+    "2026-05-09",
+    "2026-05-10",
+    "2026-05-11",
+    "2026-05-12",
+    "2026-05-13",
+    "2026-05-14",
+    "2026-05-15",
+    "2026-05-16",
+    "2026-05-17",
+    "2026-05-18",
+    "2026-05-19",
+    "2026-05-20",
+    "2026-05-21",
+    "2026-05-22",
+    "2026-05-23",
+    "2026-05-24",
+    "2026-05-25",
+    "2026-05-26",
+    "2026-05-27",
+    "2026-05-28",
+    "2026-05-29",
+    "2026-05-30",
+    "2026-05-31",
+    "2026-06-01",
+    "2026-06-02",
+    "2026-06-03",
+    "2026-06-04",
+    "2026-06-05",
+    "2026-06-06",
+    "2026-06-07",
+    "2026-06-08",
+    "2026-06-09",
+    "2026-06-10",
+    "2026-06-11",
+    "2026-06-12",
+    "2026-06-13",
+    "2026-06-14",
+    "2026-06-15",
+    "2026-06-16",
+    "2026-06-17",
+    "2026-06-18",
+    "2026-06-19",
+    "2026-06-20",
+    "2026-06-21",
+    "2026-06-22",
+    "2026-06-26",
+    "2026-06-27",
+    "2026-06-28",
+    "2026-07-02",
+    "2026-07-03",
+    "2026-07-04",
+    "2026-07-05",
+    "2026-07-06",
+    "2026-07-07",
+    "2026-07-08",
+    "2026-07-14",
+    "2026-07-16",
+    "2026-07-17",
+    "2026-07-21",
+    "2026-07-25",
+    "2026-07-26",
+    "2026-07-27",
+    "2026-08-01",
+    "2026-08-02",
+    "2026-08-03",
+    "2026-08-05",
+    "2026-08-07",
+    "2026-08-08",
+    "2026-08-09",
+    "2026-08-10",
+    "2026-08-11",
+    "2026-08-12",
+    "2026-08-13",
+    "2026-08-14",
+    "2026-08-15",
+    "2026-08-16",
+    "2026-08-17",
+    "2026-08-20",
+    "2026-08-21",
+    "2026-08-22",
+    "2026-08-23",
+    "2026-08-24",
+    "2026-08-25",
+    "2026-08-28",
+    "2026-08-29",
+    "2026-08-30",
+    "2026-08-31",
+    "2026-09-01",
+    "2026-09-02",
+    "2026-09-03",
+    "2026-09-04",
+    "2026-09-05",
+    "2026-09-06",
+    "2026-09-14",
+    "2026-09-17",
+    "2026-09-20",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    "2026-09-28",
+    "2026-10-07",
+    "2026-10-08",
+    "2026-10-26"
+  ],
+  "new_confirmed_human_events_beyond_parent_history_and_projection": 0,
+  "wordcount_definition": "wordcount counts total words in the exact message. gates_occurrences counts case-insensitive exact-word gates occurrences, including user-supplied quotations flagged in the record.",
+  "uncertainty_note": "Classification retains excluded source records for audit. Zero additional confirmed inputs is not proof no unavailable historical utterances exist."
+}

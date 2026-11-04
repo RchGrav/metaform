@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Node, Store, TableTx
-from metaform.module import Context, Stop, agent_caller, provided
+from metaform.module import Context, Stop, provided
 
 from . import follow
 
@@ -21,7 +22,7 @@ QUESTIONS = {
     'research': 'Proceed with the complete architectural design?',
     'architecture': 'Create a separate project and run intake on this design?',
     'intake': 'Proceed with the step-by-step implementation plan?',
-    'plan_review': 'Review the full plan. Comment, return it to Planner, or approve decomposition.',
+    'plan_review': 'Review the full plan. Comment, return it for planning again, or approve decomposition.',
     'decomposition': 'Review the execution outline before facilitation.',
     'execution_outline': 'Approve this execution outline and proceed with facilitation?',
 }
@@ -32,7 +33,7 @@ ROLES = {'research': 'researcher', 'architecture': 'architect', 'plan_review': '
 
 
 def upgrade(tx: TableTx, found: int) -> None:
-    """Keep old proposal evidence without allowing its direct Planner route to continue."""
+    """Keep old proposal evidence without allowing its direct planning route to continue."""
     if found != 3:
         return
     for row in tx.found_rows('proposals', limit=0).results:
@@ -135,19 +136,42 @@ def target(ctx: Context, kept: dict[str, Any]) -> Context:
 
 
 def service(ctx: Context) -> Any:
-    services = [value for _, value in provided(ctx.folder, 'orchestration')]
+    services = [value for _, value in provided(ctx.folder, 'task.lifecycle')]
     if not services:
-        raise Stop('Orchestration is off, so this stage cannot start.', 'metaform enable orchestration')
+        raise Stop('Assigned tasks are off, so this stage cannot start.', 'metaform enable tasks')
     return services[0]
 
 
-def claim(ctx: Context, table: str, role: str, *, coordinator: bool = False) -> None:
+def claim(ctx: Context, table: str, role: str) -> None:
+    """Keep only refused current launches in the target project's durable retry set."""
+    called = target(ctx, row(ctx, table))
+    key = {'origin': ctx.require_store().project_id, 'table_id': table}
+    try:
+        work = claim_task(ctx, table, role)
+    except (Stop, OSError, ValueError):
+        kept = row(ctx, table)
+        if kept['state'] == 'running' and ROLES.get(str(kept['stage'])) == role:
+            values = {'stage': kept['stage'], 'work_id': kept.get('work_id')}
+            with called.require_store().tables() as tx:
+                pending = tx.get('pending_stages', key)
+                if pending is None:
+                    tx.insert('pending_stages', {**key, **values})
+                else:
+                    values['work_id'] = kept.get('work_id') or pending.get('work_id')
+                    tx.update('pending_stages', key, values)
+        raise
+    with called.require_store().tables() as tx:
+        pending = tx.get('pending_stages', key)
+        if pending and pending.get('work_id') in (None, work):
+            tx.delete('pending_stages', key)
+
+
+def claim_task(ctx: Context, table: str, role: str) -> str:
     """Reserve each stage once before dispatching, including recovery after an interrupted launch."""
     kept = row(ctx, table)
-    called = ctx if coordinator else target(ctx, kept)
+    called = target(ctx, kept)
     owner = service(called)
-    key = 'coordinator' if coordinator else 'work_id'
-    work = kept.get(key)
+    work = kept.get('work_id')
     if not work:
         with ctx.require_store().tables(write=False) as tx:
             discussion = tx.get('tables', {'table_id': table})
@@ -159,7 +183,7 @@ def claim(ctx: Context, table: str, role: str, *, coordinator: bool = False) -> 
         saved = str(cast(dict[str, Any], discussion.get('followed') or {}).get('saved') or '')
         artifacts = cast(list[dict[str, Any]], kept.get('artifacts') or [])
         materials = '\n'.join(str(root(ctx) / str(one['file'])) for one in artifacts)
-        task = prompt_files.required(follow.PACKAGE, 'follow_through_task' if coordinator else 'stage_task',
+        task = prompt_files.required(follow.PACKAGE, 'stage_task',
                 table=table, origin=str(ctx.require_store().project_id), role=role, stage=str(kept['stage']),
                 question=QUESTIONS.get(str(kept['stage']), ''), request=str(discussion['topic']),
                 record=str(root(ctx) / saved / follow.RECORD), materials=materials,
@@ -170,27 +194,76 @@ def claim(ctx: Context, table: str, role: str, *, coordinator: bool = False) -> 
                 table_record=path(ctx, f'{saved}/{follow.RECORD}').read_text(encoding='utf-8'),
                 preparation=prompt_files.required(follow.PACKAGE, 'approved_execution' if role == 'facilitator' else
                     'automated_preparation' if kept.get('automate_ticket_creation') else 'reviewed_preparation'))
-        # Work and reservation share a transaction when they belong to the source project.
-        with called.require_store().atomic():
+        # These stores have separate transactions: commit the ticket before either durable reference to it.
+        key = {'origin': ctx.require_store().project_id, 'table_id': table}
+        with called.require_store().tables(write=False) as tx:
+            pending = tx.get('pending_stages', key)
+        reserved = str(pending.get('work_id') or '') if pending and pending['stage'] == kept['stage'] else ''
+        if reserved:
+            if not called.require_store().work(ids=[reserved]).results:
+                raise Stop('The reserved stage ticket is missing. It was not recreated.',
+                           'metaform roundtables review ' + table)
+            work = reserved
+        else:
             created = called.require_store().add_work(Node('element', address), None, kind='enhancement',
-                        title=f'Roundtable {table}: {"follow-through" if coordinator else role}', task=task)
+                        title=f'Roundtable {table}: {role}', task=task)
             work = created.id
-            change(ctx, table, **{key: work})
-    # Creation authorizes presentation and its selected preparation mode.
-    # Reviewed launches carry the exact persisted person decision.
-    nouns: dict[str, Any] = {'work': str(work), 'role': role, 'automatic': False,
-             'result': 'Publish only the assigned output. The durable pipeline controls later stages.'}
-    if role == 'facilitator' and not coordinator:
-        nouns['specification'] = {'approved_board': kept['board'], 'source_project': ctx.require_store().project_id,
-                                  'table': table, 'reviewed_digest': kept['digest']}
-    launch = replace(called, nouns=nouns, consented=True)
-    if owner.assignment(launch, work_id=str(work)) is None:
-        try:
-            owner.claim(launch)
-        except Stop:
-            if owner.assignment(launch, work_id=str(work)) is None:
-                raise
+            with called.require_store().tables() as tx:
+                if pending is None:
+                    tx.insert('pending_stages', {**key, 'stage': kept['stage'], 'work_id': work})
+                else:
+                    tx.update('pending_stages', key, {'stage': kept['stage'], 'work_id': work})
+        change(ctx, table, work_id=work)
+    kept = row(ctx, table)
+    history = list(kept.get('history') or [])
+    attempts = [one for one in history if one.get('event') == 'stage_task' and one.get('work') == work]
+    attempt = attempts[-1] if attempts else None
+    if attempt and attempt.get('task_id'):
+        owner.get(called, str(attempt['task_id']))
+        assigned = owner.assignment(called, str(attempt['task_id']))
+        if assigned and (assigned['state'] == 'cancelled' or assigned.get('cancel_requested')):
+            change(ctx, table, state='stopped', error=None, revision=int(kept['revision']) + 1)
+            return str(work)
+        if assigned and assigned['state'] not in ('completed', 'failed', 'cancelled'):
+            change(ctx, table, error=None)
+            return str(work)
+        attempt = None
+    if attempt is None:
+        attempt = {'event': 'stage_task', 'stage': kept['stage'], 'work': work,
+                   'request_key': f'roundtable:{ctx.project}:{table}:{work}:{len(attempts) + 1}', 'at': follow.now(),
+                   'asked': attempts[0].get('asked', time.time_ns()) if attempts else next(
+                       (one['asked'] for one in reversed(history) if one.get('action') in (
+                           'yes', 'approve', 'revise', 'automated_preparation') and one.get('asked')), time.time_ns())}
+        history.append(attempt)
+        # Record the launch intent first. Replaying a lost reply uses the same task request key.
+        change(ctx, table, history=history)
+    records = called.require_store().work(ids=[str(work)]).results
+    if not records:
+        raise Stop('The stage ticket is missing.', 'metaform roundtables review ' + table)
+    ticket = records[0]
+    launch = replace(called, nouns={'text': str(ticket.task).replace('work=YOUR_TICKET', f'work={work}'),
+        'node': f'{ticket.node_kind}:{ticket.node_id}', 'options': {'requested_at': attempt.get('asked'), 'roundtable': {
+            'origin': ctx.require_store().project_id, 'table': table, 'work': work, 'stage': kept['stage']}}})
+    result = owner.assign(launch, 'roundtable_stage', None, request_key=str(attempt['request_key']))
+    attempt['task_id'] = result['task_id']
+    current = row(ctx, table)
+    history = list(current.get('history') or [])
+    for index, recorded in enumerate(history):
+        if recorded.get('request_key') == attempt['request_key']:
+            history[index] = attempt
+            break
+    change(ctx, table, history=history)
+    if current.get('work_id') != work or current['state'] != 'running':
+        return str(work)  # A fast task can publish while its launch reply is being recorded.
+    assigned = owner.assignment(called, str(result['task_id']))
+    if assigned and (assigned['state'] == 'cancelled' or assigned.get('cancel_requested')):
+        change(ctx, table, state='stopped', error=None, revision=int(current['revision']) + 1)
+        return str(work)
+    if assigned and assigned['state'] in ('completed', 'failed', 'cancelled'):
+        raise Stop(str(assigned.get('message') or 'The stage task ended before publishing its output.'),
+                   'metaform roundtables follow-through ' + table)
     change(ctx, table, error=None)
+    return str(work)
 
 
 def prepare(ctx: Context, table: str) -> dict[str, Any]:
@@ -217,15 +290,7 @@ def prepare(ctx: Context, table: str) -> dict[str, Any]:
             if kept['state'] == 'pending':
                 change(ctx, table, state='awaiting', file=file, digest=hashlib.sha256(body).hexdigest(), revision=1,
                        artifacts=[{'stage': 'roundtable', 'file': file, 'digest': hashlib.sha256(body).hexdigest()}])
-            for _, transport in provided(ctx.folder, 'orchestration.transport'):
-                ident = f'roundtable-result-{table}'
-                record = f'{saved}/{follow.RECORD}'
-                transport.notify_user(ctx, {'message_id': ident, 'kind': 'roundtable_result',
-                                      'table': table, 'record': record, 'text': f'Roundtable {table}: {record}'}, ident)
-                break
-            if kept['stage'] == 'roundtable' and kept['state'] in ('pending', 'awaiting'):
-                claim(ctx, table, 'roundtable_follow_through', coordinator=True)
-            elif kept['state'] == 'running' and kept['stage'] in ROLES:
+            if kept['state'] == 'running' and kept['stage'] in ROLES:
                 claim(ctx, table, ROLES[kept['stage']])
             elif kept['state'] == 'running' and kept['stage'] == 'intake' and not intake_complete(ctx, table):
                 status = [value for _, value in provided(ctx.folder, 'dispatch.design_intake_active')]
@@ -275,6 +340,35 @@ def intake_finished(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | N
     return None
 
 
+def tasks_changed(payload: dict[str, Any], ctx: Context) -> None:
+    """A native session change can free a slot for a previously refused stage launch."""
+    if payload.get('project') != ctx.project or not payload.get('work_ids'):
+        return
+    tables, kinds = payload.get('tables'), payload.get('kinds')
+    if tables != 'dispatch' and not (isinstance(tables, list) and any(
+            str(one).startswith('dispatch.') for one in cast(list[Any], tables))):
+        return
+    if not isinstance(kinds, list) or not {'session', 'worker-idle'} & set(cast(list[str], kinds)):
+        return
+    with ctx.require_store().tables(write=False) as tx:
+        pending = [dict(one) for one in tx.rows('pending_stages', limit=0).results]
+    for reference in pending:
+        source, table = str(reference['origin']), str(reference['table_id'])
+        try:
+            called = origin(replace(ctx, nouns={'origin': source, 'table': table}))
+            kept = row(called, table)
+        except Stop:
+            with ctx.require_store().tables() as tx:
+                tx.delete('pending_stages', {'origin': source, 'table_id': table})
+            continue  # A removed source project/table no longer has preparation to recover.
+        if kept['state'] == 'running' and kept.get('work_id') in (None, reference['work_id']) \
+                and kept['stage'] == reference['stage']:
+            prepare(called, table)
+        else:
+            with ctx.require_store().tables() as tx:
+                tx.delete('pending_stages', {'origin': source, 'table_id': table})
+
+
 def start_intake(ctx: Context, table: str) -> None:
     kept = row(ctx, table)
     starters = [value for _, value in provided(ctx.folder, 'dispatch.design_intake')]
@@ -308,7 +402,7 @@ def advance_automated(ctx: Context, table: str) -> None:
     if next_stage is None or next_stage == 'facilitation':
         return
     history = list(kept.get('history') or []) + [{'stage': stage, 'action': 'automated_preparation',
-               'digest': kept['digest'], 'revision': kept['revision'], 'at': follow.now()}]
+               'digest': kept['digest'], 'revision': kept['revision'], 'at': follow.now(), 'asked': time.time_ns()}]
     change(ctx, table, stage=next_stage, state='running', work_id=None, error=None, history=history,
            revision=int(kept['revision']) + 1)
     try:
@@ -321,8 +415,6 @@ def advance_automated(ctx: Context, table: str) -> None:
 
 
 def decide(ctx: Context) -> dict[str, Any]:
-    if not ctx.consented and (ctx.surface == 'mcp' or (ctx.surface == 'cli' and agent_caller() is not None)):
-        raise Stop('The person must decide from the page or their own terminal.', 'metaform roundtables review')
     ctx = origin(ctx)
     table, action = str(ctx.nouns['table']), str(ctx.nouns['action'])
     with lock(ctx, table):
@@ -338,14 +430,16 @@ def decide(ctx: Context) -> dict[str, Any]:
             raise Stop('This stage requires ' + ', '.join(allowed) + '.', 'metaform roundtables review ' + table)
         comment = str(ctx.nouns.get('comment') or '').strip()
         if action in ('comment', 'revise') and not comment:
-            raise Stop('Provide comments for Planner.', 'metaform roundtables review ' + table)
+            raise Stop('Provide comments on the plan.', 'metaform roundtables review ' + table)
         history = list(kept.get('history') or []) + [{'stage': stage, 'action': action, 'digest': kept['digest'],
-                    'revision': kept['revision'], 'comment': comment, 'at': follow.now()}]
+                    'revision': kept['revision'], 'comment': comment, 'at': follow.now(), 'asked': time.time_ns()}]
         change(ctx, table, history=history, feedback='\n'.join(filter(None, [kept.get('feedback'), comment])))
         if action == 'comment':
             change(ctx, table, revision=int(kept['revision']) + 1)
         elif action == 'no':
             change(ctx, table, state='stopped', revision=int(kept['revision']) + 1)
+            with target(ctx, kept).require_store().tables() as tx:
+                tx.delete('pending_stages', {'origin': ctx.project, 'table_id': table})
         else:
             next_stage = 'plan_review' if action == 'revise' else NEXT[stage]
             change(ctx, table, stage=next_stage, state='running', work_id=None, error=None,

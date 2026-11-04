@@ -156,7 +156,7 @@ def test_handoff_keeps_notes_verbatim_refreshes_sessions_and_resets_votes(script
     assert all(f'Maximum {2 * render.reply_limit(found)} characters' in text
                for _, _, text in calls if '# Carry-forward note' in text)
     editor = next(text for _, _, text in calls if '# Shared continuation' in text)
-    assert 'Original person instructions' in editor and 'RAW HISTORY' in editor
+    assert 'original instructions' in editor and 'RAW HISTORY' in editor
     assert all(note in editor for note in notes.values())
     assert all(row['session'] is None and row['messages'] == [] for row in store.seats(number))
     assert store.submissions(number)[-1]['kind'] == 'handoff'
@@ -188,13 +188,17 @@ def test_handoff_uses_smallest_active_budget_without_jev(scripted, monkeypatch):
     assert held.context_limit(held.row()) == 24000
 
 
-def test_summary_continuation_preserves_identity_history_and_previous_outputs(scripted, monkeypatch):
+@pytest.mark.parametrize('continuation_time', [None, '2000-01-01T00:00:00+00:00'])
+def test_summary_continuation_preserves_identity_history_and_previous_outputs(scripted, monkeypatch,
+                                                                            continuation_time):
     make, replies, _, calls = scripted
     number = make()
     asyncio.run(runner.Table(number).run())
     previous = store.submissions(number)
     outputs = store.staged(number)
     found = store.discussion(number)
+    if continuation_time is not None:  # A clock correction cannot reorder the completed record.
+        monkeypatch.setattr(store, 'stamp', lambda: continuation_time)
     store.change(number, unjudged={'position': 0, 'text': 'Pending paid reply retained after explicit end.', 'use': {}})
     folder, seats = found['folder'], [(row['id'], row['name']) for row in store.seats(number)]
     monkeypatch.setattr(runner, 'spawn', lambda number: None)

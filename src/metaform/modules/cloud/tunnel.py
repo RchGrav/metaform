@@ -5,9 +5,8 @@ from `metaform cloud login`, and serves each request the broker sends down it wi
 serve --http` serves, run here in-process: nothing listens on any address. Each request carries the broker's signed
 assertion of who is calling; it is checked here (oauth.Asserted) against the key set saved at login, this instance's
 resource URL, the account this machine signed in as and the request's body, before the app sees it. The app's own
-scope gate then holds every tool to the scopes the assertion carries and this machine allows (cloud_capability), and
-person-only settings are refused over MCP exactly as for any other client. Each request is written to the audit log
-here (audit.py).
+scope gate then holds every tool to the scopes the assertion carries and this machine allows (cloud_capability). Each
+request is written to the audit log here (audit.py).
 
 The connection renews its token in-band before it expires, answers the broker's pings, and when it drops comes back
 with jittered backoff from one second to a minute; after a broker restart (goaway, or 1012 without one) it waits a

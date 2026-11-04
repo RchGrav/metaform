@@ -19,11 +19,14 @@ round it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import secrets
+import shutil
 import sys
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
@@ -150,7 +153,7 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
                  spend: float | None, reporter: str | None, folder: str | None, chair_key: str | None,
                  topics: list[str] | None = None, host: str | None = None,
                  synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT,
-                 judging: bool | None = None) -> dict[str, Any]:
+                 judging: bool | None = None, session: dict[str, Any] | None = None) -> dict[str, Any]:
     """A table opened and its runner started, for `open` and the web page alike; ToolError says why it cannot be.
     With topics, the three Roundtable 2 topics unless others are given, it runs the Roundtable 2 protocol, its
     opening the Roundtable 2 opening unless one is given; with `topics=[]` it discusses its opening alone."""
@@ -199,7 +202,8 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
     number = store.opened({'subject': render.slug(subject or opening), 'opening': opening, 'folder': where,
                            'chair_key': chair_key, 'chair_token': token, 'reporter': writer,
                            'rounds': 0, 'spend': most_spend if spend is None else spend,
-                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit, judging)
+                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit, judging,
+                          session)
     pid = runner.spawn(number)
     found = store.discussion(number)
     return {'discussion': number, 'chair': token, 'a2a': {'context_id': found['context_id'],
@@ -219,10 +223,10 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
                spend: float | None = None, reporter: str | None = None,
                folder: str | None = None, seat_mcp: list[dict[str, Any]] | None = None,
                ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT,
-               judging: bool | None = None) -> dict[str, Any]:
+               judging: bool | None = None, session: dict[str, Any] | None = None) -> dict[str, Any]:
     """Open a roundtable with its seats, in speaking order; you chair it.
 
-    Seats: acp:<claude|codex>/<model> (the agent on the person's own login, read-only), an OpenRouter model id
+    Seats: acp:<claude|codex|antigravity>/<model> (the agent on the person's own login through ACP), an OpenRouter model id
     such as deepseek/deepseek-v4.1-flash, a2a:<peer name or card URL> for a remote A2A agent the person names, or
     agent:<name> for an outside agent that submits its own turns.
     topics are discussed one at a time, in order, each followed by a synthesis, every seat's ranking and
@@ -237,7 +241,7 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
     seat (a 1-based place in speaking order) gives one to that seat alone, as for a playground body's own endpoint
     and token. Other seats stay text-only. Returns the table's number and the chair token."""
     return await opened(opening, seats, subject, spend, reporter, folder, connection(ctx), topics, host,
-                        synthesizer, seat_mcp, reply_limit, judging)
+                        synthesizer, seat_mcp, reply_limit, judging, session)
 
 
 # The chair's actions on a table already found to be the caller's: the MCP tools check the chair first, the web page
@@ -296,6 +300,8 @@ def advanced(found: dict[str, Any]) -> dict[str, Any]:
 def ended(found: dict[str, Any]) -> dict[str, Any]:
     if found['state'] == 'ended' and found['report'] and not found['report_error']:
         return status_of(found)
+    if found['state'] == 'ended' and str(found['reason'] or '') == said('aborted_by_chair'):
+        return status_of(found)  # an aborted table stays ended: no runner, no report, nothing spent
     reason = found['reason'] if found['state'] == 'ended' else said('ended_by_chair')
     found = store.change(int(found['number']), state='ending', reason=reason, unpaid=False)
     runner.spawn(int(found['number']))
@@ -353,6 +359,43 @@ def reseat(discussion: int, seat: str, chair: str | None = None,
     failures, or out of credits, is asked again on its next turn; one that left, an ACP seat whose session ended,
     starts a fresh session holding the whole discussion."""
     return reseated(chaired(discussion, chair, ctx, 'reseat its seats'), seat)
+
+
+@server.tool(annotations=WRITE)
+def permit(discussion: int, request: str, option: str) -> dict[str, Any]:
+    """Return the person's selected ACP permission option to the waiting agent."""
+    from . import permissions
+    try:
+        return permissions.answer(discussion, request, option)
+    except ValueError as error:
+        raise ToolError(str(error)) from None
+
+
+@server.tool(annotations=WRITE)
+def abort(discussion: int, chair: str | None = None, ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
+    """As the chair, abort a table at once: it is ended now, its runner is stopped and every seat's agent with it,
+    so the turn in flight ends too, no report is written and nothing more is spent."""
+    found = chaired(discussion, chair, ctx, 'abort it')
+    from . import permissions
+    permissions.cancel_all(discussion)
+    if found['state'] != 'ended':
+        found = store.change(int(found['number']), state='ended', reason=said('aborted_by_chair'),
+                             ended=store.stamp(), unpaid=False)
+    runner.stop_runner(int(found['number']))  # hard stop: the turn in flight and every seat end now
+    return {**status_of(found), 'archived': str(put_aside(int(found['number'])))}
+
+
+def put_aside(number: int) -> Path:
+    """An aborted table's files moved out of the engine's live folders into one folder, aborted/<number>, for the
+    caller to archive: its report, export and record, its seats' folders and its logs."""
+    home = config.home()
+    held = home / 'aborted' / str(number)
+    held.mkdir(parents=True, exist_ok=True)
+    for path in [*config.reports().glob(f'{number}-*'), *(home / 'seats').glob(f'{number}-*'),
+                 *(home / 'logs').glob(f'table-{number}.log'), *(home / 'logs').glob(f'table-{number}-*.log')]:
+        with contextlib.suppress(OSError):
+            shutil.move(str(path), str(held / path.name))
+    return held
 
 
 @server.tool(annotations=PAID)

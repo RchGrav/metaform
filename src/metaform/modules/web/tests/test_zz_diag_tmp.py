@@ -5,14 +5,13 @@ from metaform.modules.web.tests.test_web import browser, mapped, opened, started
 
 @pytest.mark.browser
 @pytest.mark.kind("fixture")
-def test_diag(run, web, mapped, browser, monkeypatch, tmp_path):
+def test_diag(run, web, mapped, browser, monkeypatch, tmp_path):  # noqa: F811
     monkeypatch.setenv('FAKE_ACP_LOG', str(tmp_path / 'acp.log'))
     monkeypatch.setenv('FAKE_ACP_MODE', 'hold')
     from metaform import relay
     from metaform.data import Node, Store
     store = Store('proj')
     run('enable', 'dispatch')
-    run('set', '--dispatch-autostart')
     worked = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a quieter tone')
     store.take_work(worked.id, steps=2, by='claude')
     started(run)
@@ -45,4 +44,5 @@ def test_diag(run, web, mapped, browser, monkeypatch, tmp_path):
     import glob
     for path in glob.glob(str(mapped.parent / 'home' / '**' / '*.log'), recursive=True):
         print('LOG', path)
-        print(open(path, encoding='utf-8', errors='replace').read()[-3000:])
+        with open(path, encoding='utf-8', errors='replace') as stream:
+            print(stream.read()[-3000:])

@@ -36,13 +36,14 @@ table, so two runners never drive one table.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, cast
+
+from metaform.data import DataConnection, DataRow, private_database
 
 from . import config
 from .names import names as named
@@ -59,7 +60,8 @@ JSON = frozenset({'messages', 'reply', 'unjudged', 'models', 'extra', 'imported'
                   'continuation', 'handoff'})
 # What an operational event says happened, in `events`: OpenRouter's credits ran out, the table held or resumed, a
 # seat left the table, was degraded or came back, the table's runner stopped
-EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report')
+EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report',
+          'permission')
 SYNTHESIZER, HOST, REPORTER = -1, -2, -3  # the position of a fresh request's seat, never one at the table
 
 SCHEMA = """
@@ -74,7 +76,8 @@ CREATE TABLE IF NOT EXISTS discussions(
   context_id TEXT, task_id TEXT, imported TEXT, snapshot TEXT,
   topic INTEGER NOT NULL DEFAULT 0, stage TEXT, host TEXT, synthesizer TEXT, advance_asked INTEGER NOT NULL DEFAULT 0,
   unpaid INTEGER NOT NULL DEFAULT 0, mechanical TEXT, seat_mcp TEXT,
-  continuation TEXT, handoff TEXT, pass_after INTEGER NOT NULL DEFAULT 0);
+  continuation TEXT, handoff TEXT, pass_after INTEGER NOT NULL DEFAULT 0,
+  phase_after INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS seats(
   discussion INTEGER NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
   agent TEXT, model TEXT, reported TEXT, session TEXT, gone TEXT,
@@ -117,6 +120,14 @@ CREATE TABLE IF NOT EXISTS events(
   discussion INTEGER NOT NULL, number INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, seat TEXT,
   created TEXT NOT NULL,
   PRIMARY KEY (discussion, number));
+CREATE TABLE IF NOT EXISTS profiles(
+  agent TEXT PRIMARY KEY, name TEXT NOT NULL, score REAL, ratings INTEGER NOT NULL DEFAULT 0,
+  sessions INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS scorecards(
+  discussion INTEGER NOT NULL, position INTEGER NOT NULL, text TEXT NOT NULL, created TEXT NOT NULL,
+  PRIMARY KEY (discussion, position));
+CREATE TABLE IF NOT EXISTS session_ratings(
+  discussion INTEGER NOT NULL, agent TEXT NOT NULL, PRIMARY KEY (discussion, agent));
 """
 
 
@@ -133,7 +144,8 @@ ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported
                          ('topic', 'INTEGER NOT NULL DEFAULT 0'), ('stage', 'TEXT'), ('host', 'TEXT'),
                          ('synthesizer', 'TEXT'), ('advance_asked', 'INTEGER NOT NULL DEFAULT 0'),
                          ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT'),
-                         ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0')),
+                         ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0'),
+                         ('phase_after', 'INTEGER NOT NULL DEFAULT 0')),
          'seats': (('extra', 'TEXT'), ('availability', "TEXT NOT NULL DEFAULT 'active'"),
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
@@ -147,7 +159,7 @@ WRITTEN = (('completion_tokens', 'INTEGER'), ('reasoning_tokens', 'INTEGER'), ('
 _migrated: set[str] = set()
 
 
-def migrate(db: sqlite3.Connection, path: str) -> None:
+def migrate(db: DataConnection, path: str) -> None:
     if path in _migrated:
         return
     for table, columns in (*ADDED.items(), ('submissions', WRITTEN), ('stages', WRITTEN)):
@@ -172,7 +184,7 @@ class Lost(Exception):
 _fences: dict[int, str] = {}  # the tables this process runs, by number, with the token it claimed each under
 
 
-def fence(db: sqlite3.Connection, number: int) -> None:
+def fence(db: DataConnection, number: int) -> None:
     """Lost when this process runs the table and another runner's token is on it now; nothing otherwise."""
     token = _fences.get(number)
     if token is not None and db.execute('SELECT 1 FROM discussions WHERE number=? AND runner=?',
@@ -185,12 +197,12 @@ def stamp() -> str:
 
 
 @contextmanager
-def connect() -> Generator[sqlite3.Connection]:
+def connect() -> Generator[DataConnection]:
     """One transaction on the store, committed when the block ends."""
     path = config.home() / 'roundtable.sqlite3'
-    db = sqlite3.connect(path, timeout=30, isolation_level=None)
+    db = private_database(path)
     try:
-        db.row_factory = sqlite3.Row
+        db.row_factory = DataRow
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('PRAGMA busy_timeout=30000')
         db.executescript(SCHEMA)
@@ -206,7 +218,7 @@ def connect() -> Generator[sqlite3.Connection]:
         db.close()
 
 
-def plain(row: sqlite3.Row | None) -> dict[str, Any] | None:
+def plain(row: DataRow | None) -> dict[str, Any] | None:
     if row is None:
         return None
     found = dict(row)
@@ -223,7 +235,7 @@ def stored(value: Any, key: str) -> Any:
     return json.dumps(value) if key in JSON and value is not None else value
 
 
-def update(db: sqlite3.Connection, table: str, where: Mapping[str, Any], changes: Mapping[str, Any]) -> int:
+def update(db: DataConnection, table: str, where: Mapping[str, Any], changes: Mapping[str, Any]) -> int:
     """The rows changed."""
     if not changes:
         return 0
@@ -233,7 +245,7 @@ def update(db: sqlite3.Connection, table: str, where: Mapping[str, Any], changes
                       [stored(value, key) for key, value in changes.items()] + list(where.values())).rowcount
 
 
-def insert(db: sqlite3.Connection, table: str, row: Mapping[str, Any]) -> None:
+def insert(db: DataConnection, table: str, row: Mapping[str, Any]) -> None:
     db.execute(f'INSERT INTO {table} ({", ".join(row)}) VALUES ({", ".join("?" * len(row))})',
                [stored(value, key) for key, value in row.items()])
 
@@ -276,7 +288,7 @@ def topics(number: int) -> list[dict[str, Any]]:
 def staged(number: int, topic: int | None = None) -> list[dict[str, Any]]:
     """What the stages after a topic's discussion gave, in the order they came: every topic's, or one's."""
     with connect() as db:
-        rows = db.execute('SELECT * FROM stages WHERE discussion=? AND (? IS NULL OR topic=?) ORDER BY created, rowid',
+        rows = db.execute('SELECT * FROM stages WHERE discussion=? AND (? IS NULL OR topic=?) ORDER BY rowid',
                           (number, topic, topic))
         return [one for row in rows if (one := plain(row)) is not None]
 
@@ -308,13 +320,18 @@ def submission(number: int, at: int) -> dict[str, Any]:
 # ----------------------------------------------------------------------------------------------- writes
 
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
-           topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None) -> int:
+           topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None,
+           session: Mapping[str, Any] | None = None) -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
 
     names = named(chosen)
     snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
+    if session:  # a session of roundtables: Jev judges only whether a turn keeps to the topic
+        snapshot = {**snapshot, 'session': dict(session)}
+        if snapshot.get('floors'):
+            snapshot['floors'] = {**snapshot['floors'], 'new_context': 0.0}
     with connect() as db:
         number = 1 + int(db.execute('SELECT COALESCE(MAX(number), 0) FROM discussions').fetchone()[0])
         insert(db, 'discussions', {**row, 'snapshot': snapshot, 'number': number, 'state': 'running', 'created': stamp(),
@@ -327,6 +344,71 @@ def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
             insert(db, 'topics', {'discussion': number, 'topic': at, 'name': topic['name'], 'title': topic['title'],
                                   'text': topic['text'], 'opened': stamp() if at == 0 else None})
     return number
+
+
+def add_topic(number: int, text: str) -> int:
+    """A topic added after the open ones, as a session's agents submit the next; its index."""
+    from .stages import title
+    with connect() as db:
+        fence(db, number)
+        at = int(db.execute('SELECT COUNT(*) FROM topics WHERE discussion=?', (number,)).fetchone()[0])
+        insert(db, 'topics', {'discussion': number, 'topic': at, 'name': f'{at + 1:02d}', 'title': title(text),
+                              'text': text, 'opened': None})
+    return at
+
+
+def profile(agent: str) -> dict[str, Any] | None:
+    """An agent's profile across sessions: its rating, the total of the points it was given, and how many."""
+    with connect() as db:
+        return plain(db.execute('SELECT * FROM profiles WHERE agent=?', (agent,)).fetchone())
+
+
+def rated(agent: str, name: str, points: Sequence[float], *, discussion: int) -> dict[str, Any]:
+    """A session's points added once to an agent's profile; unscored until its first rating."""
+    with connect() as db:
+        fence(db, discussion)
+        held = plain(db.execute('SELECT * FROM profiles WHERE agent=?', (agent,)).fetchone())
+        if db.execute('SELECT 1 FROM session_ratings WHERE discussion=? AND agent=?',
+                      (discussion, agent)).fetchone() is not None:
+            assert held is not None
+            return held
+        score = (float(held['score']) if held and held['score'] is not None else 0.0) + sum(points)
+        row = {'agent': agent, 'name': name,
+               'score': score if points or (held and held['score'] is not None) else None,
+               'ratings': (int(held['ratings']) if held else 0) + len(points),
+               'sessions': (int(held['sessions']) if held else 0) + 1, 'updated': stamp()}
+        db.execute('INSERT OR REPLACE INTO profiles VALUES (:agent, :name, :score, :ratings, :sessions, :updated)', row)
+        db.execute('INSERT INTO session_ratings VALUES (?, ?)', (discussion, agent))
+    return row
+
+
+def scorecards(number: int) -> list[dict[str, Any]]:
+    """Private scorecards, kept outside the shared transcript and exported discussion."""
+    with connect() as db:
+        return [dict(one) for one in db.execute('SELECT * FROM scorecards WHERE discussion=? ORDER BY position',
+                                                (number,)).fetchall()]
+
+
+def scorecard_record(number: int, position: int, text: str) -> None:
+    with connect() as db:
+        fence(db, number)
+        db.execute('INSERT OR REPLACE INTO scorecards VALUES (?, ?, ?, ?)', (number, position, text, stamp()))
+
+
+def phase(number: int, stage: str, text: str) -> None:
+    """Start a session phase and record its opening message in one fenced transaction."""
+    with connect() as db:
+        fence(db, number)
+        found = plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
+        if found is None:
+            raise Missing(f'No roundtable {number}.')
+        latest = int(db.execute('SELECT COALESCE(MAX(number), 0) + 1 FROM submissions WHERE discussion=?',
+                                (number,)).fetchone()[0])
+        insert(db, 'submissions', {'discussion': number, 'number': latest, 'round': found['round'],
+                                   'position': None, 'kind': 'chair', 'seat': 'chair', 'name': None, 'text': text,
+                                   'topic': found['topic'], 'created': stamp()})
+        update(db, 'discussions', {'number': number},
+               {'stage': stage, 'position': 0, 'phase_after': latest, 'pass_after': latest})
 
 
 def imported(row: Mapping[str, Any], seated: list[dict[str, Any]], rows: list[dict[str, Any]]) -> int:
@@ -406,7 +488,7 @@ def seat_change(number: int, position: int, **changes: Any) -> None:
         update(db, 'seats', {'discussion': number, 'position': position}, changes)
 
 
-def judge(db: sqlite3.Connection, number: int, judgment: Mapping[str, Any]) -> None:
+def judge(db: DataConnection, number: int, judgment: Mapping[str, Any]) -> None:
     """One judgment written, and its cost added to what the table has spent, in the caller's transaction."""
     insert(db, 'judgments', {**judgment, 'discussion': number, 'created': stamp()})
     if float(judgment.get('cost') or 0) > 0:
@@ -537,7 +619,7 @@ def install_handoff(number: int, continuation: Mapping[str, Any], round_number: 
         _reset_context(db, number, {**continuation, 'through': latest}, None)
 
 
-def _reset_context(db: sqlite3.Connection, number: int, continuation: Mapping[str, Any], topic: int | None) -> None:
+def _reset_context(db: DataConnection, number: int, continuation: Mapping[str, Any], topic: int | None) -> None:
     fence(db, number)
     through = int(continuation['through'])
     update(db, 'discussions', {'number': number},

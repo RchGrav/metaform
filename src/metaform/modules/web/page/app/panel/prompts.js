@@ -32,7 +32,9 @@ export async function renderPrompt(name = P.name, number = P.number) {
       + 'sent, is off for this project, and the prompt store holds none yet.';
     return;
   }
-  const chosen = listed.includes(name) ? name : listed.includes('dispatch:system') ? 'dispatch:system' : listed[0];
+  // the system agent's prompt opens first: the tasks module's user agent prompt, by its store name or its short one
+  const chosen = listed.includes(name) ? name
+    : ['prompt.tasks:user_agent.txt', 'tasks:user_agent.txt'].find(one => listed.includes(one)) || listed[0];
   const read = await getJson(`/api/prompt-versions?name=${encodeURIComponent(chosen)}`);
   if (asked !== P.asked) return;
   P.name = chosen;

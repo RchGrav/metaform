@@ -128,8 +128,9 @@ def folder_of(given: dict[str, Any]) -> Path:
 
 def identity(given: dict[str, Any]) -> dict[str, str]:
     """The METAFORM_* names of the thread's agent session, as its runner gave them to its own MCP server, so a view's
-    call is made as that agent's would be: its runner's id, its ticket and its role. With no thread, none: the view
-    then reads as the person's page does. A session that is not the ticket's is refused."""
+    call is made as that agent's would be: its runner's id, its ticket, and its task and the task's name when it runs
+    one. With no thread, none: the view then reads as the person's page does. A session that is not the ticket's is
+    refused."""
     work, session = str(given.get('work_id') or ''), str(given.get('session') or '')
     if not work:
         return {}
@@ -141,11 +142,11 @@ def identity(given: dict[str, Any]) -> dict[str, str]:
     if row is None:
         raise Stop('That session is not one of this ticket\'s.', f'metaform dispatch sessions id={work}')
     state = cast(dict[str, Any], cast(dict[str, Any], found.get('states') or {}).get(str(row['session_id'])) or {})
-    about = state.get('about')
-    # the role its runner gave it: an intake, the person's system agent, a talk, or else a worker, whose authority
-    # the person may hold back (roles_without_authority), so a view of its thread is held back alike
-    role = 'intake' if work.startswith('intake-') else 'system' if about == 'system' else 'talk' if about else 'worker'
-    return {'METAFORM_ROLE': role, 'METAFORM_WORK': work,
+    task = cast(dict[str, Any], state.get('task') or {})
+    # a session no task names carries its ticket and runner alone: its first turn was its instructions
+    return {**({'METAFORM_TASK': str(task['task_id'])} if task.get('task_id') else {}),
+            **({'METAFORM_TASK_NAME': str(task['name'])} if task.get('task_id') and task.get('name') else {}),
+            'METAFORM_WORK': work,
             **({'METAFORM_SESSION': str(row['runner'])} if row.get('runner') else {})}
 
 

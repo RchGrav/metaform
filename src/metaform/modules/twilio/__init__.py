@@ -63,7 +63,6 @@ REMOTE_AGENT = False  # a bridge for the person's own phone; nothing an agent on
 PORT = 7441
 E164 = re.compile(r'^\+[1-9][0-9]{6,14}$')
 PIN = re.compile(r'^[0-9]{4,12}$')
-AGENT_SESSION = ('METAFORM_SESSION', 'METAFORM_ROLE', 'METAFORM_WORK')  # what dispatch's runner sets on its agents
 HERE = resources.files(__name__)
 
 
@@ -114,7 +113,7 @@ def _check_certificate(value: Any, folder: Path) -> list[str] | None:
 
 # Who may call, who is called, and where Twilio reaches the bridge decide who talks with the person's agent and who
 # pays for calls, so each is the person's alone: an agent over MCP cannot change them, CLI-011.
-settings.boolean('twilio_enabled', False, scope='global', person_only=True, label='Phone',
+settings.boolean('twilio_enabled', False, scope='global', label='Phone',
                  help='Answer your Twilio number with your system agent, and call or text you as twilio_call_when and '
                       'twilio_text_when say. Off: nothing is served, called or texted.',
                  details='On, metaform web start also starts the bridge, and metaform twilio serve runs it on its own. '
@@ -122,16 +121,16 @@ settings.boolean('twilio_enabled', False, scope='global', person_only=True, labe
                          'and TWILIO_API_SECRET for the calls Metaform makes) in the environment of the process that '
                          'runs the bridge; they are never stored or shown. metaform twilio status says what is missing.',
                  heading='Your phone', essential=90)
-settings.text('twilio_number', '', scope='global', person_only=True, check=_check_number,
+settings.text('twilio_number', '', scope='global', check=_check_number,
               help='Your Twilio phone number, in E.164 form, such as +15551234567: it answers you and calls you.',
               label='Twilio number', heading='Your phone', essential=100)
-settings.items('twilio_owner_numbers', [], scope='global', person_only=True, check=_check_numbers,
+settings.items('twilio_owner_numbers', [], scope='global', check=_check_numbers,
                help='Your own phone numbers, in E.164 form: the only callers answered and the only numbers called or '
                     'texted.',
                details='A call from any other number hears a short refusal and is hung up; a text from one is ignored. '
                        'Calls and texts Metaform starts go to the first number.',
                label='Your own numbers', heading='Your phone')
-settings.text('twilio_public_url', '', scope='global', person_only=True, check=_check_public,
+settings.text('twilio_public_url', '', scope='global', check=_check_public,
               help='The public https address Twilio reaches the bridge at: your Metaform Node, your relay name, or a '
                    'tunnel of your own.',
               details='Such as https://alice.metaform.ing. Twilio posts to <address>/phone/voice and /phone/sms and opens '
@@ -140,21 +139,21 @@ settings.text('twilio_public_url', '', scope='global', person_only=True, check=_
               label='Public address', heading='Your phone')
 # A direct route: the person's router or firewall forwards a port straight to the bridge, with no Node or tunnel. Who
 # can reach the bridge and with what certificate is the person's alone, as the public address is.
-settings.text('twilio_bind', '127.0.0.1', scope='global', person_only=True, check=_check_bind,
+settings.text('twilio_bind', '127.0.0.1', scope='global', check=_check_bind,
               help='The address the bridge listens on, port 7441: 127.0.0.1 behind a Node or tunnel; this machine\'s '
                    'own address, or 0.0.0.0, for a port your router or firewall forwards to it.',
               details='Off loopback, Twilio reaches the bridge directly, so it serves TLS itself from twilio_certificate, '
                       'or you leave that empty behind your own TLS terminator. Every webhook must still carry Twilio\'s '
                       'signature. metaform help twilio says what to forward.',
               label='Listen on', heading='Your phone', category='advanced')
-settings.text('twilio_certificate', '', scope='global', person_only=True, check=_check_certificate,
+settings.text('twilio_certificate', '', scope='global', check=_check_certificate,
               help='A PEM file with the certificate chain and its private key, for the bridge to serve https itself on '
                    'a direct route; empty serves plain http behind your own TLS terminator.',
               details='One file, as Python\'s ssl.load_cert_chain reads it: the certificate, any intermediates, and the '
                       'key, such as Let\'s Encrypt\'s fullchain.pem and privkey.pem joined. Twilio refuses a '
                       'self-signed certificate.',
               label='TLS certificate', heading='Your phone', category='advanced')
-settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='global', person_only=True,
+settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='global',
                 label='Caller proof',
                 help='What a call or text from your number must show beyond its caller ID, which can be faked: '
                      'attested-or-pin, pin, attested, or caller-id.',
@@ -165,7 +164,7 @@ settings.choice('twilio_caller_proof', list(PROOFS), 'attested-or-pin', scope='g
                         'has no attestation, so under any choice but caller-id it starts with the PIN, which is taken '
                         'off before your agent reads it; without a PIN, texts are ignored.',
                 heading='Your phone')
-settings.items('twilio_call_when', [], scope='global', person_only=True, choices=notify.CHOICES,
+settings.items('twilio_call_when', [], scope='global', choices=notify.CHOICES,
                check=lambda value, folder: notify.check(listed(value), 'twilio_call_when'),  # pyright: ignore[reportUnknownLambdaType]
                help='What calls you: waiting-for-you, stuck, budget, intake-finished, or one signal of those groups. None '
                     'by default.',
@@ -173,11 +172,11 @@ settings.items('twilio_call_when', [], scope='global', person_only=True, choices
                        'ticket open. stuck: an agent spins, falls silent or fails the same way. Calls are at least '
                        'twilio_call_gap_minutes apart, and the same signal on the same ticket calls once an hour.',
                label='Call you when', heading='Calls and texts')
-settings.items('twilio_text_when', [], scope='global', person_only=True, choices=notify.CHOICES,
+settings.items('twilio_text_when', [], scope='global', choices=notify.CHOICES,
                check=lambda value, folder: notify.check(listed(value), 'twilio_text_when'),  # pyright: ignore[reportUnknownLambdaType]
                help='What texts you, from the same list as twilio_call_when. None by default.',
                label='Text you when', heading='Calls and texts')
-settings.number('twilio_call_gap_minutes', 15, min=0, max=1440, scope='global', person_only=True,
+settings.number('twilio_call_gap_minutes', 15, min=0, max=1440, scope='global',
                 help='The least time between calls Metaform places on its own, in minutes; your own phone call never '
                      'waits.',
                 label='Least time between calls', heading='Calls and texts')
@@ -189,7 +188,7 @@ settings.text('twilio_voice', '', scope='global',
                       'Empty, the phone speaks in the voice elevenlabs_voices gives your mascot character; metaform '
                       'elevenlabs voices lists your account\'s voices.',
               label='Voice on the phone', heading='On the line')
-settings.choice('twilio_hearing', ['server', 'elevenlabs'], 'server', scope='global', person_only=True,
+settings.choice('twilio_hearing', ['server', 'elevenlabs'], 'server', scope='global',
                 help='Who hears you on the phone: server (Whisper on this machine) or elevenlabs (Scribe).',
                 details='server needs the voice extra and a downloaded Whisper model; elevenlabs SENDS THE CALL AUDIO to '
                         'ElevenLabs. Twilio carries the call either way.',
@@ -200,7 +199,7 @@ def _projects(ctx: Context) -> list[str]:
 
 
 settings.choice('twilio_project', _projects, '',
-                scope='global', person_only=True,
+                scope='global',
                 help="The project whose system agent answers the phone; empty is the project of the folder it runs in.",
                 label='Project the phone works on', category='advanced')
 
@@ -302,15 +301,6 @@ def pin() -> str | None:
     """The PIN from the environment, when it is set and is 4 to 12 digits; never shown."""
     found = os.environ.get(PIN_NAME, '').strip()
     return found if PIN.match(found) else None
-
-
-def persons_own(ctx: Context, what: str) -> None:
-    """Stop when an agent's session runs this: placing calls, sending texts and running the bridge are the person's.
-    The runner names its agent's session in the environment; this is a guard against an agent's mistakes, not a
-    boundary, since an agent with a shell runs as the person's account and can change its own environment."""
-    if any(os.environ.get(name) for name in AGENT_SESSION):
-        raise Stop(f'metaform twilio {what} is the person\'s own, never run from an agent\'s session.',
-                   'Say what you need in your ticket\'s note.')
 
 
 def problems(ctx: Context, project: str | None = None) -> list[tuple[str, str]]:
@@ -521,7 +511,6 @@ def _certificate(ctx: Context) -> str | None:
 def serve(ctx: Context) -> dict[str, Any]:
     """Run the bridge until stopped: the ASGI app on twilio_bind, 127.0.0.1 unless the person chose a direct route,
     with TLS from twilio_certificate when it is set; the signals it calls and texts about heard as they are raised."""
-    persons_own(ctx, 'serve')
     found = problems(ctx)
     if found:
         raise Stop(found[0][0], found[0][1])
@@ -733,7 +722,6 @@ def _owner(ctx: Context) -> str:
 
 
 def call(ctx: Context) -> dict[str, Any]:
-    persons_own(ctx, 'call')
     if not ctx.setting('twilio_enabled'):
         raise Stop('The phone is off.', 'metaform set --twilio-enabled')
     reason = ' '.join(listed(ctx.nouns.get('reason')))
@@ -741,7 +729,6 @@ def call(ctx: Context) -> dict[str, Any]:
 
 
 def text(ctx: Context) -> dict[str, Any]:
-    persons_own(ctx, 'text')
     if not ctx.setting('twilio_enabled'):
         raise Stop('The phone is off.', 'metaform set --twilio-enabled')
     body = ' '.join(listed(ctx.nouns['text']))
@@ -767,21 +754,17 @@ async def test(ctx: Context) -> dict[str, Any]:
 
 def check(ctx: Context) -> dict[str, Any]:
     """Where Twilio sends the number's calls and texts against where the bridge answers; with fix=true, the number
-    pointed at the bridge, the person's own step."""
+    pointed at the bridge."""
     fix = bool(ctx.nouns.get('fix'))
-    if fix:
-        if ctx.surface == 'mcp':  # changing where the number sends calls is the person's, as a person-only setting is
-            raise Stop("Pointing the number at the bridge changes where Twilio sends the person's calls, so it is the "
-                       "person's own step.", 'ask the person to run metaform twilio check fix=true')
-        persons_own(ctx, 'check fix=true')
     return checked(ctx, fix=fix, asked=True)
 
 
 def helps(folder: Path) -> bool:
     """Whether twilio_status and twilio_check are listed to an agent here: only once the person has begun setting up
-    the phone, and only to the person's own AI tool or their system agent, who troubleshoots it with them; every other
+    the phone, and only to the person's own AI tool or their system agent, the `user_agent` task, who troubleshoots it
+    with them; every other
     agent's context stays without them. Reads settings and the environment, never the network."""
-    if os.environ.get('METAFORM_ROLE') not in (None, '', 'none', 'system'):
+    if os.environ.get('METAFORM_SESSION') and os.environ.get('METAFORM_TASK_NAME') != 'user_agent':
         return False
     if settings.value('twilio_number', folder) or settings.value('twilio_public_url', folder):
         return True

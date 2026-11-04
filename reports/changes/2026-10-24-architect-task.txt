@@ -1,0 +1,37 @@
+Architect task
+
+Repository: /home/rich/metaform
+Branch: remove/unapproved-procedural-roles
+Starting commit: 85fccc18d0e970432ec3af68d5602b9e39bd3960
+
+Installed
+- Named task: architect.
+- Canonical prompt: src/metaform/modules/tasks/resources/architect.txt.
+- Prompt text is the user's supplied Architect prompt, unchanged. Delivery binds {project}.
+- SHA-256: 7ff67eb19829ce5f3bf92ecc9347a4fe6bcca7bc6afbb9098e1836d6973391cc.
+- Existing task discovery, read and assignment paths serve it. No role registration or privilege was added.
+
+Verification
+18 assigned-task tests passed in 10.41s. Coverage includes canonical source/rendered fingerprints and assignment of the architect's exact instructions with the original input.
+Ruff passed on the changed Python files. No live model or service was started.
+
+Specification-delivery requirements (pending implementation)
+- Persist the completed specification and give it a stable reference. Later chat requests must retrieve it after the completion window closes.
+- When Full Auto is disabled, show a specification-completion window with the build name, download link, absolute saved path, specification reference and an example chat request using that reference. This supports document review and deferred ticket creation.
+- Provide Create tickets and Start building controls. Create the tickets on a new board named for what is being built.
+- With Start building unchecked, preserve both the primary board and the Full Auto value. Ticket preparation must not redirect current execution or change its automation setting.
+- With Start building checked, finish writing all tickets, then make the new board primary and enable Full Auto. Start building against the completed ticket set.
+- Leave the saved specification available when the window closes. Support requesting ticket creation later through chat using the displayed reference.
+- With Full Auto enabled at specification completion, forward the specification to the decomposer automatically. Automatic activation of the resulting board still requires a design decision.
+
+Storage proposal
+Use <project>/specifications/<build-name>.md for the canonical Markdown file. The existing reference reader scans specifications/*.md. Finalize the reference format and collision/revision handling before implementation.
+
+Unresolved design decisions
+1. Decide whether the already-enabled Full Auto path also activates the new board and starts building, or preserves the current primary board.
+2. Receive the forthcoming ticket-making prompt and establish its task name and relationship to the provisional ticket_creation draft.
+
+Current status
+The completion window, specification registry, decomposer handoff and restored Full Auto control are not implemented. The registered architect prompt is unchanged. Preserve unrelated pre-existing edits.
+
+Continuation: docs/reviews/2026-10-24-task-skill-iceblock-handoff.txt.

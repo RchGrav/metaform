@@ -27,6 +27,7 @@ def test_construction_guide_preserves_served_grammar_and_original_xml_examples(p
         assert axiom[start:axiom.index(following, start)].strip() in actual['text']
     start = xml.index('<namespace_rules>')
     assert xml[start:xml.index('</namespace_rules>', start) + len('</namespace_rules>')] in actual['text']
+    assert 'ASD-STE100' in actual['text']
     for declaration in ('{Roots}', '{Roles}', '{Purpose_Types}', '{IFD}'):
         assert next(line for line in axiom.splitlines() if line.lstrip().startswith(declaration)) in actual['text']
     for term in ('OP', 'EF', 'RE', 'PE', 'CQU'):

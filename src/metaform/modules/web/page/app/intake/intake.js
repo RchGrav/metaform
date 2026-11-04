@@ -22,14 +22,14 @@ import {LIVE, following, recordingNow} from '/page/app/live/stream.js';
  * An agent the person chooses runs the project's intake and records the map as it goes; the page follows the intake
  * being recorded, so the map grows here. A project with no map offers it first; Administration offers it again, to map
  * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
- * Its work id, `intake-…`, is never a ticket. */
+ * Its named task has a `task-…` work id; historical intakes used `intake-…`. Neither is a ticket. */
 export const INTAKE = {work: null, session: null, agent: null, waiting: 0, closed: new Set(), resume: false,
   map: null};
 // closed: the runs whose bar the person closed with its ×
 /* An intake agent under way: starting, launched and its session not made yet, or running. The server's one record of
  * it is read with the sessions, `dispatch sessions` listing a launch as starting, so every tab and every surface agrees
  * whichever surface launched it, UX review round 1 (2026-10-17) cross-surface F1. */
-const underWay = one => isIntake(one.work_id) && (one.state === 'running' || one.state === 'starting');
+const underWay = one => isIntake(one.work_id, one) && (one.state === 'running' || one.state === 'starting');
 export const intakeRunning = () => Boolean(INTAKE.session && underWay(INTAKE.session));
 /* The intake agent of this project, as the sessions read says it: one starting or running. */
 export async function readIntake(signals = []) {
@@ -40,7 +40,7 @@ export async function readIntake(signals = []) {
   INTAKE.agent = session?.agent || null;
   INTAKE.waiting = session ? signals.filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false
     && one.work_id === session.work_id).length : 0;
-  // what the intake's guard and its runner say of it, such as no first record yet
+  // what the intake's runner says of it
   INTAKE.signals = session ? signals.filter(one => one.active !== false && one.work_id === session.work_id
     && !WAITS_ON_PERSON.includes(one.signal)) : [];
   drawIntake();
@@ -49,10 +49,7 @@ export async function readIntake(signals = []) {
 }
 /* The signals an intake's session raises, said in words on its bar: [words, status class, why]. A signal not named here
  * is said by its own name. */
-const NO_RECORD = 'The intake has read for a while and recorded nothing: open its chat to see what it is doing.';
 const INTAKE_SIGNALS = {
-  'no-first-record': ['No record yet', 'input_required', NO_RECORD],
-  'first-record-late': ['No record yet', 'input_required', NO_RECORD],
   silent: ['Silent', 'waiting', 'It has said nothing for a while.'],
   'spinning-calls': ['Repeating calls', 'failed', 'It makes the same calls again and again.'],
   'spinning-time': ['Long turn', 'waiting', 'Its turn has run long.'],
@@ -73,15 +70,11 @@ export function drawIntake() {
   drawLeft();
   if (bar.hidden) return;
   const parts = S.elements.size;
-  // the intake guard's page side: no record yet is said with how long the agent has been at it, from its session's
-  // start, said again at each change the page hears, never by a timer of its own
-  // the runner's own word on it first, its `intake` state, M04: the phase and when it began
-  const guard = (D.states || {})[INTAKE.session?.session_id]?.intake || null;
-  const since = guard?.began || INTAKE.session?.started || null;
-  const waitingFirst = guard ? guard.phase === 'waiting for first record' : INTAKE.session?.activity === 'working';
-  const firstWait = running && !recording && !INTAKE.waiting && since && waitingFirst && !parts
-    ? `Waiting for the first record · ${ago(since) === 'now' ? 'just started' : `${ago(since)} since it started`}`
-      + (guard?.steered ? ' · told to record' : '') : null;
+  // no record yet is said with how long the agent has been at it, from its session's start, said again at each change
+  // the page hears, never by a timer of its own
+  const since = INTAKE.session?.started || null;
+  const firstWait = running && !recording && !INTAKE.waiting && since && INTAKE.session?.activity === 'working' && !parts
+    ? `Waiting for the first record · ${ago(since) === 'now' ? 'just started' : `${ago(since)} since it started`}` : null;
   // a session made and between turns is idle, not starting: its agent stays to talk after a turn, so an intake agent
   // that has stopped working, or was used for something else, would otherwise read Starting for as long as it runs
   const activity = INTAKE.session?.activity;
@@ -138,9 +131,8 @@ export async function stopIntake() {
   const stopped = await wrote('/api/dispatch-stop', {work_id: work, ...(session ? {session} : {})});
   if (stopped) {
     if (session) rememberStop(session, new Date().toISOString());
-    if (stopped.autostart === false) $('#autostartAgents').checked = false;  // dispatch's `paused`
     toast(stopped.gone ? 'The intake agent had ended already; what it recorded is kept.'
-      : `The intake agent was stopped.${stopped.autostart === false ? ` ${stopped.notice}` : ''}`);
+      : `The intake agent was stopped.`);
   }
   // redrawn from the server's record after any answer, a refusal too, so the bar never stays on an agent that is gone
   await renderAgents();
@@ -200,7 +192,7 @@ async function startIntake() {
 function showIntakeRefusal(body) {
   const box = $('#intake .failed'), next = body?.next || '';
   const acts = [];
-  const running = /dispatch stop (intake-[0-9a-f]+)/.exec(next);
+  const running = /dispatch stop ((?:intake|task)-[0-9a-f]+)/.exec(next);
   if (/resume=true/.test(next)) {
     acts.push(h('button', {class: 'btn sm', type: 'button', onclick: () => takeOver(box)}, 'Take it over'));
   }

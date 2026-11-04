@@ -16,7 +16,6 @@ owner then reads only the tasks it runs, `ended`. The task ends only when its wo
 and completed with its result if it finished first, as the extension's cooperative cancellation allows. Each task is
 kept for `TTL_MS` from its creation, the `ttlMs` every task states, and removed after that whenever a task is made.
 
-Workflow runs are tasks too, kept by the workflow module in its own run records, BASE-051; nothing of them is here.
 """
 from __future__ import annotations
 

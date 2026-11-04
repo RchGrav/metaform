@@ -18,7 +18,7 @@ REMOTE_AGENT = False  # it sets up a repository of the person's own modules, whi
 
 # Which secret CI hands its agent is the person's to choose, never an agent's over MCP, CLI-011. The agent itself is
 # the dispatch default agent, dispatch_agent, review.agent_of: settings cleanup 2026-10-15 merged fork_agent into it.
-settings.text('fork_secret', 'OPENAI_API_KEY', person_only=True,
+settings.text('fork_secret', 'OPENAI_API_KEY',
               help='The CI environment variable holding the selected agent\'s API key.',
               details='The workflow passes the repository secret to the agent. Its value is never put in a ticket.')
 

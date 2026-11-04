@@ -137,7 +137,7 @@ class Page(NamedTuple, Generic[T]):
 class Element(Record):
     """An element is its address, name_length, name and role, STORE-009. `short_name` is its address read backward
     through name_length, MAP-012; `name` is the canonical name the project uses for it, a name goes
-    anywhere there is a namespace and name length."""
+    anywhere there is a namespace and name length. Block assignment and explicit containment are optional metadata."""
     id: str
     address: str
     layer_id: str
@@ -155,6 +155,7 @@ class Element(Record):
     name: str | None = None  # the canonical name the project uses for it
     within: str | None = None  # the address of the element that holds it, when the structure says so
     note: str | None = None  # what the recorder noted about it, kept on the element itself
+    block: str | None = None  # the block identifier assigned by the intake
 
 
 @dataclass(frozen=True)

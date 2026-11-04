@@ -17,7 +17,7 @@
 <instructions>fork is active. When a user wants a feature Metaform does not have, explain that an agent can build it as a module in the user's own repository and offer to set that repository up with metaform fork init. User features belong in modules over the released chassis. A user's agent never changes the chassis. Every public base service available to shipped modules is available to user modules. Details: metaform help fork.</instructions>
 <!-- The review task for one module before a wheel is built: check it against the quality standard, unchanged, and
      close the ticket with a JSON verdict that CI reads.
-     Written as the ticket's task by fork wheel, one ticket per module, and read by the worker dispatch starts on it.
+     Written as the ticket's task by fork wheel, one ticket per module, and read by the agent dispatch starts on it.
      Must not be deleted: the code requires it. Sent only when fork wheel runs, which needs dispatch on. -->
 <muster>Review the module at <module/> against QUAL-001 using the standard below. This is a review of the existing module, with its behavior tests and lifecycle. Read its source and tests. Leave the source unchanged. The CI check evidence is: <checks/>.
 
@@ -26,7 +26,7 @@
 The fork CI builds a wheel from modules that meet this standard. Determine whether this module meets it and give the concrete reason, including unmet items. A module with no behavior tests is left out. Complete this ticket with resolution containing one JSON object with a boolean passed and a nonempty reason. Example shape: {&quot;passed&quot;: false, &quot;reason&quot;: &quot;The module has no behavior tests.&quot;}. The CI reads this verdict from the completed ticket. Never put credentials in the ticket or output.</muster>
 <!-- The upkeep task for one module: bring it up to the released template version and open a pull request.
      Written as the ticket's task by fork upkeep for each module whose template version is behind, and read by the
-     worker dispatch starts on it, in the ticket's own worktree.
+     agent dispatch starts on it, in the ticket's own worktree.
      Must not be deleted: the code requires it. Sent only when fork upkeep runs, which needs dispatch on. -->
 <upkeep>Maintain the user's module at <module/>. Its README Template version is <current/>. Bring it up to date with the released template version <latest/> by applying the relevant contract changes below, preserving the module's functionality. Use the public chassis base. Leave the chassis unchanged.
 

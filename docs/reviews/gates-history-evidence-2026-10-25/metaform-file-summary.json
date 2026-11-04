@@ -1,0 +1,71 @@
+{
+  "scope": "/home/rich/metaform",
+  "word": "gates",
+  "match": "case-insensitive standalone word, rg -i -w, UTF-8 byte offsets",
+  "counted_at": "2026-10-26T01:07:03.833799+00:00",
+  "counts": {
+    "main_tree_matching_lines": 1077,
+    "main_tree_word_occurrences": 1359,
+    "worktree_copies_matching_lines": 105061,
+    "worktree_copies_word_occurrences": 150649
+  },
+  "matching_file_counts": {
+    "main_tree": 409,
+    "worktree_copies": 29240
+  },
+  "occurrences_by_category": {
+    "main_tree:generated_gate_report": 30,
+    "main_tree:project_source_docs_tests_instructions": 253,
+    "main_tree:memory_export_not_user_transcript": 6,
+    "main_tree:session_or_conversation_material": 204,
+    "main_tree:generated_evidence_or_archived_project_copy": 591,
+    "main_tree:generated_project_copy": 275,
+    "worktree_copies:project_source_docs_tests_instructions": 41319,
+    "worktree_copies:session_or_conversation_material": 51988,
+    "worktree_copies:memory_export_not_user_transcript": 1626,
+    "worktree_copies:generated_evidence_or_archived_project_copy": 55672,
+    "worktree_copies:generated_project_copy": 44
+  },
+  "unique_bounded_contexts": 1966,
+  "unread_match_files": [],
+  "files": {
+    "primary": "/tmp/gates-project-metaform.jsonl",
+    "nested_worktree_occurrences_gzip": "/tmp/gates-project-metaform-worktrees.jsonl.gz",
+    "deduplicated_bounded_contexts_gzip": "/tmp/gates-project-metaform-contexts.jsonl.gz",
+    "git_exact_word_history": "/tmp/gates-project-git-history.jsonl",
+    "git_concrete_policy_history": "/tmp/gates-project-concrete-history.json"
+  },
+  "exclusions": [
+    "All .git internal trees",
+    "Dependency/virtualenv directories: .venv, venv, node_modules,site-packages,vendor,.uv-cache,.cache/uv",
+    "__pycache__ compiled caches",
+    "Binary files per rg auto detection (images,PDFs,SQLite databases,compressed archives etc.)",
+    "Symlink directory targets not followed",
+    "Contents inside ZIP/archive files not recursively searched; archives are binary containers"
+  ],
+  "interpretation": [
+    "Nested .worktrees are counted separately,never as main-tree observations.",
+    "Source authors,commit authors,memory-note authors and file owners are not treated as speakers in user chat.",
+    "Matched lines and bounded +-2-line context preserve the word evidence; long lines truncated with full line lengths and exact per-match byte offsets.",
+    "Generated gate reviews include assistant output and are distinct from operational source and genuine conversation turns."
+  ],
+  "snapshot_head": "a15adbb0ea9c4477b91ebdfc8540a63902e0cc36",
+  "nested_worktree_prefixes": [
+    ".worktrees/",
+    ".claude/worktrees/"
+  ],
+  "scanned_line_context_mismatches": [
+    {
+      "path": "/home/rich/metaform/.worktrees/68b181f4aa06/docs/roundtables/1-embodied-ai-in-a-3d-physics/raw/dispatch.lines.json",
+      "line": 7
+    }
+  ],
+  "mismatch_interpretation": "One nested worktree record context differed from the original rg match line; original line hash,word count and offsets retained. This is not proof of a semantic source change. No main-tree mismatches.",
+  "verification": {
+    "primary_counts_recounted": 1359,
+    "nested_worktree_counts_recounted": 150649,
+    "all_context_refs_present": true,
+    "all_occurrence_offset_counts_match": true,
+    "main_tree_has_no_worktree_prefixes": true
+  }
+}

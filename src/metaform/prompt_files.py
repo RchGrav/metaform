@@ -265,7 +265,7 @@ def merge_selected_updates(name: str, *, retry: bool = False) -> dict[str, Any] 
 
     def transform(version: PromptVersion) -> tuple[str, list[str]]:
         # Older prompt review saved whole skill files with format=xml, though their consumers read them literally.
-        # Follow that actual source contract instead of parsing Axiom or legacy library sections as XML.
+        # Follow that actual source contract instead of parsing legacy library sections as XML.
         xml = version.format == 'xml' and not name.startswith('prompt.skill.') and not update.get('source_component')
         if xml:
             try:
@@ -599,7 +599,7 @@ def readable(version: PromptVersion) -> str:
 def shipped(identifier: str, name: str) -> str | None:
     """The text the loaded module `identifier`, `chassis` or `skills` (the skill registry's) ships for its prompt
     `name` as a version holds it: an element of its prompts.xml, or a file under its resources/ for a name with a dot,
-    such as intake.axiom. None when the module is not loaded or ships no such prompt."""
+    such as intake.xml. None when the module is not loaded or ships no such prompt."""
     folder = _folder(identifier)
     if folder is None:
         return None
@@ -638,6 +638,9 @@ def _noted(sent: Sent) -> None:
 def component(name: str, text: str, *, version_id: str | None = None,
               bindings: dict[str, str] | None = None) -> dict[str, Any]:
     """One exact rendered context component; constructing it establishes no delivery."""
+    for marker, value in (bindings or {}).items():
+        if marker.startswith('{') and marker.endswith('}'):
+            text = text.replace(marker, value)
     return {'name': name, 'text': text, 'actual_version_id': version_id,
             'selected_version_id': version_id, 'number': None, 'origin': 'generated',
             'rendered_fingerprint': hashlib.sha256(text.encode('utf-8')).hexdigest(),
@@ -726,7 +729,7 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
     place. A prompt on trial is read first and never stored. A missing element is a defect, as for `required`. An edit
     that is not well formed is not sent: the shipped text is, and the reason goes to stderr, for `agents show` names
     it on the role."""
-    resolved = _resolved(folder, name, **fills)
+    resolved = resolve(address(owner(folder), name), **fills) if '.' in name else _resolved(folder, name, **fills)
     for problem in [*resolved['problems'], *resolved.get('notices', [])]:
         sys.stderr.write(str(problem) + '\n')
     _noted(Sent(resolved['name'], resolved['number'], resolved['origin'], resolved['actual_version_id'],
@@ -735,15 +738,16 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
     return str(resolved['text'])
 
 
-def resolve_text(name: str, text: str) -> dict[str, Any]:
+def resolve_text(name: str, text: str, **fills: str) -> dict[str, Any]:
     """Resolve a whole authored file's selected version without claiming it was delivered to any agent.
 
     Such files are read literally, including historical skill edits labeled XML by an older review surface.
-    Deployment and direct serving therefore use the same text and exact selected version.
+    Deployment and direct serving therefore use the same text and exact selected version. Optional bindings replace
+    only explicit literal markers through the shared component renderer.
     """
     from .data import prompts
     version, notices = _selected_update(prompts.shipped(name, 'text', text))
-    return {**component(name, version.text, version_id=version.version_id),
+    return {**component(name, version.text, version_id=version.version_id, bindings=fills),
             'number': version.number, 'origin': version.origin, 'notices': notices,
             'source': {'kind': 'selected_edit' if version.origin == 'edited' else 'shipped', 'path': None,
                        'shipped_identity': hashlib.sha256(text.encode()).hexdigest()}}
@@ -751,7 +755,7 @@ def resolve_text(name: str, text: str) -> dict[str, Any]:
 
 def served_text(name: str, text: str) -> str:
     """A prompt kept whole in a file, read by the caller as `text`, as the prompt store serves it under `name`, the
-    name `metaform prompts review` gives it (`prompt.intake:intake.axiom`, `prompt.skill.<name>`), STORE-044: the text when it is
+    name `metaform prompts review` gives it (`prompt.intake:intake.xml`, `prompt.skill.<name>`), STORE-044: the text when it is
     the newest version, else the edit saved in its place. The caller fills it as it fills the file."""
     resolved = resolve_text(name, text)
     for notice in resolved['notices']:

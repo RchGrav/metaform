@@ -71,7 +71,7 @@ from metaform.data import (
     reference,
 )
 from metaform.finish_xml import xml as map_xml
-from metaform.module import Stop, agent_role_name
+from metaform.module import Stop
 from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
@@ -100,10 +100,7 @@ from . import (
 HERE = Path(__file__).parent
 STATIC = {'page': (HERE / 'page').resolve(), 'vendor': (HERE / 'vendor').resolve()}
 COOKIE = 'metaform_token'
-# The cookie each page this server serves gets its own key in, named with the server's port: a write that is the
-# person's alone is taken only with a key this server gave a page, CLI-011 (UX review, person-consent F1).
-PAGE_COOKIE = 'metaform_page'
-PAGE_KEYS = 64  # the newest page keys kept: the pages open now and the reloads before them
+NOTE_BYTES = 1024 * 1024  # the most of one roundtable note the stage is sent
 RESERVED = ('project', 'metaform', 'layers')  # what picks the store and its layers; never a read's own argument
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -145,22 +142,6 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # The page's modulepreload links, with what they were worked out from: the import map and module scripts, and the
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
-DISPATCH_CHANGES = frozenset({'work', 'messages', 'orchestration.routing', 'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after',
-                              'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
-                              'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
-                              'dispatch.raised'})
-
-
-# What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
-# work, a ticket made ready, released or freed, a message or question answered; and the inputs no kind names, read from
-# the tables. A session that ended says no kinds (dispatch's release), so the tables decide; `session` alone is a
-# runner's own state, working or idle, which starts nothing. A ticket's words, `note`, and its plan and steps, `step`,
-# start nothing either, so an agent editing its note or reporting a step costs the starter no pass (UX review round 1,
-# runaway F3): only `ticket` does, a ticket written, released, freed, done or given a task.
-STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'question', 'worker-idle'})
-UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
-                      'dispatch.claims',
-                      'dispatch.claim_work', 'dispatch.raised'})
 
 
 def named_tables(payload: dict[str, Any]) -> list[str] | None:
@@ -189,16 +170,6 @@ def runner_change(payload: dict[str, Any]) -> bool:
     return kinds is None or 'session' in kinds or 'ticket' in kinds
 
 
-def dispatch_change(payload: dict[str, Any]) -> bool:
-    """Only selection inputs trigger autostart: a change whose `kinds` say it concerns none that can start work
-    does not, and else the tables it names decide. Older events without table detail may have changed any input."""
-    kinds = given_kinds(payload)
-    if kinds is not None and not STARTS.intersection(kinds):
-        return bool(UNKINDED.intersection(named_tables(payload) or ()))
-    tables = named_tables(payload)
-    return tables is None or bool(DISPATCH_CHANGES.intersection(tables))
-
-
 # Behind a Metaform Node's gate, the page server trusts who is calling only from requests carrying the per-deploy
 # secret Caddy adds (GATE_SECRET), and serves each route only to an account whose classes, which the gate sends,
 # include the route's class.
@@ -218,16 +189,16 @@ WRITE_ROUTES = frozenset({
     '/api/voice/note', '/api/page-faults'})
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/ticket-merge', '/api/dispatch-start',
-    '/api/orchestration-call',
+    '/api/task-assign',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
-    '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
+    '/api/dispatch-configure', '/api/dispatch-session-prompts',
     '/api/roundtable-open', '/api/roundtable-decision', '/api/roundtable-control'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
-    '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
+    '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
     '/api/mcp-call', '/api/board-line', '/api/board-add', '/api/board-remove', '/api/board-wipe', '/api/board-restore',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
@@ -255,10 +226,9 @@ def route_class(method: str, path: str) -> str:
 
 def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) -> str:
     """The class a toolbar tool's verb needs, as an MCP tool call is scoped by its effect (mcp.oauth.required_scope):
-    admin for a verb with a caution or given a setting only the person sets; dispatch for the dispatch module's verbs
-    and any that changes something past the map; read for a read; write otherwise."""
-    if verb.caution or any((setting := settings.SCHEMA.get(key)) is not None and setting.person_only
-                           for key in arguments if key in verb.switches):
+    admin for a verb with a caution; dispatch for the dispatch module's verbs and any that changes something past the
+    map; read for a read; write otherwise."""
+    if verb.caution:
         return 'admin'
     if module_id == 'dispatch' or (verb.open_world and verb.effect != 'read'):
         return 'dispatch'
@@ -396,15 +366,10 @@ class Server(ThreadingHTTPServer):
         self.origin, self.gate = origin.rstrip('/').lower(), gate or None
         self.token = None if loopback(bind) else token()
         self.listeners: set[queue.SimpleQueue[dict[str, Any]]] = set()
-        # The project each open page shows, so the page that opens a project runs its agent starter at once.
+        # The project each open page shows, for page counts and mascot messages.
         self.watching: dict[queue.SimpleQueue[dict[str, Any]], str] = {}
         self.listening = threading.Lock()
-        self.dispatch_lock = threading.Lock()
-        self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
-        self.capacity_waiters: set[tuple[str, str | None]] = set()
-        self.dispatch_last = ''
-        self.dispatch_busy = False
-        self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
+        self.runner_lock = threading.Lock()
         self.said: dict[str, None] = {}  # the refusals and faults already logged, oldest first, `first_time`
         self.said_lock = threading.Lock()
         self.busy: set[Busy] = set()  # each request and page read's work running now, `tracked`
@@ -415,7 +380,6 @@ class Server(ThreadingHTTPServer):
         self.supervisor = os.environ.pop(SUPERVISOR, '') or None
         self.restarted = restart_said(os.environ.pop(RESTARTED, ''))
         self.told: int | None = None  # the pipe to the watchdog, kept past the ready line, `ready`
-        self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
         # The watch on every runner of the home, dispatch's `dispatch.deaths`: a runner's death, however it comes, is a
         # change announced at once, never one a page finds on its next read (UX review round 2, intake-single-flight F1)
         self.deaths: Any = None
@@ -424,12 +388,6 @@ class Server(ThreadingHTTPServer):
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
         self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
-        # The secret the commands this server runs for the person carry, so they act as the person, CLI-011.
-        self.vouch = chassis.page_vouch()
-        # The keys this server put in its pages' cookies, newest last, held in memory alone: never in a file, the
-        # environment or a page's script, where an agent's process would read it (UX review, person-consent F1).
-        self.page_keys: dict[str, None] = {}
-        self.keys_lock = threading.Lock()
         self.handing = threading.Lock()
         self.stopping, self.handed = threading.Event(), threading.Event()
         self.replacing = self.successor = False
@@ -438,22 +396,6 @@ class Server(ThreadingHTTPServer):
         self.port = int(self.server_address[1])
         names = {'127.0.0.1', 'localhost', '::1'} if loopback(bind) else {bind, socket.gethostname()}
         self.hosts = {host_port(name, self.port).lower() for name in names}
-
-    def page_key(self) -> str:
-        """A new key for one page this server serves, kept among the newest PAGE_KEYS."""
-        key = secrets.token_urlsafe(32)
-        with self.keys_lock:
-            self.page_keys[key] = None
-            while len(self.page_keys) > PAGE_KEYS:
-                del self.page_keys[next(iter(self.page_keys))]
-        return key
-
-    def page_key_held(self, key: str | None) -> bool:
-        """Whether `key` is one this server gave a page it served."""
-        if not key:
-            return False
-        with self.keys_lock:
-            return key in self.page_keys
 
     def server_bind(self) -> None:
         """Bind without `HTTPServer`'s own reverse lookup of the address, which can stall for many seconds on macOS
@@ -546,11 +488,12 @@ class Server(ThreadingHTTPServer):
 
     def changed(self, payload: dict[str, Any], own: bool = False) -> int:
         """Push one `map.changed` to every open page, VIEW-018 and BASE-053; a change to a project no longer registered,
-        such as the removal of one, is not pushed, since a page has nothing of it to read. `own`, the agent starter's
-        own writes, schedules no dispatch check: a process never reacts to its own writes."""
+        such as the removal of one, is not pushed, since a page has nothing of it to read. Module-owned background
+        services hear the change, and new runner leases are observed without selecting or starting work."""
         if home.project(str(payload.get('project', ''))) is None:
             self.watch_backgrounds(str(payload.get('project', '')), refresh=True)
             return 0
+        self.watch_backgrounds(str(payload['project']))
         self.background_heard(payload)
         deaths = getattr(self, 'deaths', None)  # a server made without __init__, as a test's, has none
         if deaths is not None and runner_change(payload):  # the leases listed, read only when one is new
@@ -560,11 +503,6 @@ class Server(ThreadingHTTPServer):
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
         if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
             self.watch_backgrounds(str(payload['project']), refresh=True)
-        if not own and dispatch_change(payload):
-            if runner_change(payload) and getattr(self, 'capacity_waiters', None):
-                with self.dispatch_lock:
-                    self.dispatch_pending.update(getattr(self, 'capacity_waiters', ()))
-            self.schedule_dispatch(str(payload['project']))
         return self.push({'topic': 'map.changed', 'payload': payload})
 
     def pages_changed(self, project_id: str) -> None:
@@ -596,8 +534,16 @@ class Server(ThreadingHTTPServer):
                 return
             folder = Path(found.path)
             self.backgrounds[project] = []
+            self.watch_runners(folder)
             for owner, start in chassis.provided(folder, 'project.background'):
-                service = start(chassis.context(owner, folder, project=project, surface='web'))
+                try:
+                    source = chassis.context(owner, folder, project=project, surface='web')
+                except StoreError:
+                    if home.project(project) is None:
+                        self.backgrounds.pop(project, None)
+                        return
+                    raise
+                service = start(source)
                 if service is not None:
                     self.backgrounds[project].append(service)
 
@@ -629,15 +575,14 @@ class Server(ThreadingHTTPServer):
         if getattr(self, 'deaths', None) is not None:
             return
         for _, watch in chassis.provided(folder, 'dispatch.deaths'):
-            with self.dispatch_lock:
+            with self.runner_lock:
                 if getattr(self, 'deaths', None) is None:
                     self.deaths = watch(self.runner_died)
             return
 
     def runner_died(self, about: dict[str, Any]) -> None:
         """A runner of the home ended without saying so, killed or crashed: dispatch has ended what it left; the change
-        goes to every open page and every other process of the home, and the agent starter looks again, since a slot
-        is free and a ticket may be back in To do. In the watch's own thread."""
+        goes to every open page and every other process of the home. In the watch's own thread."""
         project = home.project(str(about.get('project', '')))
         if project is None:
             return
@@ -650,89 +595,6 @@ class Server(ThreadingHTTPServer):
         self.changed(payload)
         source = chassis.context('web', Path(project.path), project=project.project_id, surface='web')
         events.publish('map.changed', payload, source)
-
-    def open_projects(self) -> set[str]:
-        with self.listening:
-            return set(self.watching.values())
-
-    def schedule_dispatch(self, project: str, base: str | None = None) -> None:
-        """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches; on the active
-        base, or on `base`, a base the page shows that is not the active one."""
-        with self.dispatch_lock:
-            self.dispatch_pending.add((project, base))
-            if self.dispatch_busy:
-                return
-            self.dispatch_busy = True
-        threading.Thread(target=self.dispatch_waiting, daemon=True).start()
-
-    def schedule_retry(self, project: str, due: Any) -> None:
-        """The supervisor's next retry, P012, when one waits: one timer per project, at the earliest time due, runs the
-        agent starter again, so a session whose runner is gone, as after a restart, is still resumed; nothing polls,
-        QUAL-015. A runner that saw its own session stop comes back for it as well; a second pass finds it done."""
-        if not isinstance(due, (int, float)):
-            with self.dispatch_lock:
-                held = self.retry_timers.pop(project, None)
-                if held is not None:
-                    held[1].cancel()
-            return
-        with self.dispatch_lock:
-            held = self.retry_timers.get(project)
-            if held is not None and held[1].is_alive() and held[0] <= due:
-                return
-            if held is not None:
-                held[1].cancel()
-            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,))
-            timer.daemon = True
-            self.retry_timers[project] = (float(due), timer)
-            timer.start()
-
-    def dispatch_waiting(self) -> None:
-        """Start eligible work for changed projects in one worker; coalesce changes while a batch starts."""
-        while True:
-            with self.dispatch_lock:
-                if self.dispatch_pending:
-                    def order(one: tuple[str, str | None]) -> tuple[str, str]:
-                        return one[0], one[1] or ''
-                    ordered = sorted(self.dispatch_pending, key=order)
-                    last = getattr(self, 'dispatch_last', '')
-                    project_id, base = next((one for one in ordered if one[0] > last), ordered[0])
-                    self.dispatch_pending.discard((project_id, base))
-                    self.dispatch_last = project_id
-                else:
-                    self.dispatch_busy = False
-                    return
-            with chassis.request_scope(fresh=True):
-                chassis.refresh_modules()
-                project = home.project(project_id)
-                if project is None:
-                    continue
-                try:
-                    self.watch_backgrounds(project_id)
-                    self.watch_runners(Path(project.path))
-                    started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {'batch': 1},
-                                          chosen=bool(base))
-                    if isinstance(started, dict):
-                        result = cast(dict[str, Any], started)
-                        with self.dispatch_lock:
-                            if hasattr(self, 'capacity_waiters'):
-                                if result.get('capacity_waiting'):
-                                    self.capacity_waiters.add((project_id, base))
-                                else:
-                                    self.capacity_waiters.discard((project_id, base))
-                            if result.get('more'):
-                                self.dispatch_pending.add((project_id, base))
-                    self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
-                                        if isinstance(started, dict) else None)
-                except StoreError as error:
-                    if self.dispatch_errors.get(project_id) != str(error):  # once until it changes, not on every change
-                        self.dispatch_errors[project_id] = str(error)
-                        log(f'Automatic dispatch for {project_id}: {error}')
-                    continue
-                except Stop:  # dispatch is disabled for this project
-                    continue
-                self.dispatch_errors.pop(project_id, None)
-                for payload in events.announce(Path(project.path), 'web'):
-                    self.changed(dict(payload), own=True)
 
     def push(self, event: dict[str, Any]) -> int:
         """Hand one event to every open page's stream, VIEW-018."""
@@ -1061,8 +923,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_spend({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-broadcasts':
             return self.dispatch_broadcasts({key: values[-1] for key, values in query.items() if key != 't'})
-        if url.path == '/api/workflow-runs':
-            return self.workflow_runs({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/roundtable':  # the roundtable stage's table, its events after a cursor
             return self.roundtable({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-claims':
@@ -1076,13 +936,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.module_notices(query.get('project', [''])[-1])
         if url.path in ('/api/phone-check', '/api/speech-voices'):  # asked for by a button, never on a page's read
             return self.settings_check(url.path, query.get('project', [''])[-1])
-        if url.path == '/api/dispatch-autostart':
-            return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/dispatch-agents':
             return self.dispatch_agents({'project': query.get('project', [''])[-1]})
-        if url.path in ('/api/agent-roles', '/api/agent-role'):
-            return self.authored_roles({key: values[-1] for key, values in query.items() if key != 't'},
-                                       one=url.path == '/api/agent-role')
+        if url.path == '/api/worker-board':
+            return self.worker_board({'project': query.get('project', [''])[-1]})
+        if url.path in ('/api/tasks', '/api/task-definition'):
+            return self.task_definitions({key: values[-1] for key, values in query.items() if key != 't'},
+                                         one=url.path == '/api/task-definition')
         if url.path == '/api/lookup':
             return self.lookup(query.get('project', [''])[-1], list(dict.fromkeys(query.get('refs', [''])[-1].split())))
         if url.path == '/api/merges':
@@ -1122,15 +982,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, plain(PROMPT_READS[name](given)))
             except StoreError as error:
                 return self.refuse(error, 404)
-        if name == 'workflows':
-            try:
-                # List the active folder's callable logic, the same context an ACP worker starts in.
-                found = module_verb({'project': given.get('project', '')}, 'workflow', 'list', {})
-            except StoreError as error:
-                return self.refuse(error, 404)
-            except Stop:
-                return self.send(200, {'enabled': False, 'workflows': []})
-            return self.send(200, {'enabled': True, 'workflows': plain(found)})
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
         doing(f'the {name} read of {given.get("project", "")}')
@@ -1292,21 +1143,14 @@ class Handler(BaseHTTPRequestHandler):
             if project:
                 self.gui.watching[waiting] = project
         if project:
-            self.gui.schedule_dispatch(project)  # the page opened the project: its agent starter runs now
             self.gui.pages_changed(project)
         self.close_connection = True
-        # A page whose key this process never gave, an open page reconnecting after a restart, gets a key of its own
-        # with its stream, in the same HttpOnly cookie the page's load sets, so its later writes are the person's
-        # again without a reload; an agent's process gets none, as with the page, CLI-011.
-        keyed = None if self.gui.page_key_held(self.page_key_given()) else self.page_cookie()
         try:
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Connection', 'close')
             self.send_header('X-Content-Type-Options', 'nosniff')
-            if keyed is not None:
-                self.send_header('Set-Cookie', keyed)
             self.end_headers()
             self.wfile.write(b': open\n\n')
             # first, the code this server runs, so a page opened on older code knows it once the server it reconnects
@@ -1362,36 +1206,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.gui.pages_changed(shown)
 
     def write(self, path: str) -> None:
-        """One of the writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body. Whether a
-        write is the person's is decided once, for every route: the page's key is held and no agent's process sent it.
-        Every write that is the person's carries this server's vouch, so the commands it runs act as the person and a
-        message carries their word, CLI-011, whatever the route; no route loses it by being left off a list. A write
-        that is the person's alone, PERSONS_WRITES, is refused when it is not the person's; any other is taken as
-        before, carrying no vouch."""
+        """One of the writes of VIEW-011, from the GUI's own page only: the same Origin, and a JSON body."""
         if not self.same_origin():
             return self.send(403, {'error': "A write is taken only from the web GUI's own page."})
-        keyed = self.gui.page_key_held(self.page_key_given())
-        sent_by = chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2],
-                                      home.home()) if keyed else None
-        if path in PERSONS_WRITES:
-            if not keyed:
-                return self.send(403, {'error': f"{path} is the person's to do on the page itself, and this request "
-                                                'carries no key this server gave a page it served.',
-                                       'next': 'ask the person in chat; they do it on the page'})
-            if sent_by is not None:
-                return self.send(403, {'error': f"{path} is the person's to do on the page, and this request came "
-                                                f'from an agent: {sent_by}.',
-                                       'next': 'ask the person in chat; they do it on the page'})
-        if not keyed or sent_by is not None:
-            return self.writing(path)
-        VOUCHED.server = self.gui
-        try:
-            return self.writing(path)
-        finally:
-            VOUCHED.server = None
+        return self.writing(path)
 
     def writing(self, path: str) -> None:
-        """The write itself, once it is known to come from the page, and from the person where it must."""
+        """The write itself, once it is known to come from the page."""
         if (self.headers.get('Content-Type') or '').split(';')[0].strip().lower() != 'application/json':
             return self.send(415, {'error': 'A write takes a JSON body.'})
         writes = {'/api/apply-layers': self.apply_layers,
@@ -1409,14 +1230,14 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/memory': self.write_memory,
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/orchestration-call': self.orchestration_call,
+                  '/api/task-assign': self.assign_task,
                   '/api/dispatch-fork': self.dispatch_fork, '/api/dispatch-broadcast': self.dispatch_broadcast,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-stop-all': self.dispatch_stop_all,
                   '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-new': self.dispatch_new,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
-                  '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
+                  '/api/board-line': self.board_line,
                   '/api/board-add': self.add_board, '/api/board-remove': self.remove_board,
                   '/api/board-wipe': self.wipe_board, '/api/board-restore': self.restore_board,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
@@ -1424,7 +1245,6 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
-                  '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/roundtable-open': self.roundtable_open,
                   '/api/roundtable-decision': self.roundtable_decision,
                   '/api/roundtable-control': self.roundtable_control,
@@ -1689,8 +1509,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             if given.get('hold'):
-                from metaform.modules.map.storage import validate_hold_reason
-                validate_hold_reason(given.get('hold_reason'))
+                map_service(store, 'work.hold_reason')(given.get('hold_reason'))
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
                 written = [store.add_work(targets[0], None, task=text.strip(), held=bool(given.get('held')),
@@ -1724,17 +1543,13 @@ class Handler(BaseHTTPRequestHandler):
             work = store.ticket(given.get('work_id', '')).work
             fields = ticket_fields(store, work)
             graph = functional_context(store, work)
-            ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
-            ctx.store = store
-            routing = next((owner.routing_status(ctx, work.id) for _, owner in
-                            chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
             self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column,
                                        **integration_for(store, [work]).get(work.id, {}),
                                        **ticket_hold(store, work.id)}, 'revision': ticket_revision(fields),
                             'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
-                            'functionality': graph, 'routing': routing,
+                            'functionality': graph,
                             'hold_history': list(store.work_hold_history(work.id))})
         except (Stop, StoreError) as error:
             self.refuse(error, 404)
@@ -1765,12 +1580,6 @@ class Handler(BaseHTTPRequestHandler):
                                             hold_reason=given.get('hold_reason'))
                     after = ticket_fields(store, edited)
                     revision = ticket_revision(after)
-                    if before != after:
-                        ctx = chassis.context('web', Path(store.project().path), project=store.project_id,
-                                              surface='web')
-                        ctx.store = store
-                        for _, owner in chassis.provided(ctx.folder, 'orchestration'):
-                            owner.ticket_edited(ctx, work_id, revision, source="user")
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
@@ -1788,8 +1597,7 @@ class Handler(BaseHTTPRequestHandler):
             rows: list[dict[str, Any]] = cast(list[dict[str, Any]], data.get('sessions') or []) if running else []
             live = [row for row in rows if row.get('state') == 'running']
             if live and live[-1].get('agent') != agent:
-                # The stopped runner releases the ticket and announces it; the agent starter, run on every change,
-                # then starts the agent the ticket now prefers. Nothing here waits for it, QUAL-015.
+                # End the prior agent's session after changing the ticket's preferred adapter.
                 self.dispatch_call(given, 'stop', [work_id])
         self.send(200, {'results': [edited]})
 
@@ -1943,7 +1751,7 @@ class Handler(BaseHTTPRequestHandler):
                                   for ref, one in found.items()}})
 
     def raise_issue(self, given: dict[str, Any]) -> None:
-        """The person raises an issue on a node: the dispatch module's raise starts the sentinel."""
+        """Send the supplied observation to a dedicated User Agent task at its functional node."""
         node, text = given.get('node'), given.get('text')
         if not isinstance(node, str) or not node:
             return self.send(400, {'error': 'An issue is raised on one node.'})
@@ -2027,9 +1835,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def held_work(self, given: dict[str, Any]) -> None:
         """Preview held work and its recorded reasons before the person's bulk release."""
-        from metaform.modules.map.holds import held_work_project
         try:
-            held = held_work_project(opened(given))
+            store = opened(given)
+            held = cast(list[dict[str, Any]], map_service(store, 'work.held')(store))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, {'results': held, 'revision': held_work_revision(held)})
@@ -2040,8 +1848,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'Review held work before releasing it.'})
         try:
             if 'revision' in given:
-                from metaform.modules.map.holds import held_work_project
-                if given['revision'] != held_work_revision(held_work_project(opened(given))):
+                store = opened(given)
+                held = cast(list[dict[str, Any]], map_service(store, 'work.held')(store))
+                if given['revision'] != held_work_revision(held):
                     return self.send(409, {'error': 'Held work changed. Review its reasons again before releasing.'})
             made = module_verb(given, 'map', 'work', {'op': 'unhold_all',
                                **({'hold_preview': given['hold_preview']} if 'hold_preview' in given else {})},
@@ -2131,13 +1940,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {'project': project, 'created': created, 'path': found.path if found else path.strip()})
 
     def shown(self, given: dict[str, Any]) -> None:
-        """The project the page now shows, kept as the one the person used last when the page is the person's own,
-        VIEW-002; a page an agent drives is answered and kept nowhere, so it never chooses the person's project."""
+        """The project the page now shows, kept as the one the person used last, VIEW-002."""
         project = str(given.get('project') or '')
         if home.project(project) is None:
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
-        if VOUCHED.server is None:
-            return self.send(200, {'project': project, 'kept': False})
         home.mkdir_private(shown_file().parent)
         write_run(shown_file(), project)
         self.send(200, {'project': project, 'kept': True})
@@ -2230,49 +2036,6 @@ class Handler(BaseHTTPRequestHandler):
                if isinstance(given.get(key), str) and given[key]]
         self.dispatched(given, 'start', [work_id, agent, *own])
 
-    def dispatch_autostart(self, given: dict[str, Any]) -> None:
-        """Read automatic dispatch settings in the registered project's folder, VIEW-042."""
-        project = home.project(str(given.get('project', '')))
-        if project is None:
-            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
-                                   'next': 'metaform list projects'})
-        folder = Path(project.path)
-        chassis.refresh_modules()
-        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
-            return self.send(200, {'value': False, 'available': False})
-        # with the most Agents at once may be, the setting's own maximum, so the page checks what the server checks
-        self.send(200, {**{name: settings.value(key, folder) for name, key in
-                           (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'),
-                            ('machine', 'dispatch_machine_agents'))},
-                        'most': settings.SCHEMA['dispatch_agents'].max})
-
-    def set_dispatch_autostart(self, given: dict[str, Any]) -> None:
-        """Save automatic dispatch settings and start waiting work when enabled, VIEW-042."""
-        project = home.project(str(given.get('project', '')))
-        if project is None:
-            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
-                                   'next': 'metaform list projects'})
-        folder = Path(project.path)
-        chassis.refresh_modules()
-        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
-            return self.send(400, {'error': 'The dispatch module is not enabled.', 'next': 'metaform enable dispatch'})
-        values = {key: given[name] for name, key in
-                  (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'))
-                  if name in given}
-        if 'value' in given and not isinstance(given['value'], bool):
-            return self.send(400, {'error': 'Autostart is checked or unchecked.'})
-        if 'agents' in given and (not isinstance(given['agents'], int) or isinstance(given['agents'], bool)):
-            return self.send(400, {'error': 'The number of agents is a whole number.'})
-        try:
-            for key, value in values.items():
-                settings.checked(key, value, folder, typed=True)
-            for key, value in values.items():
-                settings.put(key, value, folder)
-        except (settings.SettingError, Stop) as error:
-            return self.refuse(error, 400)
-        self.gui.schedule_dispatch(project.project_id, chosen_base(given))
-        self.dispatch_autostart(given)
-
     def board_line(self, given: dict[str, Any]) -> None:
         """Archive through the map's shared operation, including Git proof and kept faults."""
         project = home.project(str(given.get('project', '')))
@@ -2304,22 +2067,34 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, chassis.result_json({**cast(dict[str, Any], found), 'enabled': True}).encode('utf-8'),
                    'application/json', {'Cache-Control': 'no-store'})
 
-    def authored_roles(self, given: dict[str, Any], *, one: bool = False) -> None:
-        """Responsibilities from the enabled public providers, with installed BMAD provenance beside native roles."""
+    def worker_board(self, given: dict[str, Any]) -> None:
+        """The project's worker board, read through the tasks module in the browser's normal web context."""
         try:
-            found = module_verb(given, 'agents', 'resolve', {'name': given.get('name')}) if one else role_choices(given)
+            found = module_verb(given, 'tasks', 'board', {})
         except StoreError as error:
             return self.refuse(error, 404)
         except Stop as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
-    def orchestration_call(self, given: dict[str, Any]) -> None:
-        """The person requests a contribution from the selected assignment; the normal continuation owns launch."""
-        if not all(isinstance(given.get(key), str) and given[key].strip() for key in ('assignment', 'role', 'task')):
-            return self.send(400, {'error': 'A specialist call names its assignment, role and requested contribution.'})
+    def task_definitions(self, given: dict[str, Any], *, one: bool = False) -> None:
+        """Discover task definitions and selected skills, or read an exact task instruction body."""
+        arguments = {key: given[key] for key in ('name', 'project_name', 'node') if key in given} if one else {}
         try:
-            result = call_role(given)
+            found = module_verb(given, 'tasks', 'read' if one else 'list', arguments)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def assign_task(self, given: dict[str, Any]) -> None:
+        """Assign the exact named or explicit task with its selected skills through the tasks module."""
+        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'folder', 'project_name', 'node',
+                                              'options')
+                     if key in given}
+        try:
+            result = module_verb(given, 'tasks', 'assign', arguments)
         except (Stop, ValueError) as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(result).encode('utf-8'), 'application/json', {})
@@ -2572,23 +2347,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
-    def workflow_runs(self, given: dict[str, str]) -> None:
-        """The project's workflow runs for the page's Runs pane, as `metaform workflow runs` lists them: the open ones,
-        or those in one state, each with what stopped a paused one. With workflow not enabled there are none."""
-        nouns: dict[str, Any] = {'limit': 0}
-        if given.get('state'):
-            nouns['state'] = given['state']
-        try:
-            found = module_verb(given, 'workflow', 'runs', nouns)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            if 'not on this project' in str(error):
-                return self.send(200, {'enabled': False, 'runs': []})
-            return self.refuse(error, 400)
-        self.reply(200, chassis.result_json({'enabled': True, **cast(dict[str, Any], found)}).encode('utf-8'),
-                   'application/json', {'Cache-Control': 'no-store'})
-
     def roundtable(self, given: dict[str, str]) -> None:
         """The roundtable stage's read, through the roundtables module: with a table, its events after the `after` the
         page holds, and with `whole` its status too, for a stage that starts watching it; without one, the seats a
@@ -2600,9 +2358,18 @@ class Handler(BaseHTTPRequestHandler):
                 chassis.refresh_modules()  # roundtables declares the setting once it is loaded
                 if 'roundtables_seats' not in settings.SCHEMA:
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
+                listed: Any = module_verb(given, 'roundtables', 'tables', {})
+                rows: list[dict[str, Any]] = cast(list[dict[str, Any]], listed) if isinstance(listed, list) else \
+                    cast(list[dict[str, Any]], cast(dict[str, Any], listed).get('tables') or []) \
+                    if isinstance(listed, dict) else []
+                running = next((str(one['table']) for one in rows
+                                if one.get('state') in ('opening', 'running', 'held', 'ending', 'continuing')), None)
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder),
-                                       'judging': settings.value('roundtables_judging', folder)})
+                                       'judging': settings.value('roundtables_judging', folder),
+                                       **({'running': running} if running else {})})
             table = {'table': given['table']}
+            if given.get('notes') or given.get('note'):
+                return self.roundtable_notes(given, table)
             if given.get('pipeline'):
                 return self.send(200, module_verb(given, 'roundtables', 'review', table))
             if given.get('file'):
@@ -2626,11 +2393,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
+    def roundtable_notes(self, given: dict[str, str], table: dict[str, str]) -> None:
+        """A table's notes folder, `<project>/docs/roundtables/<number>-notes`: its files listed with their sizes, or,
+        with `note`, one file's text, the first NOTE_BYTES of it. Nothing outside the folder is read."""
+        status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
+        if status.get('discussion') is None:
+            return self.send(200, {'notes': []})
+        _, folder = project_folder(given)
+        notes = (folder / 'docs' / 'roundtables' / f'{int(status["discussion"])}-notes').resolve()
+        if given.get('note'):
+            found = (notes / given['note']).resolve()
+            if not found.is_relative_to(notes) or not found.is_file():
+                return self.send(404, {'error': 'No such note.'})
+            with found.open('rb') as held:
+                data = held.read(NOTE_BYTES + 1)
+            return self.send(200, {'path': given['note'], 'text': data[:NOTE_BYTES].decode('utf-8', 'replace'),
+                                   'cut': len(data) > NOTE_BYTES})
+        listed = sorted(one for one in notes.rglob('*') if one.is_file()) if notes.is_dir() else []
+        return self.send(200, {'notes': [{'path': one.relative_to(notes).as_posix(), 'bytes': one.stat().st_size}
+                                         for one in listed]})
+
     def roundtable_control(self, given: dict[str, Any]) -> None:
         """The person's discussion controls, using the existing table and its stored chair token."""
         action, table = given.get('action'), given.get('table')
-        if action not in ('hold', 'continue', 'comment', 'advance'):
-            return self.send(400, {'error': 'Choose Hold, Continue, Comment or End discussion.'})
+        if action not in ('hold', 'continue', 'comment', 'advance', 'abort', 'permit'):
+            return self.send(400, {'error': 'Choose Hold, Continue, Comment, End discussion, Abort or a permission option.'})
         if not isinstance(table, str) or not table.strip():
             return self.send(400, {'error': 'Choose a roundtable.'})
         nouns = {'table': table}
@@ -2639,6 +2426,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(text, str) or not text.strip():
                 return self.send(400, {'error': 'A comment says something.'})
             nouns['text'] = text.strip()
+        if action == 'permit':
+            request, option = given.get('request'), given.get('option')
+            if not isinstance(request, str) or not request or not isinstance(option, str) or not option:
+                return self.send(400, {'error': 'A permission answer names its request and an agent-supplied option.'})
+            nouns.update(request=request, option=option)
         try:
             found = module_verb(given, 'roundtables', action, nouns)
         except StoreError as error:
@@ -2678,7 +2470,10 @@ class Handler(BaseHTTPRequestHandler):
         if seats is not None and (not isinstance(seats, list) or not all(isinstance(one, str) for one in
                                                                           cast(list[Any], seats))):
             return self.send(400, {'error': 'The seats are a list of seat names, such as claude/opus.'})
-        nouns: dict[str, Any] = {'topic': topic.strip(),
+        chain = given.get('chain')
+        if chain is not None and (type(chain) is not int or not 1 <= chain <= 20):
+            return self.send(400, {'error': 'The number of roundtables is a whole number from 1 to 20.'})
+        nouns: dict[str, Any] = {'topic': topic.strip(), **({'chain': chain} if chain else {}),
                                **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
                                'automate_ticket_creation': automate_ticket_creation,
                                **({'judging': judging} if judging is not None else {}),
@@ -2691,36 +2486,6 @@ class Handler(BaseHTTPRequestHandler):
         except Stop as error:
             return self.refuse(error, 400)
         self.send(200, plain(found))
-
-    def workflow_answer(self, given: dict[str, Any]) -> None:
-        """The person's answer to a run paused on them, as `metaform workflow answer` takes it on the command line, the
-        person's own surface; the answer after `--`, so nothing typed is read as a switch. The page then tells the
-        agent that paused it, with the web module's `resume_run` prompt, when the person asks it to."""
-        run, said = given.get('run'), given.get('answer')
-        if not isinstance(run, str) or not run:
-            return self.send(400, {'error': 'A run is answered by its run id.'})
-        if not isinstance(said, str) or not said.strip():
-            return self.send(400, {'error': 'An answer says something.'})
-        status, found = cli_result(given, 'workflow', 'answer', [f'run={run}'], said.strip())
-        ticket = found.get('ticket')
-        if status == 200 and given.get('resume') is True and isinstance(ticket, str) and ticket \
-                and not ticket.startswith('not noted'):
-            told = prompt_files.module('web', 'resume_run', run=run) or ''
-            sent, reply = cli_result(given, 'dispatch', 'message', [ticket], told)
-            found['resumed'] = sent == 200
-            if sent != 200:
-                found['resume_error'] = reply.get('error')
-        self.send(status, found)
-
-    def workflow_cancel(self, given: dict[str, Any]) -> None:
-        """Cancel a run and every run below it, as `metaform workflow cancel` does, with the person's reason."""
-        run, reason = given.get('run'), given.get('reason')
-        if not isinstance(run, str) or not run:
-            return self.send(400, {'error': 'A run is cancelled by its run id.'})
-        if reason is not None and not isinstance(reason, str):
-            return self.send(400, {'error': 'A reason is text.'})
-        nouns = [f'run={run}', *([f'reason={reason.strip()}'] if reason and reason.strip() else [])]
-        self.dispatched(given, 'cancel', nouns, module_id='workflow')
 
     def dispatch_sessions(self, given: dict[str, str]) -> None:
         """The agent sessions and their threads, from the dispatch module's own tables, VIEW-039 and VIEW-036. With
@@ -2758,14 +2523,14 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_claims(self, given: dict[str, str]) -> None:
-        """The work claims and the sentinels' proposals, from the dispatch module's own tables, LAYER-029 and VIEW-045.
-        With dispatch not enabled there are none."""
+        """The work claims, from the dispatch module's own tables, LAYER-029. With dispatch not enabled there are
+        none."""
         try:
             found = module_verb(given, 'dispatch', 'claims', {}, chosen=True)
         except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
             return self.refuse(error, 404)
         except Stop:
-            return self.send(200, {'claims': [], 'proposals': {}})
+            return self.send(200, {'claims': []})
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def dispatch_prompts(self, project_id: str) -> None:
@@ -2800,7 +2565,7 @@ class Handler(BaseHTTPRequestHandler):
         done = subprocess.run([sys.executable, '-m', 'metaform', 'set', *confirmed, f'--dispatch-prompts={value}'],
                               cwd=project.path,
                               capture_output=True, text=True, encoding='utf-8', stdin=subprocess.DEVNULL,
-                              timeout=DISPATCH_LIMIT, check=False, env=vouched(None))
+                              timeout=DISPATCH_LIMIT, check=False)
         if done.returncode == 0:
             return self.send(200, {'value': value})
         said = (done.stderr + done.stdout).strip().splitlines()
@@ -2906,8 +2671,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {**refusal(done), 'key': key})
         said = f'Notice: {key}: '  # what set kept and says of this setting, apart from notices of the run itself
         notices = [line[len(said):] for line in done.stdout.splitlines() if line.startswith(said)]
-        if key == 'dispatch_stay_connected':  # turned on, the system agent connects now, not at the next change
-            self.gui.schedule_dispatch(project.project_id)
         try:
             self.send(200, {**configured(folder), 'key': key, 'notices': notices})
         except Stop as error:
@@ -3078,19 +2841,6 @@ class Handler(BaseHTTPRequestHandler):
         self.body_read = True
         return json.loads(self.rfile.read(length) or b'null')
 
-    def page_key_given(self) -> str | None:
-        """The page key this request's cookie carries, the one this server set when it served the page."""
-        cookie = SimpleCookie(self.headers.get('Cookie') or '')
-        named = f'{PAGE_COOKIE}_{self.gui.port}'
-        return cookie[named].value if named in cookie else None
-
-    def page_cookie(self) -> str | None:
-        """The cookie that gives the page being served its own key, CLI-011; None when the process asking for the
-        page is known as an agent's, which gets the page without one, so its writes of the person's are refused."""
-        if chassis.page_caller(self.client_address[:2], self.connection.getsockname()[:2], home.home()) is not None:
-            return None
-        return f'{PAGE_COOKIE}_{self.gui.port}={self.gui.page_key()}; Path=/; HttpOnly; SameSite=Strict'
-
     def given_token(self, query: dict[str, list[str]]) -> str | None:
         if query.get('t'):
             return query['t'][0]
@@ -3135,9 +2885,6 @@ class Handler(BaseHTTPRequestHandler):
             headers['Vary'] = 'Accept-Encoding'
         cookies = [f'{COOKIE}={self.gui.token}; Path=/; HttpOnly; SameSite=Strict'] \
             if set_cookie and self.gui.token is not None else []
-        if page and resolved == base / 'index.html':  # each page served gets a key of its own, CLI-011
-            keyed = self.page_cookie()
-            cookies += [keyed] if keyed is not None else []
         if cookies:
             headers['Set-Cookie'] = '\n'.join(cookies)  # each sent as its own header, `sent_headers`
         if current:
@@ -3617,8 +3364,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                     **{field: row[field] for field in ('model', 'effort', 'fast', 'decision', 'hold_reason') if row.get(field) is not None})
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
-            # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every
-            # agent starter does (UX review round 2, held-and-signals F2: the page never received it)
+            # The tickets it waits on, `after_work`, for the card's Waiting on display.
             try:
                 for row in rows('after', 'work_id', {}):
                     held.setdefault(str(row['work_id']), {})['after_work'] = row['works']
@@ -3875,42 +3621,8 @@ def chosen_base(given: dict[str, Any]) -> str | None:
 
 
 def based(base: str | None) -> dict[str, str] | None:
-    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none. A
-    command run for a write that is the person's carries this server's vouch too, `vouched`."""
-    return vouched({**os.environ, BASE_VARIABLE: base} if base else None)
-
-
-# The writes only the person makes: clearing, switching or removing the map, discarding an intake, the page's memory
-# edits, locking and unlocking among them, the settings and modules, among them the person-only ones, and what
-# dispatch keeps the person's own (an agent's permissions at its start, a ticket's model and effort, cancelling a
-# ticket, `persons_own`). One sent by an agent's process is refused, CLI-011.
-PERSONS_WRITES = frozenset({
-    '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
-    '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
-    '/api/board-wipe', '/api/board-restore',
-    '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
-    '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
-    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/orchestration-call',
-    # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
-    # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
-    '/api/move', '/api/ticket', '/api/distribute', '/api/unhold-all'})
-
-
-class _Vouched(threading.local):
-    """The server whose person's write this thread is serving, so the commands it runs carry its vouch."""
-    server: Any = None
-
-
-VOUCHED = _Vouched()
-
-
-def vouched(env: dict[str, str] | None) -> dict[str, str] | None:
-    """`env`, None for this process's own, with this server's vouch while the thread serves a write that is the
-    person's: the command it runs then acts as the person, since its parent is this server, CLI-011."""
-    server = VOUCHED.server
-    if server is None:
-        return env
-    return {**(env if env is not None else os.environ), **server.vouch.environment()}
+    """The environment of a command run on `base`, METAFORM_BASE set to it; None, this process's own, with none."""
+    return {**os.environ, BASE_VARIABLE: base} if base else None
 
 
 MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
@@ -3921,8 +3633,7 @@ def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     doing(f'metaform {args[0]}')
     try:
         return subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, capture_output=True, text=True,
-                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False,
-                              env=vouched(None))
+                              encoding='utf-8', stdin=subprocess.DEVNULL, timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'metaform {args[0]} did not finish: {error}', f'metaform {args[0]}, in {folder}') from None
 
@@ -3949,7 +3660,7 @@ def stored_list_there(folder: Path, key: str, members: list[str], *, glue: bool)
     Stop when it cannot be run or does not answer."""
     program = 'from metaform.modules.web.server import store_list_here; store_list_here()'
     try:
-        done = subprocess.run([sys.executable, '-c', program], cwd=folder, env=vouched(None),
+        done = subprocess.run([sys.executable, '-c', program], cwd=folder,
                               input=json.dumps({'key': key, 'members': members, 'glue': glue}), capture_output=True, text=True, encoding='utf-8', timeout=DISPATCH_LIMIT, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Stop(f'saving {key} did not finish: {error}', f'metaform config --show, in {folder}') from None
@@ -3986,42 +3697,41 @@ def refused(done: subprocess.CompletedProcess[str]) -> Stop:
     return Stop(said['error'], said['next'] or 'metaform config --show')
 
 
+def map_service(store: Store, kind: str) -> Callable[..., Any]:
+    """A map-owned operation shared with the page through its declared provider."""
+    found = chassis.provided(Path(store.project().path), kind)
+    if not found:
+        raise Stop('The map module is off here.', 'metaform enable map')
+    return cast(Callable[..., Any], found[0][1])
+
+
 def configured(folder: Path, *, listing: bool = True) -> dict[str, Any]:
     """Every setting of a folder as `metaform config --show --json` describes it, each with what its declaration adds
     for the settings screen, and every module as `metaform list modules` lists it, with whether it is on and its
     summary or the reason it did not load. Both were read as the command line in the folder, two processes and about
     a second on every page load (2026-10-20); they are read in this process now, which follows a module enabled or
     disabled since this server started as `module_verb` does, `refresh_modules`."""
-    from metaform import loader
     chassis.refresh_modules()
     chassis.surface(folder)  # loads a module enabled since, whose settings describe then knows
     rows = cast(list[dict[str, Any]], json.loads(json.dumps(settings.describe(folder), default=str,
                                                             ensure_ascii=False)))  # as the command line prints them
     for row in rows:
         row.update(declared(row))
-    modules: list[dict[str, Any]] = []
-    for item in loader.discover() if listing else []:
-        state = 'error' if item.problem else ('on' if item.enabled else 'off')
-        summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
-        text = item.problem or summary or ''
-        stored = home.module_state(item.id)
-        modules.append({'id': item.id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
-                        'place': item.place, 'summary': '' if state == 'error' else (text or ''),
-                        'problem': (text or '') if state == 'error' else ''})
+    modules = chassis.module_registry() if listing else []
     return {'folder': str(folder), 'settings': rows, 'modules': modules, 'all_when_empty': list(settings.EMPTY_IS_ALL),
             'categories': [{'name': name, 'title': title, 'about': about} for name, title, about in settings.CATEGORIES]}
 
 
 def declared(row: dict[str, Any]) -> dict[str, Any]:
     """What a setting's declaration says beyond what describe gives: its label and longer details, its bounds, its
-    `--no-` form, and whether only the person changes it. A setting this server has not loaded, a module's in the
+    `--no-` form. A setting this server has not loaded, a module's in the
     project's own place, is given its label from its key and no more; the command that saves it still checks it."""
     setting = settings.SCHEMA.get(str(row.get('key')))
     if setting is None or setting.owner != row.get('owner'):
         return {'label': row.get('label') or str(row.get('key', '')).replace('_', ' ').capitalize(), 'details': '',
-                'min': None, 'max': None, 'negative': None, 'person_only': None, 'exclusive': None, 'section': None}
+                'min': None, 'max': None, 'negative': None, 'exclusive': None, 'section': None}
     return {'label': setting.label, 'details': setting.details, 'min': setting.min, 'max': setting.max,
-            'negative': setting.negative, 'person_only': setting.person_only, 'exclusive': setting.exclusive,
+            'negative': setting.negative, 'exclusive': setting.exclusive,
             'section': setting.section}
 
 
@@ -4079,48 +3789,6 @@ def merges_waiting(given: dict[str, Any]) -> dict[str, Any]:
     except (Stop, StoreError):
         return {'merges': []}
     return cast(dict[str, Any], found) if isinstance(found, dict) else {'merges': []}
-
-
-def role_choices(given: dict[str, Any]) -> dict[str, Any]:
-    """Source-aware menu from public role and installed-adapter declarations; opening it starts no agent."""
-    inventory = cast(dict[str, Any], module_verb(given, 'agents', 'roles', {}))
-    installed: dict[str, Any]
-    try:
-        installed = cast(dict[str, Any], module_verb(given, 'orchestration', 'bmad', {}))
-        available = True
-    except Stop:
-        installed = cast(dict[str, Any], {'installed': False, 'roles': [], 'problems': []})
-        available = False
-    bmad = {one['name']: one for one in installed.get('roles', [])}
-    roles: list[dict[str, Any]] = []
-    for one in inventory.get('authored', []):
-        external = bmad.get(one['role'])
-        source = 'BMAD' if external else 'Generated' if one['provider'] == 'agents' else 'Native'
-        launch = {'gc': 'claim', 'functionality': 'assessment', 'role_creator': 'commission'}.get(one['role'], 'call')
-        roles.append({**one, 'source_kind': source, 'launch': launch,
-                      **({'installed': external} if external else {})})
-    specialists: list[dict[str, Any]] = []
-    for one in inventory.get('specialists', []):
-        external = bmad.get(one['name'])
-        source = 'BMAD' if external else 'Generated' if one['provider'] == 'agents' else 'Native'
-        specialists.append({**one, 'role': one['name'], 'source_kind': source, 'launch': 'call',
-                            **({'installed': external} if external else {})})
-    return {'roles': roles, 'specialists': specialists, 'launch_available': available, 'bmad': installed}
-
-
-def call_role(given: dict[str, Any]) -> Any:
-    """Use actual managed verbs, retaining independent assessment and GC-owned commissioning boundaries."""
-    selected = str(given['role'])
-    role = agent_role_name(selected)
-    procedural = not selected.startswith('metaform://specialist/')
-    if procedural and role in ('gc', 'role_creator'):
-        raise Stop('A GC claims a root ticket; a new role is commissioned from its recorded role request.',
-                   'use the ticket start or GC commission operation')
-    if procedural and role == 'functionality':
-        return module_verb(given, 'orchestration', 'assess', {
-            'assignment': given['assignment'], 'summary': given['task']}, chosen=True)
-    arguments = {key: given[key] for key in ('assignment', 'task', 'result', 'context') if given.get(key)}
-    return module_verb(given, 'orchestration', 'call', {**arguments, 'role': selected}, chosen=True)
 
 
 def _stage(store: Store, target: Node, condition: str) -> Any:
@@ -4239,24 +3907,20 @@ def serve(given: argparse.Namespace) -> int:
     with listener:
         server.run()  # the stop signal ends the process; a hand-over to newer code ends `run`
     server.close_backgrounds()
-    server.vouch.close()
     log(f'Process {os.getpid()} stopped')
     return 0
 
 
 def projects_started(server: Server) -> None:
-    """Each registered project's background services and its agent starter's first look."""
+    """Initialize registered projects' module-owned background services and runner observation."""
     for project in home.projects():
         server.watch_backgrounds(project.project_id)
-        server.schedule_dispatch(project.project_id)
 
 
 def stopped(number: int, frame: Any) -> None:
     """The stop signal, `metaform web stop`'s: write it to the log and end the process at once, as the signal's own
     default would. On Windows the signal ends the process before any handler runs, so no line is written there."""
     log(f'Process {os.getpid()} stopped by {signal.Signals(number).name}')
-    for server in SERVING:  # its vouch goes with it
-        server.vouch.close()
     os._exit(0)
 
 

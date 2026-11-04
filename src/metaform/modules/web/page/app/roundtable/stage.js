@@ -39,7 +39,7 @@ import {bubbleSeconds} from '/page/app/figures/bubble.js';
 import {glyphOfType} from '/page/app/figures/walk.js';
 import {swap} from '/page/app/camera/flight.js';
 import {calledOf} from '/page/app/board/messages.js';
-import {wrote} from '/page/app/board/history.js';
+import {wrote, movable} from '/page/app/board/history.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
@@ -95,14 +95,77 @@ UI.comment = h('textarea', {class: 'rt-comment', 'aria-label': 'Plan comments', 
 UI.sendComment = h('button', {class: 'btn sm rt-send-comment', type: 'button',
   onclick: () => decidePipeline('comment')}, 'Save comment');
 UI.revise = h('button', {class: 'btn sm rt-revise', type: 'button', onclick: () => decidePipeline('revise')},
-  'Send back to Planner');
+  'Send back for planning');
 UI.pipelineText = h('div', {class: 'rt-pipeline-text', hidden: true, style: {'white-space': 'pre-wrap'}});
 UI.pipelineQuestion = h('p', {class: 'rt-pipeline-question'});
 UI.pipeline = h('section', {class: 'rt-pipeline', hidden: true}, h('h3', {}, 'Follow-through'), UI.pipelineState,
   UI.pipelineError, UI.pipelineLink, UI.review, UI.pipelineText, UI.pipelineQuestion, UI.comment, UI.sendComment,
   UI.revise, UI.yes, UI.approve, UI.no);
+/* The table's notes folder: every file the seats wrote there, listed by name; a click shows its text below. */
+UI.noteList = h('ul', {class: 'rt-list rt-notelist'});
+UI.noteView = h('pre', {class: 'rt-noteview', hidden: true, tabindex: '0', 'aria-label': 'The note'});
+/* The notes in a window of their own: opened by the Notes button, moved by its title, closed with its button. */
+UI.notesWin = h('div', {class: 'window movable rt-noteswin', role: 'dialog', 'aria-label': 'Notes', hidden: true},
+  h('div', {class: 'bar'}, h('span', {class: 'title'}, 'Notes'),
+    h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close', title: 'Close',
+      onclick: () => { UI.notesWin.hidden = true; UI.notesButton.setAttribute('aria-pressed', 'false'); }},
+    h('i', {class: 'i i-close', 'aria-hidden': 'true'}))),
+  h('div', {class: 'body'}, UI.noteList, UI.noteView));
+document.body.append(UI.notesWin);
+movable(UI.notesWin);
+UI.notesButton = h('button', {class: 'btn sm quiet rt-notes-button', type: 'button', 'aria-pressed': 'false',
+  title: "Open the table's notes folder", onclick: () => {
+    UI.notesWin.hidden = !UI.notesWin.hidden;
+    UI.notesButton.setAttribute('aria-pressed', String(!UI.notesWin.hidden));
+    if (!UI.notesWin.hidden) readNotes();
+  }}, 'Notes');
 UI.board = h('div', {class: 'rt-board', 'aria-live': 'polite'}, UI.ideasBox, UI.rankingsBox, UI.results,
   UI.answerBox, UI.records, UI.pipeline);
+/* The ideas and rankings at the top: closed with their own button and opened again from the Results button below. */
+const showBoard = shown => {
+  UI.board.classList.toggle('closed', !shown);
+  UI.resultsButton.setAttribute('aria-pressed', String(shown));
+};
+UI.boardClose = h('button', {class: 'close btn icon sm quiet rt-board-close', type: 'button', 'aria-label': 'Close',
+  title: 'Close the ideas and rankings; Results opens them again', onclick: () => showBoard(false)},
+  h('i', {class: 'i i-close', 'aria-hidden': 'true'}));
+UI.board.prepend(UI.boardClose);
+UI.resultsButton = h('button', {class: 'btn sm quiet rt-results-button', type: 'button', 'aria-pressed': 'true',
+  title: 'Show or hide the ideas and rankings at the top',
+  onclick: () => showBoard(UI.board.classList.contains('closed'))}, 'Results');
+const NOTES = {busy: false, again: false, open: ''};
+/* The notes folder listed again: as the stage starts watching a table and after each turn, a burst read once. */
+async function readNotes() {
+  if (NOTES.busy) { NOTES.again = true; return; }
+  NOTES.busy = true;
+  try {
+    do {
+      NOTES.again = false;
+      const id = TABLE.id;
+      if (!id) return;
+      const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+        encodeURIComponent(id)}&notes=1`);
+      if (id !== TABLE.id) return;
+      const listed = found.notes || [];
+      fill(UI.noteList, ...listed.map(one => h('li', {}, h('button', {type: 'button', class: 'btn sm quiet',
+        'aria-pressed': String(one.path === NOTES.open), onclick: () => viewNote(one.path)},
+        one.path), h('small', {class: 'rt-why'}, ` ${one.bytes} bytes`))));
+      UI.notesButton.textContent = listed.length ? `Notes (${listed.length})` : 'Notes';
+      if (!listed.length) fill(UI.noteList, h('li', {class: 'rt-why'}, 'No notes yet.'));
+    } while (NOTES.again);
+  } catch (error) { toast(error.message); }
+  finally { NOTES.busy = false; }
+}
+async function viewNote(path) {
+  if (NOTES.open === path && !UI.noteView.hidden) { NOTES.open = ''; UI.noteView.hidden = true; return; }
+  try {
+    const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+      encodeURIComponent(TABLE.id)}&note=${encodeURIComponent(path)}`);
+    NOTES.open = path;
+    UI.noteView.textContent = found.text + (found.cut ? '\n\n… (cut at 1 MB)' : '');
+    UI.noteView.hidden = false;
+  } catch (error) { toast(error.message); }
+}
 UI.canvas = h('canvas', {class: 'rt-canvas', 'aria-hidden': 'true'});
 UI.seats = h('div', {class: 'rt-seats'});
 UI.band = h('div', {class: 'rt-band'}, UI.canvas, UI.seats);
@@ -118,6 +181,13 @@ UI.endDiscussion = h('button', {class: 'btn sm rt-end-discussion', type: 'button
   onclick: () => chairControl('advance')}, 'End discussion');
 UI.continueDiscussion = h('button', {class: 'btn sm rt-continue-discussion', type: 'button', hidden: true,
   onclick: () => chairControl('continue')}, 'Continue discussion');
+/* Abort: ends the table at once, a stuck one included, with no report, no further turn and no next table; its
+ * transcript and notes stay saved. */
+UI.endTable = h('button', {class: 'btn sm quiet rt-end-table', type: 'button', hidden: true,
+  title: 'Abort this table now: no report, no further turn, nothing more spent; its transcript and notes stay saved',
+  onclick: () => {
+    if (confirm('Abort this table now? It ends at once with no report and nothing more spent.')) chairControl('abort');
+  }}, 'Abort');
 UI.discussionComment = h('textarea', {class: 'rt-discussion-comment', rows: 2,
   'aria-label': 'Discussion comment', placeholder: 'Add to the discussion', oninput: renderChair});
 UI.sendDiscussion = h('button', {class: 'btn sm', type: 'submit'}, 'Send comment');
@@ -126,9 +196,85 @@ UI.discussion = h('form', {class: 'rt-discussion', hidden: true,
   UI.discussionComment, UI.sendDiscussion,
   h('small', {}, 'Comments enter at the next gap. Hold pauses AI turns. Continue resumes them.'));
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
-  UI.endDiscussion, UI.continueDiscussion, UI.newTable, UI.leave),
-  UI.transcript, UI.discussion);
+const MINUTES = {chosen: false, topic: 0};
+/* Each translated turn appends to the minutes. The full transcript remains available. */
+UI.minutes = h('p', {class: 'rt-running', role: 'status', 'aria-live': 'polite', tabindex: '0',
+  'aria-label': 'Discussion minutes', hidden: true});
+UI.permissions = h('div', {class: 'rt-permissions', 'aria-label': 'Agent permission requests', hidden: true});
+const PERMISSIONS = new Map();
+UI.showTranscript = h('button', {class: 'btn sm quiet rt-show-transcript', type: 'button', 'aria-pressed': 'true',
+  title: 'Show or hide every turn above the minutes', onclick: () => {
+    MINUTES.chosen = true;
+    UI.transcript.hidden = !UI.transcript.hidden;
+    UI.showTranscript.setAttribute('aria-pressed', String(!UI.transcript.hidden));
+  }}, 'Transcript');
+function minutesIs(event) {
+  if (!event.text) return;
+  const topic = Number(event.topic || 1);
+  const heading = MINUTES.topic !== topic ? `Roundtable ${topic}\n` : '';
+  MINUTES.topic = topic;
+  UI.minutes.textContent += `${UI.minutes.textContent ? '\n\n' : ''}${heading}${event.seat || 'Participant'}${
+    event.vetoed ? ' (vetoed)' : ''}: ${event.text}`;
+  UI.minutes.hidden = false;
+  if (!MINUTES.chosen) {
+    UI.transcript.hidden = true;
+    UI.showTranscript.setAttribute('aria-pressed', 'false');
+  }
+}
+/* The harness supplies the request and its choices. The page relays the person's selected option unchanged. */
+function permissionIs(event) {
+  const previous = PERMISSIONS.get(event.request);
+  if (previous) previous.remove();
+  PERMISSIONS.delete(event.request);
+  if (event.state === 'waiting') {
+    const controls = h('div', {class: 'rt-permission-options'});
+    const panel = h('div', {class: 'rt-permission'}, h('b', {}, event.name || event.seat || 'Agent'),
+      h('p', {}, event.title || 'Permission requested'),
+      event.description ? h('p', {}, event.description) : null,
+      event.subject ? h('pre', {}, typeof event.subject === 'string' ? event.subject : JSON.stringify(event.subject, null, 2)) : null,
+      controls);
+    for (const option of event.options || []) {
+      const button = h('button', {class: 'btn sm', type: 'button', onclick: async () => {
+        for (const choice of controls.children) choice.disabled = true;
+        try {
+          await wrote('/api/roundtable-control', {project: S.project, table: TABLE.id, action: 'permit',
+            request: event.request, option: option.optionId});
+        } catch (error) {
+          toast(error.message);
+        } finally {
+          for (const choice of controls.children) choice.disabled = false;
+        }
+      }}, option.name);
+      controls.append(button);
+    }
+    PERMISSIONS.set(event.request, panel);
+    UI.permissions.append(panel);
+  }
+  UI.permissions.hidden = PERMISSIONS.size === 0;
+}
+/* The bottom pane's grip: dragged up or down, it sets the transcript's height; the press is the grip's alone, so the
+ * 3D map behind never takes it for a camera turn. */
+UI.grip = h('div', {class: 'rt-grip', role: 'separator', 'aria-orientation': 'horizontal',
+  title: 'Drag to resize the transcript', onpointerdown: dragGrip});
+function dragGrip(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const pane = UI.transcript.hidden ? UI.minutes : UI.transcript;
+  const grip = event.currentTarget, from = event.clientY, start = pane.getBoundingClientRect().height;
+  grip.setPointerCapture(event.pointerId);
+  const move = moved => {
+    const most = window.innerHeight * 0.7;
+    pane.style.height = `${Math.max(48, Math.min(most, start + from - moved.clientY))}px`;
+  };
+  const done = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', done);
+    grip.removeEventListener('pointercancel', done); };
+  grip.addEventListener('pointermove', move);
+  grip.addEventListener('pointerup', done);
+  grip.addEventListener('pointercancel', done);
+}
+UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
+  UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
+  UI.permissions, UI.transcript, UI.discussion, UI.minutes);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -141,11 +287,14 @@ UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.judging = h('input', {type: 'checkbox', name: 'judging', checked: true});
+UI.tables = h('input', {type: 'number', min: 1, max: 20, step: 1, value: 1, name: 'chain', required: true});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
   h('h2', {}, 'Roundtable', UI.where), UI.question,
   h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat, UI.saveParticipants,
     h('small', {}, 'Start remembers this browser’s lineup. Save participants sets this project’s defaults.')),
+  h('label', {}, 'Number of roundtables', UI.tables),
+  h('small', {}, 'Each roundtable opens the next one when it ends, with the same seats.'),
   h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
   h('small', {}, 'Applies to each discussion reply.'),
   h('label', {}, UI.judging, 'Judge novelty with Jev'),
@@ -174,10 +323,24 @@ addEventListener('resize', placed, {passive: true});
  * part when there is one and on nothing when there is none. */
 export async function openRoundtable(fresh = false) {
   if (!G) { toast('The roundtable is a mode of the 3D map, which this page does not draw.'); return; }
-  if (TABLE.id && fresh !== true) { showStage(); UI.setup.hidden = true; readTable(true); return; }
+  if (TABLE.id && fresh !== true && !TABLE.ended) { showStage(); UI.setup.hidden = true; readTable(true); return; }
+  if (fresh !== true) {  // a table running in this project, such as the next of a planning session: watched, not asked
+    let running = null;
+    try { running = (await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}`)).running || null; }
+    catch { running = null; }
+    if (running) {
+      resetTable();
+      TABLE.id = running;
+      TABLE.kind = `roundtables:${running}`;
+      showStage();
+      UI.setup.hidden = true;
+      await readTable(true);
+      return;
+    }
+  }
   const entry = S.selected ? S.elements.get(S.selected) : null;
-  TABLE.address = entry ? entry.element.address : '';
-  UI.where.textContent = entry ? ` on ${calledOf(S.selected) || TABLE.address}` : '';
+  TABLE.address = '';  // the person's question alone opens the table: the node selected on the map is never attached
+  UI.where.textContent = '';
   resetTable();
   showStage();
   UI.setup.hidden = false;
@@ -231,7 +394,21 @@ function resetTable() {
     next: -1, ended: false});
   fill(UI.ideas); fill(UI.rankings); fill(UI.results); fill(UI.transcript);
   fill(UI.records, h('h3', {}, 'Saved record'));
-  UI.results.hidden = UI.records.hidden = UI.newTable.hidden = true;
+  fill(UI.noteList);
+  UI.noteView.textContent = '';
+  UI.minutes.textContent = '';
+  UI.minutes.hidden = true;
+  fill(UI.permissions);
+  UI.permissions.hidden = true;
+  PERMISSIONS.clear();
+  UI.transcript.hidden = false;
+  UI.showTranscript.setAttribute('aria-pressed', 'true');
+  MINUTES.chosen = false;
+  MINUTES.topic = 0;
+  NOTES.open = '';
+  UI.results.hidden = UI.records.hidden = UI.newTable.hidden = UI.noteView.hidden = UI.notesWin.hidden = true;
+  UI.notesButton.textContent = 'Notes';
+  UI.notesButton.setAttribute('aria-pressed', 'false');
   Object.assign(PIPELINE, {value: null, reviewed: '', text: '', version: PIPELINE.version + 1, reading: false,
     writing: false});
   renderPipeline();
@@ -262,11 +439,13 @@ async function startTable() {
   const listed = seatsChosen();
   const replyLimit = Number(UI.replyLimit.value);
   if (!Number.isSafeInteger(replyLimit) || replyLimit < 1) { UI.replyLimit.reportValidity(); return; }
+  const tables = Number(UI.tables.value);
+  if (!Number.isSafeInteger(tables) || tables < 1 || tables > 20) { UI.tables.reportValidity(); return; }
   if (listed.length) rememberParticipants(S.project, listed);
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
-  const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit,
+  const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit, ...(tables > 1 ? {chain: tables} : {}),
     judging: UI.judging.checked,
     automate_ticket_creation: UI.automate.checked,
     ...(TABLE.address ? {address: TABLE.address} : {}),
@@ -401,8 +580,12 @@ async function readTable(whole = false) {
         encodeURIComponent(id)}&after=${TABLE.seq}${whole || !SEAT.n ? '&whole=1' : ''}`);
       if (id !== TABLE.id) return;
       // State and final results show immediately; speaking turns keep their pacing.
+      let wrote = whole;
       for (const event of found.events || []) {
-        if (event.kind === 'state') stateIs(event.state, event.reason);
+        if (event.kind === 'turn' || event.kind === 'veto' || event.kind === 'end') wrote = true;
+        if (event.kind === 'minutes') minutesIs(event);
+        else if (event.kind === 'permission') permissionIs(event);
+        else if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
         else if (event.kind === 'pipeline') pipelineIs(event.pipeline);
         else TOLD.list.push(event);
@@ -410,6 +593,7 @@ async function readTable(whole = false) {
       if (found.status) seated(found.status);
       TABLE.seq = Math.max(TABLE.seq, found.latest || 0);
       tell();
+      if (wrote) readNotes();  // a seat writes notes on its turn, so the folder is read again after one
     } while (TABLE.again);
   } catch (error) { toast(error.message); }
   finally { TABLE.busy = false; }
@@ -475,7 +659,7 @@ function turn(event) {
   if (n < 0 || TABLE.ended) return;
   TABLE.floor = n;
   const seat = SEATS.list[n];
-  seat.text = bubbleText(event.text || '');
+  seat.text = bubbleText(event.text || '', LOOK.seat.most, true);
   seat.lineAt = performance.now();
   SEAT.until[n] = seat.lineAt + 1000 * bubbleSeconds(seat.text, WS.view()?.bubble_seconds ?? 'auto');
   nextUp();
@@ -648,6 +832,8 @@ function renderChair() {
   UI.endDiscussion.disabled = CHAIR.writing;
   UI.continueDiscussion.hidden = TABLE.state !== 'ended';
   UI.continueDiscussion.disabled = CHAIR.writing;
+  UI.endTable.hidden = !TABLE.id || ['ended', 'refused'].includes(TABLE.state);
+  UI.endTable.disabled = CHAIR.writing;
   UI.hold.textContent = TABLE.state === 'held' ? 'Continue' : 'Hold';
   UI.hold.disabled = CHAIR.writing;
   UI.discussionComment.disabled = CHAIR.writing;
@@ -655,7 +841,8 @@ function renderChair() {
 }
 async function chairControl(action) {
   if (!TABLE.id || CHAIR.writing || (!['running', 'held'].includes(TABLE.state)
-      && !(action === 'continue' && TABLE.state === 'ended'))) return;
+      && !(action === 'continue' && TABLE.state === 'ended')
+      && !(action === 'abort' && !['ended', 'refused'].includes(TABLE.state)))) return;
   const table = TABLE.id, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
   CHAIR.writing = true;
@@ -669,6 +856,11 @@ async function chairControl(action) {
       TABLE.stage = 'discussion';
     }
     if (found.state) stateIs(found.state, found.reason);
+    if (action === 'abort') {  // an aborted table leaves the stage: the empty form opens for a new one
+      CHAIR.writing = false;
+      await openRoundtable(true);
+      return;
+    }
     if (action === 'comment') {
       UI.discussionComment.value = '';
       toast('Comment queued for the next gap between turns.');

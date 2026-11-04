@@ -6,7 +6,7 @@ import {askHealth, healthMayBeBack, SLOW} from '/page/app/core/health.js';
 
 /* ---------- reads ---------- */
 /* The page in an AI tool's frame, the MCP Apps map view, MCP-037: it shows the maps and the panel only, so the agents,
- * their merges and autostart, which it does not show, are not read. */
+ * their merges and session controls, which it does not show, are not read. */
 export const FRAMED = document.documentElement.classList.contains('frame');
 // In a frame, the view's bar the host's code adds to the page, #viewbar, stands in the frame's header slot, #viewslot.
 function adoptViewbar() {

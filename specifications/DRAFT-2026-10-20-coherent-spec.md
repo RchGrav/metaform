@@ -50,8 +50,8 @@
 
 ## 2. Map and layers
 
-### 2.1 C(T) and the functional map
-- **Rule:** A metaform is C(T) = { (r_i ∧ p_i ∧ e) }: receiving elements, providing elements and their encounters, as a tripartite mesh of elements and purpose joins that cannot express a cycle. A join runs one way: the RE owns it, the PE serves it. The element-to-element view is derived and may cycle. Any artifact can be mapped; its Defining Element stands for it.
+### 2.1 Functional identity and the functional map
+- **Rule:** A metaform represents receiving elements, their operative purposes and the providing elements' encounters, as a tripartite mesh of elements and purpose joins that cannot express a cycle. A join runs one way: the RE owns it, the PE serves it. The element-to-element view is derived and may cycle. Any artifact can be mapped; its Defining Element stands for it.
 - **Why:** A frozen core that allows mutation, not transformation, is what lets agents work on a part without losing what it is for.
 - **Check:** MAP-002 and MAP-003 tests (`projection.py:298-322`, A1).
 - **Built:** Yes.
@@ -70,7 +70,7 @@
 
 ### 2.4 The base map is the intake's alone
 - **Rule:** The base holds only the intake's elements and purpose joins, grows only by refinement (`map refine`), and never changes otherwise. A knowledge write naming a finished base goes to a knowledge layer, with a notice naming it. Genre, style, medium and encoding stay out of the base during intake. Porting is a layer swap.
-- **Why:** Ports, scoped knowledge and specialist routing (`functional_context`, `59195de7`) all stand on an exact C(T).
+- **Why:** Ports, scoped knowledge and specialist routing (`functional_context`, `59195de7`) all stand on exact functional relationships.
 - **Check:** A1's scratch-home probe: `add_element` and `add_property` on a finished base return a notice naming the knowledge layer; the base is unchanged.
 - **Built:** Refinement yes (`8af918f6`). Guard no (plan step 25).
 
@@ -199,7 +199,7 @@
 ### 6.1 Connect
 - **Rule:** At connect the server sends the directive and links to the blocks that apply to this agent; the agent reads each whole before anything else, once per context epoch. A block links only the agent's own role, read from its own session's assignment, never inherited from the process that started it. No paragraph appears in two blocks. The person's first-run onboarding never pre-empts the person's request.
 - **Why:** The current decision (`a0f67e19`, "Connect directive back to its original wording: before you do anything else, read every resource linked below, whole"; the owner: "Well, get rid of that. I didn't say applicable.", `f9f108ee`, 2026-10-20T01:30:13Z). Inherited roles cost every helper the 10,691-character triage block (A2 F6).
-- **Check:** A helper connects with `metaform://role/helper` only; paragraph-hash check finds no repeat across blocks.
+- **Check:** A helper connects with no task block, its brief being its first turn (2026-10-25: `metaform://role/<name>` is gone; the task block is `metaform://task/<name>` for the person's own session and the intake task); paragraph-hash check finds no repeat across blocks.
 - **Built:** Directive yes. Role leak: `harness.py:248` omits `METAFORM_AUTHORED_ROLE` (plan step 7).
 
 ### 6.2 One delivery ledger
@@ -377,7 +377,7 @@ Sources in the Why column: A1 to A5 and the audits as named in `docs/architectur
 
 | Record | Title | Verdict | Into | Why |
 |---|---|---|---|---|
-| MAP-001 | C(T) is the theory behind how a metaform works | Kept | §2.1 | Holds as built (A1 appendix A). |
+| MAP-001 | Functional identity is represented by receivers, purposes and encounters | Kept | §2.1 | Holds as built (A1 appendix A). |
 | MAP-002 | The functional map is a tripartite mesh that cannot express a cycle | Kept | §2.1 | Holds as built (A1 appendix A). |
 | MAP-003 | A join runs one way: the receiver owns it and the provider serves it | Kept | §2.1 | Holds as built (A1 appendix A). |
 | MAP-004 | The element-to-element view is derived and may cycle | Kept | §2.1 | Holds as built (A1 appendix A). |

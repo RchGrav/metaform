@@ -1,8 +1,8 @@
 # Choosing the AI tool, model and thinking level
 
-Research delivered on 2026-10-20, kept whole. Assignment-time runtime selection uses advertised model descriptions
-and the policy in BASE-066. Jev chooses when available. The Facilitator's full model decides when Jev cannot answer.
-The ticket records agent, model, effort, decider and confidence. Person overrides remain effective.
+Research delivered on 2026-10-20, kept whole. The person sets each agent's model and thinking level in their own
+`dispatch_<agent>_model` and `dispatch_<agent>_effort` settings; the assignment-time runtime selection this research
+informed went with the retired orchestration module, and no prompt asks an agent to choose a model or thinking level.
 
 ---
 
@@ -56,14 +56,7 @@ Choose ChatGPT, Claude, or Jev based on whether you need open-ended generation, 
 ## Related
 
 - [xinyao27/jevonian](https://github.com/xinyao27/jevonian), a project the person pointed to on 2026-10-20 as doing
-  something similar: automatic selection with Jev. Without Jev, the Facilitator chooses each ticket's runtime.
+  something similar: automatic selection with Jev.
   The person chooses `dispatch_system_agent` for the system agent, `dispatch_healing_agent` and `dispatch_healing_effort` for
   the system healing itself, each agent's own mode, model and thinking level under Agents, and `dispatch tune` for one
   ticket.
-
-## Where it is applied
-
-- `src/metaform/modules/orchestration/runtime.py`: constrained assignment-time runtime choices from advertised options.
-- `src/metaform/modules/orchestration/resources/prompts.xml`: runtime questions and Facilitator fallback instructions.
-- `HEALING_EFFORT`: a ticket of kind or condition broken, the system healing itself, is started at the highest thinking
-  level, under the person's own choice for the ticket or the agent.

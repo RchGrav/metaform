@@ -40,7 +40,7 @@ def test_nonrepository_completion_records_verification_without_inventing_commit(
         pass
 
     monkeypatch.setattr(made, 'note', note)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     dispatch.store.finish_work(dispatch.id, 'Verified nonrepository result.')
     asyncio.run(made.commit_done())
     assert dispatch.ticket().done
@@ -52,9 +52,9 @@ def test_nonrepository_completion_records_verification_without_inventing_commit(
     assert receipt['evidence']['repository'] is False
     assert receipt['evidence']['verification']['passed'] is check_passes
     if not check_passes:
-        monkeypatch.delenv('METAFORM_ROLE')
+        monkeypatch.delenv('METAFORM_TASK_NAME')
         run('set', f'--dispatch-test-command="{sys.executable}" -c "raise SystemExit(0)"', cwd=dispatch.folder)
-        monkeypatch.setenv('METAFORM_ROLE', 'worker')
+        monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
         asyncio.run(made.commit_done())
         assert dispatch.ticket().done
 
@@ -74,7 +74,7 @@ def test_shared_verification_cannot_certify_dirty_content_as_saved_commit(dispat
 
     initialize(dispatch.folder)
     run('set', '--dispatch-test-command=grep -q fixed owned.py', cwd=dispatch.folder)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
     record = dispatch.store.finish_work(dispatch.id, 'Fix verified.')
     (dispatch.folder / 'owned.py').write_text('broken\n')
     saved = complete_ticket(dispatch.folder, dispatch.id, ticket_message(dispatch.store, record),
@@ -100,7 +100,7 @@ def test_failed_shared_check_retry_saves_and_verifies_current_fix(dispatch, run,
         pass
 
     monkeypatch.setattr(made, 'note', note)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
 
     async def scenario():
         await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'broken\n')
@@ -121,7 +121,7 @@ def test_failed_shared_check_retry_saves_and_verifies_current_fix(dispatch, run,
         receipt = tx.get('merges', {'work_id': dispatch.id})
     assert receipt['head'] == git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
     assert receipt['evidence']['verification']['passed'] is True
-    monkeypatch.delenv('METAFORM_ROLE')
+    monkeypatch.delenv('METAFORM_TASK_NAME')
     retained = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert retained['dispatch']['completion']['head'] == receipt['head']
     assert retained['dispatch']['completion']['branch'] == 'dev'

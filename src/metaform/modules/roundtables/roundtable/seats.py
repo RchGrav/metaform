@@ -119,6 +119,10 @@ def resolve(given: str, choices: list[dict[str, str]]) -> str | None:
             released = [(tuple(int(part) for part in match[1].split('.')), one['value']) for one in choices
                         if (match := re.search(r'-(\d+(?:\.\d+)*)-([a-z]+)$', one['value']))
                         and match[2] == given.casefold()]
+            # Claude Code's ids put the family first and the version after it, claude-fable-5-1 and claude-fable-5
+            released += [(tuple(int(part) for part in match[2].split('-')), one['value']) for one in choices
+                         if (match := re.fullmatch(r'[a-z]+-([a-z]+)-(\d+(?:-\d+)*)', one['value']))
+                         and match[1] == given.casefold()]
             if released:
                 newest = max(version for version, _ in released)
                 values = {value for version, value in released if version == newest}

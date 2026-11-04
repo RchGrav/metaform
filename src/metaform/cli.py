@@ -27,7 +27,6 @@ from typing import Any, cast
 from . import (
     __version__,
     aliases,
-    caller,
     changes,
     context,
     docs,
@@ -45,7 +44,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, caution_of, decided, on_this_system, persons_word, persons_word_acted
+from .module import Verb, call, caution_of, on_this_system
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -166,9 +165,6 @@ def add(args: list[str], folder: Path) -> None:
         return
     if args[:1] == ['base'] and len(args) in (2, 3):
         project_id = _project_arg(folder, args[2] if len(args) == 3 else None)
-        if caller.unconsented():  # switching the map is the person's decision, CLI-011
-            raise caller.persons_decision(home.switch_caution(project_id), shlex.join(['metaform', 'add', *args]),
-                                          'the base picker')
         previous = home.active_base(project_id)
         created = home.add_base(project_id, args[1])
         kept = previous.name if previous else 'main'
@@ -368,10 +364,6 @@ def activate(args: list[str], folder: Path) -> None:
     known = {form.name for form in home.bases(project_id)}
     if args[1] not in known:
         raise Stop(f'No base {args[1]} in {project_id}.', 'metaform list bases')
-    if caller.unconsented():  # switching the map is the person's decision, CLI-011
-        raise caller.persons_decision(home.switch_caution(project_id, args[1]),
-                                      shlex.join(['metaform', 'activate', *args]),
-                                      'the base picker')
     left = home.active_base(project_id)
     made = home.activate_base(project_id, args[1])
     out(f'Active base for {project_id}: {args[1]}')
@@ -391,10 +383,6 @@ def clear(args: list[str], folder: Path) -> None:
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
     found = home.to_clear(project_id)
-    if caller.unconsented():  # clearing the map is the person's decision: an agent's --confirm never runs it, CLI-011
-        raise caller.persons_decision(found.caution, shlex.join(['metaform', 'clear', 'project', project_id,
-                                                                 '--confirm']),
-                                      'Clear project')
     if not confirm:
         raise Stop(found.caution, f'If you are sure: metaform clear project {project_id} --confirm')
     cleared = home.clear_project(project_id)
@@ -437,9 +425,6 @@ def restore(args: list[str], folder: Path) -> None:
     project_id = _project_arg(folder, args[1] if len(args) >= 2 else None)
     if home.project(project_id) is None:
         raise Stop(f'No project {project_id} is registered.', 'metaform list projects')
-    if caller.unconsented():  # a restore replaces the map the person and every agent sees, CLI-011
-        raise caller.persons_decision(home.restore_caution(project_id, args[2] if len(args) == 3 else None),
-                                      shlex.join(['metaform', 'restore', *args]), 'Restore')
     # A restore clears first, and a clear stops the agents at work: with any at work it asks first and names them,
     # as clear project does (UX review round 2, 2026-10-17, project-scope F2).
     if not confirm and home.at_work(project_id):
@@ -498,34 +483,6 @@ def _setting_for(switch: str, verb: str) -> tuple[settings.Setting, bool]:
     return found
 
 
-def _held_or_word(keys: list[str], folder: Path, command: str) -> dict[str, Any] | None:
-    """For a call without the person's consent that names person-only settings: the person's word it runs on, when
-    every one of them is a setting their own system agent changes on their word (`Setting.on_persons_word`, Autostart
-    agents) and the call is made in a turn their own message started, as over MCP; otherwise refused as the person's
-    decision, saying what would allow it. None when it names no person-only setting."""
-    word = persons_word(folder, f'Setting {", ".join(keys)}') if settings.on_persons_word(keys) else None
-    if word is None:
-        settings.refuse_held_control(keys, folder, command)
-    return word
-
-
-def _acted_on_word(folder: Path, word: dict[str, Any], said: str) -> None:
-    """What a settings call did on the person's word: written in their system agent's chat with the message that
-    authorized it, and said in the output."""
-    persons_word_acted(folder, word, said)
-    out(f'On the person\'s word, "{word.get("text")}": {said}.')
-
-
-def _set_command(pairs: list[tuple[settings.Setting, Any]]) -> str:
-    """The `metaform set` line the person pastes for the person-only settings among `pairs`, quoted for a shell."""
-    words = ['metaform', 'set']
-    for setting, raw in pairs:
-        if setting.person_only:
-            words += [setting.switch if raw is True else setting.negative or setting.switch] \
-                if setting.kind == 'bool' else [setting.switch, str(raw)]
-    return shlex.join(words)
-
-
 def set_(args: list[str], folder: Path) -> None:
     named = any(arg.startswith('folder=') for arg in args)
     args, folder = _split_folder(args, folder)
@@ -564,11 +521,6 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
-    word: dict[str, Any] | None = None
-    if caller.unconsented():
-        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control. Autostart
-        # agents, asked by the person in their system agent's chat, is set in the turn their message started.
-        word = _held_or_word([setting.key for setting, _ in pairs], folder, _set_command(pairs))
     for setting, raw in pairs:
         try:
             settings.checked(setting.key, raw, folder)
@@ -596,10 +548,6 @@ def set_(args: list[str], folder: Path) -> None:
         notices += [(setting.key, message) for message in noted]
     for key, message in notices:
         out(f'Notice: {key}: {message}')
-    if word is not None:  # what it did on the person's word, in their system agent's chat
-        said = 'set ' + ', '.join(f'{key} to {show(key, new)}' for key, _, new in updates) if updates else \
-            'left the settings as they were'
-        _acted_on_word(folder, word, said)
     if quiet:
         return
     where = f' for {folder}' if named else ''
@@ -663,19 +611,12 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
-    held = shlex.join(['metaform', 'unset',
-                       *(settings.SCHEMA[key].switch for key in keys if settings.SCHEMA[key].person_only)])
-    word = _held_or_word(keys, folder, held) if caller.unconsented() else None
     for key in keys:  # every one is checked before any is reset
         try:
             settings.check_reset(key, folder)
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or 'metaform config --show') from None
     results_by_key = {key: settings.reset(key, folder, unglue=unglue) for key in keys}
-    if word is not None:  # what it did on the person's word, in their system agent's chat
-        done = [key for key, (result, _) in results_by_key.items() if result == 'reset']
-        _acted_on_word(folder, word, f'reset {", ".join(done)} to the default' if done
-                       else 'left the settings as they were')
     if quiet:
         return
     reset = [key for key, (result, _) in results_by_key.items() if result == 'reset']
@@ -1161,35 +1102,21 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     if parsed.help:
         out(docs.verb_syntax(module, verb))
         return
-    given = [key for key in parsed.switches if key in verb.switches]
-    # read only when the call needs to know: whether the person's consent is with it, from their terminal or the page
-    acting = caller.unconsented() if given or verb.person_says else None
-    word = _held_or_word(given, folder, shlex.join(['metaform', identifier, *rest])) if acting else None
     messages = sys.stderr if parsed.json else sys.stdout
     project = parsed.switches.pop('project', None)
 
     def sink(text: str) -> None:
         messages.write(text + '\n')
     ctx = context.build(identifier, folder, project=project, nouns=parsed.nouns, switches=parsed.switches, sink=sink)
-    if verb.caution and (not parsed.confirm or verb.person_says and acting):
-        # quoted for a shell, so a JSON argument such as ["k3"] pastes as it was given (person-consent F4)
+    if verb.caution and not parsed.confirm:
+        # quoted for a shell, so a JSON argument such as ["k3"] pastes as it was given
         confirm = shlex.join(['metaform', identifier, verb.name, *(arg for arg in rest[1:] if arg != '--confirm'),
                               '--confirm'])
-        if verb.person_says and acting:  # the person's decision: an agent's --confirm never runs it, CLI-011
-            raise caller.persons_decision(caution_of(verb, ctx), confirm, verb.page)
         raise Stop(caution_of(verb, ctx), f'If you are sure: {confirm}')
-    # a call that is the person's decision by what it asks, such as releasing a held ticket: it runs on their consent
-    # alone, from their terminal or the page, and needs no --confirm there (UX review round 2, held-and-signals)
-    deciding = decided(verb, ctx)
-    if deciding and caller.unconsented():
-        raise caller.persons_decision(deciding, shlex.join(['metaform', identifier, *rest]), verb.page)
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:
         result = call(verb.run, ctx)
-    if word is not None:  # run on the person's word with a switch only they set otherwise, as over MCP
-        _acted_on_word(folder, word, f'ran {identifier} {verb.name} with ' + ', '.join(
-            f'{key} {show(key, parsed.switches[key])}' for key in given if key in parsed.switches))
     data = results.noted(result, parsed.notices) if parsed.notices else result
     if parsed.notices and not isinstance(data, dict):
         for where, message in parsed.notices:
@@ -1277,7 +1204,7 @@ docs.command(Command('alias', 'Give two or more modules one name at the top menu
                                  'the commands of every module it stands for, each written <module> <command>.',
                      details='It holds in the folder it is defined for and every folder below it. Defining a name '
                              'again replaces what it stood for there. folder= defines it for another folder, such as '
-                             "a worker's, before the worker starts.",
+                             "an agent's, before the agent starts.",
                      examples=(('metaform alias mapping map memory', 'One name for the map and memory commands.'),),
                      see_also=('help',)))
 docs.command(Command('export', "Write a project's data to one JSON document.",
@@ -1527,7 +1454,6 @@ VERSION = f'metaform {__version__}'  # what metaform --version prints; the build
 
 def main(argv: list[str] | None = None) -> int:
     _utf8_streams()
-    caller.claim()  # the web server's vouch, kept for this command alone and never passed to what it starts
     args = list(sys.argv[1:] if argv is None else argv)
     folder = Path.cwd()
     if argv is None and 'COMP_LINE' in os.environ and 'COMP_POINT' in os.environ:  # the shell's tab, complete -C

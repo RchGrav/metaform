@@ -154,7 +154,7 @@ function applyElement(op, layer) {
   if (op.op === 'remove') { S.elements.delete(op.id); return true; }
   const kept = S.elements.get(op.id)?.element || {};
   const element = {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name,
-    ...written(data, ['address', 'name', 'name_length', 'role', 'within', 'note'])};
+    ...written(data, ['address', 'name', 'name_length', 'role', 'within', 'block', 'note'])};
   if (!element.address) return false;
   element.reading = plainWords(element.address);
   element.short_name = shortName(element.address, element.name_length);
@@ -243,7 +243,7 @@ const BRIEF_TABLES = new Set(['work', 'work_links', 'work_steps', 'messages', 'm
 export function briefTouched(named) {
   if (!Array.isArray(named)) return named !== 'dispatch';
   return named.some(table => BRIEF_TABLES.has(table) || /^(memory|jev)\./.test(table)
-    || !TICKET_TABLES.has(table) && !/^(dispatch|web|workflow)\./.test(table));
+    || !TICKET_TABLES.has(table) && !/^(dispatch|web)\./.test(table));
 }
 export const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.length > 0
   && payload.tables.every(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));

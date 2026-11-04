@@ -39,7 +39,7 @@ from metaform.module import Stop
 
 ENGINE = 'metaform.modules.roundtables.roundtable'  # the shipped engine's package, by the name every process imports
 AGENTS = ('claude', 'codex', 'antigravity')  # Metaform's own agents, seated through the engine's ACP client
-IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_AUTHORED_ROLE',
+IDENTITY = ('METAFORM_TASK', 'METAFORM_TASK_NAME', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE',
             'METAFORM_LEASE')
 CALL_LIMIT = 180.0  # seconds one engine call has, its process start included: a deadline on one request
 START_LIMIT = 60.0  # seconds the follower's page server has to answer its first request

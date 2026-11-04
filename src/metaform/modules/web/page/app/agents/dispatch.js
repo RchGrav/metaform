@@ -29,51 +29,73 @@ import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab, optionWords}
   from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
-import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
+import {notificationState, taskSummary} from '/page/app/session/tasks.js';
+import {renderWorkerBoard} from '/page/app/agents/workers.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 import {nodeIn} from '/page/app/graph/data.js';
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
 export const D = {sessions: [], starting: false, signals: [], states: {}, subagents: [], claims: [],
-  proposals: {}, asking: [], onAsking: null, next: null, historyBusy: false, menuMost: 40};
+  asking: [], onAsking: null, next: null, historyBusy: false, menuMost: 40};
 export const SESSIONS_DRAWN = [];  // what a later part draws again with the sessions, such as the broadcast window
 /* The signals of an agent waiting on the person: a permission request, or a question of its own, ACP's elicitation. */
 export const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
-export const AUTO = {value: false, agents: null};
-export async function readAutostart() {
-  if (FRAMED) return;
-  const project = S.project, control = $('#autostartAgents');
-  control.disabled = true;
+/* Full Auto, the header's switch: the shown project's tasks_full_auto. When a worktree closes, its branch is merged
+ * into the branch checked out in the project's folder and the worktree is removed. Read with the project and again
+ * when the tasks module's settings change, here or elsewhere; saved as the person turns it. */
+// turn: the newest read or save begun, so an older one that lands after it is let go; a read asked for while a save
+// is in flight waits for it, `again`, so the change the save itself announces is read once, after its answer
+const FULLAUTO = {turn: 0, saving: false, again: false};
+export async function readFullAuto() {
+  const project = S.project, control = $('#fullAuto');
+  if (FRAMED || !project) return;
+  if (FULLAUTO.saving) { FULLAUTO.again = true; return; }
+  const turn = ++FULLAUTO.turn;
   try {
-    const found = await read('dispatch-autostart');
-    if (S.project !== project) return;
-    Object.assign(AUTO, found);
-    control.checked = found.value;
-    control.disabled = found.available === false;
-  } catch (error) { if (S.project === project) readFailed(error); }
+    const rows = (await read('settings', {keys: 'tasks_full_auto'})).settings || [];
+    if (turn === FULLAUTO.turn) showFullAuto(rows, project);
+  } catch (error) {
+    if (S.project !== project || turn !== FULLAUTO.turn) return;
+    control.disabled = false;  // a turn saves the value it shows and reads again, so a failed read is not a dead end
+    readFailed(error);
+  }
 }
-async function saveAutostart() {
-  const project = S.project, control = $('#autostartAgents');
+/* The switch as the settings say it; a server without the tasks module's setting has nothing to turn. */
+function showFullAuto(rows, project) {
+  if (S.project !== project) return;
+  const row = rows.find(one => one.key === 'tasks_full_auto'), control = $('#fullAuto');
+  control.checked = row?.value === true;
+  control.disabled = !row;
+}
+$('#fullAuto').onchange = async () => {
+  const project = S.project, control = $('#fullAuto'), on = control.checked;
   control.disabled = true;
+  ++FULLAUTO.turn;
+  FULLAUTO.saving = true;
+  let saved = null;
   try {
-    // the switch alone: Full Auto starts each ticket with the agent its card prefers, and the default agent is the
-    // person's own choice, made in a picker, never taken from whatever a window last showed
-    const saved = await wrote('/api/dispatch-autostart', {value: control.checked});
-    if (S.project !== project) return;
-    if (saved) Object.assign(AUTO, saved);
-    control.checked = AUTO.value;
-  } catch (error) { if (S.project === project) { control.checked = AUTO.value; toast(error.message); } }
-  finally { if (S.project === project) control.disabled = false; }
-}
-$('#autostartAgents').onchange = saveAutostart;
+    saved = await wrote('/api/settings', {key: 'tasks_full_auto', value: on});
+  } finally { FULLAUTO.saving = false; }
+  if (saved && S.project === project) {
+    showFullAuto(saved.settings || [], project);  // the save answers with every setting as it is now
+    toast(on ? 'Full Auto is on: a worktree that closes is merged into your checked-out branch and removed.'
+      : 'Full Auto is off: a worktree that closes stays, with its branch, for you to merge.');
+  }
+  // a refused save reads the value in force; a read asked for meanwhile, another project's among them, runs now
+  if (!saved || FULLAUTO.again) { FULLAUTO.again = false; readFullAuto(); }
+};
+document.addEventListener('metaform:settings', event => {
+  if (Array.isArray(event.detail) && event.detail.includes('tasks.settings')) readFullAuto();
+});
 export const waiting = ticket => !ticket.done && !ticket.taken && (ticket.task || '').trim()
   && !D.sessions.some(one => one.state === 'running'
     && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
 export const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id === workId);
-/* An agent's own name, an adjective and a noun dispatch chose for its ticket as its session started, `name` on the
- * session's state: what the person calls it, and how they call its context back, `dispatch resume <name>`. None for a
- * session that ran before agents had names. */
+/* An agent's own name, two capitalized words dispatch works out from its session id as the session starts,
+ * `StableComet`, `name` on the session's state: what the person calls it, and how they call its context back,
+ * `dispatch resume <name>`. Shown as given, never split or recased. None for a session that ran before agents had
+ * names. */
 export const nameOf = session => (session && D.states?.[session.session_id]?.name) || null;
 /* An agent as the dock, the agents key and the session lists say it: its name first, then its ticket's number; its
  * kind where it has no name, and the part it works on where its work is no ticket. */
@@ -140,8 +162,7 @@ export function startWindow(title, tickets, all = false) {
     startAll.textContent = counted ? said.label : 'Start all';
     $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
     startAll.disabled = !shown.length || !agent || !counted || !said.count;
-    // a ticket's own Start is off, with why, only while the machine is full: dispatch_agents bounds what Full Auto
-    // starts, never the person's start (code.dispatcher.agent#79); UX review round 1 (web-gui-controls F10)
+    // A ticket's own Start is off, with why, only while the machine is full.
     const full = counted && HARNESS.slots ? HARNESS.slots.machine_free <= 0 : false;
     fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
       conditionLabel(ticket), h('span', {class: 'agent'}, agentName(startAgentFor(ticket, agent))),
@@ -228,16 +249,16 @@ export function startAllLabel(offered) {
   const count = Math.min(free, offered);
   const machine = slots && slots.machine_free < Math.max(0, slots.limit - slots.used)
     ? `; this machine runs ${slots.machine_used} of the ${slots.machine_limit} it allows` : '';
-  // a ticket's own Start runs past Full Auto's slots, so with none free the person is sent to it, not told to wait
+  // A ticket's own Start is available whenever the machine has room.
   const own = slots && slots.machine_free > 0 ? ' Start a ticket on its own to run it now.'
     : ' A ticket can start once an agent finishes or is stopped.';
-  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} Full Auto `
+  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} agent `
     + `slots free${machine}.${free ? '' : own} `
-    + `${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
+    + `${offered - count ? `${offered - count} wait in To do for an explicit start or agent choice.` : ''}`.trim()};
 }
 /* Start all: each ticket's assigned agent, or the person's override, starts one after another, up to the
- * agent slots free now, as its label says before the click; the rest wait in To do, and autostart starts them as
- * slots free. Stop starting ends the run between two starts. A start that fails can be retried on its own ticket. */
+ * agent slots free now, as its label says before the click; the rest wait in To do for an explicit start or agent
+ * choice. Stop starting ends the run between two starts. A failed start can be retried on its own ticket. */
 async function startAllTickets(tickets, pick, startAll) {
   if (D.starting) { START.cancel = true; return; }  // the button reads Stop starting while it runs
   D.starting = true;
@@ -282,9 +303,7 @@ async function startAllTickets(tickets, pick, startAll) {
   toast(`${started} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (failed ? ` ${failed} could not start; retry their tickets.` : '')
-    + (waiting ? ` ${waiting} wait in To do for a free Full Auto slot, or start each on its own; ` + (AUTO.value
-      ? 'with Full Auto checked they start as agents finish.'
-      : 'they wait until you start them or check Full Auto.') : ''));
+    + (waiting ? ` ${waiting} wait in To do for an explicit start or agent choice.` : ''));
   await renderBoard();
 }
 /* One ticket's Start uses its assignment or the person's current override, within its eligible agents. */
@@ -322,9 +341,29 @@ overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .bt
  * Sessions are the dispatch module's own tables, never the map. */
 let WHOLE_READS = 0;  // the reads of every agent begun, so one that lands after a later one's is let go
 const PENDING = {project: null, base: null, whole: null};
+const WORKERS = {reading: null, again: false};
+export function renderWorkerPanel() {
+  if (WORKERS.reading) { WORKERS.again = true; return WORKERS.reading; }
+  WORKERS.reading = updateWorkerPanel().finally(() => {
+    WORKERS.reading = null;
+    if (WORKERS.again) { WORKERS.again = false; return renderWorkerPanel(); }
+  });
+  return WORKERS.reading;
+}
+async function updateWorkerPanel() {
+  let container = $('#workerBoard');
+  if (!container) {
+    container = h('div', {id: 'workerBoard'});
+    $('#agents').insertBefore(container, $('#agents .list'));
+  }
+  await renderWorkerBoard(container);
+  agentsWindow(container.querySelectorAll('.worker-entry').length + D.sessions.filter(one => one.activity === 'working').length);
+}
+
 export async function renderAgents(only = null, bySession = false) {
   if (FRAMED || Array.isArray(only) && !only.length) return;
   const project = S.project, metaform = S.base;
+  if (only === null) await renderWorkerPanel();
   const some = Array.isArray(only);
   // A live-list snapshot must land before a later event's records, so it cannot overwrite them afterwards.
   while (some && PENDING.whole && PENDING.project === project && PENDING.base === metaform) await PENDING.whole;
@@ -343,7 +382,7 @@ export async function renderAgents(only = null, bySession = false) {
     // a login needed is read from the signals, `sessionStatus`, and a spinning or stuck agent's figure circles
     // restlessly, `moodOf`
     D.signals = found.signals || [];
-    D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
+    D.states = found.states || {};  // each session's state, by session id
     D.next = found.next || null;
     D.menuMost = 40;
   }
@@ -355,7 +394,6 @@ export async function renderAgents(only = null, bySession = false) {
   if (!some) D.subagents = found.subagents || [];  // the running sessions' own subagents, each a figure, `childFigures`
   if (claimed) {
     D.claims = claimed.claims || [];
-    D.proposals = claimed.proposals || {};
   }
   noticeAttention();  // and the mascot calls the person to what needs them, `ATTN`
   // the permission requests and the agents' questions waiting for the person, counted on the chat's tab
@@ -371,10 +409,10 @@ export async function renderAgents(only = null, bySession = false) {
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
     text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentLabel(one),
-      onOtherBase(one), assignmentSummary(D.states?.[one.session_id])].join('\n'),
+      onOtherBase(one), taskSummary(D.states?.[one.session_id])].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
-  agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
+  agentsWindow(working.length + ($('#workerBoard')?.querySelectorAll('.worker-entry').length || 0));  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
 }
@@ -453,7 +491,7 @@ export async function readSessionHistory() {
  * read with no metaform too, after a clear or before the first intake, PROJ-026. */
 async function readDispatch() {
   let found = {sessions: []};
-  let claimed = {claims: D.claims || [], proposals: D.proposals || {}};
+  let claimed = {claims: D.claims || []};
   try { found = await read('dispatch-sessions', {thread: 'false'}); }
   catch (error) { readFailed(error); found = {sessions: D.sessions}; }
   try { claimed = await read('dispatch-claims'); } catch (error) { readFailed(error); }
@@ -471,7 +509,7 @@ export function onOtherBase(one) {
 }
 function agentRow(one) {
   const name = nameOf(one) || agentName(one.agent), elsewhere = onOtherBase(one);
-  const responsibility = assignmentSummary(D.states?.[one.session_id]);
+  const responsibility = taskSummary(D.states?.[one.session_id]);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
     h('input', {type: 'checkbox', class: 'inuse', checked: !INUSE.off.has(one.work_id),

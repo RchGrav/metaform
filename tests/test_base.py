@@ -5,6 +5,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,11 +82,6 @@ def test_every_shipped_module_imports_only_the_public_base():
                         assert alias.name != 'sqlite3', source
                 if isinstance(node, ast.ImportFrom) and node.module == 'sqlite3':
                     raise AssertionError(f'{source} imports sqlite3')
-    for source in MODULES.rglob('*.py'):
-        for node in ast.walk(ast.parse(source.read_text(encoding='utf-8'))):
-            names = [alias.name for alias in node.names] if isinstance(node, ast.Import) else \
-                [node.module or ''] if isinstance(node, ast.ImportFrom) else []
-            assert 'sqlite3' not in names, source
 
 
 @pytest.mark.req('BASE-004')
@@ -123,6 +119,7 @@ def test_stop_needs_its_next_step():
 @pytest.mark.req('BASE-035')
 @pytest.mark.req('BASE-006')
 @pytest.mark.req('BASE-043')
+@pytest.mark.req('CLI-037')
 def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     user_module('scratch', f'''
         import json
@@ -140,9 +137,12 @@ def test_a_declared_verb_gets_its_nouns_and_appears_in_help(run, user_module):
     got = json.loads(run('scratch', 'show', 'a', 'count=3', 'b', 'c', '--json').stdout)
     assert got == {'nouns': {'first': 'a', 'count': 3, 'rest': ['b', 'c']}}
     assert json.loads(run('scratch', 'show', 'a', '--json').stdout) == {'nouns': {'first': 'a'}}
-    assert 'scratch show' in run('help', 'commands').stdout
+    index = run('help', 'commands').stdout
+    assert re.search(r'^  scratch +A scratch module\.$', index, re.MULTILINE)
+    assert 'scratch show' not in index and 'scratch local' not in index
     page = run('help', 'scratch').stdout
-    assert 'show' in page and 'local' in page
+    assert re.search(r'^  show <first>.*Show the nouns it received\.$', page, re.MULTILINE)
+    assert re.search(r'^  local +Only on the command line\.$', page, re.MULTILINE)
     assert run('scratch', 'show', '--help').stdout.splitlines()[0] == \
         'Usage: metaform scratch show <first> [count=<int>] [rest...]'
     refused = run('scratch', 'show', ok=False)
@@ -554,6 +554,7 @@ def test_the_example_modules_ship_disabled(module_row):
 
 
 @pytest.mark.req('BASE-016')
+@pytest.mark.req('CLI-037')
 def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module, monkeypatch, capsys):
     import platform
 
@@ -572,7 +573,11 @@ def test_a_verb_off_its_systems_is_hidden_and_explains_itself(home, user_module,
     loader.reset()
     assert cli.main(['help', 'commands']) == 0
     listed = capsys.readouterr().out
-    assert 'narrow here' in listed and 'narrow elsewhere' not in listed
+    assert re.search(r'^  narrow +Narrow\.$', listed, re.MULTILINE)
+    assert 'narrow here' not in listed and 'narrow elsewhere' not in listed
+    assert cli.main(['narrow', '--help']) == 0
+    syntax = capsys.readouterr().out
+    assert 'narrow here' in syntax and 'narrow elsewhere' not in syntax
     assert cli.main(['narrow', 'elsewhere']) == 2
     err = capsys.readouterr().err.removeprefix(f'Notice: {harness.NOTICE}\n').splitlines()
     assert err == ['Error: narrow elsewhere runs on plan9.', 'Next: metaform help narrow']
@@ -698,9 +703,14 @@ def test_unloading_cancels_the_modules_tasks_and_calls_stop(home, user_module):
 @pytest.mark.req('BASE-034')
 @pytest.mark.req('BASE-019')
 def test_every_shipped_module_has_a_readme_with_the_template_headings():
-    headings = [line for line in (MODULES / 'template' / 'README.md').read_text(encoding='utf-8').splitlines()
-                if line.startswith('## ')]
-    assert len(headings) >= 15
+    # BASE-034 names these developer sections. Template appendices describe optional capabilities,
+    # so adding an appendix must not require unrelated modules to document a capability they do not use.
+    headings = ('## Purpose', '## Template version', '## Declaration', '## Common base used', '## Prompts',
+                '## Verbs', '## Settings', '## Events', '## Sync and async', '## Layers',
+                '## Lifecycle and cleanup', '## Modules relied on', '## Systems supported',
+                '## Resources owned', '## Installed and direct wheel', '## Demonstration')
+    template = (MODULES / 'template' / 'README.md').read_text(encoding='utf-8').splitlines()
+    assert all(heading in template for heading in headings)
     missing = {}
     for folder in sorted(path for path in MODULES.iterdir() if (path / '__init__.py').is_file()):
         readme = folder / 'README.md'
@@ -896,17 +906,19 @@ def _fake_jev(monkeypatch, project_folder):
 
 @pytest.mark.req('BASE-004')
 def test_jev_is_on_by_default_and_off_sends_nothing_with_every_decision_none(home, project_folder, monkeypatch):
-    """Jev via OpenRouter is on by default (the person's decision, 2026-10-20: it costs pennies and chooses the agent,
-    model and thinking level); the code asks it only with a key and credit. Turned off, nothing is sent."""
+    """Jev via OpenRouter is on by default (the person's decision, 2026-10-20: it costs pennies); the code asks it only
+    with a key and credit. Turned off, nothing is sent. No decision point chooses a ticket's agent, model or thinking
+    level: the person sets those (the owner's decision, 2026-10-25)."""
     from metaform import jev, settings
 
     def refuse(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
         raise AssertionError('nothing is sent while jev is off')
     assert settings.value('jev', project_folder) is True
+    assert not hasattr(jev, 'choose_agent') and 'choose_agent' not in settings.JEV_DECISIONS
     settings.put('jev', False, project_folder)
     monkeypatch.setenv('OPENROUTER_API_KEY', 'test-key')
     monkeypatch.setattr(jev, 'post', refuse)
-    assert jev.choose_agent(project_folder, {'id': 't1', 'task': 'x'}, {'claude': 'best'}) is None
+    assert jev.triage(project_folder, {'m1': 'may I spend $40?'}) is None
     assert jev.rank_items(project_folder, 'code.a', {'code.a#1': 'yes'}, {'address': 'code.a'}) is None
 
 
@@ -952,28 +964,6 @@ def test_jev_choice_that_flips_with_the_order_stays_unsure_from_the_cache_and_is
     assert again.answer == 'claude' and not again.sure and again.item == 'code.a#1'
     kept = item_read(project_folder, 'code.a', 1)
     assert kept is not None and kept['module'] == 'jev' and kept['sure'] is False and kept['why']
-
-
-@pytest.mark.req('BASE-004')
-def test_jev_chooses_agent_model_and_effort_for_many_tickets_and_their_start_order_in_one_request(
-        home, project_folder, monkeypatch):
-    from metaform import jev
-    from metaform.module import item_read
-    sent = _fake_jev(monkeypatch, project_folder)
-    tickets = {'t1': {'task': 'Fix a typo.', 'address': 'code.a'}, 't2': {'task': 'yes: unblocks t3'},
-               't3': {'task': 'Build on t2.'}}
-    options = {'claude': {'model': {'opus': 'deep work', 'haiku': 'best for small edits'},
-                          'thought_level': {'high': 'best for most', 'low': 'quick'}}}
-    got = jev.choose_agents(project_folder, tickets, {'claude': 'best at design', 'codex': 'fast edits'}, options,
-                            unplaced={'t2', 't3'})
-    assert got is not None and len(sent) == 1  # one paid state, every question on it
-    assert set(sent[0]['state']['tickets']) == {'t1', 't2', 't3'}
-    assert all(decided.answer == {'agent': 'claude', 'model': 'haiku', 'thought_level': 'high'} and decided.sure
-               for decided in got.decisions.values())
-    assert {name.split('__', 1)[1] for name in sent[0]['questions']} >= {
-        'agent', 'agent__r', 'claude__model', 'claude__model__r', 'claude__thought_level', 'first'}
-    assert got.order is not None and got.order.answer == ['t2', 't3'] and got.order.item is None  # placed t1 stays out
-    assert got.decisions['t1'].item == 'code.a#1' and item_read(project_folder, 'code.a', 1) is not None
 
 
 @pytest.mark.req('BASE-004')

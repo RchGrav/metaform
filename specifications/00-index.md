@@ -25,12 +25,12 @@ Every design decision goes into this spec when it is decided, in the record that
 
 | File | Prefix | Covers |
 |---|---|---|
-| 01-map.md | MAP | C(T), the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records and how it is judged, work records, tasks, the work queue, questions and past work, the map written out as Markdown or XML |
+| 01-map.md | MAP | Functional identity, the receiver, purpose and encounter mesh, namespace and Types, element identity, roles, joins, subtypes, how an intake result becomes records and how it is judged, work records, tasks, the work queue, questions and past work, the map written out as Markdown or XML |
 | 02-layers.md | LAYER | Layers and their one variable, layer properties, select and mask, direct reads, provenance, memory, corrections, the two types of blind spot analysis, the blind-spot challenge, knowledge layers built node by node, item flags, reading from the roots, layer names as namespace roots |
 | 03-storage.md | STORE | SQLite tables, keys and indexes, the data access object, import, export and query |
-| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, handing work to an agent, the workflow module, the roles of the work, the workflow agent, the loop controller, the signals the orchestrator reads |
+| 04-chassis-modules.md | BASE | The chassis, the common base, the module contract, the template, discovery, compatibility, lifecycle, versioning, wheels and packaging, handing work to an agent, the workflow module (removed 2026-10-25), the roles of the work, the workflow agent (removed 2026-10-25), the loop controller, the signals the orchestrator reads |
 | 05-cli-settings.md | CLI | Command grammar, help, errors, the settings schema, glue, booleans, context and the command surface, the top menu and entering a module, the working folder, aliases, the settings screen |
-| 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the slash commands, the workflow agent served as a skill, complete prompts, the first working test |
+| 06-mcp-install.md | MCP | The MCP module, uvx launch, the installer, the skill, agent instructions and what they tell an agent to do, the slash commands, the workflow agent served as a skill (removed 2026-10-25), complete prompts, the first working test |
 | 07-quality.md | QUAL | The quality bar, tests, type checking, lint, three-system CI, reviews, the cold build check |
 | 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history, clearing a project |
 | 09-viewer.md | VIEW | The one web GUI, user global, and its first view, the viewer: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object in the left window |
@@ -59,7 +59,7 @@ A record whose status is recommended is built as written. A record whose status 
 ## Out of scope for this spec
 
 - Remote hosting of the MCP server.
-- Module specs for the rulebook and the browser terminal module, pending D44. The workflow module is BASE-051. The viewer, section 9, is in scope.
+- Module specs for the rulebook and the browser terminal module, pending D44. The workflow module, BASE-051, was removed 2026-10-25. The viewer, section 9, is in scope.
 - Maintaining users' forks, CI and wheels at release, pending D30.
 
 ## Build order for the first working test

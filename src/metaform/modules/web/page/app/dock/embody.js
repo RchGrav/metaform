@@ -12,7 +12,7 @@ import {chatDocked} from '/page/app/workspace/workspace.js';
 /* The chat dock: a thin sliver at the lower right that lifts when the pointer comes near and opens, on a click, into
  * the page's one place for conversations with agents. Every thread is an ACP session, kept by its session id, and a
  * tab of its own: an agent dispatched on a ticket, the intake, the person's system agent, a chat the person started, a
- * sentinel, each with a chip saying where it comes from. A thread shows the agent's words, its thinking, its tool calls
+ * each with a chip saying where it comes from. A thread shows the agent's words, its thinking, its tool calls
  * and its permission requests in order, with its plan and its settings above; Call reaches the person's system agent,
  * the +1 outside the agent limit, and /list and /chat <n> talk with an agent at work, VIEW-039 and VIEW-045. Bubbles
  * alternate: the person's on the right, the agent's on the left. A file attached with the paperclip is saved in the
@@ -148,11 +148,10 @@ export function paintAvatar(work, session) {
   avatar.title = glyph ? `Its body on the map: the ${glyph}. Change it with /mascot.` : 'Choose a glyph with /mascot';
 }
 /* Where a thread comes from, said on its chip. The system agent and a chat the person started are the person's own;
- * a session the page did not start is known only as an agent at work, an intake or a sentinel. */
+ * a session the page did not start is known only as an agent at work or an intake. */
 export const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Your system agent',
-  conversation: 'Your chat', sentinel: 'Sentinel', merge: 'Merge help', notification: 'Project updates'};
-export const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DOCK.mine ? 'system'
-  : (D.proposals || {})[workId] ? 'sentinel' : 'agent';
+  conversation: 'Your chat', merge: 'Merge help', notification: 'Project updates'};
+export const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DOCK.mine ? 'system' : 'agent';
 export const sourceChip = source => h('span', {class: 'src', 'data-source': source}, SOURCES[source] || SOURCES.agent);
 export function dockState(state) {
   const box = $('#helpdesk'), was = !box.hidden, open = state === 'open' || state === 'open big';

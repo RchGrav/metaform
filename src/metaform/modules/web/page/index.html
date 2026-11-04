@@ -44,25 +44,25 @@
     </div>
     <button id="messages" class="btn" type="button" hidden title="Go to the oldest message that waits for you"></button>
     <div class="hmore">
-      <label class="switch autostart" title="Start agents on this project's tickets by themselves. Each project has its own setting"><input id="autostartAgents" type="checkbox" role="switch" disabled>Full Auto</label>
+      <label class="switch fullauto" title="Full Auto: when a worktree closes, its branch is merged into the branch checked out in this project's folder and the worktree is removed. Saved as the tasks_full_auto setting; each project has its own"><input id="fullAuto" type="checkbox" role="switch" disabled>Full Auto</label>
       <div class="agentpick pick">
         <button class="btn quiet" id="agentsMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="agentbox" title="The agents at work: how many at once, how their prompts are answered, and putting them back in order">Agents<i class="i i-chev" aria-hidden="true"></i></button>
         <div class="menu" id="agentbox" hidden role="menu" aria-label="Agents">
           <div class="agent-sessions" aria-label="Agent conversations" hidden></div>
           <button id="broadcastBtn" type="button" role="menuitem" aria-controls="broadcast" title="Tell every agent working on this project something at once, as your own message">Broadcast…</button>
           <div class="label">Settings</div>
-          <div class="menu-field agent-count" title="How many ticket workers Full Auto may start in this project. A ticket you start runs whatever the count. The advisor and temporary helpers have separate capacity. Saved as the dispatch_agents setting"><label for="agentCount">Full Auto workers</label><input id="agentCount" type="number" min="1" step="1"></div>
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
-          <p class="menu-hint">Chats, issues, intakes and the tickets Full Auto starts use the default unless you choose another, on the card or where you start it.</p>
+          <p class="menu-hint">Chats, intakes and explicitly started tickets use the default unless you choose another, on the card or where you start it.</p>
+          <div class="pair-agents" id="pairPick" hidden title="The pair of project agents that tasks start begins, each with its model and thinking level. Saved as tasks_agent_1 and tasks_agent_2 with their _model and _effort settings; default runs on the agent's own dispatch setting"></div>
           <div class="menu-field agent-prompts" title="How agents' permission prompts are answered. Saved as the dispatch_prompts setting; every agent reads it at its next prompt, so a change reaches agents already running"><label for="promptsPick">Agent prompts</label><select id="promptsPick" disabled></select><p class="said" id="promptsSaid" role="status"></p></div>
           <div class="menu-field bubble-seconds" title="How long a word bubble stays up after each new line. Saved as the web_bubble_seconds setting"><label for="bubbleSeconds">How long speech bubbles stay up</label><select id="bubbleSeconds"><option value="auto">Auto: longer lines stay longer</option><option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option></select></div>
           <button id="shareBtn" type="button" role="menuitem">Share a screen with agents…</button>
           <button id="agentViewBtn" type="button" role="menuitem" aria-controls="agentview" title="Exactly what an agent connecting to this project receives: the connect message, the glossary with its tools, and the selected node's brief, each with its size">What an agent sees…</button>
           <button id="allSettingsBtn" type="button" role="menuitem" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <div class="sep" role="separator"></div>
-          <button id="stopAllBtn" class="danger" type="button" role="menuitem" title="Stop every agent of this project and turn Full Auto off, so nothing starts in their place. Each can be resumed afterwards">Stop all agents</button>
-          <button id="stopHomeBtn" class="danger" type="button" role="menuitem" title="Stop every agent of every project on this machine, and turn Full Auto off in each">Stop all agents on this machine</button>
-          <button id="automationSettingsBtn" type="button" role="menuitem">Full Auto configuration…</button>
+          <button id="stopAllBtn" class="danger" type="button" role="menuitem" title="Stop every agent of this project Each can be resumed afterwards">Stop all agents</button>
+          <button id="stopHomeBtn" class="danger" type="button" role="menuitem" title="Stop every agent of every project on this machine">Stop all agents on this machine</button>
+          <button id="automationSettingsBtn" type="button" role="menuitem">Agent settings…</button>
           <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
         </div>
       </div>
@@ -278,8 +278,6 @@
         <label class="check hold"><input type="checkbox" class="backlog"> Put it in the backlog</label>
       </div>
       <p class="hint">The part's state says where the part stands on the map; the kind says what this ticket asks for. A plain task on a part that works needs neither.</p>
-      <label class="field">Workflow <select class="workflow" disabled><option value="">Loading workflows…</option></select></label>
-      <label class="field workflow-entry" hidden>Entry call <input class="workflow-call" aria-label="Workflow entry call" placeholder="workflow.quality.code.review(target=this)"><small>Edit the arguments for this run. this is the first node below. Task text is optional for a workflow.</small></label>
       <div class="text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="The task" data-placeholder="Say what is to be done. Insert a part from the list on the right to name it here."></div>
       <div class="eyebrow">Nodes of this task</div>
       <p class="hint">The first is the one the ticket is on; the others are for reference.</p>
@@ -318,7 +316,6 @@
     <div class="sessionbar" hidden></div>
     <div class="assignmentbox" aria-label="Assignment and delivery" hidden></div>
     <div class="planbox" hidden></div>
-    <div class="proposals" aria-label="The sentinel's proposals" hidden></div>
     <div class="log" role="log" aria-live="polite" aria-label="The conversation" tabindex="-1"></div>
     <!-- Shown while the person reads further up and something new arrives below: a click, or Alt+End, goes to it. -->
     <button class="latest" type="button" hidden title="Go to the newest message (Alt+End)"><i class="i i-chev" aria-hidden="true"></i><span>New messages</span></button>
@@ -333,7 +330,7 @@
     </form>
     <!-- One quiet line under the box: Resume and Stay connected, then Interrupt while a turn runs, and Call. Stop agent is a separate control in the thread bar.
          The agent a call starts is chosen in the settings line at the top. -->
-    <div class="calls"><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><label class="resume stay" title="Keep your system agent running for this project: it starts when the web GUI starts or this page opens, and comes back with its memory when it ends without your stop; Stop agent turns this off; closing the chat leaves it running"><input type="checkbox"> Stay connected</label><span class="grow"></span><button class="interrupt" type="button" disabled hidden title="Interrupt the current turn and keep the conversation available (Ctrl+.)" aria-keyshortcuts="Control+.">Interrupt</button><button class="call" type="button" title="Start a chat with your system agent; close × hides the chat, Stop agent stops it">Call</button></div>
+    <div class="calls"><label class="resume" title="Call and Chat go on with your last conversation about the same thing, so the agent keeps its memory of it; unchecked starts a new one"><input type="checkbox" checked> Resume</label><span class="grow"></span><button class="interrupt" type="button" disabled hidden title="Interrupt the current turn and keep the conversation available (Ctrl+.)" aria-keyshortcuts="Control+.">Interrupt</button><button class="call" type="button" title="Start a chat with your system agent; close × hides the chat, Stop agent stops it">Call</button></div>
     </div></div>
   </div>
 </div>
@@ -347,7 +344,7 @@
     <label class="field">Address <input class="address" list="addresses" placeholder="code.alarm.visible" autocomplete="off"></label>
     <datalist id="addresses"></datalist>
     <div class="row"><label class="field">Words of its name <input class="length" type="number" min="1" max="9" value="1" title="How many segments of the address, read from the leaf, name it"></label>
-      <label class="field">Name <input class="name" placeholder="what the project calls it" title="Canonical Name (Project official terminology) or Informal Name"></label></div>
+      <label class="field">Name <input class="name" placeholder="Canonical Name (Project official terminology)" title="Canonical Name (Project official terminology) or Informal Name"></label></div>
     <label class="field">Role <select class="role"><option value="">none given</option><option>SE</option><option>NE</option><option>DE</option><option>CQU</option><option>AUE</option></select></label>
     <label class="field">The purpose is held by <select class="receives"><option value="node"></option><option value="new">the new element, and this node serves it</option></select></label>
     <label class="field">Purpose <textarea class="purpose" placeholder="What the one that holds the purpose needs this for"></textarea></label>

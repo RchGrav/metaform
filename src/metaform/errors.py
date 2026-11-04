@@ -23,8 +23,3 @@ class StoreError(Stop):
 class NewerStore(StoreError):
     """A file at a schema version newer than this Metaform's code, STORE-029: a long-running process, such as the web
     GUI's server, can tell it apart and hand over to newer code on disk."""
-
-
-class PersonsDecision(Stop):
-    """A refusal of something only the person decides, CLI-011: its next step is what the person does, which no
-    surface turns into a call for the agent that was refused."""

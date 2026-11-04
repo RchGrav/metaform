@@ -1,6 +1,6 @@
 # Automation, triage and scoped knowledge
 
-Metaform assigns a ticket directly to a specialist. The user-facing agent handles triage, board priorities and communication. It can commission a missing role without taking over the ticket's execution session. New assignments default to `metaform://role/implementer`; an explicit specialty uses its registered Metaform URI. Generated duties travel with project exports and each admitted assignment keeps its exact role snapshot across resumes and later prompt edits.
+Metaform assigns a ticket directly to a specialist. The user-facing agent handles triage, board priorities and communication. It can commission a missing role without taking over the ticket's execution session. Assignments use registered expertise at its Metaform URI; no Implementer role is supplied by default. Generated duties travel with project exports and each admitted assignment keeps its exact role snapshot across resumes and later prompt edits.
 
 ## User control and capacity
 

@@ -45,18 +45,20 @@ def test_no_prompt_text_is_written_in_python():
     python = {path: literals(path) for path in SOURCE.glob('**/*.py') if 'tests' not in path.parts}
     for path in prompt_files():
         for element in ET.parse(path).getroot():
-            for piece in [element.text or ''] + [child.tail or '' for child in element]:
-                for line in piece.splitlines():
-                    line = ' '.join(line.split())
-                    if len(line) < 25:
-                        continue
-                    holders = [str(source.relative_to(SOURCE)) for source, strings in python.items()
-                               if any(line in string for string in strings)]
-                    assert not holders, f'{path.relative_to(SOURCE)} {element.tag}: "{line}" is in {holders}'
+            # Inline fills belong to the same line: a command prefix alone is not duplicated prompt prose.
+            body = (element.text or '') + ''.join(ET.tostring(child, encoding='unicode') for child in element)
+            for line in body.splitlines():
+                line = ' '.join(line.split())
+                if len(line) < 25:
+                    continue
+                holders = [str(source.relative_to(SOURCE)) for source, strings in python.items()
+                           if any(line in string for string in strings)]
+                assert not holders, f'{path.relative_to(SOURCE)} {element.tag}: "{line}" is in {holders}'
 
 
 @pytest.mark.req('MCP-031')
 def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_modules_listed(run, home, tmp_path):
+    from metaform.module import module_instructions
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -64,10 +66,11 @@ def test_the_full_instructions_are_the_instructions_prompt_with_the_surfaced_mod
     run('set', '--no-tasks', cwd=folder)  # the task lines are tested below
     element = prompt(SOURCE / 'resources' / 'prompts.xml', 'instructions')
     on = [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines() if line.split()[1] == 'on']
-    def line(module):  # a module's instructions prompt; a project with no intake also gets the notice, MCP-009
-        own = (prompt(SOURCE / 'modules' / module / 'resources' / 'prompts.xml', 'instructions').text or '').strip()
-        notice = prompt_text(SOURCE / 'modules' / module, 'no_intake')
-        return own if notice is None else f'{own}\n{notice}'  # the status hook's line starts on its own line
+    def line(module):  # include state notices, and allow modules with no instructions prompt, MCP-009
+        own = (prompt_text(SOURCE / 'modules' / module, 'instructions') or '').strip()
+        served = module_instructions(folder, module)
+        assert not own or (served is not None and own in served)
+        return served
     listed = '\n'.join(filter(None, (line(module) for module in sorted(on))))  # an empty one sends nothing
     assert [child.tag for child in element] == ['surface', 'modules']
     opening = prompt(SOURCE / 'resources' / 'prompts.xml', 'surface_cli').text.strip()  # no server claimed on the CLI
@@ -84,8 +87,9 @@ INTAKE = (('element', 'code.timer.kitchen', 'role=DE', 'name_length=2', 'name=ki
 @pytest.mark.req('MCP-029')
 @pytest.mark.req('MCP-031')
 def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_state(run, home, tmp_path):
-    """Claude Code keeps the first 2,048 characters of a server's instructions and drops the rest, so the whole
-    default text must fit before an intake, while one is recorded and after it, with every shipped module on."""
+    """The MCP startup directive and links fit the host's 2,048-character limit in every intake state. The CLI
+    guide serves the full module and state instructions separately, with every shipped module on."""
+    from metaform.modules.mcp.server import connect_instructions
     folder = tmp_path / 'proj'
     folder.mkdir()
     run('add', 'project', 'proj', str(folder))
@@ -94,8 +98,13 @@ def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_sta
         run('enable', module, cwd=folder)
     more = prompt(SOURCE / 'resources' / 'prompts.xml', 'more').text.strip()
     def served():
+        startup = connect_instructions(folder)
+        assert len(startup) <= 2048, len(startup)
+        assert startup.splitlines()[0] == prompt_text(SOURCE / 'modules' / 'mcp', 'connect_directive')
+        assert {'metaform://rules', 'metaform://metaform', 'metaform://memory', 'metaform://modules',
+                'metaform://task/person', 'metaform://proj'} <= set(startup.splitlines())
         text = run('help', 'agents', cwd=folder).stdout
-        assert more in text and len(text) <= 2048, len(text)
+        assert more in text
         return text
     assert prompt_text(SOURCE / 'modules' / 'intake', 'no_intake') in served()
     run('intake', 'start', cwd=folder)
@@ -213,7 +222,7 @@ def test_a_prompt_written_wrong_in_its_file_is_named_with_its_line_and_the_other
 def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_path):
     """UX review round 2, prompt-authoring F2 and F3: the gate every surface saves through encodes the person's text,
     so &, < and > are sent as written, a declared fill place stays one, and what is saved is what is sent; reads give
-    it back as written. The Canonical Intake is refused, for an edit of it would never be sent."""
+    it back as written. The Canonical Intake stays fixed while other whole files remain editable."""
     from metaform import prompt_files
     from metaform.data import prompts
     folder = tmp_path / 'mine'
@@ -233,11 +242,18 @@ def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_
     assert prompts.prompt_version('prompt.mine:greet', 1).origin == 'shipped'  # the edit's parent is the shipped text
     with pytest.raises(ValueError, match='Canonical Intake'):
         prompt_files.save_edit('prompt.intake:intake.axiom', 'x')
+    intake_text = '# A different intake\n\nUse these words directly.\n<unclosed & literal < >'
+    edited, notices = prompt_files.save_edit('prompt.intake:intake.xml', intake_text)
+    assert edited.text == intake_text and notices == []
+    selected = prompt_files.resolve_text('prompt.intake:intake.xml', 'The shipped file has different words.')
+    assert selected['text'] == intake_text
+    assert selected['actual_version_id'] == selected['selected_version_id'] == edited.version_id
+    assert selected['problems'] == []
 
 
 def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
     """prompt-authoring F2: `metaform prompt save` of a prompt a module ships stores what is sent and reads it back
-    as written; a save that would not be sent is never stored."""
+    as written. A save of the fixed Canonical Intake is refused. Other whole files accept arbitrary text."""
     from metaform import prompt_files
     from metaform.data import prompts
     run('prompt', 'save', 'prompt.chassis:work_reminder', 'Hand work on & name its node <here/>.')
@@ -247,3 +263,83 @@ def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
     assert run('prompt', 'prompt.chassis:work_reminder').stdout == 'Hand work on & name its node <here/>.'
     refused = run('prompt', 'save', 'prompt.intake:intake.axiom', 'x', ok=False)
     assert refused.returncode == 2 and 'never be sent' in refused.stderr
+    intake_text = '# Replacement\n\n[unfinished Markdown]( & <unclosed>\nNo former sections are required.'
+    run('prompt', 'save', 'prompt.intake:intake.xml', intake_text)
+    selected = prompts.prompt_version('prompt.intake:intake.xml')
+    assert selected.text == intake_text
+    assert run('prompt', 'prompt.intake:intake.xml').stdout == intake_text
+    assert prompt_files.resolve_text('prompt.intake:intake.xml', 'Original prompt.')['text'] == intake_text
+
+
+def test_intake_schema_instructions_are_editable_like_other_whole_files(home):
+    from metaform import prompt_files
+    from metaform.data import prompts
+
+    name = 'prompt.intake:metaform.xml'
+    text = 'Choose any source. A < b & <unclosed need no prescribed markup.'
+    selected, notices = prompt_files.save_edit(name, text)
+
+    assert notices == []
+    assert prompt_files.readable(selected) == text
+    assert prompts.prompt_version(name).version_id == selected.version_id
+    assert prompt_files.resolve_text(name, 'Original schema instructions.')['text'] == text
+
+
+@pytest.mark.parametrize('name', ['prompt.intake:intake.axiom', 'prompt.intake:schema_pointer'])
+def test_canonical_intake_and_its_schema_pointer_stay_fixed(home, name):
+    from metaform import prompt_files
+
+    with pytest.raises(ValueError, match='never be sent'):
+        prompt_files.save_edit(name, 'An edit must not replace the served Canonical Intake.')
+
+
+@pytest.mark.parametrize('format', ['text', 'markdown', 'xml'])
+def test_whole_file_resolution_serves_selected_edits_literally_regardless_of_stored_format(home, format):
+    from metaform import prompt_files
+    from metaform.data import prompts
+
+    name = 'prompt.intake:intake.xml'
+    source = '<old_layout><old_tag>Original content.</old_tag></old_layout>'
+    prompts.shipped(name, format, source)
+    text = '  # Any replacement\n\n<unknown &amp; <unclosed>\nNo old tags.\n  '
+    edited, notices = prompt_files.save_edit(name, text)
+
+    resolved = prompt_files.resolve_text(name, source)
+
+    assert notices == []
+    assert edited.format == format
+    assert resolved['text'] == text
+    assert resolved['actual_version_id'] == resolved['selected_version_id'] == edited.version_id
+    assert (resolved['number'], resolved['origin']) == (edited.number, 'edited')
+    assert resolved['source']['kind'] == 'selected_edit'
+    assert resolved['source']['path'] is None
+    assert resolved['bindings'] == {}
+    assert resolved['problems'] == resolved['notices'] == []
+    assert prompts.prompt_version(name, 1).text == source
+
+
+def test_whole_file_resolution_applies_only_explicit_literal_bindings_and_preserves_source_metadata(home):
+    from metaform import prompt_files
+
+    name = 'prompt.intake:intake.xml'
+    source = '# Arbitrary words\n{project}\n<unclosed &amp; {task}\n{unknown}\n<who/>\n'
+    before = prompt_files.resolve_text(name, source)
+    text = source + '\nAn edited ending without any required section.'
+    selected, notices = prompt_files.save_edit(name, text)
+    unfilled = prompt_files.resolve_text(name, source)
+    bindings = {'{project}': 'A & <B>', '{task}': 'Keep <raw/> &amp; literal.', 'who': 'Unapplied'}
+
+    resolved = prompt_files.resolve_text(name, source, **bindings)
+
+    assert notices == []
+    assert before['text'] == source
+    assert resolved['text'] == text.replace('{project}', 'A & <B>').replace(
+        '{task}', 'Keep <raw/> &amp; literal.')
+    assert '{unknown}' in resolved['text'] and '<who/>' in resolved['text']
+    assert resolved['bindings'] == bindings
+    assert resolved['actual_version_id'] == resolved['selected_version_id'] == selected.version_id
+    assert resolved['source'] == unfilled['source']
+    assert resolved['number'] == unfilled['number'] == selected.number
+    assert resolved['origin'] == unfilled['origin'] == 'edited'
+    assert resolved['problems'] == resolved['notices'] == []
+    assert resolved['rendered_fingerprint'] != unfilled['rendered_fingerprint']

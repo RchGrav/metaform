@@ -1,4 +1,4 @@
-/* Giving work, VIEW-032: the task written as a person writes, its linked nodes, workflows, the editor's own chart
+/* Giving work, VIEW-032: the task written as a person writes, its linked nodes, the editor's own chart
  * and the cursor kept. */
 import '/page/app/agents/dispatch.js';  // the part before runs first, so the parts run in the page's order
 import {$, SVG, h, fill} from '/page/app/core/dom.js';
@@ -32,39 +32,6 @@ function unlink(address) {
   K.nodes = K.nodes.filter(one => one !== address);
   linkedNodes();
 }
-async function taskWorkflows() {
-  const generation = ++K.generation, picker = $('#task .workflow'), project = S.project, metaform = S.base;
-  const stale = () => generation !== K.generation || $('#task').hidden || project !== S.project || metaform !== S.base;
-  picker.disabled = true;
-  fill(picker, h('option', {value: ''}, 'Loading workflows…'));
-  $('#task .workflow-entry').hidden = true;
-  $('#task .workflow-call').value = '';
-  if (!S.bases.some(map => map.active && map.id === metaform)) {
-    fill(picker, h('option', {value: ''}, 'Choose the active map to run workflows'));
-    return;
-  }
-  try {
-    const found = await read('workflows');
-    if (stale()) return;
-    const calls = found.workflows.flatMap(workflowCalls);
-    const none = found.enabled ? (calls.length ? 'No workflow' : 'No stored workflows') : 'Workflows unavailable';
-    fill(picker, h('option', {value: ''}, none), ...calls);
-    picker.disabled = !calls.length;
-  } catch (error) {
-    if (stale()) return;
-    fill(picker, h('option', {value: ''}, 'Workflows could not load'));
-    toast(error.message);
-  }
-}
-/* Each entry of a stored workflow, offered as a call to start it with. */
-const workflowCalls = workflow => workflow.prompt.map(name =>
-  h('option', {value: `${workflow.address}.${name}`}, `${workflow.name || workflow.address} · ${name}`));
-function chooseWorkflow() {
-  const chosen = $('#task .workflow').value;
-  $('#task .workflow-entry').hidden = !chosen;
-  $('#task .workflow-call').value = chosen ? `${chosen}()` : '';
-}
-$('#task .workflow').onchange = chooseWorkflow;
 export function giveWork(id, text = '') {
   const element = S.elements.get(id)?.element;
   if (!element) { toast('Work is given at an element.'); return; }
@@ -89,7 +56,6 @@ export function giveWork(id, text = '') {
   fill($('#task .rows'), parts.map(partRow));
   $('#task .insert').disabled = $('#task .link').disabled = true;
   $('#task').hidden = false;
-  taskWorkflows();
   $('#task .text').focus();
   chart(parts);
 }
@@ -244,13 +210,6 @@ const taskText = () => [...$('#task .text').childNodes].map(function told(node) 
   if (node.dataset?.address) return `[[${node.textContent}|${node.dataset.address}]]`;
   return (node.tagName === 'DIV' || node.tagName === 'BR' ? '\n' : '') + [...node.childNodes].map(told).join('');
 }).join('').replace(/\u200b/g, '').replace(/\u00a0/g, ' ').trim();
-/* The task with the stored workflow it runs: the agent is told to run it with the workflow module and to complete the
- * ticket with what the entry call returns. */
-const withWorkflow = (task, input) => (task ? task + '\n\n' : '')
-  + 'Run this stored workflow using the workflow module\'s run command with the following input. '
-  + 'Follow the returned instructions and use the workflow commands for calls, handoffs and returns. '
-  + 'Complete this ticket with the result when the entry call returns. Report any workflow failure on this ticket.\n'
-  + `Workflow input: ${JSON.stringify(input)}`;
 /* Put: one ticket saved for the task, and its agent started at once when that is asked. */
 async function putTask() {
   if (K.project !== S.project || K.base !== S.base) {
@@ -258,12 +217,7 @@ async function putTask() {
     return;
   }
   let task = taskText();
-  if (!task.trim() && !$('#task .workflow').value) { toast('Say what is to be done.'); return; }
-  if ($('#task .workflow').value) {
-    const call = $('#task .workflow-call').value.trim();
-    if (!call) { toast('Give the workflow an entry call.'); return; }
-    task = withWorkflow(task, {call, element: K.nodes[0]});
-  }
+  if (!task.trim()) { toast('Say what is to be done.'); return; }
   if (!task) { toast('A task says what is to be done.'); return; }
   // One ticket on the node it is assigned to, the first listed; every other node of the task, linked or named
   // inline, is linked for reference, VIEW-035.

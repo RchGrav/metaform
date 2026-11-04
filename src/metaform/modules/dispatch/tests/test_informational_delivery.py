@@ -7,12 +7,12 @@ import os
 from types import SimpleNamespace
 
 import pytest
+from metaform.modules.dispatch.tests.test_orchestration_transport import sent
 
 from metaform.data import Store
 from metaform.module import context
 from metaform.modules.dispatch.signals import add_line
 from metaform.modules.dispatch.tests.test_dispatch import Dispatch
-from metaform.modules.dispatch.tests.test_orchestration_transport import sent
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -257,7 +257,7 @@ def test_accepted_delivery_receipts_survive_duplicate_entries_and_restart(dispat
         session.prep = session.link_asked = session.context_checked = True
         for name in ('changed', 'note', 'flush', 'save_state', 'spend'):
             monkeypatch.setattr(session, name, nothing)
-        for name in ('hush', 'arm', 'intake_clock', 'trace'):
+        for name in ('hush', 'arm', 'trace'):
             monkeypatch.setattr(session, name, lambda *args, **kwargs: None)
         monkeypatch.setattr(session, 'spawn', lambda coro: tasks.append(asyncio.create_task(coro)))
         session.conn = SimpleNamespace(prompt=accepted, resume_session=resume, load_session=resume)

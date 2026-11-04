@@ -1,6 +1,5 @@
 """Two live project sessions exchange threaded notes and survive project/base selection."""
 import json
-import sys
 
 import pytest
 
@@ -30,7 +29,7 @@ def test_live_project_routing_and_reply_keep_original_sessions(run, home, projec
             return next((row for row in tx.rows('agent_sessions', limit=0).results if row['state'] == 'running'), None)
     def command(runner, row, *words):
         done = run('dispatch', 'note', '--json', *words, cwd=runner.folder, env={
-            'METAFORM_ROLE': 'worker', 'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']})
+            'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']})
         assert done.returncode == 0, done.stderr
         return json.loads(done.stdout)
     try:
@@ -55,7 +54,7 @@ def test_live_project_routing_and_reply_keep_original_sessions(run, home, projec
         assert returned['from']['base'] == original_base
         assert returned['from']['session_id'] == b['session_id']
         shown = json.loads(run('dispatch', 'notes', f'note={reply["note"]}', '--json', cwd=first.folder, env={
-            'METAFORM_ROLE': 'worker', 'METAFORM_WORK': first.id, 'METAFORM_SESSION': a['runner']}).stdout)
+            'METAFORM_WORK': first.id, 'METAFORM_SESSION': a['runner']}).stdout)
         received = next(one for one in shown['notes'] if one['note'] == reply['note'])
         assert received['way'] == 'received' and received['from']['project'] == 'other'
 
@@ -142,60 +141,6 @@ def test_informational_duplicates_stay_recorded_and_user_direction_reaches_sessi
     assert waiting == [] and not resumed.pending
 
 
-@pytest.mark.parametrize('start', ['claim', 'ensure'])
-def test_ticket_check_in_keeps_outcome_without_system_inbox_changes(run, home, project_folder, tmp_path,
-                                                                 monkeypatch, start):
-    import os
-
-    from metaform.module import context, provided, refresh_modules, work_reads
-    from metaform.modules.dispatch.orchestration import UPDATES
-    from metaform.modules.dispatch.peering import peer_lines
-
-    live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
-    run('set', '--orchestration-reviews', '0', cwd=project_folder)
-    work = live.store.add_work(live.node, None, task='Count only open tickets toward the held cap.')
-    refresh_modules()
-    transport = provided(project_folder, 'orchestration.transport')[0][1]
-    owner = provided(project_folder, 'orchestration')[0][1]
-    module = sys.modules[type(transport).__module__.rpartition('.')[0]]
-    monkeypatch.setattr(module, 'runner_of', lambda pid: live.id)
-    dispatch_store = Store('proj', module='dispatch')
-    with dispatch_store.tables() as tx:
-        tx.insert('agent_sessions', {'session_id': 'system', 'work_id': live.id, 'agent': 'claude',
-                                     'state': 'running', 'pid': os.getpid(), 'runner': 'r-system',
-                                     'started': '2026-10-21T00:00:00Z', 'seq': 1, 'origin': module.origin()})
-        tx.insert('session_lines', {'session_id': 'system', 'name': 'state', 'work_id': live.id, 'kind': 'state',
-                                    'text': json.dumps({'about': 'system', 'role': 'system'}), 'seq': 1})
-    told = []
-    monkeypatch.setattr(module, 'tell', lambda *args, **kwargs: told.append((args, kwargs)))
-
-    def ctx(**nouns):
-        return context('orchestration', project_folder, project='proj', session='worker', nouns=nouns)
-
-    if start == 'claim':
-        owner.claim(ctx(work=work.id, role='implementer', session='worker'))
-    else:
-        owner.ensure(ctx(), work.id, role='implementer', session_id='worker')
-    before = peer_lines(live.store, live.id)
-    with dispatch_store.tables(write=False) as tx:
-        lines = tx.rows('session_lines', limit=0).results
-        assert tx.get('agent_sessions', {'session_id': UPDATES}) is None
-    owner.check_in(ctx(state='returned', summary='Only open, active tickets count toward the held cap.',
-                       candidate={'revision': 'held-cap'}, evidence=['Closed tickets leave the count.']))
-    owner.drain(ctx())
-    owner.drain(ctx())
-    assert told == []
-    assert peer_lines(live.store, live.id) == before
-    with dispatch_store.tables(write=False) as tx:
-        assert tx.rows('session_lines', limit=0).results == lines
-        assert tx.get('agent_sessions', {'session_id': UPDATES}) is None
-    ticket = live.store.ticket(work.id).work
-    assert ticket.done and ticket.resolution == 'Only open, active tickets count toward the held cap.'
-    retained = work_reads(project_folder, ticket, project='proj')['orchestration']
-    assert retained['candidate'] == {'revision': 'held-cap'}
-    assert retained['evidence'] == ['Closed tickets leave the count.']
-
-
 @pytest.mark.kind('fixture')
 def test_reply_returned_while_its_thread_is_written_is_not_also_queued(run, home, project_folder, tmp_path):
     import asyncio
@@ -272,7 +217,7 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
 
     def command(runner, row, *words):
         return json.loads(run('dispatch', 'note', '--json', *words, cwd=runner.folder, env={
-            'METAFORM_ROLE': 'system', 'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']}).stdout)
+            'METAFORM_TASK_NAME': 'user_agent', 'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']}).stdout)
 
     def chat(runner):
         lines = json.loads(run('dispatch', 'sessions', f'id={runner.id}', '--json', cwd=runner.folder).stdout)['lines']

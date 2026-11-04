@@ -187,11 +187,6 @@ def test_a_prompt_store_at_layout_2_is_upgraded_in_place_and_keeps_its_versions(
 @pytest.mark.req('CTX-082')
 @pytest.mark.parametrize(('old_name', 'new_name'), [
     ('dispatch:work', 'prompt.dispatch:work'),
-    ('skill:sentinel', 'prompt.skill.sentinel'),
-    ('logic.skill.sentinel', 'prompt.skill.sentinel'),
-    ('skills:workflow-logic', 'prompt.skills:workflow-prompt'),
-    ('workflow-logic', 'prompt.skills:workflow-prompt'),
-    ('prompt-lexicalization', 'prompt.workflow:prompt-lexicalization'),
 ])
 def test_legacy_copy_renames_preserve_all_history_and_layer_uses(home, tmp_path, old_name, new_name):
     """Upgrade an isolated legacy copy before exposing canonical serving to a newer client."""
