@@ -390,6 +390,7 @@ Reply in <limit/> characters or fewer.</phase_turn>
 <score_received>Your private scorecard was received.</score_received>
 <session_profile>Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.</session_profile>
 <farewell_instruction>Speak freely. Say done when you are finished.</farewell_instruction>
+<advance_after_discussion>Panel <topic/>'s discussion has already ended. The current phase is <stage/>. End discussion is available during panel discussion.</advance_after_discussion>
 <budget_warning>Token budget warning for roundtable <topic/>, <phase/>: <seat/> has used <tokens/> tokens, crossing the <percent/>% threshold of <limit/> tokens per agent.
 Bring the current work toward closure. This phase advances automatically when any participant reaches 120%.</budget_warning>
 <budget_closing_panel>Roundtable <topic/> panel closing: <seat/> has used <tokens/> tokens against the <limit/>-token per-agent budget.

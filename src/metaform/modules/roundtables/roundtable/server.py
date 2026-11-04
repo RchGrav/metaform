@@ -313,7 +313,8 @@ def advanced(found: dict[str, Any]) -> dict[str, Any]:
     if found['state'] == 'ended':
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
     if found['stage'] and found['stage'] != 'discussion':
-        raise ToolError(f'Roundtable {found["number"]} is past its topic\'s discussion, at {found["stage"]}.')
+        raise ToolError(said('advance_after_discussion', topic=int(found['topic']) + 1,
+                            stage=str(found['stage']).replace('_', ' ')))
     found = store.change(int(found['number']), advance_asked=True, state='running', reason=None, unpaid=False)
     runner.spawn(int(found['number']))
     return status_of(found)

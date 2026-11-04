@@ -74,7 +74,7 @@ const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right:
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 const CHAIR = {writing: false};
 const BUDGET = {value: 0, dirty: false, setupDirty: false};
-const PHASE_BUDGET = {project: null, table: null};
+const PHASE_BUDGET = {project: null, table: null, stage: null};
 const LINEUP = {project: null, saving: false};
 const LAUNCH = {project: null, agents: new Map()};
 const MINUTES = {project: null, table: null, seq: 0, through: 0, pending: 0, live: false, permissions: new Set()};
@@ -520,7 +520,7 @@ function resetTable() {
   UI.topic.textContent = ''; UI.state.textContent = '';
   UI.discussionComment.value = '';
   BUDGET.dirty = false;
-  Object.assign(PHASE_BUDGET, {project: null, table: null});
+  Object.assign(PHASE_BUDGET, {project: null, table: null, stage: null});
   resetPhaseBudget();
   budgetIs(0);
   renderChair();
@@ -790,6 +790,7 @@ function toldAll() {
 function seated(status) {
   TABLE.topic = status.topic;
   UI.topic.textContent = status.topic;
+  if (Object.hasOwn(status, 'stage')) liveStageIs(status.stage);
   budgetIs(status.token_budget);
   if (!SEAT.n) {
     TABLE.seats = status.seats || [];
@@ -801,7 +802,8 @@ function seated(status) {
 }
 function heard(event) {
   if (event.kind === 'turn' || event.kind === 'veto') return turn(event);
-  if (event.kind === 'stage') { TABLE.stage = event.stage; if (event.stage !== 'discussion') TABLE.floor = -1;
+  if (event.kind === 'stage') { TABLE.stage = PHASE_BUDGET.stage ?? event.stage;
+    if (event.stage !== 'discussion') TABLE.floor = -1;
     renderChair(); }
   else if (event.kind === 'ideas') ideas(event.ideas || []);
   else if (event.kind === 'rankings') rankings(event.rankings || []);
@@ -993,6 +995,11 @@ function tokenBasisLabel(basis) {
   if (basis === 'output') return 'Generated output only';
   return 'Input + cached input + output';
 }
+function liveStageIs(stage) {
+  PHASE_BUDGET.stage = stage || 'discussion';
+  TABLE.stage = PHASE_BUDGET.stage;
+  renderChair();
+}
 function resetPhaseBudget() {
   UI.phaseBudget.hidden = true;
   UI.phaseBudgetLabel.textContent = UI.phaseBudgetState.textContent = '';
@@ -1003,8 +1010,12 @@ function watchPhaseBudget(project, table) {
   resetPhaseBudget();
   PHASE_BUDGET.project = project;
   PHASE_BUDGET.table = table;
+  PHASE_BUDGET.stage = null;
 }
 function phaseBudgetIs(snapshot) {
+  if (snapshot && Object.hasOwn(snapshot, 'stage')) liveStageIs(snapshot.stage);
+  else if (snapshot?.phase === 'panel') liveStageIs('discussion');
+  else if (snapshot?.phase === 'collaboration') liveStageIs('collaboration');
   if (!snapshot || !['panel', 'collaboration'].includes(snapshot.phase)) { resetPhaseBudget(); return; }
   const maximum = Number(snapshot.limit || 0), topic = snapshot.topic;
   budgetIs(maximum);
@@ -1055,6 +1066,7 @@ async function chairControl(action) {
   if (!TABLE.id || CHAIR.writing || (!['running', 'held'].includes(TABLE.state)
       && !(action === 'continue' && TABLE.state === 'ended')
       && !(action === 'abort' && !['ended', 'refused'].includes(TABLE.state)))) return;
+  if (action === 'advance' && TABLE.stage && TABLE.stage !== 'discussion') return;
   const table = TABLE.id, project = S.project, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
   const tokenBudget = Number(UI.liveTokenBudget.value);
@@ -1074,8 +1086,9 @@ async function chairControl(action) {
     }
     if (action === 'continue' && TABLE.ended) {
       TABLE.ended = false;
-      TABLE.stage = 'discussion';
+      liveStageIs('discussion');
     }
+    if (Object.hasOwn(found, 'stage')) liveStageIs(found.stage);
     if (found.state) stateIs(found.state, found.reason);
     if (action === 'abort') {  // an aborted table leaves the stage: the empty form opens for a new one
       CHAIR.writing = false;

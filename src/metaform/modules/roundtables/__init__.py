@@ -232,7 +232,7 @@ def phase_progress(ctx: Context, row: dict[str, Any]) -> dict[str, Any] | None:
     if not Path(str(found['folder'])).resolve().is_relative_to(project) or \
             not str(found['subject']).startswith(str(row['table_id'])):
         return None
-    return budget.progress(found)
+    return {**budget.progress(found), 'stage': found['stage'] or 'discussion'}
 
 
 def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
@@ -252,6 +252,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             'token_basis': progress['basis'] if progress is not None else followed.get('token_basis', 'all'),
             'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
             'phase_budget': progress,
+            **({'stage': progress['stage']} if progress is not None else {}),
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],

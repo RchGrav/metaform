@@ -111,6 +111,38 @@ def test_hold_allows_comments_and_continue_keeps_table(run, web, mapped, browser
 
 
 @pytest.mark.browser
+def test_held_collaboration_controls_use_current_phase_during_older_transcript_playback(
+        run, web, mapped, browser):  # noqa: F811
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.route('**/api/roundtable?*', lambda route: route.fulfill(json={
+        'events': [{'kind': 'stage', 'seq': 1, 'stage': 'discussion', 'topic': 4},
+                   {'kind': 'turn', 'seq': 2, 'seat': 'Sol', 'text': 'Earlier discussion contribution.'}],
+        'latest': 2,
+        'status': {'table': 'existing', 'topic': 'Keep this session', 'state': 'held',
+                   'stage': 'collaboration', 'reason': 'held by its chair.', 'seats': [],
+                   'phase_budget': {'phase': 'collaboration', 'stage': 'collaboration', 'topic': 4,
+                                    'limit': 500000, 'participants': [], 'notices': []}}}))
+    calls = []
+    page.route('**/api/roundtable-control', lambda route: (
+        calls.append(route.request.post_data_json), route.fulfill(json={'state': 'held'})))
+    page.evaluate('''async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        stage.TABLE.id = 'existing';
+        stage.TABLE.kind = 'roundtables:existing';
+        await stage.openRoundtable();
+    }''')
+    page.get_by_role('button', name='Continue', exact=True).wait_for()
+    assert page.locator('.rt-end-discussion').is_hidden()
+    assert page.locator('.rt-phase-budget-label').inner_text() == 'Collaboration 4'
+    assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.stage") == 'collaboration'
+    assert calls == []
+    assert not problems
+    page.close()
+
+
+@pytest.mark.browser
 def test_completed_discussion_continues_inline_preserving_transcript(run, web, mapped, browser):  # noqa: F811
     started(run)
     page, problems, _ = opened(browser, web)

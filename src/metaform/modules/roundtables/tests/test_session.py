@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from metaform.modules.roundtables.roundtable import export, render, runner, stages, store
+from metaform.modules.roundtables.roundtable import export, render, runner, server, stages, store
 from metaform.modules.roundtables.roundtable.seat import Reply, Seat
 
 pytestmark = pytest.mark.kind('simulation')
@@ -120,6 +120,20 @@ def test_profile_scores_accumulate_once_per_session_and_start_unscored(session):
     assert store.rated('claude/haiku', 'Haiku', [100, 55], discussion=third)['score'] == 155
     assert store.profile('claude/haiku')['ratings'] == 2
     assert store.profile('claude/haiku')['sessions'] == 3
+
+
+def test_advance_after_discussion_names_the_panel_and_preserves_held_collaboration(session, monkeypatch):
+    make, _, _, _ = session
+    number = make(total=5)
+    store.change(number, topic=3)
+    runner.Table(number).collaboration(store.discussion(number))
+    store.change(number, state='held', reason='held by its chair.')
+    before = store.discussion(number)
+    monkeypatch.setattr(server.runner, 'spawn', lambda *_: pytest.fail('Advance must not start collaboration.'))
+    with pytest.raises(server.ToolError, match=r'Panel 4.*collaboration') as error:
+        server.advanced(before)
+    assert f'Roundtable {number}' not in str(error.value)
+    assert store.discussion(number) == before
 
 
 def test_future_session_context_contains_only_aggregate_profile_scores(session):

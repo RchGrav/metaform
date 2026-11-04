@@ -13,6 +13,7 @@ const open = source.slice(source.indexOf('export async function openRoundtable('
 const phase = source.slice(source.indexOf('function tokenBasisLabel('), source.indexOf('/* Status refreshes report'));
 const chair = source.slice(source.indexOf('function budgetIs('), source.indexOf('/* One line of the transcript, whole'));
 const status = source.slice(source.indexOf('function seated('), source.indexOf('function heard('));
+const heard = source.slice(source.indexOf('function heard('), source.indexOf('const seatOf ='));
 const plain = value => JSON.parse(JSON.stringify(value));
 function node(tag, attributes = {}, ...children) {
   return {tag, attributes, children: children.flat(Infinity), value: attributes.value ?? '', textContent: '',
@@ -30,9 +31,9 @@ function fixture(options = {}) {
     'seatList', 'addSeat', 'saveParticipants', 'launchPermissions', 'hold', 'discussion', 'discussionComment',
     'sendDiscussion', 'endDiscussion', 'continueDiscussion', 'endTable', 'root'].map(key => [key, node('div')]));
   UI.question.value = 'Plan a project'; UI.replyLimit.value = '512'; UI.tables.value = '1';
-  const api = runInNewContext(`${setupControl}\n${liveControl}\n${setupForm}\n${start}\n${open}\n${phase}\n${chair}\n${status}
-    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated, phaseBudgetIs, watchPhaseBudget})`, {
-    UI, TABLE, S, BUDGET, CHAIR, PHASE_BUDGET: {project: null, table: null}, G: {}, SEAT: {n: 1}, h: node,
+  const api = runInNewContext(`${setupControl}\n${liveControl}\n${setupForm}\n${start}\n${open}\n${phase}\n${chair}\n${status}\n${heard}
+    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated, phaseBudgetIs, watchPhaseBudget, heard})`, {
+    UI, TABLE, S, BUDGET, CHAIR, PHASE_BUDGET: {project: null, table: null, stage: null}, G: {}, SEAT: {n: 1}, h: node,
     LAUNCH: {project: 'project'}, LINEUP: {project: 'project'}, OFFERED: new Map(),
     getJson: async path => { reads.push(path); return options.get ? options.get(path) : {seats: [], token_budget: 0}; },
     wrote: async (path, body) => {
@@ -44,7 +45,7 @@ function fixture(options = {}) {
     rememberParticipants: () => {}, rememberedParticipants: (_, defaults) => defaults,
     fill: (box, ...children) => { box.children = children.flat(Infinity).filter(Boolean); }, addSeat: () => {}, drawSetupPermissions: () => {},
     showStage: () => {}, resetTable: () => { TABLE.id = null; }, leaveStage: () => {},
-    readTable: async () => {}, seatAll: () => {}, ended: () => {},
+    readTable: async () => {}, seatAll: () => {}, ended: () => {}, nextUp: () => {},
   });
   const running = (state = 'running', stage = 'discussion') => {
     Object.assign(TABLE, {id: 'active-table', state, stage});
@@ -197,6 +198,38 @@ const phaseSnapshot = (phase = 'panel', topic = 3, tokens = 0) => ({limit: 50000
     {position: 0, name: 'Alpha', tokens, reported: !!tokens, unreported: 0, closing: false},
     {position: 1, name: 'Beta', tokens: 0, reported: false, unreported: 0, closing: false}],
   notices: [], closing: false, forced: false});
+
+test('current phase hides invalid advancement before delayed transcript stages arrive', async () => {
+  for (const stage of ['collaboration', 'scoring', 'farewell']) {
+    const f = fixture();
+    f.running('held', '');
+    f.api.seated({topic: 'Keep this session', state: 'held', stage});
+    assert.equal(f.TABLE.stage, stage);
+    assert.equal(f.UI.endDiscussion.hidden, true);
+    assert.equal(f.UI.hold.hidden, false);
+    assert.equal(f.UI.hold.textContent, 'Continue');
+    f.api.heard({kind: 'stage', stage: 'discussion'});
+    assert.equal(f.TABLE.stage, stage, 'Historical playback cannot change the live phase.');
+    assert.equal(f.UI.endDiscussion.hidden, true);
+    await f.api.chairControl('advance');
+    assert.equal(f.writes.length, 0);
+  }
+});
+
+test('phase updates refresh discussion controls without new transcript events or a status snapshot', () => {
+  const f = fixture();
+  f.running('held', 'discussion');
+  f.api.phaseBudgetIs({...phaseSnapshot('collaboration', 4), stage: 'collaboration'});
+  assert.equal(f.UI.endDiscussion.hidden, true);
+  f.api.heard({kind: 'stage', stage: 'discussion'});
+  assert.equal(f.UI.endDiscussion.hidden, true);
+  f.api.phaseBudgetIs({...phaseSnapshot('panel', 5), stage: 'discussion'});
+  assert.equal(f.TABLE.stage, 'discussion');
+  assert.equal(f.UI.endDiscussion.hidden, false);
+  f.api.heard({kind: 'stage', stage: 'collaboration'});
+  assert.equal(f.TABLE.stage, 'discussion');
+  assert.equal(f.UI.endDiscussion.hidden, false);
+});
 
 test('each new panel and collaboration phase displays authoritative zero counters for every agent', () => {
   const f = fixture();

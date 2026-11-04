@@ -59,6 +59,8 @@ def test_phase_progress_is_current_even_with_no_new_follower_events(budget_proje
     store.phase(number, 'collaboration', 'Write the shared documents.')
     current = module.table_events(ctx)['phase_budget']
     assert current['phase'] == 'collaboration' and current['topic'] == 1
+    assert current['stage'] == 'collaboration'
+    assert module.status(ctx)['stage'] == 'collaboration'
     assert current['participants'][0]['tokens'] == 0
 
 
