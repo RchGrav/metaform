@@ -1,0 +1,29 @@
+{
+  "frozen_before_cross_review": true,
+  "reports": [
+    {
+      "path": "reviewers/01-CHASSIS-CLI.md",
+      "sha256": "353e4a53715b34349ac71a3b58ec5ddef9cc2b6c0c665fb78e3179b1afe5e299"
+    },
+    {
+      "path": "reviewers/02-MCP-INTAKE.md",
+      "sha256": "f1093a1f3797799de71967bfaf44f077ff9055926767906e9dc1638b617c6618"
+    },
+    {
+      "path": "reviewers/03-CONTEXT-CONTINUITY.md",
+      "sha256": "5f77ebc7a2eca020df46ab7ace20d7e3ad41aa1f180b59e414b5e90255e90c3a"
+    },
+    {
+      "path": "reviewers/04-RUNTIME-EVENTS.md",
+      "sha256": "814da812319a3a21cb4e19dcc5d1abd24ee695c137670a72b946627be8bf8704"
+    },
+    {
+      "path": "reviewers/05-BACKEND-RECOVERY.md",
+      "sha256": "b4dfa0514d354df2268496928d91dfe11c743ceae52798c854c21d38cb3cfbf4"
+    },
+    {
+      "path": "reviewers/06-VERIFICATION.md",
+      "sha256": "af8c320d84d5041b77ddfd123195a61349d69a09647695588d24f3fe8e608165"
+    }
+  ]
+}

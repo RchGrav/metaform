@@ -114,3 +114,46 @@ Product code: `sources.py`, `watch.py`, and `__init__.py` under `src/metaform/mo
 New tests in that module: `test_reader_recovery.py`, `test_watch_recovery.py`, and `test_capture_policy.py`.
 
 Documentation: this report. Existing prompts, Canonical Intake, settings values, schema declarations, specialist definitions and unrelated source files are not edited.
+
+## Main integration follow-up, 2026-10-29
+
+The original branch verification above records the October 23 work. The following checks were performed separately before integrating commit `261a1cb7172159b4354308a423028a86ffc179f3` into main at `5b080e25109f1cfb9bf55d31b1816292aac611a7`. The earlier rebuild review artifacts remain unchanged and continue to describe their pinned source revision.
+
+Three independent review passes covered reader edge cases, Watch/event-policy integration and verification boundaries. They found one integration regression: `events.publish` converts subscriber exceptions into failed delivery outcomes, but the new `Watch.settle` discarded those outcomes. A failed repair-policy subscriber could therefore appear successful after capture counts and offsets committed.
+
+The integration correction checks unsuccessful `autoticket.captured` deliveries, restores their touched group IDs on the same Watch and raises a diagnostic into the existing CLI/background failure path. Two parametrized regression cases exercise actual event dispatch and the declared subscriber with a failing or cancelled policy. Both failed before the correction and pass afterward. They verify committed count and offset preservation and explicit retry without recounting. This is restored failure visibility and in-memory retry preservation, not a durable outbox or guaranteed automatic replay after watcher/process replacement.
+
+The two capture-policy composition tests also resolve the current module per test. Their original collection-time module reference became stale when an earlier test reset the loader. The ordered loader-reset/composition reproduction now passes.
+
+| New check | Result | Limit |
+|---|---|---|
+| Original 16 regression cases, complete installed application environment | 16 passed | Uses Linux notifications, local SSH-command substitute and controlled Watch store/policy fixtures as described above. |
+| Failed/cancelled subscriber regression | 2 failures before correction, 2 passes after | Actual event dispatch and declared capture handler, with controlled source context/store and policy failure. |
+| Loader reset followed by both composition tests | 3 passed | Demonstrates test isolation across module reload. |
+| Final complete autoticket module | 47 passed, 8 failed, zero skipped, 89.87 seconds | Full module is not green. All 18 new regression cases passed. |
+| Identified failures on untouched main `5b080e25` | Same 8 failures, 1 additional selected case passed | Separate worktree, same environment. JUnit failure identities compared equal. These failures predate this integration. |
+| Ruff over all six changed/new Python files | Passed | Focused lint, not repository-wide. |
+| Pyright over the three product Python files | 0 errors, 0 warnings | Existing environment selected explicitly with `--venvpath`; not repository-wide. |
+| Python patch whitespace | Passed | Original Markdown metadata deliberately uses two-space hard line breaks. |
+
+The eight pre-existing failures are:
+
+- `test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes`
+- `test_feedback_and_error_words_do_not_impose_unrequested_approval_gates`
+- `test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled`
+- `test_done_after_delivery_closes_fault_and_recurrence_restores_same_light`
+- Both `test_fault_done_names_missing_delivery_and_keeps_light` parameter cases
+- `test_old_code_fault_is_recorded_without_reopening_delivered_repair`
+- `test_fault_fix_merged_to_main_closes_and_clears_open_condition`
+
+No existing failing test, prompt, schema, unrelated orchestration behavior or CI requirement was changed to obtain the focused results. Test homes were isolated, autostart disabled and agents substituted by the repository fixtures. The merge test pushes only to its temporary local Git origin. No paid model session or production workflow was launched. Real SSH-server and macOS/kqueue execution remain unverified.
+
+Commands used the existing environment without synchronization, with `UV_PROJECT_ENVIRONMENT=/home/rich/metaform/.venv` and `PYTHONPATH` set to each isolated worktree's `src`:
+
+```bash
+uv run --no-sync pytest -n 0 -q src/metaform/modules/autoticket/tests
+uv run --no-sync ruff check src/metaform/modules/autoticket/__init__.py src/metaform/modules/autoticket/sources.py src/metaform/modules/autoticket/watch.py src/metaform/modules/autoticket/tests/test_capture_policy.py src/metaform/modules/autoticket/tests/test_reader_recovery.py src/metaform/modules/autoticket/tests/test_watch_recovery.py
+uv run --no-sync pyright --venvpath /home/rich/metaform src/metaform/modules/autoticket/__init__.py src/metaform/modules/autoticket/sources.py src/metaform/modules/autoticket/watch.py
+```
+
+Baseline reproduction selected the named existing cases using pytest `-k` in a separate untouched main worktree. The final and baseline JUnit failure sets were compared programmatically. The intermediate all-module run exposed the two stale-module test errors; those were corrected and the final entire module was rerun without excluding the eight known failures.

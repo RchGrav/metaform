@@ -1,14 +1,14 @@
 """The collector's committed event is wired to the existing, separately owned repair policy."""
+import importlib
 from types import SimpleNamespace
 
 import pytest
-
-from metaform.modules import autoticket
 
 pytestmark = pytest.mark.kind('simulation')
 
 
 def test_capture_event_invokes_existing_policy_once(monkeypatch):
+    autoticket = importlib.import_module('metaform.modules.autoticket')
     called = []
     store = SimpleNamespace(project_id='project')
     ctx = SimpleNamespace(store=store)
@@ -22,6 +22,7 @@ def test_capture_event_invokes_existing_policy_once(monkeypatch):
 
 
 def test_capture_event_does_not_cross_projects(monkeypatch):
+    autoticket = importlib.import_module('metaform.modules.autoticket')
     def unexpected(*args):
         raise AssertionError('capture policy was invoked for another project')
     monkeypatch.setattr(autoticket.faults, 'tell', unexpected)

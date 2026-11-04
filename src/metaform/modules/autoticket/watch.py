@@ -550,7 +550,12 @@ class Watch:
         bound = self.store.bound_base()
         self.ctx.publish('map.changed', {'project': project, 'base_id': bound.id if bound else None,
                                         'tables': ['autoticket.groups'], 'kinds': ['log_capture']})
-        self.ctx.publish('autoticket.captured', {'project': project, 'groups': sorted(touched)})
+        deliveries = self.ctx.publish('autoticket.captured', {'project': project, 'groups': sorted(touched)})
+        failed = [one for one in deliveries if one['status'] != 'completed']
+        if failed:
+            self.touched.update(touched)
+            details = ', '.join(f'{one["module"]}: {one.get("error") or one["status"]}' for one in failed)
+            raise RuntimeError(f'autoticket.captured delivery failed: {details}')
 
     # -------------------------------------------------------------- one turn
 
