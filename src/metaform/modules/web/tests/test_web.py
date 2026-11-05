@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import FAKE_AGENT  # dispatch's ACP agent, no model, which every test home starts
+FAKE_AGENT = Path(__file__).parents[2] / 'dispatch' / 'tests' / 'fake_agent.py'
 
 
 def own(project_id):

@@ -33,7 +33,7 @@ function fixture(options = {}) {
     'sendDiscussion', 'endDiscussion', 'continueDiscussion', 'endTable', 'root'].map(key => [key, node('div')]));
   UI.question.value = 'Plan a project'; UI.replyLimit.value = '512'; UI.tables.value = '1';
   const api = runInNewContext(`${setupControl}\n${endSessionControl}\n${liveControl}\n${setupForm}\n${start}\n${open}\n${phase}\n${chair}\n${status}\n${heard}
-    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated, phaseBudgetIs, watchPhaseBudget, heard})`, {
+    ({startTable, openRoundtable, renderChair, chairControl, budgetIs, seated, phaseBudgetIs, watchPhaseBudget, topicSelectionIs, heard})`, {
     UI, TABLE, S, BUDGET, CHAIR, PHASE_BUDGET: {project: null, table: null, stage: null}, G: {}, SEAT: {n: 1}, h: node,
     LAUNCH: {project: 'project'}, LINEUP: {project: 'project'}, OFFERED: new Map(),
     getJson: async path => { reads.push(path); return options.get ? options.get(path) : {seats: [], token_budget: 0}; },
@@ -62,9 +62,9 @@ test('setup explains independent phase counts, disabled default and all threshol
   assert.equal(f.UI.tokenBudget.attributes.min, 0);
   assert.equal(f.UI.tokenBudget.attributes.step, 1);
   assert.equal(f.UI.tokenBudget.attributes.required, true);
-  assert.match(description, /Token budget per agent, per phase/);
+  assert.match(description, /Token budget per agent, per discussion/);
   assert.match(description, /0 disables/);
-  assert.match(description, /Each panel and collaboration phase starts a fresh count for each agent/);
+  assert.match(description, /Each discussion starts a fresh count for each agent/);
   assert.match(description, /50% or 80% warns.*100% asks it to close.*120% forces.*without waiting for everyone to finish/);
   assert.match(description, /Uncached input \+ output; cached reads excluded/);
   assert.match(description, /Cache writes count as input/);
@@ -109,10 +109,10 @@ test('an edit made while project defaults load is retained', async () => {
   assert.equal(f.UI.start.disabled, false);
 });
 
-test('budget control remains available during running or held panel and collaboration phases', () => {
+test('budget control remains available during running or held discussion and private topic selection', () => {
   const f = fixture();
   assert.equal(f.UI.budget.hidden, true);
-  for (const state of ['running', 'held']) for (const phase of ['discussion', 'collaboration']) {
+  for (const state of ['running', 'held']) for (const phase of ['discussion', 'topic_selection']) {
     f.running(state, phase);
     assert.equal(f.UI.budget.hidden, false, `${state}/${phase}`);
     assert.equal(f.UI.liveTokenBudget.disabled, false);
@@ -126,7 +126,7 @@ test('budget control remains available during running or held panel and collabor
 test('live budget edits use the existing table control and can disable a limit', async () => {
   let resolve;
   const f = fixture({write: () => new Promise(done => { resolve = done; })});
-  f.running('held', 'collaboration');
+  f.running('held', 'topic_selection');
   f.edit(7000);
   const saving = f.api.chairControl('budget');
   assert.equal('token_basis' in f.writes[0].body, false, 'Saving a limit must not convert the counting basis.');
@@ -201,13 +201,13 @@ const phaseSnapshot = (phase = 'panel', topic = 3, tokens = 0) => ({limit: 50000
   notices: [], closing: false, forced: false});
 
 test('current phase keeps valid advancement available before delayed transcript stages arrive', async () => {
-  for (const stage of ['collaboration', 'scoring', 'farewell']) {
+  for (const stage of ['discussion', 'topic_selection', 'scoring', 'farewell']) {
     const f = fixture();
     f.running('held', '');
     f.api.seated({topic: 'Keep this session', state: 'held', stage});
     assert.equal(f.TABLE.stage, stage);
     assert.equal(f.UI.endDiscussion.hidden, false);
-    assert.equal(f.UI.endDiscussion.disabled, stage !== 'collaboration');
+    assert.equal(f.UI.endDiscussion.disabled, stage !== 'discussion');
     assert.equal(f.UI.endSession.hidden, false);
     assert.equal(f.UI.endSession.disabled, false);
     assert.equal(f.UI.hold.hidden, false);
@@ -215,39 +215,40 @@ test('current phase keeps valid advancement available before delayed transcript 
     f.api.heard({kind: 'stage', stage: 'discussion'});
     assert.equal(f.TABLE.stage, stage, 'Historical playback cannot change the live phase.');
     assert.equal(f.UI.endDiscussion.hidden, false);
-    assert.equal(f.UI.endDiscussion.disabled, stage !== 'collaboration');
+    assert.equal(f.UI.endDiscussion.disabled, stage !== 'discussion');
     await f.api.chairControl('advance');
-    assert.equal(f.writes.length, stage === 'collaboration' ? 1 : 0);
-    if (stage === 'collaboration') assert.equal(f.writes[0].body.action, 'advance');
-    else assert.match(f.UI.endDiscussion.title, /Use End session/);
+    assert.equal(f.writes.length, stage === 'discussion' ? 1 : 0);
+    if (stage === 'discussion') assert.equal(f.writes[0].body.action, 'advance');
+    else assert.match(f.UI.endDiscussion.title, /[Uu]se End session/);
   }
 });
 
 test('phase updates refresh discussion controls without new transcript events or a status snapshot', () => {
   const f = fixture();
   f.running('held', 'discussion');
-  f.api.phaseBudgetIs({...phaseSnapshot('collaboration', 4), stage: 'collaboration'});
+  f.api.phaseBudgetIs({phase: null, stage: 'topic_selection'});
   assert.equal(f.UI.endDiscussion.hidden, false);
-  assert.equal(f.UI.endDiscussion.disabled, false);
+  assert.equal(f.UI.endDiscussion.disabled, true);
   f.api.heard({kind: 'stage', stage: 'discussion'});
-  assert.equal(f.TABLE.stage, 'collaboration');
+  assert.equal(f.TABLE.stage, 'topic_selection');
   assert.equal(f.UI.endDiscussion.hidden, false);
-  assert.equal(f.UI.endDiscussion.disabled, false);
+  assert.equal(f.UI.endDiscussion.disabled, true);
   f.api.phaseBudgetIs({...phaseSnapshot('panel', 5), stage: 'discussion'});
   assert.equal(f.TABLE.stage, 'discussion');
   assert.equal(f.UI.endDiscussion.hidden, false);
-  f.api.heard({kind: 'stage', stage: 'collaboration'});
+  assert.equal(f.UI.endDiscussion.disabled, false);
+  f.api.heard({kind: 'stage', stage: 'topic_selection'});
   assert.equal(f.TABLE.stage, 'discussion');
   assert.equal(f.UI.endDiscussion.hidden, false);
 });
 
-test('each new panel and collaboration phase displays authoritative zero counters for every agent', () => {
+test('each new discussion displays authoritative zero counters for every agent', () => {
   const f = fixture();
   f.api.phaseBudgetIs(phaseSnapshot('panel', 3, 479477));
   assert.equal(f.UI.phaseBudgetLabel.textContent, 'Panel 3');
   assert.match(textOf(f.UI.phaseBudgetRows), /Alpha 479,477 \/ 500,000 tokens \(96%\)/);
   assert.match(textOf(f.UI.phaseBudgetRows), /Beta 0 \/ 500,000 tokens \(0%\)/);
-  for (const [phase, topic, label] of [['collaboration', 3, 'Collaboration 3'], ['panel', 4, 'Panel 4']]) {
+  for (const [phase, topic, label] of [['panel', 4, 'Panel 4'], ['panel', 5, 'Panel 5']]) {
     f.api.phaseBudgetIs(phaseSnapshot(phase, topic));
     assert.equal(f.UI.phaseBudgetLabel.textContent, label);
     assert.equal(f.UI.phaseBudgetRows.children.length, 2);
@@ -298,11 +299,48 @@ function phaseReader(f, get) {
   const code = source.slice(source.indexOf('async function readTable('), source.indexOf('function tell('));
   const read = runInNewContext(`${code}\nreadTable`, {TABLE, S, UI: f.UI, SEAT: {n: 1}, TOLD: {list: []},
     getJson: get, phaseBudgetIs: f.api.phaseBudgetIs, watchPhaseBudget: f.api.watchPhaseBudget,
-    watchMinutes: () => {}, minutesIs: () => {}, seated: () => {}, tell: () => {}, readNotes: () => {},
+    topicSelectionIs: f.api.topicSelectionIs, seated: () => {}, tell: () => {}, readNotes: () => {},
     toast: message => { throw new Error(message); },
   });
   return {read, TABLE, S};
 }
+
+test('private topic selection shows only aggregate progress independently of transcript delivery', async () => {
+  const f = fixture();
+  f.running('held', 'topic_selection');
+  let snapshot = {requested: 4, completed: 2, state: 'collecting',
+    author: 'Private proposer', proposals: ['Private proposed topic']};
+  const reader = phaseReader(f, async () => ({events: [], latest: 17,
+    phase_budget: {phase: null, stage: 'topic_selection'}, topic_selection: snapshot}));
+  await reader.read();
+  assert.equal(f.UI.topicSelectionStatus.hidden, false);
+  assert.match(f.UI.topicSelectionStatus.textContent, /Choosing the next topic privately.*2 of 4 proposals received/);
+  assert.doesNotMatch(f.UI.topicSelectionStatus.textContent, /Private proposer|Private proposed topic/);
+  assert.equal(f.UI.endDiscussion.disabled, true);
+  assert.equal(f.UI.endSession.hidden, false);
+  await f.api.chairControl('advance');
+  assert.equal(f.writes.length, 0, 'End discussion cannot skip or restart private topic selection.');
+  snapshot = {...snapshot, completed: 4, state: 'judging'};
+  await reader.read();
+  assert.match(f.UI.topicSelectionStatus.textContent, /Comparing the private proposals.*4 of 4/);
+  assert.equal(reader.TABLE.seq, 17);
+  assert.equal(f.UI.phaseBudget.hidden, true, 'Selection does not invent another token-budget phase.');
+  f.api.phaseBudgetIs({...phaseSnapshot('panel', 4), stage: 'discussion'});
+  assert.equal(f.UI.topicSelectionStatus.hidden, true);
+  assert.equal(f.UI.topicSelectionStatus.textContent, '');
+  assert.equal(f.UI.endDiscussion.disabled, false);
+  assert.equal(f.writes.length, 0);
+});
+
+test('a changed table clears private topic-selection progress without sending controls', () => {
+  const f = fixture();
+  f.running('running', 'topic_selection');
+  f.api.topicSelectionIs({requested: 4, completed: 3, state: 'collecting'});
+  f.api.watchPhaseBudget('other-project', 'other-table');
+  assert.equal(f.UI.topicSelectionStatus.hidden, true);
+  assert.equal(f.UI.topicSelectionStatus.textContent, '');
+  assert.equal(f.writes.length, 0);
+});
 
 test('phase usage updates independently of the transcript cursor and clears when the selected table changes', async () => {
   const f = fixture();
@@ -314,10 +352,10 @@ test('phase usage updates independently of the transcript cursor and clears when
   await reader.read();
   assert.equal(reader.TABLE.seq, 17);
   assert.match(textOf(f.UI.phaseBudgetRows), /479,477/);
-  snapshot = phaseSnapshot('collaboration', 3, 0);
+  snapshot = phaseSnapshot('panel', 4, 0);
   await reader.read();
   assert.equal(reader.TABLE.seq, 17);
-  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Collaboration 3');
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Panel 4');
   assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
   reader.TABLE.id = 'another-table';
   f.api.watchPhaseBudget(reader.S.project, reader.TABLE.id);
@@ -341,12 +379,12 @@ test('a stale project response cannot replace the selected table phase counters'
 
 test('a whole response uses the phase counters bundled with its newer table status', async () => {
   const f = fixture();
-  f.running('held', 'collaboration');
+  f.running('held', 'topic_selection');
   const reader = phaseReader(f, async () => ({events: [], latest: 17,
     phase_budget: phaseSnapshot('panel', 3, 479477),
-    status: {state: 'held', phase_budget: phaseSnapshot('collaboration', 3, 0)}}));
+    status: {state: 'held', phase_budget: phaseSnapshot('panel', 4, 0)}}));
   await reader.read(true);
-  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Collaboration 3');
+  assert.equal(f.UI.phaseBudgetLabel.textContent, 'Panel 4');
   assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /479,477/);
   assert.match(textOf(f.UI.phaseBudgetRows), /0 \/ 500,000 tokens \(0%\)/);
   assert.equal(f.TABLE.state, 'held');
@@ -408,14 +446,14 @@ test('setup help uses the project counting basis without adding a hidden convers
   }
 });
 
-test('End session remains separate from End discussion in running and held collaboration', async () => {
+test('End session remains separate from End discussion during running or held private topic selection', async () => {
   const f = fixture({write: async () => ({table: 'active-table', state: 'ending'})});
-  for (const state of ['running', 'held']) for (const stage of ['discussion', 'collaboration']) {
+  for (const state of ['running', 'held']) for (const stage of ['discussion', 'topic_selection', 'scoring', 'farewell']) {
     f.running(state, stage);
     assert.equal(textOf(f.UI.endSession), 'End session');
     assert.equal(f.UI.endSession.hidden, false);
     assert.equal(f.UI.endDiscussion.hidden, false);
-    assert.equal(f.UI.endDiscussion.disabled, false);
+    assert.equal(f.UI.endDiscussion.disabled, stage !== 'discussion');
     assert.match(f.UI.endSession.attributes.title, /entire session.*documents and current record/);
     await f.UI.endSession.attributes.onclick();
     assert.deepEqual(f.writes.at(-1), {path: '/api/roundtable-control', body: {table: 'active-table', action: 'end'}});
@@ -427,7 +465,7 @@ test('End session remains separate from End discussion in running and held colla
 
 test('End session can retry ending and stays hidden after completion without opening another setup', async () => {
   const f = fixture({write: async () => ({table: 'active-table', state: 'ended'})});
-  f.running('ending', 'collaboration');
+  f.running('ending', 'topic_selection');
   f.UI.setup.hidden = true;
   assert.equal(f.UI.endSession.hidden, false);
   await f.UI.endSession.attributes.onclick();

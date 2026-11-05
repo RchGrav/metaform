@@ -116,7 +116,7 @@ def turns(request: Request) -> Response:
     except store.Missing as error:
         return refused(error, 404)
     rows = export.rows_of(number)
-    given = [{**export.scored(row), 'turn': render.turn(int(row['number'])), 'short': render.short(row),
+    given = [{**export.scored(row), 'turn': row.get('message_id') or render.turn(int(row['number'])), 'short': render.short(row),
               'kind': row['kind'], 'entered': render.entered(row)} for row in rows if int(row['number']) > since]
     latest = max([int(row['number']) for row in rows if not row.get('unjudged')], default=0)
     return JSONResponse({'turns': given, 'latest': latest, 'state': found['state']})
@@ -184,7 +184,10 @@ def download(request: Request) -> Response:
 def changes(found: dict[str, Any]) -> dict[str, Any]:
     """What the page watches of a table: a change in any of it is an event."""
     rows = store.submissions(int(found['number']), 0)
+    from . import topics as next_topics
+
     return {'state': found['state'], 'reason': found['reason'], 'round': found['round'],
+            'topic_selection': next_topics.progress(found) if found['stage'] == 'topic_selection' else None,
             'position': found['position'], 'stage': found['stage'], 'topic': found['topic'],
             'staged': len(store.staged(int(found['number']))) if found['stage'] else 0, 'latest': rows[-1]['number'] if rows else 0,
             'spent': round(float(found['spent'] or 0), 6), 'report': bool(found['report']),

@@ -49,7 +49,7 @@ def test_setup_can_disable_judging_without_starting_agents(run, web, mapped, bro
         'seats': ['claude/haiku'], 'judging': False, 'events': [], 'latest': 0}))
     page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).openRoundtable(true)")
     page.locator('.rt-pick').first.wait_for()
-    judging = page.get_by_role('checkbox', name='Judge novelty with Jev', exact=True)
+    judging = page.get_by_role('checkbox', name='Judge contributions with Jev', exact=True)
     assert not judging.is_checked()
     page.get_by_role('textbox', name='Your question to the table', exact=True).fill('Discuss without judging.')
     page.get_by_role('button', name='Start', exact=True).click()
@@ -110,7 +110,7 @@ def test_hold_allows_comments_and_continue_keeps_table(run, web, mapped, browser
 
 
 @pytest.mark.browser
-def test_held_collaboration_controls_use_current_phase_during_older_transcript_playback(
+def test_held_topic_selection_controls_use_current_phase_during_older_transcript_playback(
         run, web, mapped, browser):  # noqa: F811
     started(run)
     page, problems, _ = opened(browser, web)
@@ -120,9 +120,9 @@ def test_held_collaboration_controls_use_current_phase_during_older_transcript_p
                    {'kind': 'turn', 'seq': 2, 'seat': 'Sol', 'text': 'Earlier discussion contribution.'}],
         'latest': 2,
         'status': {'table': 'existing', 'topic': 'Keep this session', 'state': 'held',
-                   'stage': 'collaboration', 'reason': 'held by its chair.', 'seats': [],
-                   'phase_budget': {'phase': 'collaboration', 'stage': 'collaboration', 'topic': 4,
-                                    'limit': 500000, 'participants': [], 'notices': []}}}))
+                   'stage': 'topic_selection', 'reason': 'held by its chair.', 'seats': [],
+                   'phase_budget': {'phase': None, 'stage': 'topic_selection'},
+                   'topic_selection': {'requested': 3, 'completed': 1, 'state': 'collecting'}}}))
     calls = []
     page.route('**/api/roundtable-control', lambda route: (
         calls.append(route.request.post_data_json), route.fulfill(json={'state': 'held'})))
@@ -133,13 +133,14 @@ def test_held_collaboration_controls_use_current_phase_during_older_transcript_p
         await stage.openRoundtable();
     }''')
     page.get_by_role('button', name='Continue', exact=True).wait_for()
-    assert page.locator('.rt-end-discussion').is_visible() and page.locator('.rt-end-discussion').is_enabled()
-    assert page.locator('.rt-phase-budget-label').inner_text() == 'Collaboration 4'
-    assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.stage") == 'collaboration'
+    assert page.locator('.rt-end-discussion').is_visible() and page.locator('.rt-end-discussion').is_disabled()
+    assert '1 of 3 proposals received' in page.locator('.rt-topic-selection-status').inner_text()
+    assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.stage") == 'topic_selection'
+    assert 'private topic selection' in page.locator('.rt-end-discussion').get_attribute('title')
     assert calls == []
     with page.expect_response('**/api/roundtable-control'):
-        page.get_by_role('button', name='End discussion', exact=True).click()
-    assert [(one['table'], one['action']) for one in calls] == [('existing', 'advance')]
+        page.get_by_role('button', name='End session', exact=True).click()
+    assert [(one['table'], one['action']) for one in calls] == [('existing', 'end')]
     assert not problems
     page.close()
 
@@ -164,7 +165,7 @@ def test_completed_discussion_continues_inline_preserving_transcript(run, web, m
         stage.TABLE.kind = 'roundtables:existing';
         await stage.openRoundtable();
     }''')
-    page.get_by_role('button', name='Transcript', exact=True).click()
+    assert page.locator('.rt-transcript').is_visible()
     page.locator('.rt-transcript').get_by_text('Context handoff completed.').wait_for()
     page.get_by_role('button', name='Continue discussion', exact=True).click()
     page.get_by_role('button', name='Hold', exact=True).wait_for()
@@ -211,13 +212,13 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     page.route('**/api/roundtable-control', control)
     page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).openRoundtable(true)")
     setup = page.locator('.rt-setup')
-    setup_budget = setup.get_by_role('spinbutton', name='Token budget per agent, per phase', exact=True)
+    setup_budget = setup.get_by_role('spinbutton', name='Token budget per agent, per discussion', exact=True)
     assert setup_budget.input_value() == '12000'
     hint = page.locator('#rt-token-budget-hint')
     assert hint.is_visible()
     explanation = hint.text_content()
     assert '0 disables' in explanation
-    assert 'Each panel and collaboration phase starts a fresh count for each agent' in explanation
+    assert 'Each discussion starts a fresh count for each agent' in explanation
     assert '50% or 80% warns' in explanation and '100% asks it to close' in explanation
     assert '120% forces' in explanation and 'without waiting for everyone to finish' in explanation
     assert 'Uncached input + output; cached reads excluded' in explanation
@@ -228,7 +229,7 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     live = page.locator('.rt-budget')
     live.wait_for()
     assert len(opens) == 1 and opens[0]['token_budget'] == 12000
-    budget = live.get_by_role('spinbutton', name='Token budget per agent, per phase', exact=True)
+    budget = live.get_by_role('spinbutton', name='Token budget per agent, per discussion', exact=True)
     assert budget.input_value() == '12000'
     progress = page.get_by_role('region', name='Current phase token usage', exact=True)
     assert progress.is_visible()
@@ -246,8 +247,8 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     page.wait_for_function('() => document.querySelector(".rt-budget-current").textContent.includes("11,000")')
     assert budget.input_value() == '9000', 'A status refresh must preserve the unsaved edit.'
     assert progress.locator('.rt-phase-budget-count').first.text_content() == '10,000 / 11,000 tokens (91%)'
-    assert page.get_by_role('button', name='Breakdown', exact=True).get_attribute('aria-pressed') == 'true'
-    assert page.locator('.rt-transcript').is_hidden()
+    assert page.get_by_role('button', name='Breakdown', exact=True).count() == 0
+    assert page.locator('.rt-transcript').is_visible()
     with page.expect_response('**/api/roundtable-control'):
         live.get_by_role('button', name='Update budget', exact=True).click()
     page.get_by_role('button', name='Continue', exact=True).wait_for()
@@ -257,10 +258,10 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
         'project': 'proj', 'table': 'budget-fixture', 'action': 'budget', 'token_budget': 9000}
     assert live.is_visible() and budget.input_value() == '9000'
     assert page.locator('.rt-budget-current').text_content() == 'Current: 9,000 tokens'
-    current.update(phase='collaboration', tokens=0, basis='uncached')
+    current.update(phase='panel', topic=4, tokens=0, basis='uncached')
     page.evaluate('''async () => (await import('/page/app/roundtable/stage.js')).tableChange({
         kinds: ['roundtables', 'roundtables:budget-fixture']})''')
-    page.wait_for_function('() => document.querySelector(".rt-phase-budget-label").textContent === "Collaboration 3"')
+    page.wait_for_function('() => document.querySelector(".rt-phase-budget-label").textContent === "Panel 4"')
     assert progress.locator('.rt-phase-budget-count').all_text_contents() == [
         '0 / 9,000 tokens (0%)', '0 / 9,000 tokens (0%)']
     assert progress.locator('.rt-phase-budget-basis').text_content() == (
@@ -272,16 +273,17 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
 
 
 @pytest.mark.browser
-def test_end_session_saves_existing_record_from_held_collaboration(run, web, mapped, browser):  # noqa: F811
+def test_end_session_saves_existing_record_from_held_topic_selection(run, web, mapped, browser):  # noqa: F811
     from urllib.parse import parse_qs, urlparse
 
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
     calls, opens = [], []
-    status = {'table': 'existing', 'topic': 'Keep the session documents', 'state': 'held', 'stage': 'collaboration',
+    status = {'table': 'existing', 'topic': 'Keep the session documents', 'state': 'held', 'stage': 'topic_selection',
               'reason': 'held by its chair.', 'seats': [], 'phase_budget': {
-                  'phase': 'collaboration', 'topic': 4, 'limit': 500000, 'participants': [], 'notices': []}}
+                  'phase': None, 'stage': 'topic_selection'},
+              'topic_selection': {'requested': 4, 'completed': 2, 'state': 'collecting'}}
     events = [{'kind': 'turn', 'seq': 1, 'seat': 'Alpha', 'text': 'Keep this contribution in the record.'}]
 
     def read_table(route):
@@ -298,7 +300,7 @@ def test_end_session_saves_existing_record_from_held_collaboration(run, web, map
         status.update(state='ended', reason='ended by its chair.', answer='The current session record was saved.',
                       saved='docs/roundtables/4-session', phase_budget=None)
         events.append({'kind': 'end', 'seq': 2, **status})
-        route.fulfill(json={'table': 'existing', 'state': 'ending', 'stage': 'collaboration'})
+        route.fulfill(json={'table': 'existing', 'state': 'ending', 'stage': 'topic_selection'})
 
     page.route('**/api/roundtable?*', read_table)
     page.route('**/api/roundtable-control', end_session)
@@ -314,10 +316,10 @@ def test_end_session_saves_existing_record_from_held_collaboration(run, web, map
     assert end.is_visible() and end.is_enabled()
     assert 'entire session' in end.get_attribute('title') and 'documents and current record' in end.get_attribute('title')
     phase_end = page.get_by_role('button', name='End discussion', exact=True)
-    assert phase_end.is_visible() and phase_end.is_enabled()
+    assert phase_end.is_visible() and phase_end.is_disabled()
     assert page.get_by_role('button', name='Abort', exact=True).is_visible()
     assert page.get_by_role('button', name='Continue', exact=True).is_visible()
-    page.get_by_role('button', name='Transcript', exact=True).click()
+    assert page.locator('.rt-transcript').is_visible()
     with page.expect_response('**/api/roundtable-control'):
         end.click()
     page.wait_for_selector('#roundtable[data-state="ending"]')
@@ -328,6 +330,7 @@ def test_end_session_saves_existing_record_from_held_collaboration(run, web, map
     page.wait_for_selector('#roundtable[data-state="ended"]')
     assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.id") == 'existing'
     assert page.locator('.rt-setup').is_hidden() and end.is_hidden()
+    assert page.locator('.rt-topic-selection-status').is_hidden()
     assert page.locator('.rt-transcript').get_by_text('Keep this contribution in the record.').is_visible()
     assert page.get_by_text('The current session record was saved.', exact=True).is_visible()
     assert page.locator('.rt-records a').count() == 2

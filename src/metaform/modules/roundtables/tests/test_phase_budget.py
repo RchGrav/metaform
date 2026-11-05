@@ -1,17 +1,19 @@
 """Reported phase budgets are per participant, durable, and independent of PASS/DONE votes."""
 import asyncio
 import json
+from unittest.mock import Mock
 
 import pytest
 
-from metaform.modules.roundtables.roundtable import budget, judge, runner, server, stages, store
+from metaform.modules.roundtables.roundtable import budget, judge, runner, server, stages, store, topics
 from metaform.modules.roundtables.roundtable.seat import NoReply, Reply, Seat
 
 pytestmark = pytest.mark.kind('simulation')
 
 
 @pytest.fixture
-def phase_table(tmp_path, monkeypatch):
+def phase_table(run, tmp_path, monkeypatch):
+    run('enable', 'dispatch', cwd=tmp_path)
     monkeypatch.setenv('ROUNDTABLE_HOME', str(tmp_path / 'engine'))
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
     materials = tmp_path / 'materials'
@@ -50,9 +52,11 @@ def phase_table(tmp_path, monkeypatch):
     def make(maximum=100, total=1, judging=False, token_basis='all'):
         seats = [{'kind': 'acp', 'id': f'acp:claude/{name}', 'agent': 'claude', 'model': name}
                  for name in ('haiku', 'sonnet', 'opus')]
+        role = {**seats[0], 'name': 'Fixture host'}
         return store.opened({'subject': 'phase budget', 'opening': 'Preserve original session instructions.',
                              'folder': str(tmp_path), 'chair_key': None, 'chair_token': 'fixture',
-                             'reporter': seats[0]['id'], 'rounds': 0, 'spend': 1}, seats,
+                             'reporter': seats[0]['id'], 'host': role, 'synthesizer': role,
+                             'rounds': 0, 'spend': 1}, seats,
                             [{'name': 'first', 'title': 'First topic', 'text': 'Explore the first topic.'}],
                             judging=judging, token_budget=maximum, token_basis=token_basis,
                             session={'total': total, 'folder': str(materials), 'between': 'Collaborate after {index}.',
@@ -96,7 +100,7 @@ def test_thresholds_are_inclusive_once_only_and_follow_first_participant_instead
     assert store.discussion(number)['pass_after'] == 0
 
 
-def test_phase_usage_survives_restart_and_limit_changes_but_resets_for_each_phase_and_topic(phase_table):
+def test_historical_phase_usage_survives_restart_and_limit_changes_and_remains_separate(phase_table):
     make, _, _, _, _ = phase_table
     number = make(maximum=0)
     received(number, 0, 80, 'panel-first')
@@ -197,14 +201,10 @@ def test_whole_phase_closing_messages_do_not_reset_votes_and_are_delivered_on_sa
     assert store.submissions(number) == [] and store.discussion(number)['pass_after'] == 0
 
 
-@pytest.mark.parametrize('stage', ['discussion', 'collaboration'])
-def test_midpoint_is_once_and_winddown_repeats_with_current_peak_until_phase_advances(phase_table, stage):
-    make, _, _, _, materials = phase_table
+def test_midpoint_is_once_and_winddown_repeats_with_current_peak_until_topic_selection(phase_table):
+    make, _, _, _, _ = phase_table
     number = make(total=2)
     table = runner.Table(number)
-    if stage == 'collaboration':
-        table.collaboration(table.row())
-        (materials / 'next-topic.md').write_text('The agreed next topic.', encoding='utf-8')
     received(number, 0, 50, 'midpoint')
     found = table.row()
     for row in store.seats(number):
@@ -219,7 +219,7 @@ def test_midpoint_is_once_and_winddown_repeats_with_current_peak_until_phase_adv
         assert 'wind-down' in winddown.text and '(80%)' in winddown.text
         assert 'midpoint notice' not in winddown.text
         assert 'coordinator' in winddown.text
-        assert ('PASS' if stage == 'discussion' else 'next-topic.md') in winddown.text
+        assert 'PASS' in winddown.text
         budget.delivered_prompt(table.row(), 2, winddown)
     assert len(store.events(number)) == notice_count
     received(number, 1, 85, 'new-peak')
@@ -239,31 +239,32 @@ def test_midpoint_is_once_and_winddown_repeats_with_current_peak_until_phase_adv
     received(number, 1, 1, 'advance')
     assert not budget.prompt(table.row(), 2).text
     assert asyncio.run(table.enforce_budget(table.row())) is True
-    assert table.row()['state'] == 'running'
+    assert table.row()['state'] == 'running' and table.row()['stage'] == 'topic_selection'
     assert budget.progress(table.row())['participants'][0]['tokens'] == 0
     assert not budget.prompt(table.row(), 2).text
+    with store.connect() as db:
+        assert db.execute("SELECT tokens FROM phase_usage WHERE discussion=? AND topic=0 AND phase='panel' "
+                          'AND position=1', (number,)).fetchone()[0] == 120
 
 
-@pytest.mark.parametrize('phase', ['discussion', 'collaboration'])
-def test_warnings_keep_running_through_119_percent_and_120_advances_without_a_chair_click(phase_table, phase):
+@pytest.mark.parametrize('total', [1, 2])
+def test_warnings_keep_running_through_119_percent_and_120_finishes_the_panel(phase_table, total):
     make, _, _, _, _ = phase_table
-    number = make(maximum=100, total=1)
+    number = make(maximum=100, total=total)
     table = runner.Table(number)
-    if phase == 'collaboration':
-        table.collaboration(table.row())
     previous = 0
     for percent in (50, 80, 100, 119):
         received(number, 0, percent - previous, f'usage-{percent}')
         previous = percent
         assert asyncio.run(table.enforce_budget(table.row())) is False
         found = table.row()
-        assert found['state'] == 'running' and found['stage'] == phase
+        assert found['state'] == 'running' and found['stage'] == 'discussion'
         assert not found['advance_asked']
     received(number, 0, 1, 'usage-120')
     assert asyncio.run(table.enforce_budget(table.row())) is True
     found = table.row()
     assert found['state'] == 'running'
-    assert found['stage'] == ('collaboration' if phase == 'discussion' else 'scoring')
+    assert found['stage'] == ('topic_selection' if total > 1 else 'scoring')
     assert not found['advance_asked']
 
 
@@ -297,40 +298,60 @@ def test_jev_retry_does_not_count_a_physical_reply_twice(phase_table, monkeypatc
     assert budget.status(second.row())['participants'][0]['tokens'] == 15
 
 
-def test_caps_cancel_busy_participants_and_advance_both_phases_without_done(phase_table):
+def test_cap_drains_inline_file_work_and_selection_opens_a_zero_budget_panel(phase_table, monkeypatch):
     make, handlers, calls, cancelled, materials = phase_table
     number = make(total=2)
     note = materials / 'retained-proof.txt'
-    note.write_text('Keep these completed materials.', encoding='utf-8')
     table = runner.Table(number)
+    decisions = []
+
+    def compared(path, body, **options):
+        assert path == '/alpha/decisions'
+        decisions.append(body)
+        return {'answers': {key: {'noul': .5} for key in body['questions']}}
+
+    monkeypatch.setattr(topics.openrouter, 'post', compared)
+    original = table.next_topic
+
+    def stop_at_new_panel(found):
+        original(found)
+        current = table.row()
+        assert current['stage'] == 'discussion' and current['topic'] == 1
+        assert all(row['tokens'] == 0 for row in budget.progress(current)['participants'])
+        store.change(number, state='held', reason='Fixture stops before any new-panel work.')
+
+    monkeypatch.setattr(table, 'next_topic', stop_at_new_panel)
 
     async def scenario():
-        entered = {}
-        gates = {}
+        entered, everyone = set(), asyncio.Event()
 
         async def busy(seat, text):
             found = table.row()
-            phase_key = (found['stage'], found['topic'])
-            entered[phase_key] = entered.get(phase_key, 0) + 1
-            gate = gates.setdefault(phase_key, asyncio.Event())
-            if entered[phase_key] == 3:
-                gate.set()
-            await gate.wait()
+            seat.delivered()
+            entered.add(seat.position)
+            if len(entered) == 3:
+                everyone.set()
+            await everyone.wait()
             if seat.position:
                 await asyncio.Event().wait()
-            if found['stage'] == 'discussion' and found['topic'] == 0:
-                store.change(number, handoff={'after': 0})
-                store.record(number, table.entry(found, store.seats(number)[0], 'Keep the saved handoff note.',
-                                                 kind='carry'))
-            if found['stage'] == 'collaboration' and found['topic'] == 0:
-                (materials / 'next-topic.md').write_text('Agents submitted this next topic.', encoding='utf-8')
-            return Reply(f'Completed material from {found["stage"]}.', {'prompt_tokens': 100, 'completion_tokens': 20})
+            note.write_text('Keep these completed inline materials.', encoding='utf-8')
+            store.change(number, handoff={'after': 0})
+            store.record(number, table.entry(found, store.seats(number)[0], 'Keep the saved handoff note.', kind='carry'))
+            return Reply('Completed inline file work.', {'prompt_tokens': 100, 'completion_tokens': 20})
 
-        for phase_key in [('discussion', 0), ('collaboration', 0), ('collaboration', 1)]:
-            for position in range(3):
-                handlers[(*phase_key, position)] = busy
+        async def propose(seat, text):
+            assert budget.phase(table.row()) is None
+            with store.connect() as db:
+                assert db.execute("SELECT tokens FROM phase_usage WHERE discussion=? AND topic=0 AND phase='panel' "
+                                  'AND position=0', (number,)).fetchone()[0] == 120
+            return Reply(f'Privately proposed next question {seat.position}.',
+                         {'prompt_tokens': 90000, 'completion_tokens': 1000})
+
+        for position in range(3):
+            handlers[('discussion', 0, position)] = busy
+            handlers[('topic_selection', 0, position)] = propose
         result = await asyncio.wait_for(table.run(), 5)
-        assert result['state'] == 'ended', result
+        assert result['state'] == 'held', result
 
     asyncio.run(scenario())
     assert len(store.topics(number)) == 2
@@ -338,31 +359,44 @@ def test_caps_cancel_busy_participants_and_advance_both_phases_without_done(phas
     assert store.discussion(number)['handoff'] is None
     assert any(row['kind'] == 'carry' and row['text'] == 'Keep the saved handoff note.'
                for row in store.submissions(number))
-    assert note.read_text() == 'Keep these completed materials.'
-    assert (materials / 'topics' / '02.md').read_text() == 'Agents submitted this next topic.'
-    assert all(phase_key in {(stage, topic) for stage, topic, _ in cancelled}
-               for phase_key in [('discussion', 0), ('collaboration', 0), ('collaboration', 1)])
-    assert any(row['kind'] == 'collab' and 'Completed material' in row['text'] for row in store.submissions(number))
+    assert note.read_text() == 'Keep these completed inline materials.'
+    assert not (materials / 'next-topic.md').exists()
+    assert {position for stage, topic, position in cancelled if stage == 'discussion' and topic == 0} == {1, 2}
+    assert any(row['kind'] == 'seat' and row['text'] == 'Completed inline file work.'
+               for row in store.submissions(number))
     assert not table.panel_work and not table.working
-    assert any(stage == 'scoring' for stage, _, _, _ in calls)
+    assert {stage for stage, _, _, _ in calls} == {'discussion', 'topic_selection'}
+    assert len(decisions) == 1 and len(decisions[0]['questions']) == 3
+    assert all(sum(stage == 'topic_selection' and position == seat for stage, topic, position, text in calls) == 1
+               for seat in range(3))
+    with store.connect() as db:
+        usage = [tuple(row) for row in db.execute('SELECT topic,phase,position,tokens FROM phase_usage '
+                                                 'WHERE discussion=? ORDER BY topic,phase,position', (number,))]
+    assert usage == [(0, 'panel', 0, 120)]
 
 
-def test_collaboration_cap_with_no_next_topic_wraps_up_without_holding_or_inventing_one(phase_table):
+def test_end_discussion_starts_private_selection_and_cannot_advance_selection(phase_table, monkeypatch):
     make, _, _, _, materials = phase_table
     number = make(total=2)
     table = runner.Table(number)
-    table.collaboration(table.row())
     note = materials / 'decisions.md'
     note.write_text('Keep the completed decisions.', encoding='utf-8')
-    received(number, 0, 120, 'collab-cap')
     store.change(number, handoff={'after': 0})
-    assert asyncio.run(table.enforce_budget(table.row())) is True
+    spawn = Mock()
+    monkeypatch.setattr(server.runner, 'spawn', spawn)
+    monkeypatch.setattr(server.events, 'publish', Mock())
+    server.advanced(table.row())
+    table.discussed(table.row(), 'chair')
     found = table.row()
-    assert found['state'] == 'running' and found['stage'] == 'scoring'
-    assert any('no next topic' in row['text'].casefold() for row in store.submissions(number))
+    assert found['state'] == 'running' and found['stage'] == 'topic_selection'
     assert len(store.topics(number)) == 1 and not (materials / 'next-topic.md').exists()
     assert found['handoff'] is None
     assert note.read_text() == 'Keep the completed decisions.'
+    spawn.assert_called_once_with(number)
+    with pytest.raises(server.ToolError, match='topic selection'):
+        server.advanced(found)
+    assert table.row() == found
+    spawn.assert_called_once_with(number)
 
 
 def test_carry_forward_usage_is_counted_once_when_a_failed_editor_is_retried(phase_table, monkeypatch):
@@ -432,20 +466,17 @@ def test_existing_collaboration_usage_seeds_independently_from_panel_records(pha
     table = runner.Table(number)
     rows = store.seats(number)
     store.record(number, table.entry(table.row(), rows[0], 'Old panel.', prompt_tokens=900))
-    table.collaboration(table.row())
+    store.phase(number, 'collaboration', 'Historical collaboration opening.')
     store.record(number, table.entry(table.row(), rows[1], 'Old collaboration.', kind='collab', prompt_tokens=20,
                                      cached_tokens=30, completion_tokens=10))
     assert [row['tokens'] for row in budget.status(table.row())['participants']] == [0, 60, 0]
 
 
-@pytest.mark.parametrize('phase', ['panel', 'collaboration'])
 @pytest.mark.parametrize('action', ['hold', 'disable'])
-def test_phase_cap_respects_person_changes_while_busy_work_is_closing(phase_table, monkeypatch, phase, action):
+def test_panel_cap_respects_person_changes_while_busy_work_is_closing(phase_table, monkeypatch, action):
     make, _, _, _, materials = phase_table
     number = make(total=2)
     table = runner.Table(number)
-    if phase == 'collaboration':
-        table.collaboration(table.row())
     received(number, 0, 120, 'cap-before-control')
     submitted = materials / 'next-topic.md'
     submitted.write_text('The submitted next topic.', encoding='utf-8')
@@ -459,6 +490,6 @@ def test_phase_cap_respects_person_changes_while_busy_work_is_closing(phase_tabl
 
     monkeypatch.setattr(table, 'unseat', stopped)
     assert asyncio.run(table.enforce_budget(table.row())) is True
-    assert table.row()['stage'] == ('discussion' if phase == 'panel' else 'collaboration')
+    assert table.row()['stage'] == 'discussion'
     assert submitted.is_file()
     assert len(store.topics(number)) == 1

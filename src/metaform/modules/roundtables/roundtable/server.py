@@ -100,7 +100,7 @@ def submitted(row: dict[str, Any]) -> str:
 def turn_of(found: dict[str, Any], held: list[dict[str, Any]]) -> str | None:
     """Who the table waits on: the seat whose turn or stage answer it is, the synthesizer or host, or Jev judging a
     topic's round once its last seat has spoken."""
-    if found['state'] not in ('running', 'held') or not held:
+    if found['state'] not in ('running', 'held') or not held or found['stage'] == 'topic_selection':
         return None
     if found['stage'] in ('synthesis', 'host_summary'):
         return str(found['synthesizer' if found['stage'] == 'synthesis' else 'host']['name'])
@@ -116,7 +116,10 @@ def topic_of(found: dict[str, Any]) -> dict[str, Any]:
         return {}
     listed = store.topics(int(found['number']))
     at = min(int(found['topic']), len(listed) - 1)
+    from . import topics as next_topics
+
     return {'stage': found['stage'],
+            **({'topic_selection': next_topics.progress(found)} if found['stage'] == 'topic_selection' else {}),
             'topic': {'number': at + 1, 'of': len(listed), 'name': listed[at]['name'], 'title': listed[at]['title']},
             'topics': [{'number': int(one['topic']) + 1, 'name': one['name'], 'title': one['title'],
                         **({'advanced_by': one['advanced_by'], 'why': one['why']} if one['advanced_by'] else {})}
@@ -214,6 +217,9 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
     if judging and not config.openrouter_key():
         raise ToolError(f'{config.KEY} is not set where this server runs, and Jev judges every submission through '
                         'OpenRouter.')
+    if session and int(session.get('total') or 1) > 1 and len(chosen) > 1 and not config.openrouter_key():
+        raise ToolError(f'{config.KEY} is not set where this server runs, and private next-topic selection '
+                        'requires the judging service for a multi-participant session.')
     most_spend = float(config.value('spend'))
     if spend is not None and not 0 <= spend <= most_spend:
         raise ToolError(f'spend is 0 to ${most_spend:g}, the configured most; only the person raises it.')
@@ -317,15 +323,12 @@ def wake_runner(found: dict[str, Any]) -> None:
 
 
 def advanced(found: dict[str, Any]) -> dict[str, Any]:
-    """Explicitly finish panel discussion or collaboration, retaining completed work."""
+    """Explicitly finish the topic discussion, retaining completed work."""
     if found['state'] == 'ended':
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
-    collaboration = found['stage'] == 'collaboration' and render.session(found)
-    if found['stage'] and found['stage'] != 'discussion' and not collaboration:
+    if found['stage'] and found['stage'] != 'discussion':
         raise ToolError(said('advance_after_discussion', topic=int(found['topic']) + 1,
                             stage=str(found['stage']).replace('_', ' ')))
-    if collaboration and runner.alive(found) and found.get('collaboration_runner') != found['runner']:
-        raise ToolError(said('advance_runner_reload', topic=int(found['topic']) + 1))
     found = store.change(int(found['number']), advance_asked=True, state='running', reason=None, unpaid=False)
     wake_runner(found)
     return status_of(found)
@@ -500,7 +503,8 @@ def read(discussion: int, since: int = 0, events_since: int = 0) -> dict[str, An
     found = table(discussion)
     rows = store.submissions(discussion, since)
     events = store.events(discussion, events_since)
-    turns = [{'number': row['number'], 'turn': render.turn(int(row['number'])), 'seat': render.who(row),
+    turns = [{'number': row['number'], 'turn': row.get('message_id') or render.turn(int(row['number'])),
+              **({'message_id': row['message_id']} if row.get('message_id') else {}), 'seat': render.who(row),
               **({'topic': int(row['topic']) + 1} if row['topic'] is not None else {}),
               'outcome': render.outcome(row), 'shown': render.entry(row, links=True),
               **({'truncated': True} if row['truncated'] else {}),

@@ -22,6 +22,7 @@ import pytest
 from metaform import events
 from metaform.data import Store
 from metaform.module import Context
+from metaform.modules.dispatch.names import is_name
 from metaform.modules.roundtables import engine, follow
 from metaform.modules.roundtables.tests import fakes
 
@@ -202,10 +203,64 @@ def test_a_fresh_install_with_no_engine_on_path_runs_a_table_where_every_seat_ge
         heard.close()
         held.shutdown()
     status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
-    assert status['seated'] == ['Vega', 'Haiku', 'Orion'], status
+    assert len(status['seated']) == 3 and len(set(status['seated'])) == 3, status
+    assert all(is_name(name) for name in status['seated']), status
     spoke = [one['payload']['seat'] for one in heard.events if one['kind'] in ('turn', 'veto')]
     assert set(spoke) == set(status['seated']), spoke  # Startup latency must not prevent anyone else speaking.
     assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer'], status
+
+
+@pytest.mark.timeout(150)
+def test_two_round_native_session_selects_privately_and_finishes_without_an_intertopic_discussion(
+        run, table, monkeypatch):
+    """Real MCP, ACP, follower and local judging transports exercise the full autonomous session."""
+    from metaform.modules.roundtables.roundtable import store as native
+
+    folder, log = table
+    stub = stubbed()
+    service = serve(monkeypatch, stub)
+    heard = Heard()
+    answer = None
+    try:
+        answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'claude/opus']),
+                        'host=stub/host', 'chain=2')
+        assert heard.ended.wait(100), heard.kinds()
+        status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+        assert status['state'] == 'ended', status
+        number = status['discussion']
+        found = native.discussion(number)
+        assert found['topic'] == 1 and found['stage'] == 'farewell'
+        assert len(native.topics(number)) == 2
+        assert not any(row['kind'] == 'collab' for row in native.submissions(number))
+        assert not any(one.get('payload', {}).get('stage') == 'collaboration' for one in heard.events)
+        with native.connect() as db:
+            proposals = [dict(row) for row in db.execute('SELECT * FROM topic_proposals WHERE discussion=?', (number,))]
+            decisions = [dict(row) for row in db.execute('SELECT * FROM topic_decisions WHERE discussion=?', (number,))]
+        assert len(proposals) == 2 and all(row['state'] == 'ready' and row['receipt'] for row in proposals)
+        assert len(decisions) == 1 and decisions[0]['state'] == 'ready'
+        assert len([body for body in stub.decisions if set(body['questions']) == {'p0_1'}]) == 1
+        assert len(native.scorecards(number)) == 2
+        materials = Path(status['materials'])
+        assert all(name in (materials / 'participants.md').read_text() for name in status['seated'])
+        assert not (materials / 'next-topic.md').exists()
+        shared = json.loads((folder / status['saved'] / 'export.json').read_text())
+        assert 'judgments' not in shared
+        assert all(row['kind'] in ('seat', 'chair') for row in shared['submissions'])
+        assert all(brand not in json.dumps(shared).lower() for brand in ('acp:claude/', 'claude/haiku', 'claude/opus'))
+        for topic in (1, 2):
+            ids = [int(row['message_id'].split('-')[1]) for row in shared['submissions'] if row.get('topic') == topic]
+            assert ids == list(range(1, len(ids) + 1))
+        requests = [row['message']['params'] for row in map(json.loads, log.read_text().splitlines())
+                    if row.get('message', {}).get('method') == 'session/prompt']
+        text = lambda row: '\n'.join(block.get('text', '') for block in row.get('prompt', []) if block.get('type') == 'text')
+        intros = [row for row in requests if 'You are participating in a roundtable discussion as' in text(row)]
+        assert len(intros) == 2, 'Existing participants must retain their original sessions and context.'
+        assert len([row for row in requests if '# Private next-topic proposal' in text(row)]) == 2
+    finally:
+        if answer and not heard.ended.is_set():
+            run('roundtables', 'end', answer['table'], cwd=folder, ok=False)
+        heard.close()
+        service.shutdown()
 
 
 @pytest.mark.timeout(LIMIT + 60)
@@ -452,8 +507,11 @@ def test_unjudged_acp_table_runs_and_continues_without_provider_credentials(run,
         assert original_record.read_bytes() == original_bytes
         assert after['saved'] != before['saved']
         exported = json.loads((folder / after['saved'] / 'export.json').read_text())
-        assert not exported['judgments']
-        assert any(one['kind'] == 'handoff' for one in exported['submissions'])
+        assert 'judgments' not in exported
+        assert all(one['kind'] in ('seat', 'chair') for one in exported['submissions'])
+        from metaform.modules.roundtables.roundtable import store as private
+        assert not private.judgments(after['discussion'])
+        assert any(one['kind'] == 'handoff' for one in private.submissions(after['discussion']))
         prompts = [line['message']['params'] for line in map(json.loads, log.read_text().splitlines())
                    if line.get('message', {}).get('method') == 'session/prompt']
         assert any('Shared continuation:' in json.dumps(one) for one in prompts)
@@ -558,7 +616,7 @@ def test_finished_result_keeps_each_topics_rankings_without_requesting_a_system_
     follower.ended(Page(), 7)
     status = json.loads(run('roundtables', 'status', 'finished', 'report=true', '--json', cwd=folder).stdout)
     assert status['topics'] == topics and status['answer'] == 'Show results directly.'
-    assert status['report_text'] == 'Full transcript.\n'
+    assert all(text in status['report_text'] for text in ('Storage', 'Delivery', 'Keep events.', 'Show results directly.'))
     assert status['report'].endswith('/mechanical-report.md')
     assert (folder / status['saved'] / 'export.json').is_file()
     assert user_updates(dispatch) == before
@@ -711,7 +769,10 @@ def test_follower_delivers_turns_and_result_without_a_writer_or_generated_docume
     assert not (root / 'docs' / 'roundtables' / '7-notes').exists()
     assert list(session.iterdir()) == [session / 'decisions.md']
     saved = root / follower.followed['saved']
-    assert json.loads((saved / 'export.json').read_text())['turns'] == turns
+    shared = json.loads((saved / 'export.json').read_text())
+    assert [one['text'] for one in shared['submissions']] == ['Preserve the decision.']
+    assert 'Keep the disagreement.' not in json.dumps(shared)
+    assert 'veto_reason' not in json.dumps(shared)
 
     before = list(page.reads)
     unchanged = {'latest': 2, 'topic': 0, 'stage': 'discussion', 'staged': 1, 'events': 1, 'state': 'ended'}

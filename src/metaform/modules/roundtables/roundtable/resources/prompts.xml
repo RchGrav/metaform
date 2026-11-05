@@ -3,27 +3,21 @@
      element is one prompt, named by its tag. What is between the tags is sent exactly as written. An empty element
      inside a prompt, such as <opening/>, marks a place the code fills in. Comments are never sent. The table states
      its rules once, before the opening question, and every veto names the questions it failed, so the vetoed seat
-     knows why and every other seat sees it too; a seat is never told what to say, so each model's own character
+     knows why; no other participant receives the veto notice; a seat is never told what to say, so each model's own character
      comes through. To change what is sent, change the text here; to turn a line off, empty it
      only where the comment says that is allowed. -->
 <prompts>
 <!-- The server's instructions, sent to every MCP client when it connects. Kept short: a client may keep only its
      first 2,048 characters. -->
-<instructions>roundtable holds a discussion among models: seats speak in turn, up to the table's reply_limit characters each (512 by default), and Jev keeps only what is new, valuable, relevant and worth keeping. Open a table with open; you chair it: comment, hold, continue, advance and end take the chair token open returns, or work from the same connection. A table discusses its topics one at a time, each then synthesized into named ideas, ranked and explained by every seat and summarized by its host; advance ends the open topic's discussion. Follow it with status and read since=&lt;latest&gt;. An outside agent seated as agent:&lt;name&gt; reads its turn with turn wait=&lt;seconds&gt; and answers with submit. A vetoed submission's text is at roundtable://discussion&lt;N&gt;/submission&lt;M&gt;, every submission's four nouls at roundtable://discussion&lt;N&gt;/review, and the whole record as JSON at roundtable://discussion&lt;N&gt;/export.</instructions>
+<instructions>roundtable holds a discussion among named participants. Jev independently checks whether each contribution adds something new or states a position on a recent matter, is valuable, and is relevant. All three must pass. Only the author receives a rejected contribution’s failed conditions; rejected text and veto notices are not shared with the other participants. Two complete quiet rounds end a judged discussion. Open a table with open; comment, hold, continue, advance and end use its chair token or the same connection. Follow it with status and read since=&lt;latest&gt;. An outside participant seated as agent:&lt;name&gt; reads its turn with turn wait=&lt;seconds&gt; and answers with submit. The chair retains the full private record.</instructions>
 
-<!-- The rules of the table, stated once to every seat before the opening question, in its first message: who sits
-     in speaking order, the limit and what happens to a longer turn, Jev's four questions and the bar, and how a veto is shown. Rules are stated; a seat
-     is never told what to say. <seats/> is the seats' short names in speaking order, <limit/> the selected character
-     limit, <keep/> the bar (0.83 unless the person changed `keep`). Edit freely; keep the places. -->
-<rules>Rules of this roundtable:
-- The seats speak in this order: <seats/>.
-- Jev judges each turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping.
-- A turn enters the discussion only when it scores <keep/> or more on all four.
-- Every seat sees a vetoed turn as one line with the failed questions and the four scores [new, valuable, relevant, keep], for example: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88].
-- Reply PASS alone when you have nothing to add.
-- The discussion ends after a full round of unanimous PASS, chair advancement, or 120% of its configured per-agent token budget.
-- A veto, an error or a skipped turn is not a PASS.
-- A chair comment or a context handoff cancels the earlier PASS votes.</rules>
+<!-- The rules stated once before the opening question: participant names, three independent conditions, private
+     failed-condition feedback and two quiet rounds. Numeric judgment thresholds stay out of participant prompts. -->
+<rules>You discuss one topic with these participants: <seats/>.
+Write one message or PASS when you have nothing to add. The system shares a message only when it adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic.
+If your message is blocked, only you receive the failed condition at the start of your next turn. You may then reword or pass.
+You may work on shared files during discussion. Other participants continue while you are busy. Your turn limit grows after a pass or accepted messages missed while busy. A blocked message earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. The round ends when the group has nothing new to add, then each participant privately proposes the next topic.</rules>
 <!-- A seat's system message, fixed for the table's life: the table's rules, which seat it is, and the opening. Sent
      first in every request of a model through OpenRouter, as a system message; at the head of the first prompt of an
      ACP seat's session, of an A2A seat's conversation and of an outside agent seat's turns. <rules/> is the rules
@@ -45,32 +39,33 @@
 <rules/>
 
 <reply_length/></seat_system_topics>
-<reply_length>Each discussion reply has a maximum of <limit/> characters. Any excess text is truncated.</reply_length>
+<reply_length>The base reply limit is <limit/> characters. Each turn states its current limit.</reply_length>
+<message_references>Accepted messages have IDs such as R1-1. Cite one or several IDs using links such as [R1-1](R1-1). Explain your point plainly before its references. Link source passages by file and line, such as [source](docs/spec.md:42).
+After file work, you may address missed messages in one reply or pass. Your total limit is supplied with each turn. You do not owe a separate reply for each missed message.
+Use the generated names in participants.md in the shared folder. Do not disclose which model a participant runs.</message_references>
 <!-- Told to every seat just before the reply limit: the table's notes folder. Replies stay short and in turn; longer work
      goes in the folder. Writes go through each agent's own file tools, and its harness asks the owner when it needs
      permission. A session's seats are not sent this; the owner's opening message names their folder. <folder/> is the
      folder's path. -->
-<notes_folder>The owner reads along and chairs. Write plainly, and say what each code you cite means. Notes folder: <folder/>. Put longer work there and name the file in your reply. shared.md is for every seat; vetoed/ holds vetoed turns.</notes_folder>
+<notes_folder>The owner reads along and chairs. Write plainly, and explain each reference you cite. Notes folder: <folder/>. Put longer shared work there and name the file in your reply. shared.md is for every participant. Keep rejected contributions and private feedback out of shared documents.</notes_folder>
 <!-- What a seat receives on its first turn: every turn before its own, and the limit; the rules and the opening are
      in its system message. <turns/> is the turns, one line or entry each, a blank line between; <limit/> the
      selected character limit. -->
 <seat_first><turns/>
 
-Reply in <limit/> characters or fewer.</seat_first>
+Write one message or PASS.</seat_first>
 <!-- What a seat receives on each later turn: only what happened since its last reply, then the limit. When nothing
      happened since, <turns/> is the line <nothing_since>. -->
 <seat_next><turns/>
 
-Reply in <limit/> characters or fewer.</seat_next>
+Write one message or PASS.</seat_next>
 <!-- The line that fills <turns/> on a later turn when nothing entered the discussion since that seat's last
      reply, so a seat is never sent an empty turn. -->
 <nothing_since>Nothing has been added since your last reply.</nothing_since>
 <!-- One turn that entered the discussion: an accepted submission or a comment, as its text alone, with no scores.
      <turn/> is its number, T01 and on; <seat/> who wrote it, a seat by its short name. -->
 <turn_entry><turn/> <seat/>: <text/></turn_entry>
-<!-- A vetoed submission, in place of its text, to every seat and in every record, export and report: one short line,
-     the seat by its short name, the questions it failed in words, and its four scores. <failed/> is the failed
-     questions' words below, joined with commas; <scores/> the array [new, valuable, relevant, keep]. -->
+<!-- The owner's private audit line for a rejected submission. Never delivered to peers or reporter inputs. -->
 <verdict><turn/> <seat/> vetoed (<failed/>) <scores/></verdict>
 <failed_new>not new</failed_new>
 <failed_valuable>not valuable</failed_valuable>
@@ -80,8 +75,7 @@ Reply in <limit/> characters or fewer.</seat_next>
 <failed_new_context>not new</failed_new_context>
 <failed_on_topic>off topic</failed_on_topic>
 <failed_repeat>a repeat</failed_repeat>
-<!-- The line after a veto that gives the link to its text, only for a seat with a tool that reads it: an outside
-     agent seat, and the chair's read. Seats with no such tool are never sent it. -->
+<!-- A link for the owner's private read surface. Participant turns never include it. -->
 <verdict_link>Its text: <link/></verdict_link>
 <!-- A kept submission's short line, in the review and the export, where its text is not shown. -->
 <short_kept><turn/> <seat/> kept <scores/></short_kept>
@@ -163,16 +157,11 @@ The topics organize discussion rather than restrict what can be proposed; ideas 
 All findings from Roundtable 1 may be reconsidered. No architecture or technical direction has been decided. The purpose is open-ended technical debate and discovery.</rt2_opening>
 <!-- The discussion instructions, after the opening on a seat's first turn; also the rules a Roundtable 2 table
      records, shown in its review and its record. -->
-<discussion_start># How the discussion works
-
-- The roundtable discusses its topics one at a time.
-- On each topic, you may give ideas, challenge proposals, extend another seat's contribution or give alternatives.
-- Jev judges each contribution. Jev vetoes a contribution that is off topic, repeats earlier material or adds no new context.
-- At your next turn, you learn if your last contribution was cut or vetoed, and you get the other seats' contributions.
-- Reply PASS alone only when you have nothing to add.
-- The discussion ends after a full round of unanimous PASS, chair advancement, or 120% of its configured per-agent token budget.
-- A veto, a skipped turn or a failure is not a PASS. A chair comment or a context handoff cancels the earlier PASS votes.
-- Later phases follow their own instructions. For a panel session, collaboration follows the discussion.</discussion_start>
+<discussion_start>You discuss the chair's current topic. Write one message or PASS when you have nothing to add.
+The system checks three conditions separately: adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic. Only accepted messages reach the other participants.
+If your message is blocked, only you receive its failed condition at the start of your next turn. You may reword or pass. The notice gives no scores and does not quote your message.
+Work on shared files during discussion when needed. Other participants continue while you are busy. Your reply limit grows after a pass or accepted messages missed while busy. A block earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. When the group has nothing new to add, the round ends and each participant privately proposes the next topic.</discussion_start>
 <!-- The three Roundtable 2 topics, a table's topics when open names none. A topic given at open by one of these
      names (01_WORLD, 02_OBJECTS, 03_COLLABORATION) is its text below; any other topic is the text the chair gave.
      A table keeps each topic's text as it was when the table opened. -->
@@ -210,12 +199,9 @@ Findings and disagreements from Roundtable 1 may be revisited. Alternative inter
 
 <topic/>
 
-The other seats' contributions so far:
 <turns/>
 
-Contribute to the current topic. If you have nothing to add, reply PASS alone. The table records a pass and does not judge it.
-
-Maximum <limit/> characters. Any excess text is truncated.</topic_first>
+Write one message or PASS.</topic_first>
 <!-- A seat's first message in a context begun for the topic when it is a stage's prompt, <stage/>, because the
      topic went to synthesis before the seat's first discussion turn on it: the topic, <topic/>, then the stage. -->
 <stage_first><topic/>
@@ -223,47 +209,37 @@ Maximum <limit/> characters. Any excess text is truncated.</topic_first>
 <stage/></stage_first>
 <!-- A seat's first turn on a later topic: its previous contribution's status, the digest of earlier topics, the
      topic, and what was said on it before the seat's turn. -->
-<topic_open>Status of your last contribution:
-<status/>
-
-The next topic is open.
+<topic_open><status/>
 
 <digest/>
 
 <topic/>
 
-The other seats' contributions so far:
 <turns/>
 
-Contribute to the current topic. If you have nothing to add, reply PASS alone. The table records a pass and does not judge it.
-
-Maximum <limit/> characters. Any excess text is truncated.</topic_open>
+Write one message or PASS.</topic_open>
 <!-- NEXT_TURN.md: each later turn on the same topic. <status/> is one of the status lines below; <turns/> the other
      seats' contributions since the seat's last turn, each labeled by model. -->
-<next_turn>Status of your last contribution:
-<status/>
+<next_turn><status/>
 
-The other seats' contributions since your last turn:
 <turns/>
 
-Continue the discussion of the current topic. You may give a new idea, extend or challenge an idea, or answer another seat. If you have nothing to add, reply PASS alone.
-
-Maximum <limit/> characters. Any excess text is truncated.</next_turn>
+Write one message or PASS.</next_turn>
 <!-- The status of a seat's previous contribution, told only at its next turn. <turn/> is its number; <failed/> the
      questions it failed, in the words of <failed_new> and the others above. -->
-<status_kept>Your previous contribution, <turn/>, entered the discussion.</status_kept>
-<status_kept_truncated>Your previous contribution, <turn/>, was truncated to <limit/> characters; the truncated part entered the discussion.</status_kept_truncated>
+<status_kept></status_kept>
+<status_kept_truncated></status_kept_truncated>
 <status_vetoed>Your previous contribution, <turn/>, was vetoed by Jev (<failed/>).</status_vetoed>
 <status_vetoed_truncated>Your previous contribution, <turn/>, was truncated to <limit/> characters, and the truncated part was vetoed by Jev (<failed/>).</status_vetoed_truncated>
 <!-- A previous contribution that repeated an earlier submission, kept or vetoed, caught before Jev was asked.
      <earlier/> is the earlier submission's number. -->
 <status_repeat>Your previous contribution, <turn/>, repeated <earlier/>, so it was vetoed without being judged. Say something the discussion does not hold yet.</status_repeat>
-<status_none>You made no submission on your previous turn, <turn/>.</status_none>
-<status_pass>You passed on your previous turn, <turn/>.</status_pass>
+<status_none></status_none>
+<status_pass></status_pass>
 <!-- Before a seat's next turn once it has repeated itself <count/> times on a topic and its conversation was started
      again: the turn that follows is a first turn, with everything said so far. -->
 <repeat_rebuilt>You have repeated contributions already submitted <count/> times, so your conversation has been started again. Below is the discussion as it stands. Add something that has not been said.</repeat_rebuilt>
-<status_nothing>Nothing new: the status of your previous contribution was given at your last turn.</status_nothing>
+<status_nothing></status_nothing>
 <!-- A seat's own vetoed reply as its conversation keeps it from then on, in place of the reply's text: one line.
      <turn/> is its number; <failed/> the questions it failed, as in <status_vetoed>. -->
 <own_vetoed>Your <turn/> was vetoed by Jev (<failed/>).</own_vetoed>
@@ -371,12 +347,10 @@ Send your scorecard as one JSON object in your reply. Rate each other participan
 <ranking/></session_results>
 <session_rank><seat/>: <points/> points from <cards/> scorecards; rating <rating/></session_rank>
 <session_farewell><message/></session_farewell>
-<session_topic>Roundtable <index/> of <total/>. The topic:
+<session_topic>Round <index/> of <total/>. The topic:
 
-<topic/>
-
-At the start of this panel, elect or reconfirm a coordinator and record their name in the shared notes. Keep working with ready participants while busy participants rejoin.</session_topic>
-<session_coordinator>At the start of each panel, elect or reconfirm one participant as coordinator and record their name in the shared notes. The coordinator organizes decisions, evidence, unresolved disagreements, document owners and the next topic. During wind-down, the coordinator calls for PASS in panel discussion, or for finalized documents, the agreed next-topic.md and each participant's DONE in collaboration. Everyone keeps equal permissions. The coordinator has no authority over other agents and introduces no extra approval step. Continue working with ready participants; do not pause the panel while waiting for busy participants to vote.</session_coordinator>
+<topic/></session_topic>
+<session_coordinator>The group may elect a coordinator for a purpose. Everyone keeps equal permissions. Work on shared files during the discussion, and continue with ready participants while busy participants rejoin.</session_coordinator>
 <session_no_topic>No next topic was submitted. Agree on the topic, and have one of you write it in <file/>. Then each of you say done.</session_no_topic>
 <session_no_topic_end>No next topic was submitted before collaboration ended. The session will now collect scorecards and farewells. Saved documents remain available.</session_no_topic_end>
 <session_ended>the session is complete: every participant said done.</session_ended>
@@ -419,7 +393,9 @@ New queued contributions since your last delivery:
 
 <turns/>
 
-Use the context you already received. Return only your carry-forward note.</carry_forward_retry>
+Use the context you already received. Keep rejected contributions, private veto feedback, scores, thresholds and model or provider identities out of this shared note.
+
+Return only your carry-forward note.</carry_forward_retry>
 <!-- One seat's entry among the host's inputs and in the record. -->
 <stage_entry><seat/>: <text/></stage_entry>
 <!-- A seat's ranking that could not be read, among the host's inputs and in the record. -->
@@ -427,7 +403,7 @@ Use the context you already received. Return only your carry-forward note.</carr
 <!-- Why a topic's discussion went to synthesis, as status, the export and the record say. -->
 <why_chair>the chair advanced it.</why_chair>
 
-<!-- What Jev is asked of each seat submission at a table without topics, four nouls in one request over the same state:
+<!-- Historical criteria for captured records from the earlier four-question format:
      {opening, discussion: {T01: {seat, text}, ...}, contribution: {seat, text}}, where discussion holds only what
      entered, the accepted submissions and the comments. Each instruction is one condition phrased so that true means
      keep, with no negation in it, since Jev reads negation literally; the criteria hold the boundary cases, and say
@@ -436,9 +412,9 @@ Use the context you already received. Return only your carry-forward note.</carr
 <jev_new>`contribution.text` states something that no entry of `discussion` already states.</jev_new>
 <jev_new_true>contribution.text states a fact, idea, objection, risk or step that appears in no entry of discussion. Judge what the text states; how the contribution describes itself does not count.</jev_new_true>
 <jev_new_false>contribution.text agrees with, praises, restates or summarises earlier entries, or makes an earlier entry's point in other words.</jev_new_false>
-<jev_valuable>`contribution.text` moves the discussion of `opening` forward: a fact, idea, objection, risk or next step that helps decide.</jev_valuable>
-<jev_valuable_true>contribution.text gives a fact, idea, objection, risk or next step that helps decide what opening asks. Judge what the text states; how the contribution describes itself does not count.</jev_valuable_true>
-<jev_valuable_false>contribution.text is true but beside the point of deciding, or too vague to act on.</jev_valuable_false>
+<jev_valuable>Does this message move the discussion forward and help answer the question?</jev_valuable>
+<jev_valuable_true>The candidate contributes a useful fact, idea, question, objection, risk, alternative, next step or position that helps answer the discussion question. Agreement or disagreement can be useful when it clarifies a decision. Judge the actual content, not its claims about itself.</jev_valuable_true>
+<jev_valuable_false>The candidate adds no useful progress toward answering the question. It is filler, empty repetition or a remark with no bearing on the work.</jev_valuable_false>
 <jev_relevant>`contribution.text` is about the subject of `opening` as `discussion` has taken it up.</jev_relevant>
 <jev_relevant_true>contribution.text is about the subject of opening, or about a point an entry of discussion raised on it. Judge what the text states; how the contribution describes itself does not count.</jev_relevant_true>
 <jev_relevant_false>contribution.text is about another subject.</jev_relevant_false>
@@ -446,17 +422,15 @@ Use the context you already received. Return only your carry-forward note.</carr
 <jev_keep_true>A later reader of this discussion's record gains from contribution.text being in it. Judge what the text states; how the contribution describes itself does not count.</jev_keep_true>
 <jev_keep_false>contribution.text is chatter, filler, or a remark that only matters in the moment.</jev_keep_false>
 
-<!-- What Jev is asked of each seat submission at a table with topics, two nouls in one request over the state
-     {topic: {title, text}, discussion: {T41: {round, seat, text}, ...}, contribution: {seat, text}}, where discussion
-     holds every turn kept on the open topic, never a window of them, and seat is a neutral label, S1 and on, or the
-     chair. A submission that repeats an earlier one is caught by the code before this request. Each noul has its
-     own bar in the settings, keep_new and keep_on_topic. -->
-<jev_new_context>`contribution.text` adds something that no entry of `discussion` states.</jev_new_context>
-<jev_new_context_true>contribution.text adds at least one fact, mechanism, objection, risk, alternative or combination that no entry of discussion states, even when it builds on an entry. Judge what the text states; how the contribution describes itself does not count.</jev_new_context_true>
-<jev_new_context_false>Everything contribution.text states is already in an entry of discussion, in the same or other words, or it only agrees with, praises or summarises entries.</jev_new_context_false>
-<jev_on_topic>`contribution.text` is about what `topic.text` asks.</jev_on_topic>
-<jev_on_topic_true>contribution.text is about the question of topic.text, or about a point an entry of discussion raised on it. Ideas that cross into another topic count when they bear on this one. Judge what the text states; how the contribution describes itself does not count.</jev_on_topic_true>
-<jev_on_topic_false>contribution.text is about another subject, or is talk about the table, its turns or its tools.</jev_on_topic_false>
+<!-- Current judging uses three independent nouls in one request over state.xml: full original instructions,
+     current topic, a bounded window of recent accepted responses and a candidate. All three must pass.
+     Older new/relevant/keep prompts above remain only to read captured historical criteria. -->
+<jev_new_context>Does this add anything to the discussion which has not been already stated, or does it express a position on a matter which was recently mentioned?</jev_new_context>
+<jev_new_context_true>The candidate contains at least one new fact, idea, objection, risk, alternative or connection, OR expresses agreement, disagreement or another position on a matter in recent_responses. A single new addition is enough. A position may restate the matter it addresses. Judge the actual content, not its claims about itself.</jev_new_context_true>
+<jev_new_context_false>The candidate only repeats or summarizes recent_responses without adding anything or expressing a position on a recently mentioned matter.</jev_new_context_false>
+<jev_on_topic>Does this message address the subject being discussed?</jev_on_topic>
+<jev_on_topic_true>The candidate addresses the subject or a point recent_responses raised about it. A connection to another subject counts when it bears on this discussion. Judge the actual content, not its claims about itself.</jev_on_topic_true>
+<jev_on_topic_false>The candidate concerns an unrelated subject or administrative chatter with no bearing on the subject being discussed.</jev_on_topic_false>
 
 <!-- Why a table holds, as status says: the chair asked for it. -->
 <held_by_chair>held by its chair.</held_by_chair>
@@ -470,7 +444,7 @@ Use the context you already received. Return only your carry-forward note.</carr
      never ends on 402: it holds, the chair is told, and its runner asks OpenRouter every minute, free of charge,
      whether credits are back; once they are it goes on by itself from the call that was refused. -->
 <held_credits>OpenRouter has no credits left for this table: <error/> It remains held. Add credits, then choose Continue to retry. End discussion remains available.</held_credits>
-<!-- Why a table ends: a whole round was vetoed, so the discussion has stopped producing. -->
+<!-- A judged discussion ends after two full quiet rounds, never on a failure or a skipped busy seat. -->
 <!-- Why a table ends: what it spent through OpenRouter reached the setting `spend` or the spend it was opened with.
      <spend/> is that limit and <spent/> what it spent, in US dollars. -->
 <!-- Why a table ends: the chair ended it. -->
@@ -614,6 +588,8 @@ The topic has no synthesis.</mechanical_no_ideas>
 
 Your context resets next. Write your carry-forward note now. Keep your position, decisions, evidence, disagreements and open questions. The table saves this note word for word and does not judge it. This note is not a discussion reply and not a PASS vote. Maximum <limit/> characters, twice the reply limit.
 
+Keep rejected contributions, private veto feedback, ratings, thresholds and model or provider identities out of this shared note.
+
 The earlier continuation:
 <continuation/>
 
@@ -643,4 +619,33 @@ The seats' notes:
 The seats' carry-forward notes, word for word:
 <notes/></continuation_context>
 <handoff_marker>Context handoff done. Each seat starts a fresh context with the shared continuation and every seat's note. The earlier PASS votes are cancelled.</handoff_marker>
+
+<!-- Author-only feedback. No rejected text, numeric thresholds or links are delivered. -->
+<private_failed_new_context>Your message did not add anything new to the discussion.</private_failed_new_context>
+<private_failed_valuable>Your message did not move the discussion forward.</private_failed_valuable>
+<private_failed_on_topic>Your message was not relevant to the topic.</private_failed_on_topic>
+<private_failed_new>Your message did not add anything the discussion has not already stated.</private_failed_new>
+<private_failed_relevant>Your message did not address the subject being discussed.</private_failed_relevant>
+<private_failed_keep>Your message did not add useful material for the discussion.</private_failed_keep>
+<private_failed_repeat>Your message repeated material already stated.</private_failed_repeat>
+<private_failed_unknown>Your message was excluded from the discussion. Address the current question in your next contribution.</private_failed_unknown>
+<why_exhausted>The round ended because there was nothing new to add.</why_exhausted>
+
+<!-- One frozen turn allowance and private feedback, delivered by the runner before the queued public record. -->
+<turn_allowance>Your limit for this turn is <limit/> characters. Write one message or PASS. Text beyond this limit is truncated.</turn_allowance>
+<topic_selection_start>Round <index/> of <total/> has finished. Each participant now privately proposes the next topic.</topic_selection_start>
+<topic_proposal># Private next-topic proposal
+
+The round on this topic has finished:
+<topic/>
+
+The accepted discussion:
+<discussion/>
+
+Propose the next topic in at most <limit/> characters. Return only your proposal, without your name, model or attribution. You will not see the other proposals. The selected proposal text becomes the next topic.</topic_proposal>
+<topic_similarity>Is proposal A similar to proposal B?</topic_similarity>
+<topic_similarity_true>The two proposals concern a shared subject, question or direction for the next round.</topic_similarity_true>
+<topic_similarity_false>The two proposals concern unrelated subjects or directions.</topic_similarity_false>
+<topic_selection_failed>The next topic could not be selected: <error/></topic_selection_failed>
+<proposal_received>Your private next-topic proposal was received.</proposal_received>
 </prompts>

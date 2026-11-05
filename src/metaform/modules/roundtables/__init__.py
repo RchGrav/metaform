@@ -1,31 +1,18 @@
-"""roundtables: the person brings a question to a table of agents, and the agents debate it, build on each other's
-ideas and go on until it is answered, through the Roundtable 2 engine. The finished result goes directly to the page.
+"""Roundtables with private participant identities, judged messages and inline document work.
 
-The Roundtable 2 engine ships inside this module as its `roundtable` package. This bridge owns its lifecycle
-and connects its MCP and event interfaces to Metaform. Its seats speak
-in turn, within the table's reply limit (512 characters by default); Jev, through OpenRouter, keeps only what is new and on the topic; after the discussion a
-synthesizer names the ideas, every seat ranks them and explains its choices, and the host summarises.
+Ready participants speak while busy participants work on shared files. Each substantive message is checked for a
+new contribution or position, value and relevance before peers receive it. Only its author receives a rejected
+message's failed conditions, at the start of the next turn. Passes and accepted peer messages missed while busy
+bank reply space. Public IDs name accepted messages without exposing rejected attempts.
 
-- `open` opens a table on the person's question, which is the table's one topic and its whole frame: it is limited to
-  no part and to no project. An Address given focuses it on that part: the opening then holds the part's context from
-  the map, its element, the joins it receives and provides with their purposes and encounter functions, and the
-  memories at it. Seats are Metaform's own agents, `claude/<model>`, `codex/<model>` and `antigravity/<model>`, which the
-  engine runs through its own ACP client with dispatch's commands, and OpenRouter models by their id, which the engine
-  calls itself.
-- The chair's controls are the engine's: `comment`, `hold`, `continue`, `advance`, `reseat` and `end`.
-- A follower for each table, `follow.py`, turns what the table does into events: on the bus as `roundtables.event`,
-  and in the project's `events` table, whose writes reach every other process of the home, the web page's among them,
-  as `map.changed` naming the kind `roundtables`.
-- Discussion ends after every participant voluntarily passes in one full round or explicit chair advancement. Its
-  answer is the host's summary. Its record is saved in the project; the page shows every topic's synthesis and
-  rankings, the final answer and links to the transcript. Adopting an idea as a ticket, `adopt`, comes after.
+Two complete quiet cycles finish a topic when every participant has completed PP, VV or VP; PV receives a return
+turn to reword or pass. An accepted message resets everyone's outcomes. Sessions privately collect the next-topic
+proposals and choose the highest mean of unordered pairwise similarity judgments. There is no intertopic discussion
+or document-file handoff. Final scorecards remain private, followed by farewells.
 
-Guardrails. Each seat takes one of dispatch's agent slots, through dispatch's own gate, so a table is refused when
-fewer are free than its seats. A table spends at most `roundtables_spend` US dollars through OpenRouter, a cap only
-the person raises. Seats use their agents' tools under the permissions selected at setup, through ACP, during both
-discussion and collaboration. Operational events, credits, holds and a
-seat lost, are the person's and never reach a seat or Jev. Judged tables require the person's `jev` setting. ACP-only unjudged tables need no provider credential. The tables and their events are
-kept at the project's level, so a base switch, a clear or a restore never takes them.
+The bridge opens and chairs the shipped ACP/MCP/A2A engine, holds dispatch's agent slots and follows only its changed
+records. Changes reach the page through the existing event bus. New project-readable records contain accepted
+messages and generated names. The engine's private owner audit retains full usage and diagnostic evidence.
 """
 from __future__ import annotations
 
@@ -43,7 +30,7 @@ from typing import Any, cast
 
 from metaform import events, outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Provides, Stop, Subscription, Verb, context, node_items, provided
+from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, node_items, provided
 
 from . import engine, follow, live_summary, pipeline
 
@@ -66,28 +53,30 @@ settings.number('roundtables_spend', 2, min=0, max=100, label='Most a table spen
 
 settings.boolean('roundtables_judging', True, label='Judge discussion novelty with Jev',
                  category='integrations', heading='Roundtables',
-                 help='Optional novelty filtering. Off keeps every substantive reply and needs no Jev credential '
-                      'for ACP-only tables. Discussion ends by unanimous PASS, End discussion or the configured token budget.')
+                 help='Checks new contribution or position, value and relevance. Judged discussions end after '
+                      'two complete quiet rounds. Off keeps substantive replies and ends on unanimous PASS. '
+                      'End discussion and the configured token budget remain available.')
 settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000,
                 label='Seat context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
-                help='Compact before seat context fills. The smallest active seat or judging budget wins.')
-settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000,
-                label='Jev context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
-                help='State plus judging criteria. Conservative headroom under the unconfirmed OpenRouter limits.')
+                help='Compact before seat context fills. Independent of the Jev history window.')
+settings.number('roundtables_judging_context_tokens', 50000, min=4096, max=52428,
+                label='Jev history window (estimated tokens)', category='integrations', heading='Roundtables',
+                help='Sliding accepted history plus instructions and candidate, with 20% headroom under both '
+                     'request and question limits. Older responses leave the window without pausing the panel.')
 settings.number('roundtables_token_budget', 0, min=0, max=9007199254740991,
-                label='Tokens per agent per panel or collaboration', category='integrations', heading='Roundtables',
-                help='Reported tokens under the selected counting basis. Fresh counters for each panel and '
-                     'collaboration. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.')
+                label='Tokens per agent per round', category='integrations', heading='Roundtables',
+                help='Reported tokens under the selected counting basis. Fresh counters for each '
+                     'round. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.')
 settings.choice('roundtables_token_basis', ['uncached', 'output', 'all'], 'uncached',
                 label='Count toward the phase token budget', category='integrations', heading='Roundtables',
                 choice_names={'uncached': 'Uncached input + output', 'output': 'Generated output only',
                               'all': 'Input + cached input + output'},
                 help='Uncached counts input, cache writes and output, excluding cached reads. Full usage stays '
                      'recorded. Existing tables keep their basis until explicitly adjusted while stopped.')
-settings.boolean('roundtables_live_summary', True, label='Explain the live roundtable with Haiku',
+settings.boolean('roundtables_live_summary', False, label='Legacy live roundtable summary',
                  category='integrations', heading='Roundtables',
-                 help='A separate Haiku observer explains the live discussion in plain language for you. '
-                      'Participants still create and summarize their own shared documents.')
+                 help='Historical summary records remain readable. Roundtables use linked participant messages '
+                      'and shared documents without starting a separate observer.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -232,7 +221,10 @@ def phase_progress(ctx: Context, row: dict[str, Any]) -> dict[str, Any] | None:
     if not Path(str(found['folder'])).resolve().is_relative_to(project) or \
             not str(found['subject']).startswith(str(row['table_id'])):
         return None
-    return {**budget.progress(found), 'stage': found['stage'] or 'discussion'}
+    from .roundtable import topics as next_topics
+
+    return {**budget.progress(found), 'stage': found['stage'] or 'discussion',
+            'topic_selection': next_topics.progress(found) if found['stage'] == 'topic_selection' else None}
 
 
 def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
@@ -252,6 +244,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             'token_basis': progress['basis'] if progress is not None else followed.get('token_basis', 'all'),
             'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
             'phase_budget': progress,
+            'topic_selection': progress.get('topic_selection') if progress is not None else None,
             **({'stage': progress['stage']} if progress is not None else {}),
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
@@ -309,17 +302,14 @@ def session_of(ctx: Context, table_id: str, total: int, topic: str) -> dict[str,
     root = Path(ctx.require_store().project().path)
     folder = root / 'docs' / 'roundtables' / f'session-{datetime.now(UTC):%Y%m%d}-{table_id}'
     folder.mkdir(parents=True, exist_ok=True)
-    submit = prompt_files.required(PACKAGE, 'session_submit', file=str(folder / 'next-topic.md'))
     taste = ''
     with contextlib.suppress(OSError, UnicodeDecodeError):
         taste = (root / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
     return {'total': total, 'folder': str(folder),
-            'opening': prompt_files.required(PACKAGE, 'session_opening', total=str(total), submit=submit,
+            'opening': prompt_files.required(PACKAGE, 'session_opening', total=str(total),
                                              session_folder=str(folder),
                                              taste=taste or prompt_files.required(PACKAGE, 'minutes_taste_default')),
             'first': prompt_files.required(PACKAGE, 'session_first', total=str(total), topic=topic),
-            'between': prompt_files.required(PACKAGE, 'session_between', index='{index}', total=str(total),
-                                             submit=submit, session_folder=str(folder)),
             'score': prompt_files.required(PACKAGE, 'session_score'),
             'farewell': prompt_files.required(PACKAGE, 'session_farewell')}
 
@@ -539,6 +529,13 @@ def status(ctx: Context) -> dict[str, Any]:
     return found
 
 
+def read_reference(ctx: Context) -> dict[str, Any]:
+    """Open an accepted message, a cited source passage or a bounded literal search inside this project."""
+    from . import references
+
+    return references.read(ctx)
+
+
 def listed_tables(ctx: Context) -> dict[str, Any]:
     with ctx.require_store().tables(write=False) as tx:
         rows = list(tx.rows('tables', by=('created',), limit=0).results)
@@ -569,7 +566,8 @@ def table_events(ctx: Context) -> dict[str, Any]:
                                                  for one in found],
             'latest': max((int(one['seq']) for one in found), default=after),
             'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
-            'phase_budget': progress}
+            'phase_budget': progress,
+            'topic_selection': progress.get('topic_selection') if progress is not None else None}
 
 
 def follow_table(ctx: Context) -> dict[str, Any]:
@@ -683,10 +681,10 @@ MODULE = Module(
                     Noun('synthesizer', 'Who names the ideas; the host when left out.', required=False),
                     Noun('judging', 'Use optional Jev novelty filtering; project default when omitted.',
                          kind='bool', required=False),
-                    Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
+                    Noun('reply_limit', 'Base characters per turn before pass and busy-message credits; 512 when omitted.', kind='int',
                          required=False),
-                    Noun('token_budget', 'Counted tokens per agent per panel and collaboration; resets each '
-                         'phase. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.',
+                    Noun('token_budget', 'Counted tokens per agent per round; resets each '
+                         'round. Warn at 50% and 80%, closing statements at 100%, advance at 120%. Zero disables it.',
                          kind='int', required=False),
                     Noun('token_basis', 'uncached input plus output (default), output only, or all including cached '
                          'reads.', required=False,
@@ -699,9 +697,9 @@ MODULE = Module(
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
                          'board and execution outline without decisions. Default off.', kind='bool', required=False),
-                    Noun('chain', 'Run a session of this many roundtables with the same agents: after each, they '
-                                  'collaborate on their materials and submit the next topic; after the last, they '
-                                  'score each other.', kind='int', required=False)),
+                    Noun('chain', 'Run this many rounds with the same participants, editing shared files inline. '
+                                  'Private proposals select each next topic; after the last, participants score '
+                                  'each other.', kind='int', required=False)),
              switches=('roundtables_spend', 'roundtables_seats', 'roundtables_judging',
                        'roundtables_context_tokens', 'roundtables_judging_context_tokens'), open_world=True),
         Verb('comment', comment, 'As the chair, say something to the table at its next gap between turns.',
@@ -711,11 +709,10 @@ MODULE = Module(
         Verb('continue', continued, 'Resume a held table or continue a completed table from its saved summary.',
              nouns=(TABLE, Noun('spend', 'Optional replacement table budget, up to roundtables_spend.',
                                 required=False)), open_world=True),
-        Verb('advance', advance, 'As the chair, finish the current discussion or collaboration phase, preserving '
-             'completed work without waiting for every PASS or DONE.', nouns=(TABLE,), open_world=True),
+        Verb('advance', advance, 'As the chair, finish the current topic discussion, preserving completed work ', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
-        Verb('budget', set_token_budget, 'Set the per-agent token budget for panels and collaboration without '
+        Verb('budget', set_token_budget, 'Set the per-agent token budget for discussion rounds without '
              'resetting the current counters.',
              nouns=(TABLE, Noun('token_budget', 'Tokens per agent per phase; zero disables the budget.', kind='int'),
                     Noun('token_basis', 'Optional uncached, output or all. A basis adjustment requires a stopped '
@@ -733,6 +730,9 @@ MODULE = Module(
         Verb('status', status, 'A table: its state, seats, spend, topics, answer and saved transcript.',
              nouns=(TABLE, Noun('report', 'true: the saved transcript\'s text too.', kind='bool',
                                 required=False)),
+             effect='read'),
+        Verb('reference', read_reference, 'Read a cited accepted message, project file or literal search.',
+             nouns=(TABLE, Noun('reference', 'A public message ID, file with optional line, or literal rg/grep search.')),
              effect='read'),
         Verb('tables', listed_tables, 'Every table of the project, newest first.', effect='read'),
         Verb('follow-through', follow_through, 'Prepare or resume the finished table\'s approved stages.',
@@ -769,7 +769,6 @@ MODULE = Module(
              nouns=(TABLE,), surfaces=('cli',), open_world=True),
     ),
     tables=TABLES,
-    provides=(Provides('project.background', live_summary.start),),
     subscriptions=(Subscription('intake.completed', pipeline.intake_finished),
                    Subscription('map.changed', pipeline.tasks_changed)),
 )

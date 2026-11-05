@@ -2370,6 +2370,9 @@ class Handler(BaseHTTPRequestHandler):
                                        'token_basis': settings.value('roundtables_token_basis', folder),
                                        **({'running': running} if running else {})})
             table = {'table': given['table']}
+            if given.get('reference'):
+                return self.send(200, module_verb(given, 'roundtables', 'reference',
+                                                  {**table, 'reference': given['reference']}))
             if given.get('notes') or given.get('note'):
                 return self.roundtable_notes(given, table)
             if given.get('pipeline'):

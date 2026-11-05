@@ -278,6 +278,8 @@ class Follower:
         """What one change of the table moved, read and told: only the parts the change says moved."""
         if int(now_.get('latest') or 0) > int(self.followed.get('turns') or 0):
             self.turns(page, number)
+        if now_.get('topic_selection') != last.get('topic_selection'):
+            self.emit('topic_selection', 'person', progress=now_.get('topic_selection'))
         place = [now_.get('topic'), now_.get('stage')]
         if now_.get('stage') and place != self.followed.get('place'):
             self.followed['place'] = place
@@ -299,7 +301,8 @@ class Follower:
                 continue  # judged later, and told then
             self.followed['turns'] = int(row['n'])
             self.emit('veto' if row.get('outcome') == 'vetoed' else 'turn', **{key: row[key] for key in (
-                'n', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'veto_reason', 'text', 'truncated')
+                'n', 'message_id', 'turn', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'veto_reason',
+                'text', 'truncated')
                 if key in row})
         self.followed['turns'] = max(latest, int(self.followed.get('turns') or 0))
 
@@ -312,7 +315,8 @@ class Follower:
             if row.get('outcome') == 'unjudged' and int(row['n']) > since:
                 self.followed['unjudged'] = int(row['n'])
                 self.emit('turn', **{key: row[key] for key in (
-                    'n', 'topic', 'round', 'seat', 'outcome', 'failed', 'text', 'truncated') if key in row})
+                    'n', 'message_id', 'turn', 'topic', 'round', 'seat', 'outcome', 'failed', 'text', 'truncated')
+                    if key in row})
 
     def staged(self, page: engine.Page, number: int) -> None:
         """The stages' answers told once each: a topic's ideas, its rankings as they come, its host's summary."""
@@ -372,22 +376,42 @@ class Follower:
                   topics=listed, recorded=recorded, **({'unrecorded': unrecorded} if unrecorded else {}))
 
     def saved(self, page: engine.Page, number: int) -> str:
-        """The table's record saved in the project under docs/roundtables/<n>-<topic>/ as the engine wrote it: its JSON
-        export, which holds every turn and the Borda count, and its mechanical report, the record as text; written
-        once, so a follower started again keeps the folder it wrote. Returns the folder, from the project's folder."""
+        """Save only accepted messages and public results in the shared project, leaving the owner's engine audit
+        intact. A follower started again keeps its saved folder; existing project artifacts are never replaced."""
         if self.followed.get('saved') and not self.followed.get('refresh_record'):
             return str(self.followed['saved'])
+        from .roundtable import export
+
         exported = cast(dict[str, Any], page.get(f'/tables/{number}/download/export.json'))
+        shared = export.safe_shared(exported)
+        record_text = json.dumps(shared, indent=2, ensure_ascii=False) + '\n'
+        report_text = export.shared_mechanical(shared)
         root = Path(self.store.project().path)
         topic = str((self.row() or {}).get('topic') or '')
         folder = root / 'docs' / 'roundtables' / f'{number}-{slug(topic)}'
         if self.followed.get('continuations'):
             folder /= f'continuation-{self.followed["continuations"]}'
+        if not folder.resolve().is_relative_to(root.resolve()):
+            raise Stop('The shared record folder is outside the project.', 'choose a project-local record folder')
+        if (folder / RECORD).exists() or (folder / REPORT).exists():
+            import tempfile
+
+            try:
+                same = (folder / RECORD).read_bytes() == record_text.encode('utf-8') and \
+                    (folder / REPORT).read_bytes() == report_text.encode('utf-8')
+            except OSError:
+                same = False
+            if same:
+                self.followed['saved'] = folder.relative_to(root).as_posix()
+                self.followed['refresh_record'] = False
+                return str(self.followed['saved'])
+            folder.mkdir(parents=True, exist_ok=True)
+            folder = Path(tempfile.mkdtemp(prefix='record-', dir=folder))
         folder.mkdir(parents=True, exist_ok=True)
-        mechanical = Path(str(exported.get('mechanical_report') or ''))
-        if mechanical.name and mechanical.is_file():  # the engine's own file, on this machine
-            (folder / 'mechanical-report.md').write_text(mechanical.read_text(encoding='utf-8'), encoding='utf-8')
-        (folder / RECORD).write_text(json.dumps(exported, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        with (folder / REPORT).open('x', encoding='utf-8') as report:
+            report.write(report_text)
+        with (folder / RECORD).open('x', encoding='utf-8') as record:
+            record.write(record_text)
         self.followed['saved'] = folder.relative_to(root).as_posix()
         self.followed['refresh_record'] = False
         return str(self.followed['saved'])

@@ -14,12 +14,26 @@ import pytest
 pytestmark = pytest.mark.kind('simulation')
 
 
+def test_linked_discussion_does_not_register_or_start_a_summary_observer(run, tmp_path):
+    from metaform.module import context, provided
+
+    folder = tmp_path / 'linked-project'
+    folder.mkdir()
+    run('add', 'project', 'linked-discussion', str(folder))
+    ctx = context('roundtables', folder)
+    assert ctx.setting('roundtables_live_summary') is False
+    assert all(owner != 'roundtables' for owner, callback in provided(folder, 'project.background'))
+    module = importlib.import_module('metaform.modules.roundtables.live_summary')
+    assert module.start(ctx) is None
+
+
 @pytest.fixture
 def panel(run, tmp_path, monkeypatch):
     folder = tmp_path / 'project'
     folder.mkdir()
     run('add', 'project', 'summary-project', str(folder))
     run('enable', 'dispatch', cwd=folder)
+    run('set', '--roundtables-live-summary', cwd=folder)  # Legacy coverage explicitly opts in.
     from metaform.module import context
     from metaform.modules.roundtables.roundtable import store as engine_store
 
@@ -309,7 +323,7 @@ def test_native_permission_reaches_summary_panel_and_person_answer_wakes_same_we
     result = panel.module.answer(panel.ctx, 'panel', request['request'], 'allow')
     assert result['state'] == 'answered' and result['chosen'] == 'allow'
     summary = state(panel, 'ready')
-    assert summary['text'].startswith('haiku on turn 1:')
+    assert summary['text'].startswith('Participant on turn 1:')
     rows = [json.loads(line) for line in wire.read_text().splitlines()]
     assert any(one.get('message', {}).get('result', {}).get('outcome') == {
         'outcome': 'selected', 'optionId': 'allow'} for one in rows)

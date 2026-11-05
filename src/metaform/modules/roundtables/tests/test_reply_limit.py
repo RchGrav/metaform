@@ -1,4 +1,4 @@
-"""Each table keeps one reply limit for its prompts and discussion enforcement."""
+"""Each table keeps its configured base, while each turn carries its enforceable allowance."""
 import asyncio
 import json
 from unittest.mock import AsyncMock
@@ -21,12 +21,12 @@ def test_saved_limit_controls_opening_turns_and_truncation(tmp_path, monkeypatch
     found = store.discussion(number)
     assert render.reply_limit(found) == limit
     opening = render.system(found, ['Tester'], 'Tester')
-    assert opening.endswith(f'Each discussion reply has a maximum of {limit} characters. '
-                            'Any excess text is truncated.')
+    assert f'The base reply limit is {limit} characters.' in opening
     assert '512-character limit' not in opening
     for first, spoken in [(True, False), (False, False), (False, True)]:
         prompt = render.topic_view('Topic', None, [], first, spoken, limit=limit)
-        assert prompt.endswith(f'Maximum {limit} characters. Any excess text is truncated.')
+        assert 'Write one message or PASS.' in prompt
+        assert 'Maximum 512 characters' not in prompt
     found['unjudged'] = {'position': 0, 'text': 'x' * 1100, 'original': 'x' * 1100}
     held = runner.Table(number)
     held.verdict = AsyncMock(return_value=True)
@@ -58,7 +58,9 @@ def test_reply_limit_reaches_engine_from_module(run, table, monkeypatch):  # noq
         system = stub.chats[0]['messages'][0]['content']
         if isinstance(system, list):
             system = system[0]['text']
-        assert system.endswith('Each discussion reply has a maximum of 700 characters. Any excess text is truncated.')
+        assert 'The base reply limit is 700 characters.' in system
+        assert any('Your limit for this turn is 700 characters.' in str(message['content'])
+                   for call in stub.chats for message in call['messages'] if message['role'] == 'user')
     finally:
         if answer and not heard.ended.is_set():
             run('roundtables', 'end', answer['table'], cwd=folder, ok=False)

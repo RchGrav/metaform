@@ -83,7 +83,7 @@ from metaform.module import (
 
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
 from .hold_review import HOLD_REVIEW_TABLES
-from .names import is_name
+from .names import is_name, session_name
 from .progress import SOURCE as PROGRESS
 from .progress import changed as progress_changed
 from .signals import collect, own_store, requeued, rework_limit
@@ -6263,7 +6263,7 @@ MODULE = Module(
               Provides('dispatch.design_intake', design_intake),
               Provides('dispatch.design_intake_active', design_intake_active),
               Provides('dispatch.seats', seat_slots), Provides('dispatch.models', model_for), Provides('dispatch.agents', agent_choices),
-              Provides('dispatch.option_choices', option_choices),
+              Provides('dispatch.option_choices', option_choices), Provides('agent.name', session_name),
               Provides('dispatch.roundtable_permissions', roundtable_permissions),
               Provides('dispatch.permission_choice', permission_choice),
               Provides('work.in_force', fix_in_force), Provides('dispatch.integration', integration_read),

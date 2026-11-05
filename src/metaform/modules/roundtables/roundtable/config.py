@@ -11,7 +11,8 @@ spend, so only the person, who owns the file and the environment, sets them. A c
 limits than these, never higher.
 
 Settings are read afresh on every call. A discussion keeps the rules, judgment questions and the bars captured when
-it opened, `keep` and for a table with topics each noul's own (`keep_new`, `keep_on_topic`); changes to those apply to new discussions. Other changes take effect at the next turn.
+it opened, `keep` and each noul's own (`keep_new`, `keep_valuable`, `keep_on_topic`); changes to those apply to new
+discussions. Other changes take effect at the next turn.
 """
 from __future__ import annotations
 
@@ -24,12 +25,15 @@ from pathlib import Path
 from typing import Any, cast
 
 DEFAULTS: dict[str, Any] = {
-    'keep': 0.83,  # the bar each of Jev's four nouls must reach for a submission to enter the discussion
+    'keep': 0.70,  # the bar each independent Jev noul must reach for a submission to enter the discussion
     'keep_new': '',  # on a table with topics, the bar Jev's new_context noul must reach; empty is keep
+    'keep_valuable': '',  # the bar Jev's valuable noul must reach; empty is keep
     'keep_on_topic': '',  # on a table with topics, the bar Jev's on_topic noul must reach; empty is keep
     'judging': True,  # Jev novelty filtering, captured at open; false retains every substantive reply
     'context_tokens': 24000,  # seat/editor context trigger, with room for handoff notes and editing
-    'judging_context_tokens': 24000,  # conservative state plus criteria trigger under Jev's 32K/question default
+    'judging_context_tokens': 50000,  # desired request cap; the padded per-request and per-question limits also apply
+    'judge_max_request_tokens': 65536,  # the owner's 64K total request limit, including all questions
+    'judge_max_question_tokens': 32000,  # Jev's standard state plus any one question context limit
     'spend': 2.0,  # the most US dollars a table spends through OpenRouter: its seats, Jev and an OpenRouter reporter
     'agent_wait': 300,  # seconds a seat's agent has for its turn, and an outside agent seat to submit
     'jev_wait': 300,  # seconds one of Jev's judgments has for every attempt and the waits between them
@@ -89,7 +93,7 @@ def value(key: str) -> Any:
 
 
 def keep() -> float:
-    """The bar, given as a fraction (0.83) or as per cent (83)."""
+    """The bar, given as a fraction (0.70) or as per cent (70)."""
     found = value('keep')
     return found / 100 if found > 1 else found
 
@@ -112,14 +116,13 @@ def context_budgets() -> dict[str, int]:
     return found
 
 
-FLOORS = ('keep_new', 'keep_on_topic')
+FLOORS = ('keep_new', 'keep_valuable', 'keep_on_topic')
 
 
 def notes(folder: str, number: int) -> Path:
-    """A table's notes folder, `<project>/docs/roundtables/<number>-notes`, with
-    the full text of each vetoed turn in `vetoed/`. Made on first use."""
+    """A table's shared notes folder, made on first use. Rejected turns stay private."""
     found = Path(folder) / 'docs' / 'roundtables' / f'{number}-notes'
-    (found / 'vetoed').mkdir(parents=True, exist_ok=True)
+    found.mkdir(parents=True, exist_ok=True)
     return found
 
 

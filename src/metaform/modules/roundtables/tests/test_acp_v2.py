@@ -244,7 +244,8 @@ def test_fake_wire_uses_v2_without_agent_specific_tool_permissions(tmp_path, mon
         try:
             await session.start()
             reply, usage = await session.prompt('Inspect the project', 5)
-            assert reply.startswith('opus on turn 1:')
+            assert reply.startswith('Participant on turn 1:')
+            assert usage['model'] == 'opus'
             assert usage['completion_tokens'] == 20
         finally:
             await session.close()
@@ -278,7 +279,8 @@ def test_initialize_negotiates_v1_on_a_fresh_connection(tmp_path, monkeypatch, s
         try:
             await session.start()
             assert session.protocol == 1
-            assert (await session.prompt('Inspect the project', 5))[0].startswith('opus on turn 1:')
+            assert (await session.prompt('Inspect the project', 5))[0].startswith('Participant on turn 1:')
+            assert session.reported == 'opus'
         finally:
             await session.close()
 
@@ -370,7 +372,8 @@ def test_fake_wire_permission_reaches_person_and_returns_exact_selected_option(t
                                              env=os.environ.copy(), capture_output=True, text=True, timeout=15)
             assert result.returncode == 0, result.stderr
             answer, _ = await asyncio.wait_for(running, 5)
-            assert answer.startswith('opus on turn 1:')
+            assert answer.startswith('Participant on turn 1:')
+            assert session.reported == 'opus'
             saved = permissions.get(number, payload['request'])
             assert saved['state'] == 'answered' and saved['chosen'] == 'allow'
         finally:

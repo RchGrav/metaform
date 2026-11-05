@@ -141,11 +141,13 @@ class Seat:
             self.on_delivered()
 
     def settled(self, original: str, kept: str) -> None:
-        """The seat's last reply, `original`, replaced in its conversation by `kept`: what entered of it, or the line
-        saying it did not; nothing changes when the last message is not that reply."""
+        """Retain what entered, or remove the rejected reply. Its reason belongs in the next turn prompt only."""
         last = self.messages[-1] if self.messages else {}
         if kept != original and last.get('role') == 'assistant' and last.get('content') == original:
-            self.messages[-1] = {**last, 'content': kept}
+            if kept:
+                self.messages[-1] = {**last, 'content': kept}
+            else:
+                self.messages.pop()
 
     async def report(self, record: str, seconds: float) -> str:
         """The report, written by this seat from the whole record."""

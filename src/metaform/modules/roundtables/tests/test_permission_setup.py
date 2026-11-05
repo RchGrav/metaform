@@ -124,7 +124,8 @@ def test_setup_policy_uses_dispatch_choice_for_actual_acp_kind(wire, monkeypatch
         try:
             await session.start()
             answer, _ = await session.prompt('Work on the shared notes', 5)
-            assert answer.startswith('opus on turn 1:')
+            assert answer.startswith('Participant on turn 1:')
+            assert session.reported == 'opus'
         finally:
             await session.close()
 
@@ -169,7 +170,8 @@ def test_setup_policy_keeps_unapproved_operations_waiting_for_person(wire, monke
                                                               str(wire[3]), request['request']],
                                              env=os.environ.copy(), capture_output=True, text=True, timeout=15)
             assert result.returncode == 0, result.stderr
-            assert (await asyncio.wait_for(running, 5))[0].startswith('opus on turn 1:')
+            assert (await asyncio.wait_for(running, 5))[0].startswith('Participant on turn 1:')
+            assert session.reported == 'opus'
         finally:
             if running is not None and not running.done():
                 running.cancel()

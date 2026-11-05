@@ -9,6 +9,7 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from xml.etree.ElementTree import fromstring
 
 
 def unmarked(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -35,6 +36,9 @@ class Stub:
     def chat(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         model, messages = body['model'], body['messages']
         last = json.dumps(messages[-1]['content'])
+        persona = re.search(r'You are participating in a roundtable discussion as (.+?)\. The seats,',
+                            json.dumps(unmarked(messages)))
+        name = persona[1] if persona else 'Participant'
         with self.lock:
             earlier = [one for one in self.chats if one.get('session_id') == body.get('session_id')]
             self.chats.append(body)
@@ -42,19 +46,28 @@ class Stub:
             return 402, {'error': {'message': 'Insufficient credits', 'code': 402}}
         prefix = len(json.dumps(unmarked(earlier[-1]['messages']))) // 4 if earlier else 0
         ids = sorted(set(re.findall(r'\bI(\d+)\b', last)), key=int)
-        if 'The roundtable has ended' in last:
-            text = f'# Report by {model}\n\nThe stub read the record.'
+        score = re.search(r'Send your scorecard for (.*?) as the JSON object described above\.', last)
+        if score:
+            names = [one.strip() for one in score[1].split(',') if one.strip() != name and one.strip()]
+            text = json.dumps({one: {'Efficient': 5, 'Alert & Aware': 5, 'Thorough': 5, 'Coordination': 5,
+                                     'bonus': False} for one in names}) + '\nDone.'
+        elif 'Speak freely. Say done when you are finished.' in last:
+            text = 'The shared work and open questions are recorded. Done.'
+        elif '# Private next-topic proposal' in last:
+            text = 'Explore the evidence and unresolved questions from this round.'
+        elif 'The roundtable has ended' in last:
+            text = f'# Report by {name}\n\nThe stub read the record.'
         elif '# Topic synthesis' in last:
-            text = '\n'.join(f'I{at}. Idea {at} of {model}: substance {at}.' for at in range(1, 7))
+            text = '\n'.join(f'I{at}. Idea {at} of {name}: substance {at}.' for at in range(1, 7))
         elif '# Rank collected ideas' in last:  # each seat its own order, so the derived count has something to add
             turn = sum(map(ord, model)) % len(ids)
             text = ', '.join(f'I{one}' for one in ids[turn:] + ids[:turn])
         elif '# Explain your top three' in last:
-            text = f'{model} ranked its top three first for their substance.'
+            text = f'{name} ranked its top three first for their substance.'
         elif '# Explain your bottom three' in last:
-            text = f'{model} ranked its bottom three last for their cost.'
+            text = f'{name} ranked its bottom three last for their cost.'
         elif '# Host summary' in last:
-            text = f'{model} summarises every seat\'s ranking and reasons.'
+            text = f'{name} summarises every seat\'s ranking and reasons.'
         elif model == 'stub/long' and not earlier:  # not the fake agent's 'long ' * 120, or it would be a repeat
             text = 'stub-long ' * 60
         elif model == 'stub/jev402':
@@ -64,13 +77,18 @@ class Stub:
         elif model == 'stub/jevnull' and not earlier:
             text = 'jevnull: Jev answers the first judgment of this with null.'
         else:
-            text = f'{model} says point {len(earlier) + 1}.' + (' I only say veto.' if 'VETO-ME' in last else '')
+            text = f'{name} says point {len(earlier) + 1}.' + (' I only say veto.' if 'VETO-ME' in last else '')
         return 200, {'model': model, 'choices': [{'message': {'role': 'assistant', 'content': text}}],
                      'usage': {'prompt_tokens': len(json.dumps(messages)) // 4, 'cost': 0.001,
                                'prompt_tokens_details': {'cached_tokens': prefix, 'cache_write_tokens': 0}}}
 
     def decide(self, body: dict[str, Any]) -> tuple[int, dict[str, Any] | None]:
-        text = body['state'].get('contribution', {}).get('text', '')
+        if 'proposals' in body['state']:
+            with self.lock:
+                self.decisions.append(body)
+            return 200, {'model': body['model'], 'answers': {
+                name: {'type': 'noul', 'noul': .62} for name in body['questions']}, 'usage': {'cost': .0001}}
+        text = fromstring(body['state']['xml']).findtext('candidate', '')
         with self.lock:
             self.decisions.append(body)
             if 'jev402' in text:

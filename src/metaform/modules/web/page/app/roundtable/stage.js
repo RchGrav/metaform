@@ -11,7 +11,7 @@
  * the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
- * are the question, the table's state and Haiku's live explanation; the Transcript button opens the original turns.
+ * are the question, the table's state and original turns, with links that open cited messages and files.
  * After discussion ends, follow-through shows each
  * stage's full output and question. The person decides before the next stage starts unless automated ticket creation
  * was selected. Plan review offers comments,
@@ -44,6 +44,7 @@ import {calledOf} from '/page/app/board/messages.js';
 import {wrote, movable} from '/page/app/board/history.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
+import {referenceParts} from '/page/app/roundtable/references.js';
 
 /* The table on the stage: its id and the kind its changes carry, where it was raised, its question, the last event
  * read, its state and stage, its seats by name and as opened, who has the floor and who speaks next, and whether the
@@ -77,7 +78,6 @@ const BUDGET = {value: 0, dirty: false, setupDirty: false};
 const PHASE_BUDGET = {project: null, table: null, stage: null};
 const LINEUP = {project: null, saving: false};
 const LAUNCH = {project: null, agents: new Map()};
-const MINUTES = {project: null, table: null, seq: 0, through: 0, pending: 0, live: false, permissions: new Set()};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -210,6 +210,7 @@ UI.liveTokenBudget = h('input', {type: 'number', min: 0, max: Number.MAX_SAFE_IN
   oninput: () => { BUDGET.dirty = true; }});
 UI.saveBudget = h('button', {class: 'btn sm', type: 'submit'}, 'Update budget');
 UI.currentBudget = h('span', {class: 'rt-budget-current', role: 'status'}, 'Current: disabled');
+UI.topicSelectionStatus = h('p', {class: 'rt-topic-selection-status', role: 'status', hidden: true});
 UI.phaseBudgetLabel = h('b', {class: 'rt-phase-budget-label'});
 UI.phaseBudgetState = h('span', {class: 'rt-phase-budget-state', role: 'status'});
 UI.phaseBudgetRows = h('ul', {class: 'rt-phase-budget-rows'});
@@ -217,91 +218,16 @@ UI.phaseBudgetBasis = h('small', {class: 'rt-phase-budget-basis'}, tokenBasisLab
 UI.phaseBudget = h('section', {class: 'rt-phase-budget', hidden: true, 'aria-label': 'Current phase token usage'},
   h('div', {class: 'rt-phase-budget-head'}, UI.phaseBudgetLabel, UI.phaseBudgetState), UI.phaseBudgetRows,
   UI.phaseBudgetBasis,
-  h('small', {}, 'Reported usage across model calls. Each panel and collaboration phase starts at 0. '
+  h('small', {}, 'Reported usage across model calls. Each discussion starts at 0. '
     + 'Totals update after usage reports or completed turns.'));
 UI.budget = h('form', {class: 'rt-budget', hidden: true,
   onsubmit: event => { event.preventDefault(); chairControl('budget'); }},
-  h('label', {}, 'Token budget per agent, per phase', UI.liveTokenBudget), UI.saveBudget, UI.currentBudget,
-  h('small', {id: 'rt-live-budget-hint'}, 'The same limit applies to each panel and collaboration phase. '
+  h('label', {}, 'Token budget per agent, per discussion', UI.liveTokenBudget), UI.saveBudget, UI.currentBudget,
+  h('small', {id: 'rt-live-budget-hint'}, 'The same limit applies to each discussion. '
     + '0 disables. Changing the limit keeps tokens already counted.'), UI.phaseBudget);
-UI.summaryStatus = h('p', {class: 'rt-summary-status', role: 'status'},
-  'Preparing Haiku’s explanation of the discussion.');
-UI.summaryText = h('div', {class: 'rt-summary-text', 'aria-live': 'polite'});
-UI.liveSummary = h('section', {class: 'rt-live-summary', tabindex: '0', 'aria-label': 'Haiku summary'},
-  h('h3', {}, 'Haiku summary'), UI.summaryStatus, UI.summaryText);
-UI.transcript = h('ol', {class: 'rt-transcript', hidden: true, tabindex: '0', 'aria-label': 'The transcript'});
+UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
 UI.permissions = h('div', {class: 'rt-permissions', 'aria-label': 'Agent permission requests', hidden: true});
 const PERMISSIONS = new Map();
-function discussionView(transcript) {
-  UI.transcript.hidden = !transcript;
-  UI.liveSummary.hidden = transcript;
-  UI.showTranscript.setAttribute('aria-pressed', String(transcript));
-  UI.breakdown.setAttribute('aria-pressed', String(!transcript));
-}
-UI.breakdown = h('button', {class: 'btn sm quiet rt-breakdown', type: 'button', 'aria-pressed': 'true',
-  title: 'Show Haiku’s plain-language account', onclick: () => discussionView(false)}, 'Breakdown');
-UI.showTranscript = h('button', {class: 'btn sm quiet rt-show-transcript', type: 'button', 'aria-pressed': 'false',
-  title: 'Show the original turns', onclick: () => discussionView(true)}, 'Transcript');
-/* The owner's live account is independent of the participants' jointly authored documents and the event cursor. */
-function resetMinutes() {
-  for (const request of MINUTES.permissions) permissionIs({request, state: 'answered'});
-  MINUTES.permissions.clear();
-  Object.assign(MINUTES, {project: null, table: null, seq: 0, through: 0, pending: 0, live: false});
-  UI.summaryText.textContent = '';
-  UI.summaryStatus.textContent = 'Preparing Haiku’s explanation of the discussion.';
-}
-function watchMinutes(project, table) {
-  if (MINUTES.project === project && MINUTES.table === table) return;
-  resetMinutes();
-  MINUTES.project = project;
-  MINUTES.table = table;
-}
-function minutesPending(event) {
-  if (!event.text || ['handoff', 'carry', 'pass', 'none'].includes(event.outcome)) return;
-  MINUTES.pending = Math.max(MINUTES.pending, Number(event.seq || 0));
-  UI.summaryStatus.textContent = 'Haiku is preparing an updated explanation of the discussion.';
-}
-function minutesIs(snapshot) {
-  if (!snapshot || typeof snapshot !== 'object') return;
-  const through = Number(snapshot.through_seq || 0);
-  if (through < MINUTES.through) return;
-  const text = String(snapshot.text || '').trim();
-  if (text) {
-    const box = UI.liveSummary, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
-    UI.summaryText.textContent = text;
-    MINUTES.live = true;
-    MINUTES.through = through;
-    if (bottom) box.scrollTop = box.scrollHeight;
-  }
-  const requests = new Set();
-  for (const one of snapshot.permissions || []) {
-    if (!one.request || (one.state && one.state !== 'waiting')) continue;
-    requests.add(one.request);
-    if (!MINUTES.permissions.has(one.request)) permissionIs({...one, state: 'waiting'});
-  }
-  for (const request of MINUTES.permissions) if (!requests.has(request)) permissionIs({request, state: 'answered'});
-  MINUTES.permissions.clear();
-  for (const request of requests) MINUTES.permissions.add(request);
-  UI.summaryStatus.textContent = requests.size ? 'Haiku is waiting for permission to continue.'
-    : snapshot.state === 'error' ? 'Haiku could not update the live summary. The discussion can continue. '
-      + 'Open Transcript for available turns.'
-    : snapshot.state === 'paused' ? 'The live summary is paused. Open Transcript for available turns.'
-    : snapshot.state === 'working' || (MINUTES.pending > through && snapshot.state !== 'idle')
-      ? 'Haiku is preparing an updated explanation of the discussion.'
-    : snapshot.state === 'ready' && text ? 'Live explanation by Haiku.'
-    : 'Preparing Haiku’s explanation of the discussion.';
-}
-/* Older tables kept one attributed explanation per turn. They remain readable until a live account is available. */
-function historicMinutesIs(event) {
-  const text = String(event.text || '').trim(), seq = Number(event.seq || 0);
-  if (MINUTES.live || !text || (seq && seq <= MINUTES.seq)) return;
-  if (seq) MINUTES.seq = seq;
-  const topic = Number(event.topic || 1), who = event.seat || 'Participant';
-  const entry = `Roundtable ${topic} · ${who}${event.vetoed ? ' (vetoed)' : ''}\n${text}`;
-  UI.summaryText.textContent = event.kind === 'running_summary' ? entry
-    : `${UI.summaryText.textContent}${UI.summaryText.textContent ? '\n\n' : ''}${entry}`;
-  UI.summaryStatus.textContent = 'Saved Haiku explanation.';
-}
 /* The harness supplies the request and its choices. The page relays the person's selected option unchanged. */
 function permissionIs(event) {
   const previous = PERMISSIONS.get(event.request);
@@ -340,7 +266,7 @@ UI.grip = h('div', {class: 'rt-grip', role: 'separator', 'aria-orientation': 'ho
 function dragGrip(event) {
   event.preventDefault();
   event.stopPropagation();
-  const pane = UI.transcript.hidden ? UI.liveSummary : UI.transcript;
+  const pane = UI.transcript;
   const grip = event.currentTarget, from = event.clientY, start = pane.getBoundingClientRect().height;
   grip.setPointerCapture(event.pointerId);
   const move = moved => {
@@ -354,8 +280,8 @@ function dragGrip(event) {
   grip.addEventListener('pointercancel', done);
 }
 UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
-  UI.endDiscussion, UI.endSession, UI.continueDiscussion, UI.endTable, UI.newTable, UI.breakdown, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
-  UI.permissions, UI.budget, UI.liveSummary, UI.transcript, UI.discussion);
+  UI.endDiscussion, UI.endSession, UI.continueDiscussion, UI.endTable, UI.newTable, UI.notesButton, UI.resultsButton, UI.leave),
+  UI.permissions, UI.topicSelectionStatus, UI.budget, UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -382,16 +308,19 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
     h('small', {}, 'Start remembers this browser’s lineup. Save participants sets this project’s defaults.')),
   UI.launchPermissions,
   h('label', {}, 'Number of roundtables', UI.tables),
-  h('small', {}, 'Each roundtable opens the next one when it ends, with the same seats.'),
-  h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
-  h('small', {}, 'Applies to each discussion reply.'),
-  h('label', {}, 'Token budget per agent, per phase', UI.tokenBudget),
-  h('small', {id: 'rt-token-budget-hint'}, '0 disables. Each panel and collaboration phase starts a fresh count '
+  h('small', {}, 'Between roundtables, each participant privately proposes a topic. Jev compares the proposals '
+    + 'to choose the next roundtable.'),
+  h('label', {}, 'Base reply allowance (characters)', UI.replyLimit),
+  h('small', {}, 'Base allowance for discussion replies. Saved PASS and missed-message credits can increase '
+    + 'a participant’s next allowance.'),
+  h('label', {}, 'Token budget per agent, per discussion', UI.tokenBudget),
+  h('small', {id: 'rt-token-budget-hint'}, '0 disables. Each discussion starts a fresh count '
     + 'for each agent. The first agent at 50% or 80% warns the group, at 100% asks it to close, and at 120% forces '
     + 'the next phase without waiting for everyone to finish. Counting basis: ', UI.setupBudgetBasis, '.',
   UI.setupBudgetCache, ' Totals update after reports or turns.'),
-  h('label', {}, UI.judging, 'Judge novelty with Jev'),
-  h('small', {}, 'Optional. Off keeps substantive replies without filtering.'),
+  h('label', {}, UI.judging, 'Judge contributions with Jev'),
+  h('small', {}, 'Checks new information, usefulness and topic relevance. Off keeps substantive replies without '
+    + 'filtering. Between roundtables, Jev still compares the private topic proposals.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
     'Automate Ticket Creation'),
   h('small', {id: 'rt-automate-description'},
@@ -510,8 +439,9 @@ function resetTable() {
   fill(UI.permissions);
   UI.permissions.hidden = true;
   PERMISSIONS.clear();
-  discussionView(false);
-  resetMinutes();
+  UI.transcript.hidden = false;
+  UI.topicSelectionStatus.hidden = true;
+  UI.topicSelectionStatus.textContent = '';
   UI.results.hidden = UI.records.hidden = UI.newTable.hidden = UI.notesWin.hidden = true;
   UI.notesButton.textContent = 'Notes';
   UI.notesButton.setAttribute('aria-pressed', 'false');
@@ -727,7 +657,6 @@ async function readTable(whole = false) {
     do {
       TABLE.again = false;
       id = TABLE.id; project = S.project;
-      watchMinutes(project, id);
       watchPhaseBudget(project, id);
       const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}&table=${
         encodeURIComponent(id)}&after=${TABLE.seq}${whole || !SEAT.n ? '&whole=1' : ''}`);
@@ -739,25 +668,23 @@ async function readTable(whole = false) {
       let wrote = whole;
       for (const event of found.events || []) {
         if (event.kind === 'turn' || event.kind === 'veto' || event.kind === 'end') wrote = true;
-        if (event.kind === 'turn' || event.kind === 'veto') minutesPending(event);
-        if (event.kind === 'minutes' || event.kind === 'running_summary') historicMinutesIs(event);
-        else if (event.kind === 'permission') permissionIs(event);
+        if (event.kind === 'permission') permissionIs(event);
         else if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
         else if (event.kind === 'pipeline') pipelineIs(event.pipeline);
         else TOLD.list.push(event);
       }
       if (found.status) seated(found.status);
-      if (found.live_summary) minutesIs(found.live_summary);
       if (found.status && Object.hasOwn(found.status, 'phase_budget')) phaseBudgetIs(found.status.phase_budget);
       else if (Object.hasOwn(found, 'phase_budget')) phaseBudgetIs(found.phase_budget);
+      if (found.status && Object.hasOwn(found.status, 'topic_selection')) topicSelectionIs(found.status.topic_selection);
+      else if (Object.hasOwn(found, 'topic_selection')) topicSelectionIs(found.topic_selection);
       TABLE.seq = Math.max(TABLE.seq, found.latest || 0);
       tell();
       if (wrote) readNotes();  // a seat writes notes on its turn, so the folder is read again after one
     } while (TABLE.again);
   } catch (error) {
     if (id === TABLE.id && project === S.project) {
-      UI.summaryStatus.textContent = 'The live summary could not be loaded. Open Transcript for available turns.';
       toast(error.message);
     }
   } finally { TABLE.busy = false; }
@@ -811,6 +738,9 @@ function heard(event) {
   else if (event.kind === 'ideas') ideas(event.ideas || []);
   else if (event.kind === 'rankings') rankings(event.rankings || []);
   else if (event.kind === 'summary') summary(event.text, event.name);
+  else if (event.kind === 'minutes' || event.kind === 'running_summary') {
+    said('rt-note', event.seat || 'Saved explanation', event.text || '');
+  }
   else if (event.kind === 'seat_lost') lost(event);
   else if (event.kind === 'operational') {
     let text = event.budget?.text;
@@ -846,7 +776,9 @@ function vetoReason(event) {
 /* A turn: its seat takes the floor and says it; a vetoed one fades from its bubble and is struck in the transcript. */
 function turn(event) {
   const n = seatOf(event.seat), vetoed = event.kind === 'veto';
-  said(vetoed ? 'rt-turn vetoed' : 'rt-turn', event.seat, event.text || '',
+  const name = !vetoed && /^R[1-9]\d*-[1-9]\d*$/.test(event.message_id || '')
+    ? `${event.message_id} · ${event.seat}` : event.seat;
+  said(vetoed ? 'rt-turn vetoed' : 'rt-turn', name, event.text || '',
     vetoed ? ` (vetoed: ${vetoReason(event)})`
       : event.outcome === 'unjudged' ? ' (never judged: the table ended first)' : '');
   if (event.outcome === 'handoff' || event.outcome === 'carry') return;
@@ -1028,7 +960,26 @@ function tokenBasisLabel(basis) {
 function liveStageIs(stage) {
   PHASE_BUDGET.stage = stage || 'discussion';
   TABLE.stage = PHASE_BUDGET.stage;
+  UI.topicSelectionStatus.hidden = TABLE.stage !== 'topic_selection';
+  if (UI.topicSelectionStatus.hidden) UI.topicSelectionStatus.textContent = '';
+  else if (!UI.topicSelectionStatus.textContent) UI.topicSelectionStatus.textContent = 'Choosing the next topic privately.';
+  if (TABLE.state === 'running') UI.state.textContent = runningWords();
   renderChair();
+}
+function runningWords() {
+  return {topic_selection: 'Choosing the next topic', scoring: 'Scoring', farewell: 'Farewells'}[TABLE.stage]
+    || 'The table is talking';
+}
+function topicSelectionIs(snapshot) {
+  if (TABLE.stage !== 'topic_selection' || !['running', 'held'].includes(TABLE.state)) return;
+  UI.topicSelectionStatus.hidden = false;
+  if (!snapshot) { UI.topicSelectionStatus.textContent = 'Choosing the next topic privately.'; return; }
+  const requested = Number(snapshot.requested), completed = Number(snapshot.completed);
+  const count = Number.isSafeInteger(requested) && requested > 0 && Number.isSafeInteger(completed) && completed >= 0
+    ? ` ${Math.min(completed, requested)} of ${requested} proposals received.` : '';
+  UI.topicSelectionStatus.textContent = snapshot.state === 'judging'
+    ? `Comparing the private proposals to choose the next topic.${count}`
+    : `Choosing the next topic privately.${count}`;
 }
 function resetPhaseBudget() {
   UI.phaseBudget.hidden = true;
@@ -1041,18 +992,19 @@ function watchPhaseBudget(project, table) {
   PHASE_BUDGET.project = project;
   PHASE_BUDGET.table = table;
   PHASE_BUDGET.stage = null;
+  UI.topicSelectionStatus.hidden = true;
+  UI.topicSelectionStatus.textContent = '';
 }
 function phaseBudgetIs(snapshot) {
   if (snapshot && Object.hasOwn(snapshot, 'stage')) liveStageIs(snapshot.stage);
   else if (snapshot?.phase === 'panel') liveStageIs('discussion');
-  else if (snapshot?.phase === 'collaboration') liveStageIs('collaboration');
-  if (!snapshot || !['panel', 'collaboration'].includes(snapshot.phase)) { resetPhaseBudget(); return; }
+  if (!snapshot || snapshot.phase !== 'panel') { resetPhaseBudget(); return; }
   const maximum = Number(snapshot.limit || 0), topic = snapshot.topic;
   budgetIs(maximum);
   UI.phaseBudget.hidden = false;
   UI.phaseBudgetBasis.textContent = tokenBasisLabel(snapshot.basis);
   UI.phaseBudgetBasis.title = snapshot.basis === 'uncached' ? 'Cache writes count as input.' : '';
-  UI.phaseBudgetLabel.textContent = `${snapshot.phase === 'panel' ? 'Panel' : 'Collaboration'}${topic ? ` ${topic}` : ''}`;
+  UI.phaseBudgetLabel.textContent = `Panel${topic ? ` ${topic}` : ''}`;
   const notices = snapshot.notices || [], last = notices.at(-1);
   UI.phaseBudgetState.textContent = snapshot.forced ? 'Hard limit reached.'
     : snapshot.closing ? 'Closing statements requested.'
@@ -1079,13 +1031,15 @@ function budgetIs(value) {
 }
 function renderChair() {
   const active = !!TABLE.id && (TABLE.state === 'running' || TABLE.state === 'held');
+  if (!active) { UI.topicSelectionStatus.hidden = true; UI.topicSelectionStatus.textContent = ''; }
   UI.hold.hidden = UI.discussion.hidden = UI.budget.hidden = !active;
   UI.liveTokenBudget.disabled = UI.saveBudget.disabled = CHAIR.writing;
-  const advanceable = !TABLE.stage || ['discussion', 'collaboration'].includes(TABLE.stage);
+  const advanceable = !TABLE.stage || TABLE.stage === 'discussion';
   UI.endDiscussion.hidden = !active;
   UI.endDiscussion.disabled = CHAIR.writing || !advanceable;
-  UI.endDiscussion.title = advanceable ? `Finish the current ${TABLE.stage === 'collaboration' ? 'collaboration' : 'discussion'} phase`
-    : 'Only discussion and collaboration phases can advance. Use End session to finish the session.';
+  UI.endDiscussion.title = advanceable ? 'Finish the current discussion'
+    : TABLE.stage === 'topic_selection' ? 'Wait for private topic selection, or use End session to finish the session.'
+      : 'Only discussion can advance. Use End session to finish the session.';
   UI.endSession.hidden = !TABLE.id || !['running', 'held', 'ending'].includes(TABLE.state);
   UI.endSession.disabled = CHAIR.writing;
   UI.continueDiscussion.hidden = TABLE.state !== 'ended';
@@ -1102,7 +1056,7 @@ async function chairControl(action) {
       && !(action === 'continue' && TABLE.state === 'ended')
       && !(action === 'end' && TABLE.state === 'ending')
       && !(action === 'abort' && !['ended', 'refused'].includes(TABLE.state)))) return;
-  if (action === 'advance' && TABLE.stage && !['discussion', 'collaboration'].includes(TABLE.stage)) return;
+  if (action === 'advance' && TABLE.stage && TABLE.stage !== 'discussion') return;
   const table = TABLE.id, project = S.project, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
   const tokenBudget = Number(UI.liveTokenBudget.value);
@@ -1140,7 +1094,7 @@ async function chairControl(action) {
 function stateIs(state, reason) {
   TABLE.state = state || TABLE.state;
   if (TABLE.state === 'running' || TABLE.state === 'held') TABLE.ended = false;
-  const words = {running: 'The table is talking', held: 'Held', ended: 'Ended', ending: 'Ending', opening: 'Opening',
+  const words = {running: runningWords(), held: 'Held', ended: 'Ended', ending: 'Ending', opening: 'Opening',
     refused: 'Refused'}[TABLE.state] || TABLE.state;
   UI.state.textContent = reason && TABLE.state !== 'running' ? `${words}: ${reason}` : words;
   UI.root.dataset.state = TABLE.state;
@@ -1149,7 +1103,10 @@ function stateIs(state, reason) {
 /* One line of the transcript, whole, the newest kept in view unless the person has scrolled up to read. */
 function said(kind, who, text, after = '') {
   const box = UI.transcript, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
-  box.append(h('li', {class: kind}, h('b', {}, who), ' ', text, after ? h('span', {class: 'rt-why'}, after) : null));
+  const linked = value => referenceParts(value, {project: S.project, table: TABLE.id}).map(part => part.href
+    ? h('a', {class: 'rt-reference', href: part.href, target: '_blank', rel: 'noopener noreferrer'}, part.text) : part.text);
+  box.append(h('li', {class: kind}, h('b', {}, ...linked(who)), ' ', ...linked(text),
+    after ? h('span', {class: 'rt-why'}, after) : null));
   if (bottom) box.scrollTop = box.scrollHeight;
 }
 

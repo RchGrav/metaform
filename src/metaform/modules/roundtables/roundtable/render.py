@@ -2,17 +2,14 @@
 report is written from and in the export. Every word is a prompt of `resources/prompts.xml`.
 
 Every seat has a system message (`system`), fixed for the table's life and first in every request: the table's rules,
-which seat it is and the opening. A turn that entered, an accepted submission or a comment, reads as its text. A
-vetoed turn reads as one short line, the same everywhere: `T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]`, the
-seat by its short name, the questions it failed in words and its four scores. A turn with no submission reads to a
-seat as one line with no error in it; the chair's review keeps the reason. The link to a vetoed turn's text follows
-only for a reader with a tool that reads it. A seat's own reply, once judged, stays in its conversation as what entered
-of it or as one line saying it was vetoed (`own`).
+which seat it is and the opening. Participants receive only accepted contributions and chair comments. A rejected
+contribution returns plain feedback only to its author, naming the failed conditions without scores, rejected text
+or links. The owner's private record retains the submission and its judgment.
 
 A Roundtable 2 table speaks in its own sequence (`topic_view`): a seat's first turn is the first topic; each later
 turn of a topic is the status of the seat's previous contribution, told only now, and the other seats' contributions
-since its last turn, labeled by model, a vetoed one left out and a turn with no submission one line with no error in
-it; a later topic opens with the status and its own text, in a context begun again.
+since its last turn, labeled by participant name; a later topic opens with the status and its own text, in a
+context begun again.
 """
 from __future__ import annotations
 
@@ -24,7 +21,7 @@ from typing import Any, cast
 
 from . import config, store
 from .prompts import said
-from .store import NOULS, VETO, nouls
+from .store import nouls
 
 LIMIT = 512  # default reply length, including historical discussions without a saved limit
 PASS = re.compile(r'\W*(?:T\d+\W*)?pass\W*', re.IGNORECASE)  # PASS alone, perhaps labeled or marked up
@@ -37,6 +34,16 @@ def passed(text: str) -> bool:
 
 def turn(number: int) -> str:
     return f'T{number:02d}'
+
+
+def message_id(row: Mapping[str, Any]) -> str | None:
+    """The accepted message's public reference. Private attempts have no public identifier."""
+    return str(row['message_id']) if row.get('message_id') else None
+
+
+def reference(row: Mapping[str, Any]) -> str:
+    """Public references for current contributions, with legacy numbering retained for historical records."""
+    return message_id(row) or turn(int(row['number']))
 
 
 def link(discussion: int, number: int) -> str:
@@ -73,9 +80,7 @@ def outcome(row: Mapping[str, Any]) -> str:
 
 def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMIT,
              judging: bool | None = None) -> dict[str, Any]:
-    """The rules and judgment criteria fixed when a discussion opens; for a Roundtable 2 table, `staged`, its rules
-    are the discussion instructions every seat receives, its criteria Jev's two nouls for a submission, each with its
-    own bar in `floors`. Completion is independent of judging."""
+    """Freeze rules and three independent judgment criteria, each with its own threshold, when the table opens."""
     from .judge import questions
 
     keep = config.keep()
@@ -85,16 +90,12 @@ def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMI
               'context_budgets': config.context_budgets()}
     if not judging:
         return {**common, 'rules': said('discussion_unjudged'), 'reply_limit': reply_limit}
-    if staged:
-        return {**common, 'rules': said('discussion_start'), 'reply_limit': reply_limit, 'keep': keep,
-                'criteria': questions(VETO),
-                'jev_model': config.value('jev_model'),
-                'floors': {'new_context': config.floor('keep_new'), 'on_topic': config.floor('keep_on_topic')},
-                'failed': {name: said(f'failed_{name}') for name in (*VETO, 'repeat')}}
-    rules = said('rules', seats=', '.join(names), limit=reply_limit, keep=f'{keep:.2f}')
+    rules = said('discussion_start') if staged else said('rules', seats=', '.join(names), limit=reply_limit)
     return {**common, 'rules': rules, 'reply_limit': reply_limit,
-            'keep': keep, 'criteria': questions(), 'jev_model': config.value('jev_model'),
-            'failed': {name: said(f'failed_{name}') for name in NOULS}}
+            'keep': keep, 'criteria': questions(store.CHECKS), 'jev_model': config.value('jev_model'),
+            'floors': {'new_context': config.floor('keep_new'), 'valuable': config.floor('keep_valuable'),
+                       'on_topic': config.floor('keep_on_topic')},
+            'failed': {name: said(f'failed_{name}') for name in store.CHECKS}}
 
 
 def floors(held: Mapping[str, Any]) -> dict[str, float]:
@@ -137,14 +138,17 @@ def shared(discussion: Mapping[str, Any]) -> str:
     return said('continuation_context', summary=held['text'], notes=notes)
 
 
-def reply_limit(discussion: Mapping[str, Any]) -> int:
-    """The maximum reply length frozen with this discussion, or the historical default."""
-    return int(captured(discussion).get('reply_limit', LIMIT))
+def reply_limit(discussion: Mapping[str, Any], position: int | None = None) -> int:
+    """The captured base, or one participant's durable promised reply allowance."""
+    base = int(captured(discussion).get('reply_limit', LIMIT))
+    if position is None:
+        return base
+    from . import allowance
+    return allowance.limit(discussion, position, base)
 
 
 def rules(names: Sequence[str], discussion: Mapping[str, Any] | None = None) -> str:
-    """The table's rules, stated once before the opening question: the seats in speaking order, the limit, Jev's four
-    questions and the bar, and how a veto is shown."""
+    """The captured participant rules, including how private feedback and completion work."""
     if discussion is not None:
         return str(captured(discussion).get('rules') or 'Discussion-time rules were not recorded.')
     return str(snapshot(names)['rules'])
@@ -178,7 +182,7 @@ def failed_words(row: Mapping[str, Any]) -> str:
 
 def short(row: Mapping[str, Any]) -> str:
     """A turn's one short line, the same in every view, record, export and report."""
-    at, seat = turn(int(row['number'])), who(row)
+    at, seat = reference(row), who(row)
     kind = outcome(row)
     if kind == 'vetoed':
         return said('verdict', turn=at, seat=seat, failed=failed_words(row), scores=scores(row))
@@ -201,7 +205,12 @@ def entry(row: Mapping[str, Any], links: bool = False) -> str:
     """One turn as a reader of the discussion sees it: the text that entered, or its short line, a turn with no
     submission with no error in it; a veto's link to its text after it only for a reader with a tool that reads it."""
     if entered(row):
-        return said('turn_entry', turn=turn(int(row['number'])), seat=who(row), text=row['text'])
+        label = reference(row)
+        if row['kind'] in ('chair', 'carry', 'handoff') and 'message_id' in row and not message_id(row):
+            label = ''  # Phase instructions and handoffs do not expose private submission counters.
+        return said('turn_entry', turn=label, seat=who(row), text=row['text']).lstrip()
+    if row['kind'] in ('pass', 'none'):
+        return said(f'others_{row["kind"]}', seat=who(row))
     if outcome(row) == 'none':
         return said('others_none', seat=who(row))
     line = short(row)
@@ -220,10 +229,13 @@ def system(discussion: Mapping[str, Any], names: Sequence[str], name: str) -> st
     text = said('seat_system_topics' if discussion.get('stage') else 'seat_system', opening=discussion['opening'],
                 rules=rules(names, discussion), seat=name, seats=', '.join(names),
                 reply_length=notes_line(discussion) + said('reply_length', limit=reply_limit(discussion)))
+    if captured(discussion).get('message_ids'):
+        text += '\n\n' + said('message_references', limit=reply_limit(discussion))
     if session(discussion):
         text += '\n\n' + said('session_coordinator')
         row = next((one for one in store.seats(int(discussion['number'])) if one['name'] == name), None)
-        profile = store.profile(f'{row["agent"] or row["kind"]}/{row["model"] or row["id"]}') if row else None
+        profile = store.profile(row.get('profile_key') or
+                                f'{row["agent"] or row["kind"]}/{row["model"] or row["id"]}') if row else None
         text += '\n\n' + said('session_profile',
                              score='unscored' if not profile or profile['score'] is None
                              else f'{float(profile["score"]):g}',
@@ -240,17 +252,21 @@ def notes_line(discussion: Mapping[str, Any]) -> str:
 
 
 def own(row: Mapping[str, Any]) -> str:
-    """A seat's own judged reply as its conversation keeps it: what entered of it, or one line saying it was
-    vetoed and why."""
+    """Retain accepted text only. Private feedback arrives once in the author's next turn prompt."""
     if entered(row):
         return str(row['text'])
-    return said('own_vetoed', turn=turn(int(row['number'])), failed=failed_words(row))
+    return ''
+
+
+def private_feedback(row: Mapping[str, Any]) -> str:
+    """Only the author receives the failed conditions, without scores, links or rejected text."""
+    return '\n'.join(said(f'private_failed_{name}') for name in failed(row)) or said('private_failed_unknown')
 
 
 def seat_view(rows: Sequence[Mapping[str, Any]], first: bool, links: bool = False, limit: int = LIMIT) -> str:
     """What a seat receives on its turn: on its first, every turn before its own; on each later turn, only the turns
     since its last reply. The limit closes it."""
-    turns = '\n\n'.join(entry(row, links) for row in rows)
+    turns = '\n\n'.join(entry(row) for row in rows if entered(row))
     if first:
         return tidy(said('seat_first', turns=turns, limit=limit))
     return tidy(said('seat_next', turns=turns or said('nothing_since'), limit=limit))
@@ -263,14 +279,11 @@ def status(row: Mapping[str, Any] | None, limit: int = LIMIT) -> str:
     submission, or a pass; nothing new when it was told already."""
     if row is None:
         return said('status_nothing')
-    at, kind = turn(int(row['number'])), outcome(row)
+    at, kind = reference(row), outcome(row)
     if kind in ('none', 'pass'):
         return said(f'status_{kind}', turn=at)
-    if kind == 'vetoed' and row.get('repeat_of') is not None:
-        return said('status_repeat', turn=at, earlier=turn(int(row['repeat_of'])))
     if kind == 'vetoed':
-        return said('status_vetoed_truncated' if row['truncated'] else 'status_vetoed', turn=at,
-                    failed=failed_words(row), limit=limit)
+        return private_feedback(row)
     return said('status_kept_truncated' if row['truncated'] else 'status_kept', turn=at, limit=limit)
 
 
@@ -385,7 +398,7 @@ def record(discussion: Mapping[str, Any], rows: Sequence[Mapping[str, Any]], nam
     """The whole record the report is written from: the rules, the opening, then every turn as the seats read it;
     for a table with topics, each topic's turns under its heading and then what its stages gave."""
     lines = [rules(names, discussion), said('record_opening', opening=discussion['opening'])]
-    lines += by_topic(rows, topics, entry, stages)
+    lines += by_topic([row for row in rows if entered(row)], topics, entry, stages)
     return said('report', record='\n\n'.join(lines), writing=writing(discussion))
 
 

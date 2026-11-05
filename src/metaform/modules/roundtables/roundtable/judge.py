@@ -1,8 +1,8 @@
 """Optional Jev novelty judgments through OpenRouter, with persistent request and response evidence.
 
-Submission filtering never votes PASS or decides completion. Inline handoff bounds state with compact shared
-continuation and intact participant notes. Original instructions remain present. Failed judgments hold their
-pending submission for explicit retry. No oldest-entry truncation or sufficiency-based completion remains.
+Submission filtering never votes PASS or decides completion. A sliding window keeps the most recent accepted
+responses that fit alongside the full original instructions, current topic, candidate and independent questions.
+Failed judgments retain their pending submission for explicit retry.
 """
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
+from xml.etree.ElementTree import Element, tostring
 
 from . import config, openrouter
 from .prompts import said
-from .render import turn, who
+from .render import reference, turn, who
 from .store import NOULS
 
 log = logging.getLogger(__name__)
@@ -71,8 +72,7 @@ def repeat(text: str, rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | 
 # ----------------------------------------------------------------------------------------------- the request
 
 def questions(names: Sequence[str] = NOULS) -> dict[str, dict[str, Any]]:
-    """The nouls by name, each one condition phrased so that true means keep: the four of a table without topics,
-    or the two of a submission or of a round at a table with topics."""
+    """Independent nouls over the same state, each phrased so that true means keep."""
     return {name: {'type': 'noul', 'instructions': said(f'jev_{name}'),
                    'criteria': {'true': said(f'jev_{name}_true'), 'false': said(f'jev_{name}_false')}}
             for name in names}
@@ -103,6 +103,57 @@ def topic_state(topic: Mapping[str, Any], entered: Sequence[Mapping[str, Any]],
     if latest_round is not None:
         built['latest_round'] = latest_round
     return built
+
+
+def windowed_state(opening: str, topic: Mapping[str, Any], entered: Sequence[Mapping[str, Any]],
+                   contribution: Mapping[str, Any], criteria: Mapping[str, Any], *,
+                   model: str | None = None, limit: int | None = None) -> dict[str, str]:
+    """Whole recent accepted responses inside both Jev limits, with 20% token headroom.
+
+    The request cap is a desired maximum. Jev's smaller per-question limit also includes the shared state, so it
+    can leave less room than that cap. Required instructions and the candidate are never shortened. Only history
+    is evicted, oldest first, and participants are identified by their seat positions rather than model names.
+    """
+    request_limit = min(int(config.value('judging_context_tokens')) if limit is None else limit,
+                        int(int(config.value('judge_max_request_tokens')) * 0.8))
+    question_limit = int(int(config.value('judge_max_question_tokens')) * 0.8)
+    model = str(config.value('jev_model') if model is None else model)
+
+    def element(tag: str, text: str, **attributes: str) -> str:
+        built = Element(tag, attributes)
+        built.text = text
+        return tostring(built, encoding='unicode', short_empty_elements=False)
+
+    prefix = ('<judge_state>\n' + element('original_instructions', opening) + '\n' +
+              element('topic', str(topic.get('text') or ''), title=str(topic.get('title') or '')) +
+              '\n<recent_responses>')
+    suffix = ('\n</recent_responses>\n' + element('candidate', str(contribution['text']),
+              seat=neutral({'kind': 'seat', **contribution})) + '\n</judge_state>')
+
+    def fits(xml: str) -> bool:
+        state = {'xml': xml}
+        return tokens({'model': model, 'state': state, 'questions': dict(criteria)}) <= request_limit and all(
+            tokens({'model': model, 'state': state, 'questions': {name: question}}) <= question_limit
+            for name, question in criteria.items())
+
+    if not fits(prefix + suffix):
+        raise ValueError('The full original instructions, topic, candidate and questions exceed the padded Jev '
+                         'context limits even without recent responses.')
+    selected: list[str] = []
+    current_topic = topic.get('topic')
+    for row in reversed(entered):
+        if row['kind'] not in ('seat', 'collab', 'chair') or not row.get('text') or \
+                row['kind'] != 'chair' and not row.get('accepted') or \
+                current_topic is not None and row.get('topic') not in (None, current_topic):
+            continue
+        message = element('response', str(row['text']), turn=reference(row),
+                          seat=neutral(row), round=str(int(row['round'])))
+        recent = '\n' + '\n'.join(reversed([*selected, message]))
+        if not fits(prefix + recent + suffix):
+            break
+        selected.append(message)
+    recent = '\n' + '\n'.join(reversed(selected)) if selected else ''
+    return {'xml': prefix + recent + suffix}
 
 
 def sha(criteria: Mapping[str, Any]) -> str:

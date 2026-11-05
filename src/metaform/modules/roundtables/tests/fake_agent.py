@@ -26,7 +26,7 @@ WRITING = threading.Lock()
 ANSWERS = {}
 RESULTS = {}
 STATE = {'session': None, 'model': 'sonnet', 'mode': 'default', 'prompts': 0, 'servers': [],
-         'protocol': 2, 'prompt_id': None, 'cancelled': False, 'blocked': None}
+         'protocol': 2, 'prompt_id': None, 'cancelled': False, 'blocked': None, 'persona': 'Participant'}
 MODELS = json.loads(os.environ['FAKE_ACP_MODELS']) if os.environ.get('FAKE_ACP_MODELS') else [
     {'value': 'haiku', 'name': 'Haiku 5.5'}, {'value': 'sonnet', 'name': 'Sonnet 5.5'},
     {'value': 'opus', 'name': 'Opus 5.5'}]
@@ -100,26 +100,38 @@ def call_mcp(request_id, call_id, server):
 
 def staged(text):
     """A Roundtable 2 stage's answer, or None for a discussion turn."""
+    score = re.search(r'Send your scorecard for (.*?) as the JSON object described above\.', text, re.DOTALL)
+    if score:
+        names = [name.strip() for name in score[1].split(',') if name.strip() != STATE['persona'] and name.strip()]
+        return json.dumps({name: {'Efficient': 5, 'Alert & Aware': 5, 'Thorough': 5, 'Coordination': 5,
+                                  'bonus': False} for name in names}) + '\nDone.'
+    if 'Speak freely. Say done when you are finished.' in text:
+        return 'The shared work and open questions are recorded. Done.'
+    if '# Private next-topic proposal' in text:
+        return 'Explore the evidence and unresolved questions from this round.'
     if '# Topic synthesis' in text:
         return 'I1. Evidence: inspect source.\nI2. Disagreement: preserve alternatives.'
     if '# Host summary' in text:
-        return f'{STATE["model"]} summarises the evidence and unresolved disagreement.'
+        return f'{STATE["persona"]} summarises the evidence and unresolved disagreement.'
     if '# Shared continuation' in text:
         return 'Keep original instructions. Preserve evidence, decisions, disagreement and open questions.'
     if '# Carry-forward note' in text:
-        return f'{STATE["model"]} retains its evidence and disagreement. Question remains open.'
+        return f'{STATE["persona"]} retains its evidence and disagreement. Question remains open.'
     if '# Rank collected ideas' in text or 'could not be read as every idea' in text:
         ids = sorted(set(re.findall(r'\bI(\d+)\b', text)), key=int)
         turn = len(STATE['model']) % max(len(ids), 1)
         return ', '.join(f'I{one}' for one in ids[turn:] + ids[:turn])
     if '# Explain your top three' in text:
-        return f'The fake {STATE["model"]} ranked its top three first for their substance.'
+        return f'{STATE["persona"]} ranked its top three first for their substance.'
     if '# Explain your bottom three' in text:
-        return f'The fake {STATE["model"]} ranked its bottom three last for their cost.'
+        return f'{STATE["persona"]} ranked its bottom three last for their cost.'
     return None
 
 
 def turn(ident, text):
+    persona = re.search(r'You are participating in a roundtable discussion as (.+?)\. The seats,', text)
+    if persona:
+        STATE['persona'] = persona[1]
     STATE['prompts'] += 1
     STATE['prompt_id'], STATE['cancelled'] = ident, False
     user_id = f'user-{STATE["prompts"]}'
@@ -158,7 +170,7 @@ def turn(ident, text):
     if STATE['cancelled']:
         return
     if text.startswith('The roundtable has ended'):
-        reply = f'# Report\n\nThe fake {STATE["model"]} read {text.count(chr(10))} lines of the record.'
+        reply = f'# Report\n\n{STATE["persona"]} read {text.count(chr(10))} lines of the record.'
     elif staged(text) is not None:
         reply = staged(text)
     elif STATE['prompts'] > int(os.environ.get('FAKE_ACP_PASS_AFTER', '999999')):
@@ -167,7 +179,7 @@ def turn(ident, text):
         reply = 'long ' * 120
     else:
         veto = ' I only say veto.' if 'VETO-ME' in text else ''
-        reply = f'{STATE["model"]} on turn {STATE["prompts"]}: the prompt was {len(text)} characters.{veto}'
+        reply = f'{STATE["persona"]} on turn {STATE["prompts"]}: the prompt was {len(text)} characters.{veto}'
     for part in (reply[:len(reply) // 2], reply[len(reply) // 2:]):
         update({'sessionUpdate': 'agent_message_chunk', 'messageId': f'reply-{STATE["prompts"]}',
                 'content': {'type': 'text', 'text': part}})

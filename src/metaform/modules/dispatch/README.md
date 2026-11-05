@@ -28,9 +28,13 @@ The template changelog version this module started from: the Unreleased contract
 ## Declaration
 
 - `SUPPORTED_OS = ('linux', 'macos', 'windows')`. Process handling is per system: see Systems supported.
-- `DEPENDENCIES = ('agent-client-protocol>=0.12.1,<0.13',)`, the official ACP Python SDK, imported as `acp`. Its API has changed between minor versions before 1.0, so the minor version is pinned. The chassis gains no dependency.
+- `DEPENDENCIES = ('agent-client-protocol==1.0.0rc2',)`, the official ACP Python SDK, imported as `acp`. The version is pinned to the current client implementation. The chassis gains no dependency.
 - `SHIPS_DISABLED = True`. Enable it with `metaform enable dispatch`.
 - `MODULE`: the verbs below, `work.requeued`, `dispatch.rework-limit` and raw `signal.raised` subscriptions, no `start`, `stop` or `status` hook.
+
+## Shared participant names
+
+`agent.name` provides the existing `session_name(identity)` generator through the public provider interface. Roundtables use it for persistent generated names and keep model mappings and score keys private.
 
 ## Common base used
 

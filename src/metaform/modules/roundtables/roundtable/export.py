@@ -51,7 +51,8 @@ def build(number: int) -> dict[str, Any]:
     rows = [*store.submissions(number), *([unjudged] if unjudged else [])]
     seated = store.seats(number)
     turns = [{
-        'number': row['number'], 'turn': render.turn(int(row['number'])), 'round': row['round'],
+        'number': row['number'], 'turn': row.get('message_id') or render.turn(int(row['number'])),
+        **({'message_id': row['message_id']} if row.get('message_id') else {}), 'round': row['round'],
         **({'topic': int(row['topic']) + 1} if row.get('topic') is not None else {}), 'seat': row['seat'], 'name': render.who(row), 'kind': row['kind'], 'outcome': render.outcome(row),
         'short': render.short(row), 'text': row['text'],
         **({'truncated': True, 'original': row['original']} if row['truncated'] else {}),
@@ -121,6 +122,143 @@ def build(number: int) -> dict[str, Any]:
             'jev_cost': jev_cost(number, rows),
             'openrouter': used('openrouter'), 'acp': used('acp')},
         **({'not_recorded': limitations(found)} if limitations(found) else {})}
+
+
+def safe_shared(native: dict[str, Any]) -> dict[str, Any]:
+    """Whitelist participant-readable material from an owner export, without consulting or changing its store.
+
+    Accepted prose is preserved. Audit identities, unsuccessful attempts, original replies, judgments, prompts and
+    operational records never enter this projection. Historical accepted messages retain their cited T labels.
+    """
+    discussion = cast(dict[str, Any], native.get('discussion') or {})
+    public_ids = bool(cast(dict[str, Any], discussion.get('snapshot') or {}).get('message_ids'))
+    seats = cast(list[dict[str, Any]], native.get('seats') or [])
+    roles = [cast(dict[str, Any], discussion[key]) for key in ('host', 'synthesizer')
+             if isinstance(discussion.get(key), dict)]
+    identities = {str(row[key]) for row in [*seats, *roles]
+                  for key in ('seat', 'id', 'agent', 'model', 'reported_model', 'profile_key') if row.get(key)}
+    aliases: dict[str, str] = {}
+
+    def named(row: dict[str, Any], fallback: str, *, roster: bool = False) -> str:
+        source = str(row.get('seat') or row.get('id') or '')
+        if source in aliases:
+            return aliases[source]
+        name = str(row.get('name') or '').strip()
+        if not name or (not roster and name not in aliases.values()) or \
+                any(re.search(r'(?<!\w)' + re.escape(value) + r'(?!\w)', name, re.IGNORECASE)
+                    for value in identities):
+            name = fallback
+        if source:
+            aliases[source] = name
+        return name
+
+    public_seats = [{'name': named(row, f'Participant {at}', roster=True)} for at, row in enumerate(seats, 1)]
+    for role, fallback in zip(roles, ('Host', 'Synthesizer'), strict=False):
+        named(role, fallback, roster=True)
+
+    def reason(text: Any) -> str:
+        result = str(text or '')
+        for value in sorted(identities, key=lambda value: (len(value), value), reverse=True):
+            result = re.sub(r'(?<!\w)' + re.escape(value) + r'(?!\w)',
+                            lambda _match, value=value: aliases.get(value, 'a participant'), result, flags=re.IGNORECASE)
+        return result
+
+    messages: list[dict[str, Any]] = []
+    for row in cast(list[dict[str, Any]], native.get('submissions', native.get('turns')) or []):
+        if row.get('outcome') not in ('kept', 'comment') or row.get('accepted') is False:
+            continue
+        public_id = str(row.get('message_id') or '')
+        if not re.fullmatch(r'R\d+-\d+', public_id):
+            if public_ids:
+                continue  # phase directives and private attempt numbers are not public contributions
+            legacy = str(row.get('turn') or '')
+            public_id = legacy if re.fullmatch(r'(?:R\d+-\d+|T\d+)', legacy) else \
+                f'T{row.get("number", row.get("n", len(messages) + 1))}'
+        chair = row.get('outcome') == 'comment'
+        messages.append({'message_id': public_id, 'turn': public_id,
+                         **({'topic': row['topic']} if isinstance(row.get('topic'), int) else {}),
+                         'name': 'Chair' if chair else named(row, 'Participant'),
+                         'kind': 'chair' if chair else 'seat', 'text': str(row.get('text') or '')})
+
+    def stage(row: Any, fallback: str) -> dict[str, Any] | None:
+        if not isinstance(row, dict):
+            return None
+        item = cast(dict[str, Any], row)
+        if item.get('error'):
+            return None
+        return {'name': named(item, fallback), 'text': str(item.get('text') or '')}
+
+    topics: list[dict[str, Any]] = []
+    for topic in cast(list[dict[str, Any]], native.get('topics') or []):
+        synthesis = stage(topic.get('synthesis'), 'Synthesizer')
+        original_synthesis = cast(dict[str, Any], topic.get('synthesis') or {})
+        ideas = [{key: str(idea.get(key) or '') for key in ('id', 'name', 'summary')}
+                 for idea in cast(list[dict[str, Any]], original_synthesis.get('ideas') or [])] \
+            if synthesis is not None else []
+        if synthesis is not None:
+            synthesis['ideas'] = ideas
+        ids = [one['id'] for one in ideas]
+        rankings: list[dict[str, Any]] = []
+        for row in cast(list[dict[str, Any]], topic.get('rankings') or []):
+            raw_ranking = row.get('ranking')
+            ranking = cast(list[str], raw_ranking) if isinstance(raw_ranking, list) and \
+                all(isinstance(one, str) for one in cast(list[Any], raw_ranking)) else None
+            public = stage(row, 'Participant')
+            if public is not None and ranking is not None and set(ranking) == set(ids) and len(ranking) == len(ids):
+                rankings.append({**public, 'ranking': list(ranking)})
+        counted = cast(dict[str, Any], topic.get('borda') or {})
+        points = cast(dict[str, Any], counted.get('points') or {})
+        topics.append({**{key: topic[key] for key in ('number', 'name', 'title', 'text') if key in topic},
+                       'why': reason(topic.get('why')), 'synthesis': synthesis, 'rankings': rankings,
+                       **{key: [public for row in cast(list[dict[str, Any]], topic.get(key) or [])
+                                if (public := stage(row, 'Participant')) is not None]
+                          for key in ('top_three', 'bottom_three')},
+                       'host_summary': stage(topic.get('host_summary'), 'Host'),
+                       'borda': {'derived': True, 'points': {key: points[key] for key in ids
+                                                           if isinstance(points.get(key), (int, float))},
+                                 'order': [key for key in counted.get('order', []) if key in ids]}
+                       if counted and ids else None})
+    return {'discussion': {**{key: discussion[key] for key in ('subject', 'opening', 'state') if key in discussion},
+                           'reason': reason(discussion.get('reason'))},
+            'seats': public_seats, 'submissions': messages, 'topics': topics,
+            'summary': {'messages': len(messages)}}
+
+
+def shared_mechanical(shared: dict[str, Any]) -> str:
+    """The participant-readable Markdown record, from the same safe projection as its JSON companion."""
+    discussion = cast(dict[str, Any], shared['discussion'])
+    lines = [f'# {discussion.get("subject") or "Roundtable record"}']
+    if discussion.get('reason'):
+        lines.append(f'Ended: {discussion["reason"]}')
+    if discussion.get('opening'):
+        lines.append(f'## Opening\n\n{discussion["opening"]}')
+    if shared['seats']:
+        lines.append('## Participants\n\n' + '\n'.join(f'- {one["name"]}' for one in shared['seats']))
+    if shared['submissions']:
+        lines.append('## Discussion')
+        lines.extend(f'### {one["message_id"]} · {one["name"]}\n\n{one["text"]}' for one in shared['submissions'])
+    for topic in shared['topics']:
+        lines.append(f'## Topic {topic.get("number", "")}: {topic.get("title") or "Discussion"}')
+        if topic.get('text'):
+            lines.append(str(topic['text']))
+        if topic.get('why'):
+            lines.append(f'Discussion ended: {topic["why"]}')
+        synthesis = topic.get('synthesis')
+        if synthesis:
+            lines.append(f'### Ideas · {synthesis["name"]}\n\n' + '\n'.join(
+                f'- **{idea["id"]}: {idea["name"]}**: {idea["summary"]}' for idea in synthesis['ideas']))
+        if topic.get('borda'):
+            counted = topic['borda']
+            lines.append('### Borda result\n\n' + '\n'.join(
+                f'- {key}: {counted["points"].get(key, 0)} points' for key in counted['order']))
+        for key, title in (('rankings', 'Rankings'), ('top_three', 'Top three'), ('bottom_three', 'Bottom three')):
+            if topic.get(key):
+                lines.append(f'### {title}\n\n' + '\n\n'.join(
+                    f'**{one["name"]}**\n\n{one["text"]}' for one in topic[key]))
+        host = topic.get('host_summary')
+        if host:
+            lines.append(f'### Host summary · {host["name"]}\n\n{host["text"]}')
+    return '\n\n'.join(lines) + '\n'
 
 
 def availability(seat: dict[str, Any]) -> dict[str, Any]:
@@ -252,7 +390,8 @@ def limitations(found: dict[str, Any]) -> list[str]:
 def exclusions(found: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, int | None]:
     held = render.captured(found)
     repeats = 'repeat' in (held.get('failed') or {}) or any(row.get('repeat_of') is not None for row in rows)
-    names = [*held['criteria'], *(['repeat'] if repeats else [])] if held else NOULS
+    criteria = cast(dict[str, Any], held.get('criteria') or {})
+    names = [*criteria, *(['repeat'] if repeats else [])] if held else NOULS
     failed = [name for row in rows if render.outcome(row) == 'vetoed' for name in render.failed(row)]
     return {name: failed.count(name) if held else None for name in names}
 
@@ -288,7 +427,9 @@ def legend(found: dict[str, Any]) -> dict[str, str]:
 
 def scored(row: dict[str, Any]) -> dict[str, Any]:
     """One turn as an entry of the discussion: its number, round, seat by name, outcome, scores and text."""
-    return {'n': row['number'], **({'topic': int(row['topic']) + 1} if row.get('topic') is not None else {}),
+    return {'n': row['number'], 'turn': row.get('message_id') or render.turn(int(row['number'])),
+            **({'message_id': row['message_id']} if row.get('message_id') else {}),
+            **({'topic': int(row['topic']) + 1} if row.get('topic') is not None else {}),
             'round': row['round'], 'seat': render.who(row), 'outcome': render.outcome(row),
             **({'scores': store.nouls(row)} if store.nouls(row) is not None else {}),
             **({'failed': render.failed(row), 'veto_reason': veto_reason(row)}
@@ -346,6 +487,7 @@ def stats(number: int) -> dict[str, Any]:
             'cache_hits': sum(1 for row in rows if int(row['cached_tokens'] or 0) > 0),
             'seats': seated,
             'per_turn': [{'n': row['number'], 'round': row['round'], 'seat': render.who(row),
+                          **({'message_id': row['message_id']} if row.get('message_id') else {}),
                           'outcome': render.outcome(row), **{key: row.get(key) for key in ('model', *USE, 'jev_cost')}}
                          for row in rows if row['kind'] != 'chair'],
             **({'not_recorded': limitations(found)} if limitations(found) else {})}
@@ -374,7 +516,9 @@ def context(number: int, position: int) -> list[dict[str, Any]]:
                      None)
         if match is not None:
             row, at = own[match], match + 1
-            entry.update({'n': row['number'], 'round': row['round'], 'outcome': render.outcome(row),
+            entry.update({'n': row['number'], 'turn': row.get('message_id') or render.turn(int(row['number'])),
+                          **({'message_id': row['message_id']} if row.get('message_id') else {}),
+                          'round': row['round'], 'outcome': render.outcome(row),
                           **({'scores': store.nouls(row)} if store.nouls(row) is not None else {}),
                           **({'failed': render.failed(row)} if render.outcome(row) == 'vetoed' else {})})
         if turns and 'replied' not in turns[-1]:

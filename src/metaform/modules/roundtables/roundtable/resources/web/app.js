@@ -276,7 +276,7 @@ async function showTable(number, tab) {
   }
 
   function turnNode(turn) {
-    const parts = [el('b', {text: turn.turn}), turn.topic ? ` · topic ${turn.topic}` : '', ` · round ${turn.round} · `,
+    const parts = [el('b', {text: turn.message_id || turn.turn}), turn.topic ? ` · topic ${turn.topic}` : '', ` · round ${turn.round} · `,
       el('b', {text: turn.seat}), ` · ${turn.outcome}`];
     if (turn.scores) parts.push(` · ${scores(turn.scores)}`);
     if (turn.failed && turn.failed.length) parts.push(` · failed: ${turn.failed.join(', ')}`);
@@ -468,7 +468,7 @@ async function showTable(number, tab) {
         el('thead', {}, el('tr', {}, ['Turn', 'Round', 'Seat', 'Outcome', 'Model', 'Prompt tokens', 'Cached', 'Cache write', 'Cost', 'Jev']
           .map((name) => el('th', {text: name})))),
         el('tbody', {}, rows.map((one) => el('tr', {},
-          el('td', {text: `T${String(one.n).padStart(2, '0')}`}), el('td', {class: 'num', text: one.round}), el('td', {text: one.seat}),
+          el('td', {text: one.message_id || `T${String(one.n).padStart(2, '0')}`}), el('td', {class: 'num', text: one.round}), el('td', {text: one.seat}),
           el('td', {text: one.outcome}), el('td', {class: 'small', text: one.model || ''}),
           el('td', {class: 'num', text: count(one.prompt_tokens)}), el('td', {class: 'num', text: count(one.cached_tokens)}),
           el('td', {class: 'num', text: count(one.cache_write_tokens)}), el('td', {class: 'num', text: dollars(one.cost)}),
@@ -515,7 +515,7 @@ async function showTable(number, tab) {
       turns.forEach((turn, at) => {
         if (turn.received !== undefined) parts.push(el('h3', {text: `Turn ${at + 1}: arrived`}), el('pre', {text: turn.received}));
         if (turn.replied !== undefined) {
-          const what = turn.n ? ` (T${turn.n}, round ${turn.round}: ${turn.outcome}${turn.scores ? ', ' + scores(turn.scores) : ''})` : '';
+          const what = turn.n ? ` (${turn.message_id || `T${turn.n}`}, round ${turn.round}: ${turn.outcome}${turn.scores ? ', ' + scores(turn.scores) : ''})` : '';
           parts.push(el('h3', {text: `Turn ${at + 1}: ${seat.name} replied${what}`}), el('pre', {text: turn.replied}));
         }
       });

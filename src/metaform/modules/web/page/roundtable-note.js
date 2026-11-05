@@ -1,11 +1,13 @@
-/* A note is a document of its own. Markdown-it 15.0.3 (bundled, MIT) parses it; only the supported tokens become
- * DOM nodes. Raw HTML stays text, images never load, and links can only open explicit HTTP(S) addresses. */
-'use strict';
+/* Notes and cited messages, files and searches share this reader. Markdown-it 15.0.3 (bundled, MIT) parses
+ * documents into supported DOM nodes. Raw HTML stays text and images never load. */
+import {referenceHref, referenceParts} from '/page/app/roundtable/references.js';
 
 const noteQuery = new URLSearchParams(location.search);
 const noteProject = noteQuery.get('project') || '';
 const noteTable = noteQuery.get('table') || '';
 const notePath = noteQuery.get('note') || '';
+const noteReference = noteQuery.get('reference') || '';
+const noteContext = {project: noteProject, table: noteTable, note: notePath, reference: noteReference};
 const noteTitle = document.querySelector('#note-title');
 const noteLocation = document.querySelector('#note-location');
 const noteStatus = document.querySelector('#note-status');
@@ -17,11 +19,22 @@ const noteTags = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote',
 let noteLoaded = false;
 
 function noteLink(href) {
-  if (!/^https?:\/\//i.test(href || '')) return null;
-  try {
-    const url = new URL(href);
-    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
-  } catch { return null; }
+  return referenceHref(href, noteContext, true);
+}
+
+function appendReferences(parent, text) {
+  if (/<\/?[a-z][^>]*>/i.test(text)) { parent.append(document.createTextNode(text)); return; }
+  for (const part of referenceParts(text, noteContext)) {
+    if (!part.href || parent.closest?.('a')) parent.append(document.createTextNode(part.text));
+    else {
+      const link = document.createElement('a');
+      link.href = part.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = part.text;
+      parent.append(link);
+    }
+  }
 }
 
 function noteTokens(tokens, parent) {
@@ -30,12 +43,13 @@ function noteTokens(tokens, parent) {
     const target = stack[stack.length - 1];
     if (token.type === 'inline') noteTokens(token.children || [], target);
     else if (token.type === 'text' || token.type === 'softbreak') {
-      target.append(document.createTextNode(token.type === 'softbreak' ? '\n' : token.content));
+      appendReferences(target, token.type === 'softbreak' ? '\n' : token.content);
     } else if (token.type === 'hardbreak' || token.type === 'hr') {
       target.append(document.createElement(token.type === 'hr' ? 'hr' : 'br'));
     } else if (token.type === 'code_inline' || token.type === 'fence' || token.type === 'code_block') {
       const code = document.createElement('code');
-      code.textContent = token.content;
+      if (token.type === 'code_inline') appendReferences(code, token.content);
+      else code.textContent = token.content;
       if (token.type === 'code_inline') target.append(code);
       else {
         const pre = document.createElement('pre');
@@ -77,16 +91,22 @@ async function loadNote() {
   noteStatus.textContent = 'Loading…';
   noteStatus.dataset.state = 'loading';
   try {
-    const query = new URLSearchParams({project: noteProject, table: noteTable, note: notePath});
+    const query = new URLSearchParams({project: noteProject, table: noteTable});
+    query.set(noteReference ? 'reference' : 'note', noteReference || notePath);
     const response = await fetch(`/api/roundtable?${query}`, {credentials: 'same-origin', cache: 'no-store'});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `The server returned ${response.status}.`);
     if (typeof result.text !== 'string') throw new Error('The server did not return note text.');
-    const filename = typeof result.path === 'string' ? result.path : notePath;
+    const filename = typeof result.path === 'string' ? result.path : noteReference || notePath;
+    if (noteReference) noteContext.reference = filename;
     noteTitle.textContent = filename;
     document.title = `${filename} · Roundtable note`;
     const fragment = document.createDocumentFragment();
-    noteTokens(noteMarkdown.parse(result.text, {}), fragment);
+    if (noteReference && !/^R[1-9]\d*-[1-9]\d*$/.test(noteReference) && !/\.md(?:[:#]|$)/i.test(filename)) {
+      const pre = document.createElement('pre');
+      appendReferences(pre, result.text);
+      fragment.append(pre);
+    } else noteTokens(noteMarkdown.parse(result.text, {}), fragment);
     if (!fragment.childNodes.length) {
       const empty = document.createElement('p');
       empty.textContent = 'This note is empty.';
@@ -94,6 +114,7 @@ async function loadNote() {
     }
     noteContent.replaceChildren(fragment);
     noteLoaded = true;
+    noteLocation.textContent = `${noteProject} · ${noteTable}${result.line ? ` · Line ${result.line}` : ''}`;
     noteStatus.textContent = result.cut
       ? 'This file continues beyond the first 1 MiB shown here.'
       : `Loaded at ${new Date().toLocaleTimeString()}.`;
@@ -108,10 +129,10 @@ async function loadNote() {
   }
 }
 
-noteTitle.textContent = notePath || 'Roundtable note';
+noteTitle.textContent = noteReference || notePath || 'Roundtable note';
 noteLocation.textContent = `${noteProject} · ${noteTable}`;
 noteRefresh.addEventListener('click', loadNote);
-if (noteProject && noteTable && notePath) loadNote();
+if (noteProject && noteTable && (notePath || noteReference)) loadNote();
 else {
   noteRefresh.disabled = true;
   noteContent.setAttribute('aria-busy', 'false');

@@ -88,9 +88,10 @@ def test_only_unanimous_voluntary_passes_finish_one_full_round(scripted, staged)
         assert store.topics(number)[0]['advanced_by'] == 'passes'
 
 
-def test_veto_only_rounds_continue_past_former_cap(scripted, monkeypatch):
+@pytest.mark.parametrize('staged', [True, False])
+def test_veto_only_rounds_finish_after_two_complete_opportunities_per_participant(scripted, monkeypatch, staged):
     make, replies, _, _ = scripted
-    number = make(judging=True)
+    number = make(judging=True, staged=staged)
     asked = Mock(side_effect=lambda state, criteria, **kw: judge.Asked(
         request={'state': state}, criteria=criteria, nouls={name: .1 for name in criteria}))
     monkeypatch.setattr(judge, 'ask', asked)
@@ -98,11 +99,232 @@ def test_veto_only_rounds_continue_past_former_cap(scripted, monkeypatch):
     replies[1] = [f'Beta rejected objection {n}.' for n in range(11)]
     result = asyncio.run(runner.Table(number).run())
     assert result['state'] == 'ended', result
-    assert store.discussion(number)['round'] == 12
+    assert store.discussion(number)['round'] == 2
+    assert store.discussion(number)['quiet_rounds'] == 2
+    assert asked.call_count == 4
     assert all(not row['accepted'] for row in store.submissions(number))
-    assert [one['kind'] for one in store.submissions(number)[-2:]] == ['pass', 'pass']
+    assert [one['kind'] for one in store.submissions(number)] == ['seat'] * 4
     assert not any(one['kind'] == 'sufficiency' for one in store.judgments(number))
     assert all('latest_round' not in call.args[0] for call in asked.call_args_list)
+    if staged:
+        assert store.topics(number)[0]['advanced_by'] == 'exhausted'
+
+
+@pytest.mark.parametrize('staged', [True, False])
+def test_judged_passes_also_require_two_complete_quiet_rounds(scripted, staged):
+    make, _, _, _ = scripted
+    number = make(judging=True, staged=staged)
+    result = asyncio.run(runner.Table(number).run())
+    assert result['state'] == 'ended', result
+    assert [one['kind'] for one in store.submissions(number)] == ['pass'] * 4
+    assert store.discussion(number)['round'] == 2
+    assert store.discussion(number)['quiet_rounds'] == 2
+
+
+@pytest.mark.parametrize('pairs', [('PP', 'VV'), ('VV', 'VP'), ('VP', 'PP')])
+def test_each_model_can_finish_with_a_different_terminal_pair(scripted, pairs):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    for cycle in range(2):
+        for row, pair in zip(store.seats(number), pairs, strict=True):
+            outcome = pair[cycle]
+            store.record(number, table.entry(table.row(), row, 'PASS' if outcome == 'P' else 'Rejected position.',
+                                             kind='pass' if outcome == 'P' else 'seat'))
+        asyncio.run(table.round_over(table.row()))
+    assert table.row()['stage'] == 'synthesis'
+    assert table.row()['quiet_rounds'] == 2
+    assert store.topics(number)[0]['why'] == 'The round ended because there was nothing new to add.'
+
+
+@pytest.mark.parametrize('correction', ['P', 'V'])
+def test_pass_then_veto_requires_a_targeted_correction_after_the_second_quiet_cycle(scripted, correction):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    for cycle in range(2):
+        for row in store.seats(number):
+            outcome = 'V' if row['position'] == 1 and cycle == 1 else 'P'
+            store.record(number, table.entry(table.row(), row, 'PASS' if outcome == 'P' else 'Rejected position.',
+                                             kind='pass' if outcome == 'P' else 'seat'))
+        asyncio.run(table.round_over(table.row()))
+    assert table.row()['stage'] == 'discussion' and table.row()['round'] == 3
+    assert table.row()['quiet_rounds'] == 2
+    row = store.seats(number)[1]
+    store.record(number, table.entry(table.row(), row, 'PASS' if correction == 'P' else 'Rejected correction.',
+                                     kind='pass' if correction == 'P' else 'seat'))
+    asyncio.run(table.round_over(table.row()))
+    assert table.row()['stage'] == 'synthesis'
+    assert [one['position'] for one in store.submissions(number) if one['round'] == 3] == [1]
+
+
+def test_late_accepted_correction_resets_every_models_terminal_pair(scripted):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    seated = store.seats(number)
+    for cycle in range(2):
+        for row in seated:
+            outcome = 'V' if row['position'] == 1 and cycle == 1 else 'P'
+            store.record(number, table.entry(table.row(), row, 'PASS' if outcome == 'P' else 'Rejected.',
+                                             kind='pass' if outcome == 'P' else 'seat'))
+        asyncio.run(table.round_over(table.row()))
+    store.record(number, table.entry(table.row(), seated[1], 'Accepted correction.', accepted=True))
+    assert table.row()['quiet_rounds'] == 0
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['stage'] == 'discussion' and table.row()['round'] == 3
+    store.record(number, table.entry(table.row(), seated[0], 'PASS', kind='pass'))
+    store.close_round(number, 'Exhausted.')
+    for cycle in range(2):
+        store.record(number, table.entry(table.row(), seated[0], 'PASS', kind='pass'))
+        store.record(number, table.entry(table.row(), seated[1], 'Rejected.' if cycle == 0 else 'PASS',
+                                         kind='seat' if cycle == 0 else 'pass'))
+        store.close_round(number, 'Exhausted.')
+        if cycle == 0:
+            assert table.row()['stage'] == 'discussion' and table.row()['quiet_rounds'] == 1
+    assert table.row()['stage'] == 'synthesis'
+
+
+def test_normal_session_exhaustion_goes_to_private_topic_selection_instead_of_collaboration(scripted, tmp_path):
+    make, _, _, calls = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    found = table.row()
+    store.change(number, snapshot={**found['snapshot'], 'session': {'total': 2, 'folder': str(tmp_path)}})
+    for _ in range(2):
+        for row in store.seats(number):
+            store.record(number, table.entry(table.row(), row, 'PASS', kind='pass'))
+        asyncio.run(table.round_over(table.row()))
+    assert table.row()['stage'] == 'topic_selection'
+    assert store.topics(number)[0]['why'] == 'The round ended because there was nothing new to add.'
+    assert calls == []
+
+
+def test_an_accepted_reply_resets_the_streak_and_repeated_positions_are_judged(scripted, monkeypatch):
+    make, replies, _, calls = scripted
+    number = make(judging=True)
+    replies[0] = ['The same previously stated position.'] * 4
+    replies[1] = ['The same previously stated position.'] * 4
+    judgments = []
+
+    def asked(state, criteria, **options):
+        judgments.append(state)
+        score = .99 if len(judgments) == 3 else .1
+        return judge.Asked(request={'state': state}, criteria=criteria, nouls={name: score for name in criteria})
+
+    monkeypatch.setattr(judge, 'ask', asked)
+    result = asyncio.run(runner.Table(number).run())
+    assert result['state'] == 'ended', result
+    rows = store.submissions(number)
+    assert store.discussion(number)['round'] == 4
+    assert store.discussion(number)['quiet_rounds'] == 2
+    assert len(judgments) == 8 and sum(row['accepted'] for row in rows) == 1
+    assert all(set(state) == {'xml'} and state['xml'].count('Original person instructions: retain evidence.') == 1
+               for state in judgments)
+    assert all(row['repeat_of'] is None for row in rows)
+    assert all(len({session for pos, session, text in calls if pos == position and '# Topic' not in text}) == 1
+               for position in (0, 1))
+
+
+def test_failures_and_unavailable_participants_do_not_cover_a_quiet_round(scripted):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    seated = store.seats(number)
+    store.record(number, table.entry(table.row(), seated[0], 'A rejected contribution.', accepted=False))
+    store.record(number, table.entry(table.row(), seated[1], '', kind='none', reason='Endpoint failed.'))
+    store.seat_change(number, 1, availability='unavailable')
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['round'] == 1 and table.row()['quiet_rounds'] == 0
+    assert table.row()['stage'] == 'discussion'
+    store.record(number, table.entry(table.row(), seated[1], 'Its actual rejected reply.', accepted=False))
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['round'] == 2 and table.row()['quiet_rounds'] == 1
+    restarted = runner.Table(number)
+    store.record(number, restarted.entry(restarted.row(), seated[0], 'Another rejected contribution.', accepted=False))
+    store.close_round(number, 'Exhausted.')
+    assert restarted.row()['round'] == 2 and restarted.row()['quiet_rounds'] == 1
+    store.record(number, restarted.entry(restarted.row(), seated[1], 'Another actual rejected reply.', accepted=False))
+    store.close_round(number, 'Exhausted.')
+    assert restarted.row()['stage'] == 'synthesis' and restarted.row()['quiet_rounds'] == 2
+
+
+def test_acceptance_resets_immediately_and_pending_judgment_cannot_complete_a_round(scripted):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    table = runner.Table(number)
+    seated = store.seats(number)
+    for row in seated:
+        store.record(number, table.entry(table.row(), row, 'Rejected.', accepted=False))
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['quiet_rounds'] == 1
+    store.record(number, table.entry(table.row(), seated[0], 'Accepted new material.', accepted=True))
+    assert table.row()['quiet_rounds'] == 0
+    store.record(number, table.entry(table.row(), seated[1], 'Rejected.', accepted=False))
+    store.change(number, unjudged={'position': 0, 'text': 'A later reply still awaiting its judgment.', 'use': {}})
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['round'] == 2 and table.row()['quiet_rounds'] == 0
+    store.change(number, unjudged=None)
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['round'] == 3 and table.row()['quiet_rounds'] == 0
+
+
+@pytest.mark.parametrize('staged', [True, False])
+def test_block_reason_arrives_once_only_in_authors_next_turn(scripted, monkeypatch, staged):
+    make, replies, _, calls = scripted
+    number = make(judging=True, staged=staged)
+    table = runner.Table(number)
+    replies[0] = ['PRIVATE_REJECTED_POSITION', 'PASS']
+    monkeypatch.setattr(judge, 'ask', lambda state, criteria, **options: judge.Asked(
+        request={'state': state}, criteria=criteria, nouls={name: .1 for name in criteria}))
+    asyncio.run(table.turn(table.row(), store.seats(number)[0]))
+    rejection = store.submissions(number)[0]
+    reason = render.status(rejection)
+    assert reason and 'PRIVATE_REJECTED_POSITION' not in reason
+    saved = store.seats(number)[0]['messages']
+    assert all(reason not in message['content'] for message in saved)
+    assert all('PRIVATE_REJECTED_POSITION' not in message['content'] for message in saved)
+    asyncio.run(table.turn(table.row(), store.seats(number)[1]))
+    assert reason not in calls[-1][2]
+    asyncio.run(table.turn(table.row(), store.seats(number)[0]))
+    prompt = calls[-1][2]
+    assert prompt.count(reason) == 1
+    assert 'PRIVATE_REJECTED_POSITION' not in prompt and 'roundtable://' not in prompt
+
+
+@pytest.mark.parametrize('staged', [True, False])
+def test_rejected_material_stays_private_and_is_not_written_into_shared_files(scripted, monkeypatch, tmp_path, staged):
+    make, replies, notes, calls = scripted
+    number = make(judging=True, staged=staged)
+    table = runner.Table(number)
+    replies[0] = ['PRIVATE_REJECTED_POSITION']
+    monkeypatch.setattr(judge, 'ask', lambda state, criteria, **options: judge.Asked(
+        request={'state': state}, criteria=criteria, nouls={name: .1 for name in criteria}))
+    asyncio.run(table.turn(table.row(), store.seats(number)[0]))
+    rejected = store.submissions(number)[0]
+    asyncio.run(table.turn(table.row(), store.seats(number)[1]))
+    peer = [text for position, session, text in calls if position == 1][-1]
+    assert 'PRIVATE_REJECTED_POSITION' not in peer
+    assert render.turn(rejected['number']) not in peer
+    assert 'PRIVATE_REJECTED_POSITION' not in table.editor_view(table.row(), [])
+    assert table.segment(table.row()) == []
+    assert export.build(number)['submissions'][0]['text'] == 'PRIVATE_REJECTED_POSITION'
+    assert not list(tmp_path.rglob('vetoed'))
+    asyncio.run(table.handoff(table.row()))
+    shared = render.shared(table.row())
+    assert 'PRIVATE_REJECTED_POSITION' not in shared
+    assert all(note in shared for note in notes.values())
+    assert not list(tmp_path.rglob('vetoed'))
+    reported = []
+
+    async def report(found, record):
+        reported.append(record)
+        return 'Report from public context.'
+
+    monkeypatch.setattr(table, 'report', report)
+    asyncio.run(table.finish())
+    assert reported and all('PRIVATE_REJECTED_POSITION' not in record for record in reported)
+    assert export.build(number)['submissions'][0]['text'] == 'PRIVATE_REJECTED_POSITION'
 
 
 @pytest.mark.parametrize('new_score', [.9, .3])
@@ -149,7 +371,7 @@ def test_comment_clears_prior_votes_and_stays_held(scripted, monkeypatch):
     store.change(number, state='running')
     asyncio.run(held.round_over(held.row()))
     assert held.row()['stage'] == 'discussion'
-    assert held.row()['round'] == 2
+    assert held.row()['round'] == 1
 
 
 @pytest.mark.parametrize('judging', [False, True])
@@ -202,7 +424,7 @@ def test_handoff_uses_smallest_active_budget_without_jev(scripted, monkeypatch):
     assert held.context_limit(held.row()) == 50000
     snapshot = held.row()['snapshot'] | {'judging': True}
     store.change(number, snapshot=snapshot)
-    assert held.context_limit(held.row()) == 24000
+    assert held.context_limit(held.row()) == 50000
 
 
 @pytest.mark.parametrize('continuation_time', [None, '2000-01-01T00:00:00+00:00'])

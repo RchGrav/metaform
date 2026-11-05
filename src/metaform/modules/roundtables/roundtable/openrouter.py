@@ -181,7 +181,7 @@ def retry_after(headers: Any) -> float | None:
 
 def post(path: str, body: Mapping[str, Any], *, deadline: float | None = None,
          tried: Callable[[], None] | None = None, stop: threading.Event | None = None,
-         trace: dict[str, Any] | None = None) -> dict[str, Any]:
+         trace: dict[str, Any] | None = None, retry: bool = True) -> dict[str, Any]:
     """One POST to OpenRouter and its JSON reply, asked again with a jittered, doubling wait on a timeout, a rate
     limit, a server failure or a dropped connection, never sooner than a Retry-After asks; Unpaid on HTTP 402,
     Silent on any other failure, on the last attempt's, or when a Retry-After asks past the time left. Every wait
@@ -193,7 +193,7 @@ def post(path: str, body: Mapping[str, Any], *, deadline: float | None = None,
     url = config.value('openrouter_url').rstrip('/') + path
     data = json.dumps(body).encode()
     headers = {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json', 'X-Title': 'roundtable'}
-    for backoff in [*BACKOFF, None]:
+    for backoff in [*BACKOFF, None] if retry else [None]:
         if stop is not None and stop.is_set():
             raise TimeoutError
         timeout = min(TIMEOUT, remaining(deadline))
@@ -407,7 +407,14 @@ class ModelSeat(Seat):
             raise NoReply(str(error), kind=error.kind) from None
 
     async def exchange(self, text: str, seconds: float) -> Reply:
-        return await self.ask(text, int(config.value('seat_tokens')), seconds,
+        from . import allowance, render
+
+        tokens = int(config.value('seat_tokens'))
+        base = render.reply_limit(self.table)
+        limit = allowance.limit(self.table, self.position, base)
+        if limit > base:
+            tokens = max(tokens, tokens + 4 * (limit - base))
+        return await self.ask(text, tokens, seconds,
                               str(config.value('seat_reasoning') or '').strip())
 
     async def report(self, record: str, seconds: float) -> str:

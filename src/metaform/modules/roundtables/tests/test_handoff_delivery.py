@@ -1,16 +1,18 @@
 """A carry request consumes each seat's queued context once, including recoverable failures."""
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
-from metaform.modules.roundtables.roundtable import budget, judge, render, runner, store
+from metaform.modules.roundtables.roundtable import budget, judge, permissions, render, runner, store
 from metaform.modules.roundtables.roundtable.seat import NoReply, Reply, Seat
 
 pytestmark = pytest.mark.kind('simulation')
 
 
 @pytest.fixture
-def inbox(tmp_path, monkeypatch):
+def inbox(run, tmp_path, monkeypatch):
+    run('enable', 'dispatch', cwd=tmp_path)
     monkeypatch.setenv('ROUNDTABLE_HOME', str(tmp_path / 'engine'))
     monkeypatch.setenv('ROUNDTABLE_CONTEXT_TOKENS', '24000')
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
@@ -139,24 +141,23 @@ def test_rejected_before_delivery_keeps_the_queue_for_retry(inbox):
     assert 'Complete the carry-forward note already requested' not in attempts[1]
 
 
-def test_collaboration_failure_only_consumes_delivered_queue_items(inbox):
+def test_panel_failure_only_consumes_delivered_queue_items(inbox):
     number, table, _, answers, _ = inbox
-    table.collaboration(table.row())
+    _, queued = existing_context(number, table)
     found = table.row()
     row = store.seats(number)[0]
-    phase = store.submissions(number)
-    latest = max(one['number'] for one in phase)
 
     async def attempt(delivered):
         answers[0] = [NoReply('fixture failure', delivered=delivered)]
-        table.wake(found, store.seats(number)[0], phase, 'collab')
-        await table.working[0]
-        table.harvest(found, 'collab')
+        await table.turn(found, store.seats(number)[0])
 
     asyncio.run(attempt(False))
-    assert store.seats(number)[0]['seen'] == row['seen'] < latest
+    assert store.seats(number)[0]['seen'] == row['seen'] < queued['number']
+    latest = store.submissions(number)[-1]['number']
     asyncio.run(attempt(True))
     assert store.seats(number)[0]['seen'] == latest
+    assert sum(message['content'].count('NEW_QUEUED_EVIDENCE')
+               for message in store.seats(number)[0]['messages']) == 1
 
 
 def test_handoff_send_receipt_survives_cancellation_without_replaying_batch(inbox):
@@ -192,54 +193,78 @@ def test_handoff_send_receipt_survives_cancellation_without_replaying_batch(inbo
         assert delivered.count(marker) == 1, marker
 
 
-def test_hold_after_delivery_keeps_followup_due_despite_an_earlier_done(inbox):
+def test_inline_permission_tool_work_and_queued_evidence_are_not_replayed_after_hold(inbox, tmp_path, monkeypatch):
     number, table, calls, answers, _ = inbox
-    table.collaboration(table.row())
-    found = table.row()
-    seated = store.seats(number)
-    done = store.record(number, table.entry(found, seated[0], 'Done', kind='collab', accepted=True))
-    store.record(number, table.entry(found, seated[1], 'PEER_EVIDENCE_AFTER_COMPLETION', kind='collab', accepted=True))
-    latest = store.record(number, table.entry(found, seated[1], 'Done', kind='collab', accepted=True))
-    for row in seated:
-        store.seat_change(number, row['position'], seen=done['number'] if row['position'] == 0 else latest['number'],
-                          messages=[{'role': 'user', 'content': 'Original collaboration request.'},
-                                    {'role': 'assistant', 'content': 'Done'}])
+    history, queued = existing_context(number, table)
+    document = tmp_path / 'inline-work.md'
+    requests = []
+    listeners = []
+
+    def listen(module, handler):
+        listeners.append(handler)
+        return SimpleNamespace(close=lambda: listeners.remove(handler))
+
+    # The relay excludes its own process. Deliver the person's change directly in
+    # this simulation while exercising the real permission records and wait.
+    monkeypatch.setattr(permissions.events, 'listen', listen)
 
     async def scenario():
-        sent, blocked = asyncio.Event(), asyncio.Event()
+        permission_visible, written, blocked = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        loop = asyncio.get_running_loop()
 
-        async def accepted_then_waiting(seat, text):
+        def notified(payload):
+            if payload['state'] == 'waiting':
+                requests.append(payload)
+                loop.call_soon_threadsafe(permission_visible.set)
+
+        async def inline_tool_work(seat, text):
             seat.delivered()
-            sent.set()
+            chosen = await permissions.request(number, seat.position, {
+                'toolCall': {'toolCallId': 'inline-write', 'title': 'Write shared materials', 'kind': 'edit'},
+                'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'}]}, notified)
+            assert chosen == 'allow'
+            document.write_text('Completed inline work remains saved.', encoding='utf-8')
+            written.set()
             await blocked.wait()
             return Reply('Not reached.')
 
-        answers[0] = [accepted_then_waiting]
-        await table.collaborate(table.row())
-        await asyncio.wait_for(sent.wait(), 2)
+        answers[0] = [inline_tool_work]
+        table.panel_work[0] = asyncio.create_task(table.turn(table.row(), store.seats(number)[0]))
+        await asyncio.wait_for(permission_visible.wait(), 2)
+        assert store.seats(number)[0]['seen'] == queued['number']
+        assert not table.panel_work[0].done()
+        answers[1] = [Reply('NEW_PEER_REPLY_WHILE_BUSY')]
+        await table.turn(table.row(), store.seats(number)[1])
+        fresh = store.submissions(number)[-1]
+
+        def approved():
+            permissions.answer(number, requests[0]['request'], 'allow')
+            for listener in listeners:
+                listener({'kinds': [permissions.topic(number)]})
+
+        await asyncio.to_thread(approved)
+        await asyncio.wait_for(written.wait(), 2)
         store.change(number, state='held', reason='The chair held this table.')
         await table.unseat()
-        assert store.seats(number)[0]['seen'] == latest['number']
-        assert not store.seats(number)[0]['extra'].get('phase_reply')
+        assert store.seats(number)[0]['seen'] == queued['number']
         store.change(number, state='running', reason=None)
         restarted = runner.Table(number)
-        phase = [one for one in store.submissions(number) if one['kind'] in ('chair', 'collab')]
-        assert restarted.needs(store.seats(number)[0], phase, 'collab', restarted.row()), \
-            'An earlier Done must not finish an interrupted follow-up.'
-        answers[0] = [Reply('Done')]
-        await restarted.collaborate(restarted.row())
-        assert 0 in restarted.working and restarted.row()['stage'] == 'collaboration'
-        await restarted.working[0]
-        restarted.harvest(restarted.row(), 'collab')
-        assert not store.seats(number)[0]['extra'].get('collaboration_request')
-        assert not restarted.needs(store.seats(number)[0], store.submissions(number), 'collab', restarted.row())
+        answers[0] = [Reply('PASS')]
+        await restarted.turn(restarted.row(), store.seats(number)[0])
+        assert store.seats(number)[0]['seen'] == fresh['number']
+        assert restarted.row()['stage'] == 'discussion'
         await restarted.unseat()
 
     asyncio.run(scenario())
     attempts = [text for position, text in calls if position == 0]
     assert len(attempts) == 2
-    assert sum(text.count('PEER_EVIDENCE_AFTER_COMPLETION') for text in attempts) == 1
-    assert 'Finish the collaboration request you already received' in attempts[1]
+    assert attempts[0].count('NEW_QUEUED_EVIDENCE') == 1 and 'NEW_PEER_REPLY_WHILE_BUSY' not in attempts[0]
+    assert 'NEW_QUEUED_EVIDENCE' not in attempts[1] and attempts[1].count('NEW_PEER_REPLY_WHILE_BUSY') == 1
+    delivered = history[0] + '\n' + '\n'.join(attempts)
+    for marker in ('ORIGINAL_OWNER_INSTRUCTIONS', 'SAVED_SHARED_MARKER', 'SAVED_NOTE_MARKER', 'OWN_REPLY_0'):
+        assert delivered.count(marker) == 1
+    assert document.read_text(encoding='utf-8') == 'Completed inline work remains saved.'
+    assert len(requests) == 1 and permissions.get(number, requests[0]['request'])['state'] == 'answered'
 
 
 @pytest.mark.parametrize('spent', [50, 80, 100])

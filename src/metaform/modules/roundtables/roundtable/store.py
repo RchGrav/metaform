@@ -46,7 +46,6 @@ from typing import Any, cast
 from metaform.data import DataConnection, DataRow, private_database
 
 from . import config
-from .names import names as named
 
 STATES = ('running', 'held', 'ending', 'ended')  # a table runs, is held by its chair or by Jev failing, then ends
 AVAILABILITY = ('active', 'degraded', 'unavailable')  # a seat's, from its failures in a row (`health`)
@@ -54,10 +53,11 @@ STAGES = ('discussion', 'synthesis', 'ranking', 'top_three', 'bottom_three', 'ho
 KINDS = ('seat', 'chair', 'none', 'pass', 'carry', 'handoff')
 NOULS = ('new', 'valuable', 'relevant', 'keep')  # Jev's four nouls, in the order the review's array gives them
 VETO = ('new_context', 'on_topic')  # Jev's two nouls for a submission at a table with topics
+CHECKS = ('new_context', 'valuable', 'on_topic')
 JUDGMENTS = ('veto', 'dedup', 'sufficiency')
 JSON = frozenset({'messages', 'reply', 'unjudged', 'models', 'extra', 'imported', 'snapshot', 'host', 'synthesizer',
                   'ideas', 'ranking', 'request', 'response', 'nouls', 'floors', 'usage', 'seat_mcp',
-                  'continuation', 'handoff'})
+                  'continuation', 'handoff', 'scores'})
 # What an operational event says happened, in `events`: OpenRouter's credits ran out, the table held or resumed, a
 # seat left the table, was degraded or came back, the table's runner stopped
 EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report',
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS discussions(
   topic INTEGER NOT NULL DEFAULT 0, stage TEXT, host TEXT, synthesizer TEXT, advance_asked INTEGER NOT NULL DEFAULT 0,
   unpaid INTEGER NOT NULL DEFAULT 0, mechanical TEXT, seat_mcp TEXT,
   continuation TEXT, handoff TEXT, pass_after INTEGER NOT NULL DEFAULT 0,
-  phase_after INTEGER NOT NULL DEFAULT 0, collaboration_runner TEXT);
+  phase_after INTEGER NOT NULL DEFAULT 0, collaboration_runner TEXT, quiet_rounds INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS seats(
   discussion INTEGER NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
   agent TEXT, model TEXT, reported TEXT, session TEXT, gone TEXT,
@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS seats(
   taken INTEGER NOT NULL DEFAULT 0, kept INTEGER NOT NULL DEFAULT 0, extra TEXT,
   availability TEXT NOT NULL DEFAULT 'active', failures INTEGER NOT NULL DEFAULT 0, failing TEXT, reason TEXT,
   since TEXT, retry_at REAL, submitted INTEGER NOT NULL DEFAULT 0, reseated INTEGER NOT NULL DEFAULT 0,
+  identity TEXT, profile_key TEXT,
   PRIMARY KEY (discussion, position));
 CREATE TABLE IF NOT EXISTS submissions(
   discussion INTEGER NOT NULL, number INTEGER NOT NULL, round INTEGER NOT NULL, position INTEGER,
@@ -93,7 +94,7 @@ CREATE TABLE IF NOT EXISTS submissions(
   accepted INTEGER NOT NULL DEFAULT 0, over512 INTEGER NOT NULL DEFAULT 0,
   new REAL, valuable REAL, relevant REAL, keep REAL, original TEXT, truncated INTEGER NOT NULL DEFAULT 0,
   model TEXT, prompt_tokens INTEGER, cached_tokens INTEGER, cache_write_tokens INTEGER, cost REAL, jev_cost REAL,
-  created TEXT NOT NULL, topic INTEGER, new_context REAL, on_topic REAL, label TEXT, repeat_of INTEGER,
+  created TEXT NOT NULL, topic INTEGER, new_context REAL, on_topic REAL, label TEXT, repeat_of INTEGER, message_id TEXT,
   PRIMARY KEY (discussion, number));
 CREATE TABLE IF NOT EXISTS waiting(
   discussion INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (discussion, seq));
@@ -123,11 +124,22 @@ CREATE TABLE IF NOT EXISTS events(
 CREATE TABLE IF NOT EXISTS profiles(
   agent TEXT PRIMARY KEY, name TEXT NOT NULL, score REAL, ratings INTEGER NOT NULL DEFAULT 0,
   sessions INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS profile_aliases(
+  source TEXT NOT NULL, occurrence INTEGER NOT NULL, identity TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL UNIQUE, profile_key TEXT NOT NULL UNIQUE, PRIMARY KEY(source, occurrence));
 CREATE TABLE IF NOT EXISTS scorecards(
   discussion INTEGER NOT NULL, position INTEGER NOT NULL, text TEXT NOT NULL, created TEXT NOT NULL,
   PRIMARY KEY (discussion, position));
 CREATE TABLE IF NOT EXISTS session_ratings(
   discussion INTEGER NOT NULL, agent TEXT NOT NULL, PRIMARY KEY (discussion, agent));
+CREATE TABLE IF NOT EXISTS topic_proposals(
+  discussion INTEGER NOT NULL, topic INTEGER NOT NULL, position INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending', receipt TEXT, text TEXT, usage TEXT, created TEXT,
+  PRIMARY KEY(discussion, topic, position));
+CREATE TABLE IF NOT EXISTS topic_decisions(
+  discussion INTEGER NOT NULL, topic INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+  request TEXT, response TEXT, scores TEXT, text TEXT, usage TEXT, error TEXT, created TEXT,
+  PRIMARY KEY(discussion, topic));
 CREATE TABLE IF NOT EXISTS phase_usage(
   discussion INTEGER NOT NULL, topic INTEGER NOT NULL, phase TEXT NOT NULL, position INTEGER NOT NULL,
   tokens INTEGER NOT NULL DEFAULT 0, reported INTEGER NOT NULL DEFAULT 0, unreported INTEGER NOT NULL DEFAULT 0,
@@ -165,14 +177,14 @@ ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported
                          ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT'),
                          ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0'),
                          ('phase_after', 'INTEGER NOT NULL DEFAULT 0'), ('budget_runner', 'TEXT'),
-                         ('collaboration_runner', 'TEXT')),
+                         ('collaboration_runner', 'TEXT'), ('quiet_rounds', 'INTEGER NOT NULL DEFAULT 0')),
          'seats': (('extra', 'TEXT'), ('availability', "TEXT NOT NULL DEFAULT 'active'"),
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
-                   ('reseated', 'INTEGER NOT NULL DEFAULT 0')),
+                   ('reseated', 'INTEGER NOT NULL DEFAULT 0'), ('identity', 'TEXT'), ('profile_key', 'TEXT')),
          'submissions': (('original', 'TEXT'), ('truncated', 'INTEGER NOT NULL DEFAULT 0'), ('topic', 'INTEGER'),
                          ('new_context', 'REAL'), ('on_topic', 'REAL'), ('label', 'TEXT'), ('repeat_of', 'INTEGER'),
-                         ('unjudged', 'INTEGER NOT NULL DEFAULT 0'))}
+                         ('unjudged', 'INTEGER NOT NULL DEFAULT 0'), ('message_id', 'TEXT'))}
 # What a seat's turn or stage answer wrote, its completion and reasoning tokens, and why its model stopped, added to
 # every store, old or new, as `submissions` and `stages` are opened.
 WRITTEN = (('completion_tokens', 'INTEGER'), ('reasoning_tokens', 'INTEGER'), ('finish_reason', 'TEXT'))
@@ -190,6 +202,8 @@ def migrate(db: DataConnection, path: str) -> None:
     for row in db.execute('SELECT number FROM discussions WHERE context_id IS NULL').fetchall():
         db.execute('UPDATE discussions SET context_id=?, task_id=? WHERE number=?',
                    (uuid.uuid4().hex, uuid.uuid4().hex, row[0]))
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS submission_message_id ON submissions(discussion,message_id) "
+               "WHERE message_id IS NOT NULL")
     _migrated.add(path)
 
 
@@ -348,27 +362,45 @@ def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
     number, the next one."""
     from . import render
 
-    names = named(chosen)
-    snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
-    snapshot['token_budget'] = token_budget
-    snapshot['token_basis'] = token_basis
-    if permissions:
-        snapshot['permissions'] = {agent: dict(values) for agent, values in permissions.items()}
-    if session:  # a session of roundtables: Jev judges only whether a turn keeps to the topic
-        snapshot = {**snapshot, 'session': dict(session)}
-        if snapshot.get('floors'):
-            snapshot['floors'] = {**snapshot['floors'], 'new_context': 0.0}
     with connect() as db:
+        from . import identity
+
+        assigned = identity.assign(db, str(row['folder']), chosen)
+        snapshot = render.snapshot([person['name'] for person in assigned], staged=bool(topics),
+                                   reply_limit=reply_limit, judging=judging)
+        snapshot['token_budget'] = token_budget
+        snapshot['token_basis'] = token_basis
+        snapshot['message_ids'] = True
+        snapshot['reply_credits'] = True
+        if permissions:
+            snapshot['permissions'] = {agent: dict(values) for agent, values in permissions.items()}
+        if session:
+            snapshot['session'] = dict(session)
+        metadata = dict(row)
+        if any(person['identity'] is not None for person in assigned):
+            for role in ('host', 'synthesizer'):
+                given = row.get(role)
+                if isinstance(given, dict):
+                    details = cast(dict[str, Any], given)
+                    name = next((person['name'] for seat, person in zip(chosen, assigned, strict=True)
+                                 if seat['id'] == details.get('id')), role.capitalize())
+                    metadata[role] = {**details, 'name': name}
         number = 1 + int(db.execute('SELECT COALESCE(MAX(number), 0) FROM discussions').fetchone()[0])
-        insert(db, 'discussions', {**row, 'snapshot': snapshot, 'number': number, 'state': 'running', 'created': stamp(),
+        insert(db, 'discussions', {**metadata, 'snapshot': snapshot, 'number': number, 'state': 'running', 'created': stamp(),
                                    'context_id': uuid.uuid4().hex, 'task_id': uuid.uuid4().hex,
                                    **({'stage': 'discussion', 'topic': 0} if topics else {})})
-        for position, (seat, name) in enumerate(zip(chosen, names, strict=True)):
+        for position, (seat, person) in enumerate(zip(chosen, assigned, strict=True)):
             insert(db, 'seats', {'discussion': number, 'position': position, 'kind': seat['kind'], 'id': seat['id'],
-                                 'name': name, 'agent': seat.get('agent'), 'model': seat.get('model')})
+                                 'name': person['name'], 'identity': person['identity'],
+                                 'profile_key': person['profile_key'],
+                                 'agent': seat.get('agent'), 'model': seat.get('model')})
         for at, topic in enumerate(topics):
             insert(db, 'topics', {'discussion': number, 'topic': at, 'name': topic['name'], 'title': topic['title'],
                                   'text': topic['text'], 'opened': stamp() if at == 0 else None})
+        if any(person['identity'] is not None for person in assigned):
+            folder = str(session['folder']) if session and session.get('folder') else str(
+                config.notes(str(row['folder']), number))
+            identity.write_roster(folder, [person['name'] for person in assigned])
     return number
 
 
@@ -512,6 +544,13 @@ def stage_record(number: int, row: Mapping[str, Any]) -> dict[str, Any]:
 def seat_change(number: int, position: int, **changes: Any) -> None:
     with connect() as db:
         fence(db, number)
+        if 'extra' in changes:
+            held = plain(db.execute('SELECT extra FROM seats WHERE discussion=? AND position=?',
+                                    (number, position)).fetchone())
+            current = cast(dict[str, Any], held.get('extra') or {}) if held else {}
+            if 'reply_allowance' in current:
+                changes['extra'] = {**cast(dict[str, Any], changes['extra'] or {}),
+                                    'reply_allowance': current['reply_allowance']}
         update(db, 'seats', {'discussion': number, 'position': position}, changes)
 
 
@@ -537,30 +576,58 @@ def decide(number: int, judgment: Mapping[str, Any] | None, changes: Mapping[str
 
 
 def close_round(number: int, reason: str) -> None:
-    """Check voluntary votes and pending comments in the same transaction as the round decision."""
+    """Require two quiet rotations and a finished PP, VV or VP pair for every judged participant."""
     with connect() as db:
         fence(db, number)
         found = plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
-        if found is None or found['state'] != 'running':
+        if found is None or found['state'] != 'running' or found.get('unjudged') or \
+                found['stage'] and found['stage'] != 'discussion':
             return
-        rows = db.execute('SELECT position, kind FROM submissions WHERE discussion=? AND number>? AND round=? '
+        rows = db.execute('SELECT position,kind,accepted,unjudged FROM submissions '
+                          'WHERE discussion=? AND number>? AND round=? '
                           'AND topic IS ? AND kind NOT IN (\'chair\', \'carry\', \'handoff\')',
                           (number, found['pass_after'], found['round'],
                            found['topic'] if found['stage'] else None)).fetchall()
         participants = db.execute('SELECT position FROM seats WHERE discussion=?', (number,)).fetchall()
         waiting = db.execute('SELECT 1 FROM waiting WHERE discussion=? LIMIT 1', (number,)).fetchone()
+        actual = [row for row in rows if row['kind'] == 'pass' or (row['kind'] == 'seat' and not row['unjudged'])]
+        covered = {row['position'] for row in actual}
+        snapshot = cast(dict[str, Any], found.get('snapshot') or {})
+        judging = bool(snapshot.get('judging', True))
+        terminal: set[int] = set()
+        if judging:
+            history = db.execute('SELECT number,position,kind,accepted,unjudged FROM submissions '
+                                 'WHERE discussion=? AND topic IS ? ORDER BY number',
+                                 (number, found['topic'] if found['stage'] else None)).fetchall()
+            boundary = max((int(row['number']) for row in history if row['accepted'] or row['kind'] == 'chair'),
+                           default=0)
+            outcomes: dict[int, str] = {}
+            for row in history:
+                if row['number'] <= boundary or row['position'] is None or row['unjudged']:
+                    continue
+                if row['kind'] == 'pass' or row['kind'] == 'seat' and not row['accepted']:
+                    position = int(row['position'])
+                    outcomes[position] = (outcomes.get(position, '') + ('P' if row['kind'] == 'pass' else 'V'))[-2:]
+            terminal = {position for position, pair in outcomes.items() if pair in ('PP', 'VV', 'VP')}
+            if int(found['quiet_rounds']) >= 2:
+                covered.update(terminal)
+        if waiting or not participants or not all(seat['position'] in covered for seat in participants):
+            return
+        quiet = (0 if any(row['accepted'] for row in actual) else int(found['quiet_rounds']) + 1) if judging else 0
         unanimous = not waiting and len(rows) == len(participants) and all(
             sum(one['position'] == seat['position'] and one['kind'] == 'pass' for one in rows) == 1
             for seat in participants)
-        if not unanimous:
+        finished = quiet >= 2 and all(seat['position'] in terminal for seat in participants) if judging else unanimous
+        if not finished:
             update(db, 'discussions', {'number': number},
-                   {'round': int(found['round']) + 1, 'position': 0, 'round_kept': 0})
+                   {'round': int(found['round']) + 1, 'position': 0, 'round_kept': 0, 'quiet_rounds': quiet})
         elif found['stage']:
-            update(db, 'discussions', {'number': number}, {'stage': 'synthesis', 'position': 0})
+            update(db, 'discussions', {'number': number}, {'stage': 'synthesis', 'position': 0, 'quiet_rounds': quiet})
             update(db, 'topics', {'discussion': number, 'topic': found['topic']},
-                   {'discussed': stamp(), 'advanced_by': 'passes', 'why': reason})
+                   {'discussed': stamp(), 'advanced_by': 'exhausted' if judging else 'passes', 'why': reason})
         else:
-            update(db, 'discussions', {'number': number}, {'state': 'ending', 'reason': reason, 'position': 0})
+            update(db, 'discussions', {'number': number},
+                   {'state': 'ending', 'reason': reason, 'position': 0, 'quiet_rounds': quiet})
 
 
 def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
@@ -582,17 +649,35 @@ def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
                 saved = plain(db.execute('SELECT * FROM submissions WHERE discussion=? AND number=?',
                                          (number, previous['recorded'])).fetchone())
                 if saved is not None:
+                    if judged:
+                        pending = plain(db.execute('SELECT unjudged FROM discussions WHERE number=?',
+                                                   (number,)).fetchone())
+                        waiting = cast(dict[str, Any], pending.get('unjudged') or {}) if pending else {}
+                        if waiting.get('usage_id') == receipt:
+                            update(db, 'discussions', {'number': number}, {'unjudged': None})
                     return saved
         latest = int(db.execute('SELECT COALESCE(MAX(number), 0) FROM submissions WHERE discussion=?',
                                 (number,)).fetchone()[0])
         row = {'over512': False, 'truncated': False, 'accepted': False, **entry, 'discussion': number, 'number': latest + 1,
                'created': stamp()}
+        held = plain(db.execute('SELECT snapshot FROM discussions WHERE number=?', (number,)).fetchone())
+        snapshot = cast(dict[str, Any], held.get('snapshot') or {}) if held else {}
+        row['message_id'] = None
+        if snapshot.get('message_ids') and (row['kind'] == 'chair' or
+                row['kind'] in ('seat', 'collab') and row['accepted']):
+            topic = row.get('topic')
+            count = int(db.execute('SELECT COUNT(*) FROM submissions WHERE discussion=? AND topic IS ? '
+                                   'AND message_id IS NOT NULL', (number, topic)).fetchone()[0])
+            row['message_id'] = f'R{int(topic or 0) + 1}-{count + 1}'
         insert(db, 'submissions', row)
         if receipt is not None:
             db.execute('UPDATE phase_replies SET recorded=? WHERE discussion=? AND reply=?',
                        (row['number'], number, receipt))
         if row['kind'] in ('chair', 'handoff'):
-            update(db, 'discussions', {'number': number}, {'pass_after': row['number']})
+            update(db, 'discussions', {'number': number},
+                   {'pass_after': row['number'], **({'quiet_rounds': 0} if row['kind'] == 'chair' else {})})
+        if row.get('accepted'):
+            update(db, 'discussions', {'number': number}, {'quiet_rounds': 0})
         if entry.get('position') is not None:  # a slot filled; a submission only when the seat contributed
             db.execute('UPDATE seats SET taken=taken+1, kept=kept+?, submitted=submitted+? '
                        'WHERE discussion=? AND position=?',
@@ -602,6 +687,10 @@ def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
                        (int(bool(row['accepted'])), number))
         if judgment is not None:
             judge(db, number, {**judgment, 'submission': row['number']})
+        if snapshot.get('reply_credits'):
+            from . import allowance
+
+            allowance.recorded(db, number, row, receipt)
     return row
 
 
@@ -744,12 +833,13 @@ def pending(number: int) -> dict[str, Any] | None:
 
 
 def noul_names(row: Mapping[str, Any]) -> tuple[str, ...]:
-    """The nouls a submission was judged on: the two of a table with topics when it has them, else the four."""
+    """Current independent checks, or the two/four checks retained in historical records."""
+    if all(row.get(name) is not None for name in CHECKS):
+        return CHECKS
     return VETO if all(row.get(name) is not None for name in VETO) else NOULS
 
 
 def nouls(row: Mapping[str, Any]) -> list[float] | None:
-    """A submission's nouls as the review's array, `[new, valuable, relevant, keep]`, or at a table with topics
-    `[new_context, on_topic]`; None when unjudged."""
+    """A submission's independent probabilities in current or captured historical order; None when unjudged."""
     values = [row.get(name) for name in noul_names(row)]
     return None if any(value is None for value in values) else [round(float(v), 2) for v in values if v is not None]

@@ -1,6 +1,6 @@
 # roundtables
 
-Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through assigned tasks. The system controls stage progression without a coordinator agent.
+Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the live transcript with readable message and source references, then the finished synthesis, rankings, answer and saved record. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through assigned tasks. The system controls stage progression without a coordinator agent.
 
 ## Purpose
 
@@ -16,33 +16,33 @@ The template changelog version this module started from: 0.3.0.
 
 ### Toolbar items and panes
 
-None of its own. The web page's roundtable stage (web, `page/app/roundtable/stage.js`) opens a table and shows it through the web server's `/api/roundtable-open` and `/api/roundtable`, which run `open`, `events` and `status`. The person asks the question once and then only watches; the chair's verbs are for the command line and agents.
+None of its own. The web page's roundtable stage (web, `page/app/roundtable/stage.js`) opens a table and shows it through the web server's `/api/roundtable-open` and `/api/roundtable`, which run `open`, `events` and `status`. The chair can read cited evidence, comment and use the session controls while the discussion runs.
 
 ## Common base used
 
-`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats` and design-intake providers, plus `task.lifecycle`. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
+`metaform.settings` declares the settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats`, shared `agent.name` and design-intake providers, plus `task.lifecycle`. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
 
 ### Provides
 
-Nothing. It uses dispatch's `dispatch.seats` and design-intake providers, tasks' `task.lifecycle`, and memory's `memory.record`.
+Nothing. It uses dispatch's `dispatch.seats`, `agent.name` and design-intake providers, tasks' `task.lifecycle`, and memory's `memory.record`.
 
 ## Prompts
 
 `resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
 
 The `session_*` prompts hold the person's session messages. The participating agents jointly author their own
-documents in the shared session folder. There is no automatic minutes or summary writer.
+documents in the shared session folder. The transcript and its references remain available while they collaborate.
 
 ## Verbs
 
-- `open <topic> [address=] [seats] [host=] [synthesizer=] [judging=] [reply_limit=] [spend=]`, write, open world: open a table on the question, focused on the part at `address` when one is given. `seats` is a JSON list in speaking order, `roundtables_seats` when left out: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's own agents, seated on the engine's ACP client with dispatch's commands (`dispatch_claude`, `dispatch_codex`, `dispatch_antigravity`); any other id is an OpenRouter model. The host is the first seat when none is named, never the engine's own default, which would seat an agent nobody chose. The question is the table's one topic. `reply_limit` sets the maximum characters in each discussion reply, 512 by default. The selected limit ends the opening instructions and each turn prompt; longer replies are truncated before judging. Synthesis, ranking explanations and reports retain their stage-specific limits. Judged tables require `jev` and an OpenRouter credential. ACP-only tables with `judging=false` require neither; when fewer agent slots are free than seats; and when `spend` passes `roundtables_spend`. Returns the table's id.
+- `open <topic> [address=] [seats] [host=] [synthesizer=] [judging=] [reply_limit=] [spend=]`, write, open world: open a table on the question, focused on the part at `address` when one is given. `seats` is a JSON list in speaking order, `roundtables_seats` when left out: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's own agents, seated on the engine's ACP client with dispatch's commands (`dispatch_claude`, `dispatch_codex`, `dispatch_antigravity`); any other id is an OpenRouter model. The host is the first seat when none is named, never the engine's own default, which would seat an agent nobody chose. The question is the table's one topic. `reply_limit` sets the base discussion allowance, 512 characters by default. Each participant receives its current promised limit after private reply credits. Longer replies are truncated to that promised limit before judging. Synthesis, ranking explanations and reports retain their stage-specific limits. Judged tables require `jev` and an OpenRouter credential. ACP-only single-roundtable tables with `judging=false` require neither; sessions with subsequent topics still use Jev for private topic comparison; when fewer agent slots are free than seats; and when `spend` passes `roundtables_spend`. Returns the table's id.
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
   The GUI exposes Hold, Continue, discussion comments and End discussion beside the transcript. End discussion invokes `advance` immediately at the next gap, without minimum rounds. Comments can be queued while held, without resuming AI turns. They enter at the next gap between turns. Continue resumes the same table. On a completed table, Continue discussion uses its saved host summary with fresh seat contexts, the same visible identity, project and lineup. It appends a topic without removing prior topics or outputs. Plan review comments remain separate.
   Controls use the current engine phase independently of transcript playback. End discussion remains visible and
-  advances panel discussion into collaboration, or collaboration into the next panel or scoring. During scoring and
-  farewell it is disabled with an explanation, while End session remains available. Errors identify the panel number
+  finishes the current discussion. If another roundtable remains, each participant privately proposes its next topic.
+  During private topic selection, scoring and farewell, End discussion is disabled with an explanation while End session remains available. Errors identify the panel number
   rather than the engine's internal session id.
-  End session stays available during discussion, collaboration, scoring and farewell, including while held. It
+  End session stays available during discussion, private topic selection, scoring and farewell, including while held. It
   invokes `end` to save the current record and documents and stop the remaining phases. The page retains the session.
   Abort remains a separate action that archives the run and clears it from the page.
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
@@ -51,10 +51,13 @@ documents in the shared session folder. There is no automatic minutes or summary
   ACP request. Requests not covered by the selected standard prompt policy display the options supplied by the agent.
   Setup shows the same permission controls as an ordinary agent launch, once per selected agent type. The
   `permissions` object maps agent names to `prompts` and native ACP `mode`; omitted choices use project settings.
-  Choices are captured when the table opens and persist through panels, collaboration, and recovered seat sessions.
+  Choices are captured when the table opens and persist through discussions, private topic selection and recovered seat sessions.
 - `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
+- `reference <table> <reference>`, read: an accepted message by its public ID, a cited project file with an optional
+  line number, or a quoted literal `rg`/`grep` search. The page opens the result in its reading window through
+  `/api/roundtable?reference=...`. Reads stay bounded to the selected project.
 - `follow <table>`, write, open world: start a table's follower again when it stopped before the table ended.
 - `adopt <table> <idea> [address=] [title=]`, write, the person's decision, secondary to the report: an idea of an ended table, by its id (`I2`), made one ticket of kind enhancement. On a table about a part, the ticket is at the part the idea concerns, the table's Address unless `address` names another; an `address` with no current element on the map is filed as given, and the answer passes on the map's notice that says so. On a table with no part, an idea may concern nothing that exists yet, so it is never forced onto a nearby element: the ticket is at `address` when the map holds that element, else at the project's top element (its DE, else its first root element), with the named Address in its note as `proposed`; nothing is added to the map. Its task carries the idea, the question, the answer and the report (the saved record before the report is written); its note names the table as its source. It is held by no one, so Full Auto starts it like any ticket. Kept as the table's `adopted` event, so adopting the same idea again gives the same ticket. An agent's call is refused with the caution and the command the person runs.
 - `run <table>`, command line only: the follower itself, which `open` and `follow` start detached.
@@ -62,8 +65,7 @@ documents in the shared session folder. There is no automatic minutes or summary
 ## Settings
 
 - `roundtables_spend`, 2, the person's: the most US dollars one table spends through OpenRouter; `open` may only lower it.
-- `roundtables_token_budget`, 0: counted tokens per participant per panel and per
-  collaboration. Zero disables the limit. Setup captures this default, and `budget <table> <token_budget>` or the
+- `roundtables_token_budget`, 0: counted tokens per participant per discussion. Zero disables the limit. Setup captures this default, and `budget <table> <token_budget>` or the
   live budget control changes the limit without clearing usage already recorded in the current phase.
   A runner started before token-budget support must first be held, finish stopping, and be continued to load the
   new code. Live edits refuse that older active runner rather than claim enforcement it cannot provide.
@@ -77,50 +79,117 @@ documents in the shared session folder. There is no automatic minutes or summary
 
 ## Completion and context handoff
 
-Breakdown, selected by default, is Haiku's plain-language account of the discussion. It explains the question, proposals,
-reasons, disagreements and open decisions so the chair can follow and contribute through the comment box.
-Transcript selects the original agent messages. Exactly one of Breakdown and Transcript is visible. Haiku updates beside the panel, without delaying turns,
-through the same ACP client and permission relay. `roundtables_live_summary` defaults to true. Its saved account
-and cursor live in `live_summaries`, independently of follower events, including for already-running followers.
-Failures stay visible and retain the last readable account. The participants still create and summarize their own
-shared document package during collaboration. The live account does not write those documents.
+The Git history identifies two causes of the lost completion behavior. On 2026-10-22, `b8b0db19` removed the
+engine's quiet/no-kept and sufficiency completion paths and required unanimous PASS. On 2026-11-04, `541b2c20`
+set session novelty thresholds to zero and added a separate Jev-free collaboration phase. On-topic repetition
+could therefore remain accepted, while collaboration relied on a separate DONE/file handoff. Current behavior
+restores meaningful contribution gates and actual quiet-cycle completion, keeps file work in discussion and
+chooses subsequent topics privately. These changes follow the person's corrected rules, while historical records
+retain the rules and references captured when they ran.
+
+The stage opens on the participants' transcript with the chair's comment box available. Clickable message and source
+references replace the automatic Haiku Breakdown. Haiku generation stops only after those reference readers are
+available, so removing the summary does not leave the chair with unreadable citations. Participants write and
+summarize shared documents inline while the judged discussion continues. Busy participants are skipped while others speak.
+There is no separate intertopic collaboration phase, DONE barrier or `next-topic.md` handoff.
+
+New accepted messages have public IDs such as `R1-1`, `R1-2` and `R2-1`: the panel number and a contiguous counter
+of accepted messages within that panel. Vetoes, PASS replies and failures receive no public ID and consume no number in that
+counter. Database cursors and owner audit resources retain their private submission numbers. Existing records keep
+their recorded references rather than being renumbered.
+
+A participant returning from work can contribute one optional inline comment citing several earlier public IDs,
+or reply PASS. It need not make up each skipped turn or answer each intervening message separately. Its entire reply,
+including references, fits its current private allowance. The base is 512 characters by default. Each actual PASS
+banks one base allowance, and each accepted peer message missed while doing native work banks one more. A veto
+earns no credit. At the default base, the next limit is `512 * (1 + PASS credits + missed accepted messages)`.
+An accepted reply spends the credits offered for that reply, while newer credits remain available. The promised
+limit survives retries and remains authoritative for truncation and judging. Neither the ledger nor the allowance
+is broadcast to peers. The same three Jev checks evaluate every substantive reply against the latest accepted discussion.
+
+Clicking a public message ID opens that accepted message. A source citation such as `src/module.py:42` opens the
+referenced file and line. Quoted literal `rg` or `grep` references open bounded search results through the same project
+read API. The reader resolves those references without executing a supplied shell command.
 
 Notes lists those shared files. Each selected note opens in a separate reading window with rendered Markdown,
 normal scrolling and its own filename. The file list remains available while the document is open.
 
-Discussion finishes when every participant voluntarily replies PASS in one complete round, the person chooses End
-discussion, or any participant reaches 120% of its configured token budget. Vetoes, failures, skipped turns, round
-counts and context size never imply PASS. Comments and context handoffs reset prior votes. Credit recovery requires
-explicit Continue. An exhausted dollar budget can be replaced with `continue <table> spend=<amount>`, within
-configured caps.
+Copying cited source excerpts to preserve their text across later revisions is a proposed follow-up. This version
+reads the cited project files and does not copy excerpts automatically. Graph database storage of specifications
+is deferred and is outside this version.
+
+A judged discussion finishes after two complete quiet cycles with no accepted contribution and at least two actual
+outcomes from every participant since the last accepted contribution or chair clarification. For each participant's
+two latest outcomes, `PP`, `VV` and `VP` are finished, where `P` is an actual PASS and `V` is a veto. `PV` requires
+one more correction opportunity. A busy skip, unavailable seat, missing reply, failure or pending judgment is not an
+actual outcome and cannot age the quiet cycles. Acceptance or chair input resets progress. No separate Jev
+sufficiency or completion call is made.
+
+With judging off, the existing complete round of unanimous PASS still ends discussion. End discussion and the
+120% per-agent phase budget can advance a phase independently of normal completion. Context size does not imply
+PASS or a quiet round. Context handoffs invalidate earlier PASS votes without treating the handoff as a reply.
+OpenRouter credit recovery requires explicit Continue. An exhausted dollar budget can be replaced with
+`continue <table> spend=<amount>`, within configured caps.
 
 With a token budget enabled, the first participant to reach 50% triggers a halfway notice for everyone, once per
 delivered participant. From 80%, every turn repeats the instruction to wind down and arrange phase completion.
-From 100%, every turn repeats closing instructions. Agents keep working. These notices never hold the session. At 120%, discussion
-advances into collaboration, or collaboration advances to
-the submitted next topic without waiting for every DONE. After the final collaboration, scoring follows. Each new
-panel and collaboration starts fresh per-participant counters with the same configured limit. Agents can finish
-earlier through the normal PASS and DONE flow. Usage is counted once per completed physical turn, including PASS
+From 100%, every turn repeats closing instructions. Agents keep working. These notices never hold the session. At 120%,
+the current discussion closes. A remaining roundtable starts private topic selection, and the last roundtable
+proceeds to scoring and farewell. Each discussion starts fresh per-participant counters with the same configured
+limit. The quiet-cycle rule or unanimous PASS can finish discussion earlier. Usage is counted once per completed physical turn, including PASS
 and carry-forward replies. The default closing counter excludes cached reads. Full usage records retain them.
 Reasoning tokens already included in output are not added again. Context-window occupancy is not spent usage.
 Agents that omit usage cannot trigger a measured cap. A long
 turn can overshoot a threshold before its usage report arrives. Saved shared documents survive automatic advancement.
 
-Participants elect a coordinator at the start of each panel and record their choice in their shared notes. The
-coordinator tracks decisions, document owners, the next topic and PASS or DONE responses, with the same permissions
-as the other participants. An ordinary DONE handoff with no next topic sends the agents a reminder and stays running.
-If the phase is forcibly ended with no next topic, the session proceeds to scoring and farewell with an explanation.
+Participants may elect a coordinator to track accepted decisions and document owners. Everyone keeps the same
+permissions, and file work continues while other participants speak. This optional role adds no vote or completion
+barrier. Private topic selection chooses the next topic.
 
-Vetoes show the failed checks and their recorded scores versus cutoffs. Passing ratings are omitted. This explains
-the condition that rejected the contribution without generating a rationale.
+Among participants, only the author receives a plain-language veto explanation, naming its failed checks. Peers receive neither the
+rejected contribution nor veto notices, ratings or thresholds. The chair's private record retains the original
+contribution and every failed check's recorded score and cutoff, with passing ratings omitted from the displayed
+reason. This reports the failed conditions without generating a semantic rationale. The system writes no rejected
+contribution or veto ledger to the participants' shared files.
 
-The live controls show each participant's reported count, percentage, roundtable and phase. A fresh panel or
-collaboration shows zero before its first reply. A single tool-using turn can include several model calls, so its
+In every new table, participants receive generated names through the public `agent.name` provider,
+using dispatch's existing name generator and word lists. A private alias maps the model source and its occurrence
+to an opaque identity, display name and profile key. The alias survives new sessions and lineup reordering.
+Provider and model metadata remain available to the chair, while peer prompts use the generated identities.
+The shared session folder contains `participants.md` with generated names only. The private mapping from model
+sources to participant identities remains in the engine database.
+The first alias for a source retains its existing profile and aggregate score. Additional occurrences have their
+own profile keys. Earlier profile totals, seat names and transcripts are preserved rather than rewritten or split.
+Standalone engine homes use the same provider. Existing tables retain their recorded labels.
+
+The live controls show each participant's reported count, percentage and current discussion. A fresh discussion
+shows zero before its first reply. Private topic selection shows only aggregate proposal progress; proposal text,
+authorship and comparison scores remain private. A single tool-using turn can include several model calls, so its
 first usage report can be large. The displayed counting basis identifies whether cached input is included.
 
-`roundtables_judging` selects the default novelty filter. Setup exposes the same choice for each new table. With judging off, every substantive reply is retained within the existing character reply limit, including repetitions. Synthesis, ranking, explanation and host stages remain unchanged.
+`roundtables_judging` selects the default filter. Setup exposes the same choice for each new table. A substantive
+contribution is tested by three independent Jev checks in one request: new information or a position on a recently mentioned matter, value to
+the discussion, and relevance to the current topic. Each must reach 70% (0.70). There is no fourth combined
+keep/overall check. Repeating or developing a position is judged under those checks instead of being automatically
+rejected by a text-repeat rule. Historical judgments retain the criteria and cutoffs captured when they were made.
+With judging off, every substantive reply is retained within the character reply limit, including repetitions.
+Synthesis, ranking, explanation and host stages remain unchanged.
 
-`roundtables_context_tokens` sets the common seat/editor handoff trigger, 24,000 estimated tokens by default. The engine's `config.toml` can lower individual triggers through `[context_budgets]` keyed by exact seat id. `roundtables_judging_context_tokens` defaults to 24,000 and applies only while judging. The smallest active trigger wins. Request framing, participant notes and editor output reserve additional headroom. Estimates include original instructions, seat history, shared continuation, new turns and judging criteria. Native TypeSafe documents 64K per request and 32K per question at https://docs.typesafe.ai/models. The OpenRouter route has no confirmed higher effective limits. No native long-context header is enabled.
+`roundtables_context_tokens` sets the native seat/editor context handoff trigger, 24,000 estimated tokens by
+default. The engine's `config.toml` can lower individual triggers through `[context_budgets]` keyed by exact seat id.
+This trigger is independent of Jev's judging window.
+
+`roundtables_judging_context_tokens` defaults to a desired cap of 50,000 estimated tokens for the judging request.
+Jev receives escaped XML containing the complete original instructions, current topic, full candidate and a
+sliding window of recent accepted responses and chair clarifications. Older whole responses leave the window first.
+Rejected contributions and private carry-forward material are excluded. Jev sees neutral seat positions rather
+than provider or model names.
+
+The encoded request must also fit within 80% of the configured 65,536-token request limit and each question within
+80% of its 32,000-token limit, including the shared state and question text. These leave 20% headroom. With the
+standard limits, the bounds are 52,428 tokens for the whole request and 25,600 for each question, so the effective
+history can be smaller than the desired 50,000 cap. Required instructions and the candidate are never shortened.
+Sliding the judging window does not restart native seat contexts or alter the visible transcript.
 
 Before exhaustion, every participant receives a carry-forward request at twice the discussion character limit. Notes retain attribution and exact text outside novelty filtering. One fresh synthesizer context edits shared continuation, preserving original person instructions, decisions, evidence references, disagreements and open questions. Code attaches every intact note to the shared continuation. Seat sessions start afresh. The visible transcript retains all original turns and adds a context-handoff marker. Saved notes survive a failed editor request, so Continue retries the unfinished step. Unjudged tables use the same handoff independently of Jev.
 
@@ -128,7 +197,7 @@ A held runner closes its seats. Comments remain queued or enter without resuming
 
 Each participant has an ordered inbox checkpointed at the transport's send receipt. Busy participants accumulate
 new contributions while others speak. Inputs that were not sent stay queued. Delivered inputs are not replayed
-after a missing reply, cancellation or Continue. An interrupted collaboration request remains unfinished until its
+after a missing reply, cancellation or Continue. An interrupted native request remains unfinished until its
 reply is saved. Continue asks it to finish and supplies only newly queued contributions. Budget warnings have their
 own delivery receipts; acknowledging a closing instruction does not count as completing the closing reply.
 
@@ -136,15 +205,18 @@ Carry-forward requests use that same inbox. They omit the shared continuation an
 when those already exist in its conversation. Context estimates count the native conversation's system text once.
 A fresh context receives its original instructions and saved continuation once. Saved notes remain intact.
 
-Opening with `chain=<number>` runs a session containing that many discussions. After each discussion, agents collaborate
-on saved materials and the next topic. The page uses this session flow even for one roundtable. During panels and
-collaboration, busy seats are skipped immediately while available seats contribute in a fair rotation. When all seats
-are busy, the runner waits for completion or chair-control events. No timed cycling is used. A skipped seat never
-supplies an implicit PASS or Done. Collaboration normally waits for every participant to finish. Its 120% token cap
-advances without that barrier. `next-topic.md` must contain the next topic before another panel opens. If it is
-missing, the table holds with a clear reason instead of inventing a topic.
+Opening with `chain=<number>` runs a session containing that many discussions. The page uses the same flow for one
+roundtable. Participants create shared documents while discussion continues. Busy seats are skipped while available
+seats speak. When every seat is busy, the runner waits for actual completion or chair-control events without timed cycling.
 
-After the final collaboration, each agent submits private scorecards. Only aggregate scores are shared and added to
+Between discussions, each participant receives one private next-topic request. No proposal or proposer identity is
+announced. Jev compares every unordered pair once in one request, asking whether the two proposals are similar.
+The same similarity probability is credited to both proposals. Each proposal's pair scores are averaged, and the
+highest average wins without a minimum threshold. Exact ties preserve every tied winning text verbatim and without
+attribution, joined without a model-written synthesis. A sole proposal wins directly. The owner sees aggregate
+collection and judging progress. There is no shared-file requirement for choosing the next topic.
+
+After the final discussion, each agent submits private scorecards. Only aggregate scores are shared and added to
 profiles. Agents then exchange farewells and explicitly finish. The document browser reads their shared session folder.
 
 Roundtable agent connections offer ACP v2 and retain ACP v1 support. Each connection uses its negotiated protocol.

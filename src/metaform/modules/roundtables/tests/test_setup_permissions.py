@@ -65,9 +65,11 @@ def test_open_retains_captured_choices_for_follower_and_all_session_phases(permi
     assert row['followed']['session']['total'] == 1
     assert roundtables.status(ctx)['materials'] == row['followed']['session']['folder']
     folder = row['followed']['session']['folder']
-    assert folder in row['opening'] and folder in row['followed']['session']['between']
-    assert 'minutes will have been kept' not in row['opening'] + row['followed']['session']['between']
-    assert 'create these documents together' in row['opening']
+    assert folder in row['opening']
+    assert 'between' not in row['followed']['session']
+    assert 'next-topic.md' not in row['opening']
+    assert 'minutes will have been kept' not in row['opening']
+    assert 'shared documents together during discussion' in row['opening']
 
 
 def test_engine_snapshot_keeps_the_same_permissions_between_phases(tmp_path, monkeypatch):
