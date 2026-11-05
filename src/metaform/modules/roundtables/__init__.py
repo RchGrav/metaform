@@ -551,12 +551,25 @@ def table_events(ctx: Context) -> dict[str, Any]:
     with ctx.require_store().tables(write=False) as tx:
         found = [dict(one) for one in tx.rows('events', {'table_id': row['table_id']}, limit=0).results
                  if int(one['seq']) > after]
+    progress = phase_progress(ctx, row)
+    if progress is not None:
+        from .roundtable import export as engine_export
+        from .roundtable import store as engine_store
+
+        for one in found:
+            payload = one['payload']
+            if one['kind'] == 'veto' and not payload.get('veto_reason') and type(payload.get('n')) is int:
+                try:
+                    saved = engine_store.submission(int(row['discussion']), payload['n'])
+                except engine_store.Missing:
+                    continue
+                one['payload'] = {**payload, 'veto_reason': engine_export.veto_reason(saved)}
     return {'table': row['table_id'], 'events': [{'seq': one['seq'], 'kind': one['kind'], 'audience': one['audience'],
                                                   'at': one['at'], **cast(dict[str, Any], one['payload'])}
                                                  for one in found],
             'latest': max((int(one['seq']) for one in found), default=after),
             'live_summary': live_summary.snapshot(ctx, str(row['table_id'])),
-            'phase_budget': phase_progress(ctx, row)}
+            'phase_budget': progress}
 
 
 def follow_table(ctx: Context) -> dict[str, Any]:
@@ -698,8 +711,8 @@ MODULE = Module(
         Verb('continue', continued, 'Resume a held table or continue a completed table from its saved summary.',
              nouns=(TABLE, Noun('spend', 'Optional replacement table budget, up to roundtables_spend.',
                                 required=False)), open_world=True),
-        Verb('advance', advance, 'As the chair, end discussion explicitly, for its '
-                                 'synthesis, rankings and summary.', nouns=(TABLE,), open_world=True),
+        Verb('advance', advance, 'As the chair, finish the current discussion or collaboration phase, preserving '
+             'completed work without waiting for every PASS or DONE.', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
         Verb('budget', set_token_budget, 'Set the per-agent token budget for panels and collaboration without '

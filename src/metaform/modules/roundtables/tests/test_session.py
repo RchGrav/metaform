@@ -1,10 +1,12 @@
 """Session phases keep busy work alive and score participants without exposing their scorecards."""
 import asyncio
 import json
+import time
+from pathlib import Path
 
 import pytest
 
-from metaform.modules.roundtables.roundtable import export, render, runner, server, stages, store
+from metaform.modules.roundtables.roundtable import budget, export, render, runner, server, stages, store
 from metaform.modules.roundtables.roundtable.seat import Reply, Seat
 
 pytestmark = pytest.mark.kind('simulation')
@@ -122,18 +124,180 @@ def test_profile_scores_accumulate_once_per_session_and_start_unscored(session):
     assert store.profile('claude/haiku')['sessions'] == 3
 
 
-def test_advance_after_discussion_names_the_panel_and_preserves_held_collaboration(session, monkeypatch):
+@pytest.mark.parametrize('stage', ['scoring', 'farewell'])
+def test_advance_after_discussion_names_the_panel_and_preserves_held_later_phase(session, monkeypatch, stage):
     make, _, _, _ = session
     number = make(total=5)
     store.change(number, topic=3)
-    runner.Table(number).collaboration(store.discussion(number))
-    store.change(number, state='held', reason='held by its chair.')
+    store.change(number, stage=stage, state='held', reason='held by its chair.')
     before = store.discussion(number)
-    monkeypatch.setattr(server.runner, 'spawn', lambda *_: pytest.fail('Advance must not start collaboration.'))
-    with pytest.raises(server.ToolError, match=r'Panel 4.*collaboration') as error:
+    monkeypatch.setattr(server.runner, 'spawn', lambda *_: pytest.fail('Advance must not start a later phase.'))
+    with pytest.raises(server.ToolError, match=rf'Panel 4.*{stage}') as error:
         server.advanced(before)
     assert f'Roundtable {number}' not in str(error.value)
     assert store.discussion(number) == before
+
+
+@pytest.mark.parametrize('held', [False, True])
+@pytest.mark.parametrize('total', [1, 2])
+def test_end_discussion_advances_collaboration_and_preserves_completed_and_stopping_work(
+        session, home, monkeypatch, held, total):
+    make, handlers, calls, materials = session
+    number = make(total=total)
+    role = {'kind': 'acp', 'id': 'acp:claude/haiku', 'agent': 'claude', 'model': 'haiku', 'name': 'Haiku'}
+    store.change(number, host=role, synthesizer=role)
+    table = runner.Table(number)
+    table.collaboration(table.row())
+    document = materials / 'saved.md'
+    document.write_text('Keep these shared materials.', encoding='utf-8')
+    if total > 1:
+        (materials / 'next-topic.md').write_text('The agreed next topic.', encoding='utf-8')
+    spawned = []
+    monkeypatch.setattr(server.runner, 'spawn', lambda given: spawned.append(given))
+
+    async def scenario():
+        completed, started, cancelled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        async def fast(seat, text):
+            completed.set()
+            return 'Kept completed work. Done'
+
+        async def slow(seat, text):
+            seat.delivered()
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                return 'Finished while cancellation landed.'
+
+        handlers[('collaboration', 0, 0)] = fast
+        handlers[('collaboration', 0, 1)] = slow
+        active = asyncio.create_task(table.run())
+        await asyncio.wait_for(completed.wait(), 2)
+        await asyncio.wait_for(started.wait(), 2)
+        if held:
+            store.change(number, state='held', reason='held by its chair.')
+            await table.unseat()
+            await asyncio.wait_for(active, 2)
+            transition = runner.Table(number)
+        else:
+            transition = table
+        original = transition.phase_done
+
+        async def stop_at_transition(found, stage, seated, phase, *, forced=False):
+            await original(found, stage, seated, phase, forced=forced)
+            store.change(number, state='held', reason='Fixture stops at the new phase.')
+
+        monkeypatch.setattr(transition, 'phase_done', stop_at_transition)
+        store.change(number, handoff={'after': 0})
+        answer = await asyncio.to_thread(server.advanced, store.discussion(number))
+        assert answer['state'] == 'running'
+        if held:
+            active = asyncio.create_task(transition.run())
+        result = await asyncio.wait_for(active, 3)
+        assert result['state'] == 'held'
+        assert cancelled.is_set() and not transition.working
+
+    asyncio.run(scenario())
+    found = store.discussion(number)
+    assert found['stage'] == ('discussion' if total > 1 else 'scoring')
+    assert found['topic'] == (1 if total > 1 else 0)
+    assert not found['advance_asked'] and found['handoff'] is None
+    assert document.read_text(encoding='utf-8') == 'Keep these shared materials.'
+    replies = [row['text'] for row in store.submissions(number) if row['kind'] == 'collab']
+    assert replies == ['Kept completed work. Done', 'Finished while cancellation landed.']
+    assert [(stage, topic, position) for stage, topic, position, _ in calls] == [
+        ('collaboration', 0, 0), ('collaboration', 0, 1)]
+    assert spawned == [number]
+    if total > 1:
+        assert (materials / 'topics' / '02.md').read_text() == 'The agreed next topic.'
+
+
+def test_end_collaboration_without_a_submitted_topic_opens_scoring_without_inventing_one(session, home, monkeypatch):
+    make, _, calls, _ = session
+    number = make(total=2)
+    role = {'kind': 'acp', 'id': 'acp:claude/haiku', 'agent': 'claude', 'model': 'haiku', 'name': 'Haiku'}
+    store.change(number, host=role, synthesizer=role)
+    table = runner.Table(number)
+    table.collaboration(table.row())
+    monkeypatch.setattr(server.runner, 'spawn', lambda *_: None)
+    server.advanced(store.discussion(number))
+    asyncio.run(table.finish_collaboration(table.row()))
+    assert store.discussion(number)['state'] == 'running'
+    assert store.discussion(number)['stage'] == 'scoring'
+    assert not store.discussion(number)['advance_asked']
+    assert any('No next topic was submitted' in row['text'] for row in store.submissions(number))
+    assert len(store.topics(number)) == 1 and not calls
+
+
+def test_end_collaboration_refuses_an_old_live_runner_before_changing_state(session, monkeypatch):
+    make, _, _, _ = session
+    number = make(total=2)
+    table = runner.Table(number)
+    table.collaboration(table.row())
+    store.change(number, state='held', reason='held by its chair.', runner='old-runner', beat=time.time())
+    before = store.discussion(number)
+    monkeypatch.setattr(server.runner, 'spawn', lambda *_: pytest.fail('The old runner must not receive advance.'))
+    with pytest.raises(server.ToolError, match=r'Panel 1.*reload'):
+        server.advanced(before)
+    assert store.discussion(number) == before
+
+
+@pytest.mark.parametrize('stage', ['discussion', 'collaboration'])
+@pytest.mark.parametrize('percent', [50, 80, 100, 120])
+def test_winddown_thresholds_keep_running_and_only_120_percent_advances(session, stage, percent):
+    make, _, calls, materials = session
+    number = make(total=2)
+    table = runner.Table(number)
+    if stage == 'collaboration':
+        table.collaboration(table.row())
+        (materials / 'next-topic.md').write_text('The submitted next topic.', encoding='utf-8')
+    found = table.row()
+    store.change(number, snapshot={**found['snapshot'], 'token_budget': 100})
+    budget.record_reply(table.row(), store.seats(number)[0], {'completion_tokens': percent}, 'winddown-reply')
+    advanced = asyncio.run(table.enforce_budget(table.row()))
+    found = table.row()
+    assert found['state'] == 'running'
+    assert advanced is (percent == 120)
+    if percent < 120:
+        assert found['stage'] == stage and found['topic'] == 0
+    else:
+        assert found['stage'] == ('collaboration' if stage == 'discussion' else 'discussion')
+        assert found['topic'] == (0 if stage == 'discussion' else 1)
+    assert calls == []
+
+
+@pytest.mark.parametrize('held', [False, True])
+def test_end_session_from_collaboration_saves_record_and_documents_without_more_agent_turns(
+        session, monkeypatch, held):
+    make, _, calls, materials = session
+    number = make(total=5)
+    role = {'kind': 'acp', 'id': 'acp:claude/haiku', 'agent': 'claude', 'model': 'haiku', 'name': 'Haiku'}
+    store.change(number, host=role, synthesizer=role)
+    table = runner.Table(number)
+    table.collaboration(table.row())
+    store.record(number, {'topic': 0, 'round': 1, 'position': 0, 'kind': 'collab',
+                          'seat': 'acp:claude/haiku', 'name': 'Haiku', 'text': 'Saved work before ending.'})
+    document = materials / 'decisions.md'
+    document.write_text('Decisions remain saved.', encoding='utf-8')
+    if held:
+        store.change(number, state='held', reason='held by its chair.')
+    spawned = []
+    monkeypatch.setattr(server.runner, 'spawn', lambda given: spawned.append(given))
+    answer = server.ended(store.discussion(number))
+    assert answer['state'] == 'ending' and spawned == [number]
+    result = asyncio.run(table.run())
+    assert result['state'] == 'ended'
+    found = store.discussion(number)
+    assert found['runner'] is None
+    assert document.read_text() == 'Decisions remain saved.'
+    assert Path(found['report']).is_file()
+    assert Path(found['export']).is_file()
+    exported = json.loads(Path(found['export']).read_text())
+    assert any(row['text'] == 'Saved work before ending.' for row in exported['submissions'])
+    assert len(store.topics(number)) == 1
+    assert calls == []
 
 
 def test_future_session_context_contains_only_aggregate_profile_scores(session):
@@ -169,24 +333,23 @@ def test_unavailable_participant_never_implies_done(session):
     assert not store.scorecards(number)
 
 
-def test_missing_next_topic_holds_and_can_resume_without_losing_the_session(session):
-    make, handlers, _, materials = session
+def test_missing_next_topic_requests_the_file_and_continues_without_a_manual_resume(session):
+    make, handlers, calls, materials = session
     number = make(total=2)
 
     async def done(seat, text):
+        if seat.position == 0 and 'No next topic was submitted.' in text:
+            (materials / 'next-topic.md').write_text('Explore the next topic.', encoding='utf-8')
         return 'Done'
 
     handlers[('collaboration', 0, 0)] = done
     handlers[('collaboration', 0, 1)] = done
-    held = asyncio.run(runner.Table(number).run())
-    assert held['state'] == 'held'
-    assert store.discussion(number)['stage'] == 'collaboration'
-    assert not store.scorecards(number)
-    (materials / 'next-topic.md').write_text('Explore the next topic.', encoding='utf-8')
-    store.change(number, state='running')
     finished = asyncio.run(runner.Table(number).run())
     assert finished['state'] == 'ended'
     assert len(store.topics(number)) == 2
+    assert len([row for row in store.submissions(number) if 'No next topic was submitted.' in row['text']]) == 1
+    assert all(sum('No next topic was submitted.' in text for stage, topic, position, text in calls
+                   if stage == 'collaboration' and topic == 0 and position == seat) == 1 for seat in (0, 1))
 
 
 def test_non_done_replies_do_not_finish_after_an_arbitrary_turn_count(session):

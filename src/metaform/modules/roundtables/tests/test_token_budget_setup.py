@@ -76,6 +76,33 @@ def test_phase_progress_rejects_a_stale_discussion_from_another_table(budget_pro
     assert module.phase_progress(ctx, {'table_id': 'requested-table', 'discussion': number}) is None
 
 
+def test_old_follower_veto_events_get_the_failed_check_without_rewriting_or_redelivering(budget_project):
+    from metaform.modules.roundtables.roundtable import store
+
+    folder, module = budget_project
+    ctx = context('roundtables', folder, nouns={'topic': 'A question.', 'seats': ['claude/opus'], 'judging': False})
+    table_id = module.open_table(ctx)['table']
+    ctx.nouns.update(table=table_id, after=0)
+    seats = [{'kind': 'acp', 'id': 'acp:claude/opus', 'agent': 'claude', 'model': 'opus'}]
+    number = store.opened({'subject': table_id, 'opening': 'A question.', 'folder': str(folder),
+                           'chair_token': 'fixture', 'reporter': seats[0]['id'], 'rounds': 0, 'spend': 0},
+                          seats, judging=True)
+    found = store.discussion(number)
+    store.change(number, snapshot={**found['snapshot'], 'criteria': {'on_topic': {}}, 'floors': {'on_topic': .6}})
+    saved = store.record(number, {'round': 1, 'position': 0, 'kind': 'seat', 'seat': seats[0]['id'], 'name': 'Opus',
+                                  'text': 'Original contribution.', 'accepted': False, 'on_topic': .42})
+    with ctx.require_store().tables() as tx:
+        tx.update('tables', {'table_id': table_id}, {'discussion': number, 'state': 'held'})
+        tx.insert('events', {'table_id': table_id, 'seq': 1, 'kind': 'veto', 'audience': 'person',
+                             'at': '2026-11-04T00:00:00Z', 'payload': {'n': saved['number'], 'failed': ['on_topic']}})
+    answer = module.table_events(ctx)
+    assert answer['events'][0]['veto_reason'] == 'Topic relevance scored 0.42, below the required 0.6.'
+    ctx.nouns['after'] = answer['latest']
+    assert module.table_events(ctx)['events'] == []
+    with ctx.require_store().tables(write=False) as tx:
+        assert 'veto_reason' not in tx.get('events', {'table_id': table_id, 'seq': 1})['payload']
+
+
 @pytest.mark.parametrize('invalid', [-1, True, 1.5, '1000', 9007199254740992])
 def test_invalid_budget_is_rejected_before_start(budget_project, invalid):
     folder, module = budget_project

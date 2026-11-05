@@ -205,7 +205,7 @@ class Table:
         found = self.row()
         if not store.claim(self.number, self.token, STALE):
             return {'discussion': self.number, 'state': found['state'], 'runner': 'already running'}
-        self.change(budget_runner=self.token)
+        self.change(budget_runner=self.token, collaboration_runner=self.token)
         main = cast(asyncio.Task[Any], asyncio.current_task())
         with contextlib.suppress(NotImplementedError, AttributeError):  # SIGTERM closes the seats, then the runner stops
             asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, self.stop, main)
@@ -240,6 +240,9 @@ class Table:
                 if await self.enforce_budget(found):
                     continue
                 if found['advance_asked']:
+                    if found['stage'] == 'collaboration' and render.session(found):
+                        await self.finish_collaboration(found)
+                        continue
                     await self.stop_panel(record=True)
                     self.change(handoff=None)
                     self.discussed(found, 'chair')
@@ -364,16 +367,27 @@ class Table:
             else:
                 self.change(stage='synthesis', position=0)
         else:
-            self.harvest(found, 'collab')
-            for row in store.seats(self.number):
-                self.keep_collaboration(found, row)
-            await self.unseat()
-            found = self.row()
-            if found['state'] != 'running' or not budget.status(found)['forced']:
-                return True
-            self.change(handoff=None)
-            await self.phase_done(self.row(), 'collaboration', store.seats(self.number), [])
+            await self.finish_collaboration(found, by_budget=True)
         return True
+
+    async def finish_collaboration(self, found: dict[str, Any], *, by_budget: bool = False) -> None:
+        """An explicit phase advance retains completed work and drains pending requests before the next phase."""
+        self.harvest(found, 'collab')
+        for row in store.seats(self.number):
+            self.keep_collaboration(found, row)
+        await self.unseat()
+        # An agent may finish while cancellation is acknowledged. Its durable reply still belongs to this phase.
+        for row in store.seats(self.number):
+            self.keep_collaboration(found, row)
+        current = self.row()
+        if current['state'] != 'running' or current['stage'] != 'collaboration' or current['topic'] != found['topic']:
+            return
+        if by_budget and not budget.status(current)['forced']:
+            return
+        if not by_budget and not current['advance_asked']:
+            return
+        self.change(handoff=None, advance_asked=False)
+        await self.phase_done(self.row(), 'collaboration', store.seats(self.number), [], forced=True)
 
     def enter_comments(self) -> None:
         """The chair's comments waiting, entered inline in order, unjudged."""
@@ -1173,7 +1187,7 @@ class Table:
         if kind == 'score':
             return not self.scored(row, last)
         newer = [one for one in phase if int(one['number']) > int(row['seen']) and one['position'] != position
-                 and not render.said_done(str(one.get('original') or one['text']))]
+                 and (one['kind'] == 'chair' or not render.said_done(str(one.get('original') or one['text'])))]
         return bool(newer) or not render.said_done(str(last.get('original') or last['text']))
 
     def wake(self, found: dict[str, Any], row: dict[str, Any], phase: list[dict[str, Any]], kind: str) -> None:
@@ -1286,24 +1300,31 @@ class Table:
                                                     if one['position'] != row['position']]) is not None
 
     async def phase_done(self, found: dict[str, Any], stage: str, seated: list[dict[str, Any]],
-                         phase: list[dict[str, Any]]) -> None:
+                         phase: list[dict[str, Any]], *, forced: bool = False) -> None:
         """Every seat finished its phase: after a roundtable's collaboration, the next roundtable on the topic the
         agents submitted, or the scorecards after the last; after the scorecards, the ranking and the farewell; after
         the farewell, the session's end, with no report."""
+        current = self.row()
+        if current['state'] != 'running' or current['stage'] != stage or current['topic'] != found['topic']:
+            return
+        found = current
         held = render.session(found) or {}
         at, total = int(found['topic']) + 1, int(held.get('total') or 1)
         if stage == 'collaboration' and at < total:
             submitted = Path(str(held.get('folder') or found['folder'])) / 'next-topic.md'
             text = submitted.read_text(encoding='utf-8').strip() if submitted.is_file() else ''
             if not text:
-                self.change(state='held', reason=said('session_no_topic', file=str(submitted)))
+                self.chair(found, said('session_no_topic_end') if forced else
+                           said('session_no_topic', file=str(submitted)))
+                if not forced:
+                    return
+            else:
+                kept = submitted.parent / 'topics' / f'{at + 1:02d}.md'
+                kept.parent.mkdir(parents=True, exist_ok=True)
+                submitted.replace(kept)
+                store.add_topic(self.number, said('session_topic', index=str(at + 1), total=str(total), topic=text))
+                self.next_topic(found)
                 return
-            kept = submitted.parent / 'topics' / f'{at + 1:02d}.md'
-            kept.parent.mkdir(parents=True, exist_ok=True)
-            submitted.replace(kept)
-            store.add_topic(self.number, said('session_topic', index=str(at + 1), total=str(total), topic=text))
-            self.next_topic(found)
-            return
         if stage == 'collaboration':
             store.phase(self.number, 'scoring', said('session_scoring', message=str(held.get('score') or ''),
                                                     seats=', '.join(str(one['name']) for one in seated)))

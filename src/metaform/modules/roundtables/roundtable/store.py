@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS discussions(
   topic INTEGER NOT NULL DEFAULT 0, stage TEXT, host TEXT, synthesizer TEXT, advance_asked INTEGER NOT NULL DEFAULT 0,
   unpaid INTEGER NOT NULL DEFAULT 0, mechanical TEXT, seat_mcp TEXT,
   continuation TEXT, handoff TEXT, pass_after INTEGER NOT NULL DEFAULT 0,
-  phase_after INTEGER NOT NULL DEFAULT 0);
+  phase_after INTEGER NOT NULL DEFAULT 0, collaboration_runner TEXT);
 CREATE TABLE IF NOT EXISTS seats(
   discussion INTEGER NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
   agent TEXT, model TEXT, reported TEXT, session TEXT, gone TEXT,
@@ -164,7 +164,8 @@ ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported
                          ('synthesizer', 'TEXT'), ('advance_asked', 'INTEGER NOT NULL DEFAULT 0'),
                          ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT'),
                          ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0'),
-                         ('phase_after', 'INTEGER NOT NULL DEFAULT 0'), ('budget_runner', 'TEXT')),
+                         ('phase_after', 'INTEGER NOT NULL DEFAULT 0'), ('budget_runner', 'TEXT'),
+                         ('collaboration_runner', 'TEXT')),
          'seats': (('extra', 'TEXT'), ('availability', "TEXT NOT NULL DEFAULT 'active'"),
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
@@ -478,7 +479,8 @@ def release(number: int, token: str) -> None:
     """The table let go by the runner with `token`, if it still holds it; its writes are no longer fenced."""
     _fences.pop(number, None)
     with connect() as db:
-        db.execute('UPDATE discussions SET runner=NULL, budget_runner=NULL WHERE number=? AND runner=?', (number, token))
+        db.execute('UPDATE discussions SET runner=NULL, budget_runner=NULL, collaboration_runner=NULL '
+                   'WHERE number=? AND runner=?', (number, token))
 
 
 def spend(number: int, cost: float) -> None:

@@ -308,15 +308,26 @@ def continued(found: dict[str, Any], spend: float | None = None) -> dict[str, An
     return status_of(found)
 
 
+def wake_runner(found: dict[str, Any]) -> None:
+    """Wake an existing runner's event wait, or start its replacement when none is running."""
+    number = int(found['number'])
+    events.publish('map.changed', {'tables': ['roundtables.tables'], 'kinds': [f'roundtables:control:{number}']},
+                   ModuleContext(module='roundtables', folder=Path(found['folder']), surface='mcp'))
+    runner.spawn(number)
+
+
 def advanced(found: dict[str, Any]) -> dict[str, Any]:
-    """Explicitly end discussion at the next gap, without a minimum round count."""
+    """Explicitly finish panel discussion or collaboration, retaining completed work."""
     if found['state'] == 'ended':
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
-    if found['stage'] and found['stage'] != 'discussion':
+    collaboration = found['stage'] == 'collaboration' and render.session(found)
+    if found['stage'] and found['stage'] != 'discussion' and not collaboration:
         raise ToolError(said('advance_after_discussion', topic=int(found['topic']) + 1,
                             stage=str(found['stage']).replace('_', ' ')))
+    if collaboration and runner.alive(found) and found.get('collaboration_runner') != found['runner']:
+        raise ToolError(said('advance_runner_reload', topic=int(found['topic']) + 1))
     found = store.change(int(found['number']), advance_asked=True, state='running', reason=None, unpaid=False)
-    runner.spawn(int(found['number']))
+    wake_runner(found)
     return status_of(found)
 
 
@@ -327,7 +338,7 @@ def ended(found: dict[str, Any]) -> dict[str, Any]:
         return status_of(found)  # an aborted table stays ended: no runner, no report, nothing spent
     reason = found['reason'] if found['state'] == 'ended' else said('ended_by_chair')
     found = store.change(int(found['number']), state='ending', reason=reason, unpaid=False)
-    runner.spawn(int(found['number']))
+    wake_runner(found)
     return status_of(found)
 
 

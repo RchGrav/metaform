@@ -243,7 +243,7 @@ def test_hold_after_delivery_keeps_followup_due_despite_an_earlier_done(inbox):
 
 
 @pytest.mark.parametrize('spent', [50, 80, 100])
-def test_budget_notice_is_delivered_once_even_when_the_reply_fails(inbox, spent):
+def test_delivery_keeps_midpoint_once_and_repeats_wind_down_after_a_failed_reply(inbox, spent):
     number, table, calls, answers, _ = inbox
     found = table.row()
     store.change(number, snapshot={**found['snapshot'], 'token_budget': 100})
@@ -251,13 +251,15 @@ def test_budget_notice_is_delivered_once_even_when_the_reply_fails(inbox, spent)
     budget.record_reply(table.row(), row, {'completion_tokens': spent}, 'fixture-first-reply')
     answers[0] = [NoReply('Sent, but no answer.', delivered=True), Reply('PASS')]
     asyncio.run(table.turn(table.row(), row))
-    assert not budget.prompt(table.row(), 0).text
+    assert bool(budget.prompt(table.row(), 0).text) is (spent >= 80)
     if spent == 100:
         assert budget.needs_closing(table.row(), 0), 'Delivery alone does not complete the closing statement.'
     asyncio.run(table.turn(table.row(), store.seats(number)[0]))
     texts = [text for position, text in calls if position == 0]
     for notice in budget.status(table.row())['notices']:
-        if notice['percent'] <= 100:
+        if notice['percent'] == 50:
             assert sum(text.count(notice['text']) for text in texts) == 1
+    if spent >= 80:
+        assert all('80%' in text if spent == 80 else '100%' in text for text in texts)
     if spent == 100:
         assert not budget.needs_closing(table.row(), 0)

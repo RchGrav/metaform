@@ -299,7 +299,8 @@ class Follower:
                 continue  # judged later, and told then
             self.followed['turns'] = int(row['n'])
             self.emit('veto' if row.get('outcome') == 'vetoed' else 'turn', **{key: row[key] for key in (
-                'n', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'text', 'truncated') if key in row})
+                'n', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'veto_reason', 'text', 'truncated')
+                if key in row})
         self.followed['turns'] = max(latest, int(self.followed.get('turns') or 0))
 
     def unjudged(self, page: engine.Page, number: int) -> None:

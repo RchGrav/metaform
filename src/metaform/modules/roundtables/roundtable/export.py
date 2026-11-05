@@ -23,6 +23,19 @@ from .store import NOULS
 USE = ('prompt_tokens', 'cached_tokens', 'cache_write_tokens', 'cost')
 
 
+def veto_reason(row: dict[str, Any]) -> str:
+    """Explain only failed recorded checks, without generating a rationale or exposing passing ratings."""
+    if row.get('repeat_of') is not None:
+        return 'Repeated material already submitted.'
+    held = render.captured(store.discussion(int(row['discussion'])))
+    bars = render.floors(held)
+    labels = {'new_context': 'New information', 'on_topic': 'Topic relevance', 'new': 'Novelty',
+              'valuable': 'Value', 'relevant': 'Relevance', 'keep': 'Worth retaining'}
+    return ' '.join(f'{labels.get(name, name)} scored {float(row[name])}, '
+                    f'below the required {bars[name]}.' for name in render.failed(row)) \
+        or 'No veto reason was recorded.'
+
+
 def jev_cost(number: int, rows: list[dict[str, Any]]) -> float:
     """What Jev cost the table: its judgments' costs, those of rounds and failed calls among them; for a table made
     before judgments were recorded, what its submissions say."""
@@ -278,7 +291,8 @@ def scored(row: dict[str, Any]) -> dict[str, Any]:
     return {'n': row['number'], **({'topic': int(row['topic']) + 1} if row.get('topic') is not None else {}),
             'round': row['round'], 'seat': render.who(row), 'outcome': render.outcome(row),
             **({'scores': store.nouls(row)} if store.nouls(row) is not None else {}),
-            **({'failed': render.failed(row)} if render.outcome(row) == 'vetoed' else {}),
+            **({'failed': render.failed(row), 'veto_reason': veto_reason(row)}
+               if render.outcome(row) == 'vetoed' else {}),
             **({'text': row['text']} if row['text'] else {}),
             **({'truncated': True, 'original': row['original']} if row['truncated'] else {}),
             **({'reason': row['reason']} if row['reason'] else {}),

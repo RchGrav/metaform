@@ -668,7 +668,8 @@ def test_follower_delivers_turns_and_result_without_a_writer_or_generated_docume
     monkeypatch.setattr(openrouter, 'post', unexpected)
     turns = [
         {'n': 1, 'topic': 1, 'round': 1, 'seat': 'Alpha', 'outcome': 'kept', 'text': 'Preserve the decision.'},
-        {'n': 2, 'topic': 1, 'round': 1, 'seat': 'Beta', 'outcome': 'vetoed', 'text': 'Keep the disagreement.'},
+        {'n': 2, 'topic': 1, 'round': 1, 'seat': 'Beta', 'outcome': 'vetoed', 'text': 'Keep the disagreement.',
+         'veto_reason': 'Topic relevance scored 0.42, below the required 0.6.'},
     ]
     topics = [{'number': 1, 'title': 'Decisions', 'host_summary': {'name': 'Alpha', 'text': 'Decision preserved.'}}]
     permission = {'position': 0, 'request': 'participant-write', 'state': 'waiting', 'name': 'Alpha'}
@@ -704,6 +705,7 @@ def test_follower_delivers_turns_and_result_without_a_writer_or_generated_docume
     with follower.store.tables(write=False) as tx:
         recorded = [dict(one) for one in tx.rows('events', {'table_id': 'minutes'}, limit=0).results]
     assert [one['kind'] for one in recorded] == ['turn', 'veto', 'stage', 'summary', 'permission', 'state', 'state', 'end']
+    assert recorded[1]['payload']['veto_reason'] == turns[1]['veto_reason']
     assert recorded[4]['audience'] == 'person' and recorded[4]['payload'] == permission
     assert follower.followed['turns'] == 2 and follower.row()['answered'] is True
     assert not (root / 'docs' / 'roundtables' / '7-notes').exists()

@@ -171,6 +171,14 @@ def progress(found: Mapping[str, Any]) -> dict[str, Any]:
         return _status(db, found)
 
 
+def _notice_text(key: tuple[int, int, str], name: str, spent: int, maximum: int, percent: int) -> str:
+    fills = {'phase': key[2], 'topic': key[1] + 1, 'seat': name, 'tokens': spent, 'limit': maximum,
+             'percent': percent, 'used_percent': spent * 100 // maximum}
+    prompt = 'budget_warning' if percent == 50 else f'budget_winddown_{key[2]}' if percent == 80 else \
+        f'budget_closing_{key[2]}' if percent == 100 else 'budget_forced'
+    return said(prompt, **fills)
+
+
 def _evaluate(db: DataConnection, found: Mapping[str, Any]) -> dict[str, Any]:
     key, maximum = _key(found), limit(found)
     if key is None or not maximum:
@@ -187,15 +195,12 @@ def _evaluate(db: DataConnection, found: Mapping[str, Any]) -> dict[str, Any]:
         if db.execute('SELECT 1 FROM phase_notices WHERE discussion=? AND topic=? AND phase=? AND percent=?',
                       (*key, percent)).fetchone() is not None:
             continue
-        fills = {'phase': key[2], 'topic': key[1] + 1,
-                 'seat': str(seat['name']) if seat is not None else str(position + 1),
-                 'tokens': spent, 'limit': maximum}
-        text = said('budget_warning', **fills, percent=percent) if percent < 100 else \
-            said(f'budget_closing_{key[2]}', **fills) if percent == 100 else said('budget_forced', **fills)
+        name = str(seat['name']) if seat is not None else str(position + 1)
+        text = _notice_text(key, name, spent, maximum, percent)
         db.execute('INSERT INTO phase_notices VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                    (*key, percent, position, spent, maximum, text))
         event = {'phase': key[2], 'topic': key[1] + 1, 'percent': percent, 'position': position,
-                 'seat': fills['seat'], 'tokens': spent, 'limit': maximum, 'text': text}
+                 'seat': name, 'tokens': spent, 'limit': maximum, 'text': text}
         seq = int(db.execute('SELECT COALESCE(MAX(number), 0)+1 FROM events WHERE discussion=?',
                              (key[0],)).fetchone()[0])
         store.insert(db, 'events', {'discussion': key[0], 'number': seq, 'kind': 'budget',
@@ -362,11 +367,21 @@ def prompt(found: Mapping[str, Any], position: int) -> Prompt:
         empty: dict[str, Any] = {}
         own = next((row for row in _usage(db, key) if row['position'] == position), empty)
         last = int(own.get('notice', 0))
-        peak = max((int(row['tokens']) for row in current['participants']), default=0)
-        notices = [one for one in current['notices'] if last < int(one['percent']) <= 100
-                   and peak * 100 >= limit(found) * int(one['percent'])]
-        return Prompt('\n\n'.join(str(one['text']) for one in notices),
-                      max([int(one['percent']) for one in notices], default=last), bool(current['closing']))
+        if current['forced']:
+            return Prompt()
+        peak = max(current['participants'], key=lambda row: int(row['tokens']), default=None)
+        if peak is None:
+            return Prompt()
+        spent, maximum = int(peak['tokens']), limit(found)
+        crossed = [percent for percent in THRESHOLDS if spent * 100 >= maximum * percent]
+        notices = [50] if last < 50 and 50 in crossed else []
+        # These are fresh turn instructions. Their operational threshold events remain recorded once.
+        if 100 in crossed:
+            notices.append(100)
+        elif 80 in crossed:
+            notices.append(80)
+        text = '\n\n'.join(_notice_text(key, str(peak['name']), spent, maximum, percent) for percent in notices)
+        return Prompt(text, max(crossed, default=last), bool(current['closing']))
 
 
 def needs_closing(found: Mapping[str, Any], position: int) -> bool:

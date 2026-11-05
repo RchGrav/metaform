@@ -211,3 +211,63 @@ test('note clicks synchronously open a separate reading window with a blocked-po
   assert.equal(UI.noteFallback.children[1].tag, 'a');
   assert.equal(UI.noteFallback.children[1].attributes.target, '_blank');
 });
+
+test('budget operational messages show their readable text with safe raw-text fallbacks', () => {
+  const heard = source.slice(source.indexOf('function heard('), source.indexOf('const seatOf ='));
+  const rows = [], TABLE = {seq: 41};
+  const show = runInNewContext(`${heard}\nheard`, {TABLE, said: (...args) => rows.push(args), nextUp: () => {}});
+  const old = JSON.stringify({phase: 'panel', text: 'Token budget warning: Alpha has reached 80%.'});
+  show({kind: 'operational', what: 'budget', text: old});
+  show({kind: 'operational', what: 'budget', text: old, budget: {text: 'The structured warning takes precedence.'}});
+  show({kind: 'operational', what: 'budget', text: '{malformed budget'});
+  show({kind: 'operational', what: 'budget', text: '{"phase":"panel"}'});
+  show({kind: 'operational', what: 'another-kind', text: old});
+  assert.deepEqual(rows, [
+    ['rt-note', 'budget', 'Token budget warning: Alpha has reached 80%.'],
+    ['rt-note', 'budget', 'The structured warning takes precedence.'],
+    ['rt-note', 'budget', '{malformed budget'],
+    ['rt-note', 'budget', '{"phase":"panel"}'],
+    ['rt-note', 'another-kind', old],
+  ]);
+  assert.equal(TABLE.seq, 41, 'Rendering does not rewind or redeliver events.');
+});
+
+function vetoFixture() {
+  const code = source.slice(source.indexOf('const VETO_REASONS ='), source.indexOf('/* Who speaks next'));
+  const said = source.slice(source.indexOf('function said('), source.indexOf('/* ---------- the figures'));
+  const rows = [];
+  const UI = {transcript: {scrollHeight: 100, scrollTop: 0, clientHeight: 100, append: row => rows.push(row)}};
+  const turn = runInNewContext(`${code}\n${said}\nturn`, {UI, TABLE: {ended: false}, seatOf: () => -1,
+    h: (tag, attributes, ...children) => ({tag, attributes, children})});
+  return {turn, rows};
+}
+
+test('vetoes state the recorded failed condition while keeping the original contribution', () => {
+  for (const [failed, expected] of [
+    [['on_topic'], 'The topic relevance criterion was not met.'],
+    [['new_context'], 'The new-information criterion was not met.'],
+    [['repeat'], 'The contribution was marked as repeated material.'],
+    [['on_topic', 'new_context'], 'The topic relevance criterion was not met. The new-information criterion was not met.'],
+    [[], 'No veto reason was recorded'],
+  ]) {
+    const f = vetoFixture();
+    f.turn({kind: 'veto', seat: 'Alpha', text: 'The original contribution.', failed,
+      scores: {on_topic: 0.42, new_context: 0.30, valuable: 0.99}});
+    assert.equal(f.rows[0].attributes.class, 'rt-turn vetoed');
+    assert.equal(f.rows[0].children[2], 'The original contribution.');
+    assert.equal(f.rows[0].children[3].children[0], ` (vetoed: ${expected})`);
+    assert.doesNotMatch(f.rows[0].children[3].children[0], /0\.99|usefulness/);
+  }
+});
+
+test('a recorded score-and-cutoff reason takes precedence and remains plain text', () => {
+  const f = vetoFixture(), recorded = 'Topic relevance was 0.42; required 0.60. <b>Recorded evidence</b>';
+  f.turn({kind: 'veto', seat: 'Alpha', text: 'Keep the contribution.', veto_reason: recorded,
+    reason: 'Another recorded reason.', failed: ['new_context']});
+  const suffix = f.rows[0].children[3];
+  assert.equal(suffix.tag, 'span');
+  assert.equal(suffix.children[0], ` (vetoed: ${recorded})`);
+  assert.equal(typeof suffix.children[0], 'string', 'The reason goes through the existing plain-text DOM path.');
+  f.turn({kind: 'veto', seat: 'Beta', text: 'Keep this too.', reason: ' A recorded condition failed. ', failed: ['on_topic']});
+  assert.equal(f.rows[1].children[3].children[0], ' (vetoed: A recorded condition failed.)');
+});

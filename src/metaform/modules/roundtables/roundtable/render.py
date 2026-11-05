@@ -221,6 +221,7 @@ def system(discussion: Mapping[str, Any], names: Sequence[str], name: str) -> st
                 rules=rules(names, discussion), seat=name, seats=', '.join(names),
                 reply_length=notes_line(discussion) + said('reply_length', limit=reply_limit(discussion)))
     if session(discussion):
+        text += '\n\n' + said('session_coordinator')
         row = next((one for one in store.seats(int(discussion['number'])) if one['name'] == name), None)
         profile = store.profile(f'{row["agent"] or row["kind"]}/{row["model"] or row["id"]}') if row else None
         text += '\n\n' + said('session_profile',

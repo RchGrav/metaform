@@ -186,6 +186,9 @@ UI.hold = h('button', {class: 'btn sm rt-hold', type: 'button', hidden: true,
   onclick: () => chairControl(TABLE.state === 'held' ? 'continue' : 'hold')}, 'Hold');
 UI.endDiscussion = h('button', {class: 'btn sm rt-end-discussion', type: 'button', hidden: true,
   onclick: () => chairControl('advance')}, 'End discussion');
+UI.endSession = h('button', {class: 'btn sm rt-end-session', type: 'button', hidden: true,
+  title: 'End the entire session and save its documents and current record',
+  onclick: () => chairControl('end')}, 'End session');
 UI.continueDiscussion = h('button', {class: 'btn sm rt-continue-discussion', type: 'button', hidden: true,
   onclick: () => chairControl('continue')}, 'Continue discussion');
 /* Abort: ends the table at once, a stuck one included, with no report, no further turn and no next table; its
@@ -351,7 +354,7 @@ function dragGrip(event) {
   grip.addEventListener('pointercancel', done);
 }
 UI.foot = h('div', {class: 'rt-foot'}, UI.grip, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
-  UI.endDiscussion, UI.continueDiscussion, UI.endTable, UI.newTable, UI.breakdown, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
+  UI.endDiscussion, UI.endSession, UI.continueDiscussion, UI.endTable, UI.newTable, UI.breakdown, UI.showTranscript, UI.notesButton, UI.resultsButton, UI.leave),
   UI.permissions, UI.budget, UI.liveSummary, UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
@@ -809,15 +812,42 @@ function heard(event) {
   else if (event.kind === 'rankings') rankings(event.rankings || []);
   else if (event.kind === 'summary') summary(event.text, event.name);
   else if (event.kind === 'seat_lost') lost(event);
-  else if (event.kind === 'operational') said('rt-note', event.what || 'note', event.text || '');
+  else if (event.kind === 'operational') {
+    let text = event.budget?.text;
+    if (typeof text !== 'string') {
+      text = event.text || '';
+      if (event.what === 'budget') {
+        try {
+          const budget = JSON.parse(text);
+          if (typeof budget?.text === 'string') text = budget.text;
+        } catch { /* Older followers may send plain text rather than a budget object. */ }
+      }
+    }
+    said('rt-note', event.what || 'note', text);
+  }
   nextUp();
 }
 const seatOf = name => TABLE.names.indexOf(name) >= 0 ? TABLE.names.indexOf(name) : TABLE.seats.indexOf(name);
+const VETO_REASONS = {
+  on_topic: 'The topic relevance criterion was not met.',
+  new_context: 'The new-information criterion was not met.',
+  repeat: 'The contribution was marked as repeated material.',
+  new: 'The new-idea criterion was not met.',
+  valuable: 'The usefulness criterion was not met.',
+  relevant: 'The relevance criterion was not met.',
+  keep: 'The retain criterion was not met.'};
+function vetoReason(event) {
+  if (typeof event.veto_reason === 'string' && event.veto_reason.trim()) return event.veto_reason.trim();
+  if (typeof event.reason === 'string' && event.reason.trim()) return event.reason.trim();
+  const failed = Array.isArray(event.failed) ? event.failed : [];
+  const reasons = failed.filter(key => typeof key === 'string' && Object.hasOwn(VETO_REASONS, key)).map(key => VETO_REASONS[key]);
+  return reasons.length ? reasons.join(' ') : 'No veto reason was recorded';
+}
 /* A turn: its seat takes the floor and says it; a vetoed one fades from its bubble and is struck in the transcript. */
 function turn(event) {
   const n = seatOf(event.seat), vetoed = event.kind === 'veto';
   said(vetoed ? 'rt-turn vetoed' : 'rt-turn', event.seat, event.text || '',
-    vetoed ? ` (vetoed${event.failed?.length ? `: ${event.failed.join(', ')}` : ''})`
+    vetoed ? ` (vetoed: ${vetoReason(event)})`
       : event.outcome === 'unjudged' ? ' (never judged: the table ended first)' : '');
   if (event.outcome === 'handoff' || event.outcome === 'carry') return;
   if (n < 0 || TABLE.ended) return;
@@ -1051,8 +1081,13 @@ function renderChair() {
   const active = !!TABLE.id && (TABLE.state === 'running' || TABLE.state === 'held');
   UI.hold.hidden = UI.discussion.hidden = UI.budget.hidden = !active;
   UI.liveTokenBudget.disabled = UI.saveBudget.disabled = CHAIR.writing;
-  UI.endDiscussion.hidden = !active || (!!TABLE.stage && TABLE.stage !== 'discussion');
-  UI.endDiscussion.disabled = CHAIR.writing;
+  const advanceable = !TABLE.stage || ['discussion', 'collaboration'].includes(TABLE.stage);
+  UI.endDiscussion.hidden = !active;
+  UI.endDiscussion.disabled = CHAIR.writing || !advanceable;
+  UI.endDiscussion.title = advanceable ? `Finish the current ${TABLE.stage === 'collaboration' ? 'collaboration' : 'discussion'} phase`
+    : 'Only discussion and collaboration phases can advance. Use End session to finish the session.';
+  UI.endSession.hidden = !TABLE.id || !['running', 'held', 'ending'].includes(TABLE.state);
+  UI.endSession.disabled = CHAIR.writing;
   UI.continueDiscussion.hidden = TABLE.state !== 'ended';
   UI.continueDiscussion.disabled = CHAIR.writing;
   UI.endTable.hidden = !TABLE.id || ['ended', 'refused'].includes(TABLE.state);
@@ -1065,8 +1100,9 @@ function renderChair() {
 async function chairControl(action) {
   if (!TABLE.id || CHAIR.writing || (!['running', 'held'].includes(TABLE.state)
       && !(action === 'continue' && TABLE.state === 'ended')
+      && !(action === 'end' && TABLE.state === 'ending')
       && !(action === 'abort' && !['ended', 'refused'].includes(TABLE.state)))) return;
-  if (action === 'advance' && TABLE.stage && TABLE.stage !== 'discussion') return;
+  if (action === 'advance' && TABLE.stage && !['discussion', 'collaboration'].includes(TABLE.stage)) return;
   const table = TABLE.id, project = S.project, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
   const tokenBudget = Number(UI.liveTokenBudget.value);

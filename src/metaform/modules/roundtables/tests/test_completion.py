@@ -105,6 +105,21 @@ def test_veto_only_rounds_continue_past_former_cap(scripted, monkeypatch):
     assert all('latest_round' not in call.args[0] for call in asked.call_args_list)
 
 
+@pytest.mark.parametrize('new_score', [.9, .3])
+def test_veto_explanation_contains_only_failed_checks_and_their_recorded_cutoffs(scripted, new_score):
+    make, _, _, _ = scripted
+    number = make(judging=True)
+    found = store.discussion(number)
+    store.change(number, snapshot={**found['snapshot'], 'floors': {'new_context': .7, 'on_topic': .6}})
+    saved = store.record(number, {'topic': 0, 'round': 1, 'position': 0, 'kind': 'seat',
+                                  'seat': 'acp:claude/haiku', 'name': 'Haiku', 'text': 'Original contribution.',
+                                  'accepted': False, 'new_context': new_score, 'on_topic': .42})
+    reason = export.scored(store.submission(number, saved['number']))['veto_reason']
+    assert 'Topic relevance scored 0.42, below the required 0.6.' in reason
+    assert ('New information scored 0.3, below the required 0.7.' in reason) is (new_score < .7)
+    assert '0.9' not in reason and 'http' not in reason
+
+
 def test_budget_holds_without_turns_and_explicit_end_discussion_bypasses_hold(scripted, monkeypatch):
     make, _, _, calls = scripted
     number = make(judging=True, spend=0)

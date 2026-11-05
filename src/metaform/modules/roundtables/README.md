@@ -38,8 +38,13 @@ documents in the shared session folder. There is no automatic minutes or summary
 - `open <topic> [address=] [seats] [host=] [synthesizer=] [judging=] [reply_limit=] [spend=]`, write, open world: open a table on the question, focused on the part at `address` when one is given. `seats` is a JSON list in speaking order, `roundtables_seats` when left out: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's own agents, seated on the engine's ACP client with dispatch's commands (`dispatch_claude`, `dispatch_codex`, `dispatch_antigravity`); any other id is an OpenRouter model. The host is the first seat when none is named, never the engine's own default, which would seat an agent nobody chose. The question is the table's one topic. `reply_limit` sets the maximum characters in each discussion reply, 512 by default. The selected limit ends the opening instructions and each turn prompt; longer replies are truncated before judging. Synthesis, ranking explanations and reports retain their stage-specific limits. Judged tables require `jev` and an OpenRouter credential. ACP-only tables with `judging=false` require neither; when fewer agent slots are free than seats; and when `spend` passes `roundtables_spend`. Returns the table's id.
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
   The GUI exposes Hold, Continue, discussion comments and End discussion beside the transcript. End discussion invokes `advance` immediately at the next gap, without minimum rounds. Comments can be queued while held, without resuming AI turns. They enter at the next gap between turns. Continue resumes the same table. On a completed table, Continue discussion uses its saved host summary with fresh seat contexts, the same visible identity, project and lineup. It appends a topic without removing prior topics or outputs. Plan review comments remain separate.
-  Controls use the current engine phase independently of transcript playback. End discussion is hidden during
-  collaboration, scoring and farewell. Errors identify the panel number rather than the engine's internal session id.
+  Controls use the current engine phase independently of transcript playback. End discussion remains visible and
+  advances panel discussion into collaboration, or collaboration into the next panel or scoring. During scoring and
+  farewell it is disabled with an explanation, while End session remains available. Errors identify the panel number
+  rather than the engine's internal session id.
+  End session stays available during discussion, collaboration, scoring and farewell, including while held. It
+  invokes `end` to save the current record and documents and stop the remaining phases. The page retains the session.
+  Abort remains a separate action that archives the run and clears it from the page.
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
   ACP seats use the project as their workspace. Their harnesses provide file tools and request permissions through ACP.
 - `permit <table> request=<id> option=<id>`, command line or page: return the person's selected option to the waiting
@@ -89,8 +94,10 @@ counts and context size never imply PASS. Comments and context handoffs reset pr
 explicit Continue. An exhausted dollar budget can be replaced with `continue <table> spend=<amount>`, within
 configured caps.
 
-With a token budget enabled, the first participant to reach 50% and 80% triggers warnings for everyone. At 100%,
-agents receive closing instructions. At 120%, discussion advances into collaboration, or collaboration advances to
+With a token budget enabled, the first participant to reach 50% triggers a halfway notice for everyone, once per
+delivered participant. From 80%, every turn repeats the instruction to wind down and arrange phase completion.
+From 100%, every turn repeats closing instructions. Agents keep working. These notices never hold the session. At 120%, discussion
+advances into collaboration, or collaboration advances to
 the submitted next topic without waiting for every DONE. After the final collaboration, scoring follows. Each new
 panel and collaboration starts fresh per-participant counters with the same configured limit. Agents can finish
 earlier through the normal PASS and DONE flow. Usage is counted once per completed physical turn, including PASS
@@ -98,6 +105,14 @@ and carry-forward replies. The default closing counter excludes cached reads. Fu
 Reasoning tokens already included in output are not added again. Context-window occupancy is not spent usage.
 Agents that omit usage cannot trigger a measured cap. A long
 turn can overshoot a threshold before its usage report arrives. Saved shared documents survive automatic advancement.
+
+Participants elect a coordinator at the start of each panel and record their choice in their shared notes. The
+coordinator tracks decisions, document owners, the next topic and PASS or DONE responses, with the same permissions
+as the other participants. An ordinary DONE handoff with no next topic sends the agents a reminder and stays running.
+If the phase is forcibly ended with no next topic, the session proceeds to scoring and farewell with an explanation.
+
+Vetoes show the failed checks and their recorded scores versus cutoffs. Passing ratings are omitted. This explains
+the condition that rejected the contribution without generating a rationale.
 
 The live controls show each participant's reported count, percentage, roundtable and phase. A fresh panel or
 collaboration shows zero before its first reply. A single tool-using turn can include several model calls, so its

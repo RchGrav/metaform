@@ -7,7 +7,7 @@ from metaform.modules.web.tests.test_web import _Handler, browser, mapped, opene
 pytestmark = pytest.mark.kind('simulation')
 
 
-@pytest.mark.parametrize('action', ['hold', 'continue', 'comment', 'advance'])
+@pytest.mark.parametrize('action', ['hold', 'continue', 'comment', 'advance', 'end'])
 def test_discussion_controls_address_existing_table(monkeypatch, action):
     calls = []
     monkeypatch.setattr(server, 'module_verb', lambda given, module, verb, nouns:
@@ -21,7 +21,6 @@ def test_discussion_controls_address_existing_table(monkeypatch, action):
 
 @pytest.mark.parametrize('given', [
     {'table': 'existing', 'action': 'open'},
-    {'table': 'existing', 'action': 'end'},
     {'table': '', 'action': 'hold'},
     {'table': 'existing', 'action': 'comment', 'text': ' '},
     {'table': 'existing', 'action': 'comment', 'text': None},
@@ -134,10 +133,13 @@ def test_held_collaboration_controls_use_current_phase_during_older_transcript_p
         await stage.openRoundtable();
     }''')
     page.get_by_role('button', name='Continue', exact=True).wait_for()
-    assert page.locator('.rt-end-discussion').is_hidden()
+    assert page.locator('.rt-end-discussion').is_visible() and page.locator('.rt-end-discussion').is_enabled()
     assert page.locator('.rt-phase-budget-label').inner_text() == 'Collaboration 4'
     assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.stage") == 'collaboration'
     assert calls == []
+    with page.expect_response('**/api/roundtable-control'):
+        page.get_by_role('button', name='End discussion', exact=True).click()
+    assert [(one['table'], one['action']) for one in calls] == [('existing', 'advance')]
     assert not problems
     page.close()
 
@@ -266,4 +268,70 @@ def test_token_budget_setup_and_live_edit_without_starting_agents(run, web, mapp
     assert page.get_by_role('button', name='Continue', exact=True).is_visible(), 'The chair hold is preserved.'
     assert len(controls) == 1, 'Counter refreshes must not send controls or resume the table.'
     assert not problems
+    page.close()
+
+
+@pytest.mark.browser
+def test_end_session_saves_existing_record_from_held_collaboration(run, web, mapped, browser):  # noqa: F811
+    from urllib.parse import parse_qs, urlparse
+
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    calls, opens = [], []
+    status = {'table': 'existing', 'topic': 'Keep the session documents', 'state': 'held', 'stage': 'collaboration',
+              'reason': 'held by its chair.', 'seats': [], 'phase_budget': {
+                  'phase': 'collaboration', 'topic': 4, 'limit': 500000, 'participants': [], 'notices': []}}
+    events = [{'kind': 'turn', 'seq': 1, 'seat': 'Alpha', 'text': 'Keep this contribution in the record.'}]
+
+    def read_table(route):
+        query = parse_qs(urlparse(route.request.url).query)
+        if 'notes' in query:
+            route.fulfill(json={'notes': []})
+        else:
+            after = int(query.get('after', ['0'])[0])
+            route.fulfill(json={'events': [one for one in events if one['seq'] > after],
+                                'latest': events[-1]['seq'], 'status': status})
+
+    def end_session(route):
+        calls.append(route.request.post_data_json)
+        status.update(state='ended', reason='ended by its chair.', answer='The current session record was saved.',
+                      saved='docs/roundtables/4-session', phase_budget=None)
+        events.append({'kind': 'end', 'seq': 2, **status})
+        route.fulfill(json={'table': 'existing', 'state': 'ending', 'stage': 'collaboration'})
+
+    page.route('**/api/roundtable?*', read_table)
+    page.route('**/api/roundtable-control', end_session)
+    page.route('**/api/roundtable-open', lambda route: (
+        opens.append(route.request.post_data_json), route.fulfill(status=400, json={'error': 'No new table expected.'})))
+    page.evaluate('''async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        stage.TABLE.id = 'existing';
+        stage.TABLE.kind = 'roundtables:existing';
+        await stage.openRoundtable();
+    }''')
+    end = page.get_by_role('button', name='End session', exact=True)
+    assert end.is_visible() and end.is_enabled()
+    assert 'entire session' in end.get_attribute('title') and 'documents and current record' in end.get_attribute('title')
+    phase_end = page.get_by_role('button', name='End discussion', exact=True)
+    assert phase_end.is_visible() and phase_end.is_enabled()
+    assert page.get_by_role('button', name='Abort', exact=True).is_visible()
+    assert page.get_by_role('button', name='Continue', exact=True).is_visible()
+    page.get_by_role('button', name='Transcript', exact=True).click()
+    with page.expect_response('**/api/roundtable-control'):
+        end.click()
+    page.wait_for_selector('#roundtable[data-state="ending"]')
+    assert [(one['project'], one['table'], one['action']) for one in calls] == [('proj', 'existing', 'end')]
+    assert page.locator('.rt-setup').is_hidden()
+    page.evaluate('''async () => (await import('/page/app/roundtable/stage.js')).tableChange({
+        kinds: ['roundtables', 'roundtables:existing']})''')
+    page.wait_for_selector('#roundtable[data-state="ended"]')
+    assert page.evaluate("async () => (await import('/page/app/roundtable/stage.js')).TABLE.id") == 'existing'
+    assert page.locator('.rt-setup').is_hidden() and end.is_hidden()
+    assert page.locator('.rt-transcript').get_by_text('Keep this contribution in the record.').is_visible()
+    assert page.get_by_text('The current session record was saved.', exact=True).is_visible()
+    assert page.locator('.rt-records a').count() == 2
+    assert all('table=existing' in link for link in page.locator('.rt-records a').evaluate_all(
+        'links => links.map(link => link.getAttribute("href"))'))
+    assert not opens and not problems
     page.close()

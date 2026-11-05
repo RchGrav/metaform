@@ -2422,8 +2422,8 @@ class Handler(BaseHTTPRequestHandler):
     def roundtable_control(self, given: dict[str, Any]) -> None:
         """The person's discussion controls, using the existing table and its stored chair token."""
         action, table = given.get('action'), given.get('table')
-        if action not in ('hold', 'continue', 'comment', 'advance', 'abort', 'permit', 'budget'):
-            return self.send(400, {'error': 'Choose Hold, Continue, Comment, End discussion, Abort, token budget or a permission option.'})
+        if action not in ('hold', 'continue', 'comment', 'advance', 'end', 'abort', 'permit', 'budget'):
+            return self.send(400, {'error': 'Choose Hold, Continue, Comment, End discussion, End session, Abort, token budget or a permission option.'})
         if not isinstance(table, str) or not table.strip():
             return self.send(400, {'error': 'Choose a roundtable.'})
         nouns: dict[str, Any] = {'table': table}

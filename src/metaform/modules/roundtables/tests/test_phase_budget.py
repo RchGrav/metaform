@@ -192,8 +192,79 @@ def test_whole_phase_closing_messages_do_not_reset_votes_and_are_delivered_on_sa
         assert budget.needs_closing(found, position)
         received(number, position, 0, f'closing-{position}', notice)
     assert all(not budget.needs_closing(found, position) for position in range(3))
-    assert all(budget.prompt(found, position).text == '' for position in range(3))
+    assert all(budget.prompt(found, position).closing and 'panel closing' in budget.prompt(found, position).text
+               for position in range(3))
     assert store.submissions(number) == [] and store.discussion(number)['pass_after'] == 0
+
+
+@pytest.mark.parametrize('stage', ['discussion', 'collaboration'])
+def test_midpoint_is_once_and_winddown_repeats_with_current_peak_until_phase_advances(phase_table, stage):
+    make, _, _, _, materials = phase_table
+    number = make(total=2)
+    table = runner.Table(number)
+    if stage == 'collaboration':
+        table.collaboration(table.row())
+        (materials / 'next-topic.md').write_text('The agreed next topic.', encoding='utf-8')
+    received(number, 0, 50, 'midpoint')
+    found = table.row()
+    for row in store.seats(number):
+        first = budget.prompt(found, row['position'])
+        assert 'midpoint notice' in first.text and '(50%)' in first.text
+        budget.delivered_prompt(found, row['position'], first)
+        assert not budget.prompt(found, row['position']).text
+    received(number, 0, 30, 'winddown')
+    notice_count = len(store.events(number))
+    for _ in range(2):
+        winddown = budget.prompt(table.row(), 2)
+        assert 'wind-down' in winddown.text and '(80%)' in winddown.text
+        assert 'midpoint notice' not in winddown.text
+        assert 'coordinator' in winddown.text
+        assert ('PASS' if stage == 'discussion' else 'next-topic.md') in winddown.text
+        budget.delivered_prompt(table.row(), 2, winddown)
+    assert len(store.events(number)) == notice_count
+    received(number, 1, 85, 'new-peak')
+    peak = budget.prompt(table.row(), 2)
+    assert '(85%)' in peak.text and store.seats(number)[1]['name'] in peak.text
+    received(number, 1, 15, 'closing')
+    closing = budget.prompt(table.row(), 2)
+    assert 'closing:' in closing.text and '(100%)' in closing.text
+    budget.delivered_prompt(table.row(), 2, closing)
+    assert 'closing:' in budget.prompt(table.row(), 2).text
+    assert table.row()['state'] == 'running'
+    assert asyncio.run(table.enforce_budget(table.row())) is False
+    received(number, 1, 19, 'still-closing')
+    assert '(119%)' in budget.prompt(table.row(), 2).text
+    assert asyncio.run(table.enforce_budget(table.row())) is False
+    assert table.row()['state'] == 'running'
+    received(number, 1, 1, 'advance')
+    assert not budget.prompt(table.row(), 2).text
+    assert asyncio.run(table.enforce_budget(table.row())) is True
+    assert table.row()['state'] == 'running'
+    assert budget.progress(table.row())['participants'][0]['tokens'] == 0
+    assert not budget.prompt(table.row(), 2).text
+
+
+@pytest.mark.parametrize('phase', ['discussion', 'collaboration'])
+def test_warnings_keep_running_through_119_percent_and_120_advances_without_a_chair_click(phase_table, phase):
+    make, _, _, _, _ = phase_table
+    number = make(maximum=100, total=1)
+    table = runner.Table(number)
+    if phase == 'collaboration':
+        table.collaboration(table.row())
+    previous = 0
+    for percent in (50, 80, 100, 119):
+        received(number, 0, percent - previous, f'usage-{percent}')
+        previous = percent
+        assert asyncio.run(table.enforce_budget(table.row())) is False
+        found = table.row()
+        assert found['state'] == 'running' and found['stage'] == phase
+        assert not found['advance_asked']
+    received(number, 0, 1, 'usage-120')
+    assert asyncio.run(table.enforce_budget(table.row())) is True
+    found = table.row()
+    assert found['state'] == 'running'
+    assert found['stage'] == ('collaboration' if phase == 'discussion' else 'scoring')
+    assert not found['advance_asked']
 
 
 def test_missing_usage_is_unknown_without_text_or_context_estimates(phase_table):
@@ -276,19 +347,22 @@ def test_caps_cancel_busy_participants_and_advance_both_phases_without_done(phas
     assert any(stage == 'scoring' for stage, _, _, _ in calls)
 
 
-def test_collaboration_cap_with_no_next_topic_holds_without_inventing_one(phase_table):
+def test_collaboration_cap_with_no_next_topic_wraps_up_without_holding_or_inventing_one(phase_table):
     make, _, _, _, materials = phase_table
     number = make(total=2)
     table = runner.Table(number)
     table.collaboration(table.row())
+    note = materials / 'decisions.md'
+    note.write_text('Keep the completed decisions.', encoding='utf-8')
     received(number, 0, 120, 'collab-cap')
     store.change(number, handoff={'after': 0})
     assert asyncio.run(table.enforce_budget(table.row())) is True
     found = table.row()
-    assert found['state'] == 'held' and found['stage'] == 'collaboration'
-    assert 'next topic' in found['reason'].casefold()
+    assert found['state'] == 'running' and found['stage'] == 'scoring'
+    assert any('no next topic' in row['text'].casefold() for row in store.submissions(number))
     assert len(store.topics(number)) == 1 and not (materials / 'next-topic.md').exists()
     assert found['handoff'] is None
+    assert note.read_text() == 'Keep the completed decisions.'
 
 
 def test_carry_forward_usage_is_counted_once_when_a_failed_editor_is_retried(phase_table, monkeypatch):
