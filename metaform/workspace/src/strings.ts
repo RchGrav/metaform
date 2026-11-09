@@ -160,8 +160,6 @@ export const onboarding = {
     // Show only when the host was started another way, such as `npm run dev`, so the panel
     // never shows the same command twice.
     prototypeCommand: (command: string) => `This prototype was started with: ${command}`,
-    // The owner's reopen command (UI-U1); it works since Jorge's 1a03bf2, so it carries no planned label.
-    command: "metaform gui",
   },
 } as const;
 
