@@ -104,7 +104,7 @@ These were chosen because Metaform documents cite them, or because they hold the
 | Three ELF test executables in `~/roundtable/review/` (`round3/alloyed-engine-probe`, `round2/env-order`, `round2/scope-dangling`) | Compiled binaries. Their `.rs` and `.log` files are kept. |
 | `~/topogee/~/.metaform-rust/` | A stray folder holding an empty `server.lock`. A `~` path was not expanded. **Inferred.** |
 | `~/brain/.obsidian/`, `*:Zone.Identifier` | Editor and Windows metadata |
-| Runtime map databases: `~/.metaform/` (Node harness: projects topogee, roundtable, topogee-roundtable), `~/.metaform-rust/` (Rust server: project topogee, holding the intake of `world-system-spec.md`, 61 elements and 114 wants per `.design-review/README.md`), `~/.topogee/map.lbug` (oldest) | Machine-specific live stores. Copying a live database with its WAL could give an inconsistent copy. **They hold the only real intake results, so the owner may want them exported.** |
+| Runtime map databases: `~/.metaform/` (Node harness: projects topogee, roundtable, topogee-roundtable), `~/.metaform-rust/` (Rust server: project topogee, holding the intake of `world-system-spec.md`, 61 elements and 114 wants per `.design-review/README.md`), `~/.topogee/map.lbug` (oldest) | Machine-specific live stores. Copying a live database with its WAL could give an inconsistent copy. They hold the only real intake results. The owner does not need those past results kept or exported (owner decision, 2026-11-08), so they were not copied. |
 | Session transcripts (`~/.claude/projects/*`, 20 `~/.codex/sessions` files that mention Metaform, 2026-10-31 to 2026-11-07) | Large and personal. The Codex sessions were **not reviewed**. |
 
 No credentials were found in the copy. **Verified:** a pattern scan found only the test placeholder `"test-key-not-real"` in the Roundtable adapter tests. Roundtable needs `OPENROUTER_API_KEY` in the environment. **Stated** (adapter tests and README).
@@ -284,8 +284,8 @@ Also noted:
 - **Assumption:** `~/topogee/roundtable` is the Roundtable to develop (owner, 2026-11-08).
 - **Assumption:** `main` at b65dba2 is the latest Metaform state. No unmerged branch touches it. **Verified.**
 - **Verified (2026-11-08):** the Rust server builds and passes its tests here. The Python contract checks pass. Roundtable and the Node harness were not built.
-- **Unknown:** whether the earlier private `RchGrav/metaform` repository should be brought in.
-- **Unknown:** whether the live map databases (section 3.3) should be exported into this folder.
+- **Unknown:** what, if anything, to bring in from the earlier private repository. It was renamed to `RchGrav/metaform-archive` on 2026-11-08, when this folder became `RchGrav/metaform`. A review of what fits this project is in progress.
+- **Decided:** the live map databases (section 3.3) are not exported into this folder (owner decision, 2026-11-08).
 - **Not done:** the Codex session history was not reviewed.
 
 ## 10. Suggested next steps for developers
