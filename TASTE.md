@@ -62,12 +62,6 @@ Do not sacrifice clarity or meaning to meet a length limit or use a preferred wo
 23. Remove rhetorical contrasts and analogies that add no technical distinction.
 24. Shorten wording only when doing so preserves conditions, exceptions, negation, causality, and technical distinctions.
 
-## Project terminology
-
-- The address names the functional type using standard industry terminology.
-- The `name` field holds the project’s own name.
-- Use the same term for things that are the same.
-
 ## Project blacklist
 
 Use the listed replacement when it preserves the intended meaning. Preserve exact technical names and context-specific distinctions.
