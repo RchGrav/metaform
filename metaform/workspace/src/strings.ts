@@ -154,8 +154,11 @@ export const onboarding = {
   },
   reopen: {
     title: "Open this view again",
-    // The product's own reopen command is an owner decision (UI-U1). Until it exists, show the
-    // command the host reports it was started with; never a name invented here.
+    body: "Run this command from any folder:",
+    // The owner's reopen command (2026-11-09); it works since Jorge's 1a03bf2.
+    command: "metaform gui",
+    // Show only when the host was started another way, such as `npm run dev`, so the panel
+    // never shows the same command twice.
     prototypeCommand: (command: string) => `This prototype was started with: ${command}`,
     // The owner's reopen command (UI-U1); it works since Jorge's 1a03bf2, so it carries no planned label.
     command: "metaform gui",
@@ -180,4 +183,56 @@ export const keyboard = {
       { keys: "Esc", action: "Close the panel, or leave Present" },
       { keys: "Arrow keys", action: "In Present, move the selection along wants" },
     ] as const,
+} as const;
+
+/**
+ * Intake terms on wants (climb step 2). The stored fields keep the intake's meaning: `why` is the
+ * Operative purpose (OP), `how` is the Encounter function (EF), and `direction` is the
+ * Information flow direction (IFD). The element that holds the want is the Receiving element
+ * (RE); the element it names is the Providing element (PE). Sources: SPEC R-3.4 to R-3.6; the
+ * founder's term mapping (context/topogee-repo/DECISIONS.md); the earlier graph
+ * (context/brain/digital-typology-hhgg-graph-fixed.html).
+ */
+export const intake = {
+  re: { short: "RE", long: "Receiving element (RE)" },
+  pe: { short: "PE", long: "Providing element (PE)" },
+  op: { short: "OP", long: "Operative purpose (OP)" },
+  ef: { short: "EF", long: "Encounter function (EF)" },
+  ifd: { short: "IFD", long: "Information flow direction (IFD)" },
+  // What the receiving element seeks, and what the provider supplies, as shown on a want.
+  opLine: (why: string) => `OP: ${why}`,
+  efLine: (how: string) => `EF: ${how}`,
+  // IFD is relative to the element that holds the want, never to the project, and the request
+  // is never the direction (R-3.6).
+  ifdLine: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
+    direction === "outbound"
+      ? `IFD: outbound, from ${re} to ${pe}`
+      : direction === "inbound"
+        ? `IFD: inbound, from ${pe} to ${re}`
+        : `IFD: two-way, between ${re} and ${pe}`,
+} as const;
+
+/**
+ * The legend (climb step 1): one entry per mark the renderer draws (graph/svg-renderer.ts).
+ * The same text serves as each mark's tooltip, so a mark never appears without its meaning.
+ */
+export const legend = {
+  title: "Legend",
+  show: "Show legend",
+  hide: "Hide legend",
+  roleBar: "Coloured bar: the element's role, Definitive, Supportive, Notable or Divergent",
+  definitive: "Inner ring: the Definitive element, the one without which the project is not what it is",
+  stack: "Stacked outline: a collapsed element; its elements beneath are hidden",
+  chevron: "Chevron: collapse or expand the elements beneath",
+  beneath: "Number at the right: how many elements are beneath this one",
+  outside: "\"N wants outside\": wants to or from elements outside this view",
+  layerMark: "Small shape with a number: a layer's records at this element",
+  agent: "Circle with initials: an agent at this address (simulated)",
+  agentActive: "Filled ring: the agent is active",
+  agentIdle: "Outlined ring: the agent is idle",
+  unseen: "Dot at the corner: activity here you have not looked at yet",
+  projectLink: "Link mark: this element opens another project",
+  arrow: "Arrow: a want, from the receiving element (RE) to the providing element (PE)",
+  arrowCount: "Number on an arrow: several wants drawn as one line",
+  band: "Dashed line: the project boundary, with upstream on the left and downstream on the right",
 } as const;
