@@ -129,6 +129,13 @@ describe("view state", () => {
     expect(back.returnTo).toBeNull();
   });
 
+  it("opens a link at the element it names: its container, with the element selected", () => {
+    const moved = reduce(start, { type: "open-project", project: "metaform-2", from: "link", at: "code.server.tool" });
+    expect(currentView(moved)).toMatchObject({ container: "code.server", selection: "code.server.tool" });
+    const top = reduce(start, { type: "open-project", project: "metaform-3", from: "link", at: "code" });
+    expect(currentView(top)).toMatchObject({ container: TOP, selection: "code" });
+  });
+
   it("keeps the visible set while a layer is isolated and restores it after", () => {
     const hidden = run([{ type: "layer", layer: "memory", visibility: "hidden" }, { type: "isolate", layer: "specification" }], start);
     expect(hidden.isolated).toBe("specification");

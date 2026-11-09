@@ -66,6 +66,9 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
         const loaded: ProjectData = { graph, dump, fields: fieldsFromDump(dump), layerCounts: layerCounts(dump, layers), layers };
         setData((current) => ({ ...current, [project]: loaded }));
         dispatchRaw({ type: "connected" });
+        // Check the view against the loaded map, so a place that no longer exists (or a link to an
+        // element the project lacks) falls back to its nearest existing parent, with a notice.
+        dispatchRaw({ type: "map-changed", project, addresses: graphAddresses(graph) });
         return loaded;
       } catch (error) {
         dispatchRaw(failed(error));
@@ -113,9 +116,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
             { id: lineId.current, time, project: event.project, kind: "map-changed" as const, agent: null, at: null, activity: null, simulated: event.simulated },
             ...lines,
           ].slice(0, ACTIVITY_LIMIT));
-          void load(event.project).then((loaded) => {
-            if (loaded) dispatchRaw({ type: "map-changed", project: event.project, addresses: graphAddresses(loaded.graph) });
-          });
+          void load(event.project);
         } else {
           setAgents((current) => ({
             ...current,
