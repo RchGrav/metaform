@@ -350,7 +350,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         .filter(|address| map.element(address).is_some_and(has_blocks))
     {
         return Err(parse_error(lines.len(), format!(
-            "'{missing}' holds specification text, and its section is missing; to remove the text, keep the heading '{}' and delete the text under it",
+            "'{missing}' holds specification text, but the document has no section for it. To remove the text, keep the heading '{}' and delete the text under it.",
             element_heading(map, missing)
         )));
     }
@@ -574,7 +574,7 @@ mod tests {
                 let start = document.find("## Packet Pipeline").unwrap();
                 let end = document.find("## Pipeline Tools").unwrap();
                 format!("{}{}", &document[..start], &document[end..])
-            }, "its section is missing"),
+            }, "has no section for it"),
         ];
         for (text, expected) in cases {
             let error = parse(&text, &map, "packet-lab").unwrap_err();

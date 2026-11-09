@@ -109,7 +109,7 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
 fn import(store: &Store, body: &Value) -> Result<Value, String> {
     let (key, title) = target(store, body, "import")?;
     let Some(document) = body["markdown"].as_str() else {
-        return Err("an import must carry the document as markdown".into());
+        return Err("an import request must carry the document in its `markdown` field".into());
     };
     let map = store.snapshot(&key).map_err(|e| e.to_string())?;
     let parsed = metaform_core::markdown::parse(document, &map, &title).map_err(|e| e.to_string())?;
@@ -139,7 +139,7 @@ fn import(store: &Store, body: &Value) -> Result<Value, String> {
             Ok(metaform_core::Outcome::Write(write)) => trial = write.map,
             Ok(_) => {}
             Err(refusal) => {
-                return Err(format!("'{address}': {}: {}; nothing was written", refusal.code.as_str(), refusal.reason));
+                return Err(format!("'{address}': {}: {}; the import wrote nothing", refusal.code.as_str(), refusal.reason));
             }
         }
     }
@@ -149,7 +149,7 @@ fn import(store: &Store, body: &Value) -> Result<Value, String> {
             Ok(_) => written.push(address.clone()),
             Err(failure) => {
                 return Err(format!(
-                    "'{address}': {failure}; written before it: {}",
+                    "'{address}': {failure}. The import stopped here. Sections already written: {}.",
                     if written.is_empty() { "none".to_string() } else { written.join(", ") }
                 ));
             }

@@ -625,12 +625,12 @@ fn an_edited_specification_imports_all_or_nothing() {
     assert_ne!(edited, document);
     let (code, said, why) = run(&["specification", "import", "--project", folder, "-"], Some(&edited));
     assert_eq!(code, 0, "{said}{why}");
-    assert!(said.contains("wrote 2 (code, code.store)"), "{said}");
+    assert!(said.contains("wrote 2 sections (code, code.store); 0 sections already matched the map"), "{said}");
     let (_, again, _) = run(&["specification", "export", "--project", folder], None);
     assert_eq!(again, edited, "export after import gives the edited document");
     let (code, said, _) = run(&["specification", "import", "--project", folder, "-"], Some(&again));
     assert_eq!(code, 0);
-    assert!(said.contains("nothing changed"), "{said}");
+    assert!(said.contains("nothing to write; all 2 sections already match the map"), "{said}");
 
     // A second valid edit plus a level jump: refused as a whole, nothing written.
     let broken = again

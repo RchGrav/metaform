@@ -205,7 +205,7 @@ async fn specification(
             }
             return import(home, &exe, body, source).await;
         }
-        _ => return usage("specification takes export, or import with a FILE or -"),
+        _ => return usage("specification takes `export`, or `import FILE`, or `import -` to read the document from stdin"),
     }
     body["check"] = serde_json::json!(check);
     match metaform_server::admin::request(home, &exe, serde_json::json!({"export": body})).await {
@@ -257,11 +257,17 @@ async fn import(home: &std::path::Path, exe: &std::path::Path, mut body: serde_j
     match metaform_server::admin::exchange(home, exe, serde_json::json!({"import": body})).await {
         Ok(answer) if answer["ok"] == serde_json::json!(true) => {
             let written: Vec<&str> = answer["written"].as_array().into_iter().flatten().filter_map(|a| a.as_str()).collect();
-            let unchanged = answer["unchanged"].as_u64().unwrap_or(0);
+            let unchanged = answer["unchanged"].as_u64().unwrap_or(0) as usize;
+            let sections = |n: usize| format!("{n} section{}", if n == 1 { "" } else { "s" });
             if written.is_empty() {
-                println!("imported: nothing changed; {unchanged} sections were already current");
+                println!("imported: nothing to write; all {} already match the map", sections(unchanged));
             } else {
-                println!("imported: wrote {} ({}); {unchanged} sections were already current", written.len(), written.join(", "));
+                println!(
+                    "imported: wrote {} ({}); {} already matched the map",
+                    sections(written.len()),
+                    written.join(", "),
+                    sections(unchanged)
+                );
             }
             ExitCode::SUCCESS
         }
