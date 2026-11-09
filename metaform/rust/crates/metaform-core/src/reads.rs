@@ -189,14 +189,25 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         "memory": {"records": memory},
     });
     // How to write the layers listed here. The server delivers this part once per context, not
-    // once per address (R-6.27).
+    // once per address (R-6.27), so each entry says where to read it again (R-5.30).
     if !defined.is_empty() {
         sheet["instructions"] = Value::Object(
             defined
                 .iter()
-                .map(|d| (d.layer.clone(), Value::String(d.guidance())))
+                .map(|d| {
+                    let text = format!("{}\ngoto {} to see this again.", d.guidance(), d.address);
+                    (d.layer.clone(), Value::String(text))
+                })
                 .collect(),
         );
+    }
+    // At a layer's definition element, the sheet always carries that layer's guidance, so an agent
+    // whose context was reset can read it again (R-5.30). Reads stay in the stored form (R-5.10).
+    if let Some(definition) = specification::definitions(map)
+        .into_iter()
+        .find(|d| d.address == address)
+    {
+        sheet["guidance"] = Value::String(definition.guidance());
     }
     Ok(sheet)
 }

@@ -674,3 +674,47 @@ fn an_edited_specification_imports_all_or_nothing() {
     assert_eq!(after, edited, "a refused import writes nothing");
     stop_server(&home);
 }
+
+/// After a context reset the connection may stay open, so `goto` names what it holds back
+/// (`unchanged`), and a goto at a layer's definition element always carries that layer's guidance
+/// (R-5.30). The first delivery of the guidance says where to read it again.
+#[test]
+fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, project) = (dir.path().join("home"), dir.path().join("proj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let mut agent = Agent::start(&home, &project);
+    agent.request("server/discover", json!({}));
+    let definition = metaform_core::specification::DEFINITION_ADDRESS;
+    let seed = json!({"update": {definition: serde_json::Value::Object(metaform_core::specification::definition())}});
+    for command in [
+        seed,
+        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "Definitive"}}}),
+        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "Supportive"}}}),
+    ] {
+        let (refused, answer) = agent.call(command);
+        assert!(!refused, "{answer}");
+    }
+
+    let (_, first) = agent.call(json!({"goto": "code.engine"}));
+    let guidance = first["instructions"]["specification"].as_str().unwrap();
+    assert!(guidance.ends_with(&format!("goto {definition} to see this again.")), "{guidance}");
+    assert!(first.get("unchanged").is_none(), "nothing is held back on a first arrival: {first}");
+
+    let (_, again) = agent.call(json!({"goto": "code.engine"}));
+    assert_eq!(
+        again,
+        json!({"at": "code.engine", "unchanged": ["element", "wants", "wanted_by", "layers", "memory", "instructions"]}),
+        "a repeat arrival names every part it holds back"
+    );
+    let (_, other) = agent.call(json!({"goto": "code.render"}));
+    assert!(other.get("instructions").is_none(), "{other}");
+    assert_eq!(other["unchanged"], json!(["instructions"]), "held-back instructions are named: {other}");
+
+    for _ in 0..2 {
+        let (_, at_definition) = agent.call(json!({"goto": definition}));
+        assert!(at_definition["guidance"].as_str().unwrap().contains("TASTE"), "the definition always carries its guidance: {at_definition}");
+    }
+    agent.stop();
+    stop_server(&home);
+}
