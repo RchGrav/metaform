@@ -20,7 +20,7 @@ pub enum Answer {
     Refused(String),
 }
 
-/// Run one tool command against `target` and return the tool's answer. An error is a usage,
+/// Perform one tool command on `target` and return the tool's answer. An error is a usage,
 /// connection or server failure, not a refusal.
 pub async fn call(
     home: &Path,

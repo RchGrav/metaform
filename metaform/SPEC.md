@@ -171,11 +171,11 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. **Source:** "The map is really for stuff that is durable, and long-lasting"; "If we need something like that, we'll have it write a ticket for it."; the founder's documentation set, module 1.1.
 
-**R-3.17** Each goal and each function is one sentence fragment. It states what happens, without tunable values.
+**R-3.17** Each `why` and each `how` is one sentence fragment. It states what happens, without tunable values.
 
 **Status:** Decided. **Source:** "All goal and function language should be no more than a sentence fragment"; "after should have been this Monitors context window use over the ACP session." The documentation set gives the grammar of each field (R-6.17).
 
-**R-3.5** A want record belongs to the element that holds the goal. The key of the record is the address of the element that serves the goal.
+**R-3.5** A want record belongs to the receiver, the element whose purpose its `why` states. The key of the record is the address of the provider, the element whose service to the receiver its `how` describes.
 
 **R-3.19** The two ends of a want are this element, where the agent stands and which holds the want, and the other element, which the want names. The system reasons from where the agent is operating.
 
@@ -201,7 +201,7 @@ A project has exactly one Definitive element.
 
 ### 4.1 Storage
 
-**R-4.1** Maps are stored in LadybugDB. A map is the logical unit: it has its own map id, its own write queue (R-4.7) and its own identity. A database is the physical unit that groups maps. A project's main map and its chained maps are partitions of the project's database, `projects/<encoded-path-id>/project.lbug`. Maps that belong to no project are partitions of the home's standalone database, `maps/maps.lbug`. A map moves to its own database when it needs its own writer, its own sharing or its own size; a map run as its own instance (R-4.14) has its own home and so its own database. Rust code works through Ladybug and never writes map files itself. Settings and the project registry may be JSON. Nothing is written into a project's own folder, and a project's database never stores the project's name.
+**R-4.1** Maps are stored in LadybugDB. A map is the logical unit: it has its own map id, its own write queue (R-4.7) and its own identity. A database is the physical unit that groups maps. The home is the folder that one functional map server owns and writes under (R-4.4); this project's `.mcp.json` uses `~/.metaform-rust`. A project's main map and its chained maps are partitions of the project's database, `projects/<encoded-path-id>/project.lbug`. Maps that belong to no project are partitions of the home's standalone database, `maps/maps.lbug`. A map moves to its own database when it needs its own writer, its own sharing or its own size; a map run as its own instance (R-4.14) has its own home and so its own database. Rust code works through Ladybug and never writes map files itself. Settings and the project registry may be JSON. Nothing is written into a project's own folder, and a project's database never stores the project's name.
 
 **Status of the grouping (2026-11-07):** Default, for the founder's confirmation. It replaces "one database per map", which read the founder's "any element in the metaform map can be given its own db" as a rule rather than a capability. One process failed at about 7 Ladybug databases on default settings, so a database for every map would not scale. The design and evidence are in `docs/designs/storage.md`, section 2.2.
 
@@ -211,7 +211,7 @@ A project has exactly one Definitive element.
 
 **R-4.8** Every setting is declared in code with its default. A default is never stored. A global value is stored in the main database. A project value overrides it and is stored in the project database. Every lookup goes through one place.
 
-**Status:** Decided. Global settings were built on Ladybug in the Node harness, and project overrides were not built. The values move to `settings.json` (R-4.1). In the Rust server (2026-11-08): settings are declared in code with their defaults (`metaform-store/src/settings.rs`), global values are in `<home>/settings.json` and a project's in `projects/<id>/settings.json`, and the CLI reads and sets them through the server (`metaform settings`, `metaform set`, `metaform unset`), not through an agent tool. The first setting is `stores.max_open_databases`. **Source:** "Every setting the system has would be surfaced as a global setting and would apply to all projects unless they're overrided with a local setting in that project"; "defaults aren't stored. There's no point."; CLI-023 in `RchGrav/metaform`.
+**Status:** Decided. Global settings were built on Ladybug in the Node harness, and project overrides were not built. The values move to `settings.json` (R-4.1). In the Rust server (2026-11-08): settings are declared in code with their defaults (`metaform-store/src/settings.rs`), global values are in `<home>/settings.json` and a project's in `projects/<id>/settings.json`, and the CLI reads and sets them through the server (`metaform settings`, `metaform set`, `metaform unset`), not through an agent tool. The first setting is `stores.max_open_databases`. **Source:** "Every setting the system has would be surfaced as a global setting and would apply to all projects unless they're overrided with a local setting in that project"; "defaults aren't stored. There's no point."; CLI-023 in `RchGrav/metaform-archive`.
 
 **R-4.9** The system is built for many projects from the start.
 
@@ -237,7 +237,7 @@ A project has exactly one Definitive element.
 
 **R-4.4** The functional map server is one long-running process on the home. It tracks every project, and it is the only process that writes under the home. It is not the chassis. Only one functional map server can run on a home.
 
-**R-4.5** Each agent still starts its own MCP instance. That instance is a forwarder to the functional map server. It names its project folder when it connects, and it never writes files. The CLI, the viewer and every outside part reach the data through the functional map server.
+**R-4.5** Each agent still starts its own MCP process, the forwarder. The forwarder relays to the functional map server. It names its project folder when it connects, and it never writes files. The CLI, the viewer and every outside part reach the data through the functional map server.
 
 **Status of R-4.4 and R-4.5:** Decided. Replaces the chassis as owner of the databases. **Source:** "So long as that map can have a live running server that tracks all of the projects and can be a sink for each agents mcp server then yes"; "well its a process its not the chassis as a specified it."; "yeah only one can start".
 
@@ -267,7 +267,7 @@ A project has exactly one Definitive element.
 
 **R-4.6** This project's functional map server is built in Rust, as a library and a binary (`metaform/docs/designs/metaform-rust.md`). Ladybug leaves it. The Node server in `metaform/server/` is a test harness, built in minutes to test the contract. It is not the design and is never a source for it; the design is the founder's documentation set (the founder, when it was built: "this better not become the design we have one already").
 
-**Status:** Proposed. It follows the founder's statement "at present we are working on the mcp server which exists in node". The chassis is event driven, in Rust, and uses Bevy (D-9). **Reconsidered 2026-11-07:** the founder: "I'm not against realizing metaform in rust also for this project". **Decided 2026-11-07: Rust** for this project's Metaform server. The founder: "I recommend rust too"; "I dont mind creating a version of metaform in rust, in node, in python, thats fine.. it might be interesting to use in rust for this project". Other implementations may exist beside it; each must meet this specification. The Node server in `metaform/server/` was a quick first build and has no concurrency.
+**Status:** Proposed. It follows the founder's statement "at present we are working on the mcp server which exists in node". The chassis is event driven, in Rust, and uses Bevy (D-9). **Reconsidered 2026-11-07:** the founder: "I'm not against realizing metaform in rust also for this project". **Decided 2026-11-07: Rust** for this project's functional map server. The founder: "I recommend rust too"; "I dont mind creating a version of metaform in rust, in node, in python, thats fine.. it might be interesting to use in rust for this project". Other implementations may exist beside it; each must meet this specification. The Node server in `metaform/server/` was a quick first build and has no concurrency.
 
 ## 5. The form
 
@@ -275,7 +275,7 @@ A project has exactly one Definitive element.
 
 **R-5.1** The form is one MCP tool, `project-map`. Its input schema is in `metaform/mcp-tools.proposed.json`. Its commands are `add`, `update`, `delete`, `orphaned`, `search`, `layer`, `goto` and an addressed read.
 
-**Status:** Decided. **Source:** the founder's tool design; `metaform/docs/mcp-query-source.md`; `metaform/tool-examples.json`. The name: "something an agent can actually reason against is highly preferred over something they have no idea what it is for"; "dash if its allowed". The contract is named `project-map`; it has no `search`, `layer` or `goto` until the build adds them.
+**Status:** Decided. **Source:** the founder's tool design; `metaform/docs/mcp-query-source.md`; `metaform/tool-examples.json`. The name: "something an agent can actually reason against is highly preferred over something they have no idea what it is for"; "dash if its allowed". The contract is named `project-map`; it has no `search` or `layer` until the build adds them.
 
 **R-5.26** Tools are organized by module. A module exposes a tool, and all tools that act on the same functionality collapse into one tool. Tools are not gated by where an agent stands. A new module can also unlock commands and features under other tools that do not come from that module directly.
 
@@ -313,7 +313,7 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. Not built. Replaces "a read of an address returns one localized object" with skills, attached layers and the addresses on both sides, which replaced "a read returns the address and everything beneath it", which is built. **Source:** "I was completely wrong when I said viewing an address shows its edges, you can view the wants and specify to view the wants like address wants, what you wont do is get the full breakdown of who or what relies on the address, or the wants and the attached layers that requires using goto". Earlier source, now replaced: "reading an address gives you that address in the map and its layers, and then names the attaches addresses". Naming wants through the read's `layers` list is Proposed, in `metaform/docs/designs/metaform-server-design.md`.
 
-**R-5.30** `goto` places the agent at an address. It returns what is directly linked there: the element and its wants, the full breakdown of who or what relies on the address, the names of the attached layers, the frontmatter of the skills, and the memory count. The agent's presence at that address decides which memory graph the memory tool shows (R-5.29). It returns nothing from the layers of other addresses. Knowledge arrives as a summary sheet: one JSON document shaped to describe the node and show where its data lives, with record counts, not records. Skills are in the MCP server, and nothing gates triggering one; an agent learns a skill exists only from the frontmatter `goto` delivers where the skill is relevant. `goto` delivers this once per context: the first arrival delivers it, and a later arrival in the same context delivers only what has changed. Arriving at an address is also how an agent reads its inbox (R-6.23).
+**R-5.30** `goto` places the agent at an address. It returns what is directly linked there: the element and its wants, the full breakdown of who or what relies on the address, the names of the attached layers, the frontmatter of the skills, and the memory count. The agent's presence at that address decides which memory graph the memory tool shows (R-5.29). It returns nothing from the layers of other addresses. Knowledge arrives as a summary sheet: one JSON document shaped to describe the node and show where its data lives, with record counts, not records. Skills are in the functional map server, and nothing gates triggering one; an agent learns a skill exists only from the frontmatter `goto` delivers where the skill is relevant. `goto` delivers this once per context: the first arrival delivers it, and a later arrival in the same context delivers only what has changed. Arriving at an address is also how an agent reads its inbox (R-6.23).
 
 **Status:** Decided. Built 2026-11-07: `metaform-core` builds the summary sheet, and `metaform-server` delivers it once per connection; the form stays Proposed, so the founder can still change it. **Source:** "project-map needs a goto command"; "when you use goto, thats what triggers showing the frontmatter for the skills, showing the memory count and all of that stuff"; "an agent sees a memory count when viewing a element directly, but must use the memory tool to access them"; "goto only dumps new info IF the info changes its once per context! so first arrival, from there if you move between nodes you will not get that dump a second time in the same context, that is also how you get to read the inbox is by arriving at the address". Tracking delivery by part, and one connection counting as one context until the ACP handoff exists, are Proposed. The form `{"goto": "<address>"}`, including each dependent's want in the breakdown, and holding presence on the connection until agent identity exists are Proposed, in `metaform/docs/designs/metaform-server-design.md`. Presence is state between calls, so it is held against the agent as R-8.2 allows; until identity exists (D-8), the connection stands for the agent. Summary sheet and skills: "the layer structure can carry other data but the system prescribes the minimal dump that arrives when you reach a functionality.. the knowledge gets dumped as a summary sheet, that means record counts not records"; "our skills will be in the mcp server...nothing stops you from triggering a skill, nothing gates triggering a skill, but agents dont get the context to know the skill exists until its relevent". The sheet's key names and reading a skill through the MCP resource template `skill://{name}` are Proposed.
 
@@ -369,9 +369,9 @@ A project has exactly one Definitive element.
 
 **Status:** Proposed. **Reason:** the founder pointed to SEP-2663, the tasks extension (2026-11-07). An intake run is long work, and `DECISIONS.md` rules out recurring polling.
 
-### 5.4 The MCP server and the CLI
+### 5.4 The functional map server and the CLI
 
-**R-5.13** The MCP server is a broker to modules.
+**R-5.13** The functional map server is a broker to modules.
 
 **R-5.14** Every MCP tool can be used through the CLI, so a harness without MCP access can still use it.
 
@@ -393,7 +393,7 @@ A project has exactly one Definitive element.
 
 **R-5.19** Intake has no start and no stop. Its data lives in one place and is visualized.
 
-**Status of R-5.18 and R-5.19:** Proposed. **Source:** "you are building way too much code here.. too much ceremony.. my vision is that its a tool the ceremony live in a prompt"; "there is no start and stop there is a place where data lives and its visualized". Both quotes were relayed by the agent working on `RchGrav/metaform`. The wording is an agent's. The earlier build's `intake_start`, `intake_finish`, locks and verification passes are that agent's examples of what to exclude. The founder has not reviewed that list.
+**Status of R-5.18 and R-5.19:** Proposed. **Source:** "you are building way too much code here.. too much ceremony.. my vision is that its a tool the ceremony live in a prompt"; "there is no start and stop there is a place where data lives and its visualized". Both quotes were relayed by the agent working on `RchGrav/metaform-archive` (then named `RchGrav/metaform`). The wording is an agent's. The earlier build's `intake_start`, `intake_finish`, locks and verification passes are that agent's examples of what to exclude. The founder has not reviewed that list.
 
 **R-5.20** Logic is added to a tool only to fix an observed issue.
 
@@ -447,7 +447,7 @@ Negations apply first. Additions apply second. If one element adds and negates t
 
 **R-6.7** The intake layer is the metaform itself. It is not selectable.
 
-**Status:** Decided. **Source:** `reference/theory/technical-reference.md` section 9; earlier implementation `src/metaform/data/selection.py` in `RchGrav/metaform`.
+**Status:** Decided. **Source:** `reference/theory/technical-reference.md` section 9; earlier implementation `src/metaform/data/selection.py` in `RchGrav/metaform-archive`.
 
 **R-6.8** A hidden layer is removed after the walk, with every layer built from it. A layer that is still being built is not selected.
 
@@ -583,7 +583,7 @@ A step is accepted when:
 | D-14 | How the grammar check tells a verb ending in `-ing` from a noun such as `ring` or `string`. The documentation set forbids words ending in `-ing` in `why` and `how`. | R-5.24. |
 | D-16 | How chaining (R-4.15) relates to links between projects (section 7). Storage of a chained map is a default: a `Map` node in its parent's database, reached by `CHAINS`, promotable to its own database (`docs/designs/storage.md` 2.2). The earlier recommendation of a folder with its own `map.json` is withdrawn. | Section 7 read path. |
 | D-17 | Defaults taken 2026-11-07 (`docs/designs/storage.md` 2.3, 2.4): the layout under the home, maps grouped into project databases, no separate effect log, at most 16 open databases (lowered from 64 after measuring memory, storage note risk 5) with a 64 MB pool, a 16 GB limit and 4 worker threads each. Open only for the founder's confirmation of the grouping (R-4.1). | Nothing; the build proceeds on the defaults. |
-| D-10 | How the system scales sideways. Default for the rule (`docs/designs/storage.md` 2.5): every store has one owning process, declared in settings and proved by a lock file; every other process, on this machine or another, goes through the owner, never through a shared file. Still open: how several world servers or chassis divide work. | Any multi-chassis deployment. |
+| D-10 | How the system scales sideways. Default for the rule (`docs/designs/storage.md` 2.5): every store has one owning process, declared in settings and proved by a lock file; every other process, on this machine or another, goes through that owning process, never through a shared file. Still open: how several world servers or chassis divide work. | Any multi-chassis deployment. |
 
 ## 11. Not in this document yet
 

@@ -49,7 +49,17 @@ Limit: the test knows the kinds of blocking construct found on 2026-11-07. A new
 
 **Mechanical impossibility (§3):** errors that only report something cannot be done. An agent does not speak a usable ACP version, a session does not offer a requested setting, a session cannot be resumed, a JEV answer is unreadable, or the table has already ended.
 
-**Not inference gates:** ordinary software safeguards. They are the web API's chair token and address check, the seat tool tokens, Roundtable's secrets removed from agents' environment, the registry launch-variable filter, the table configuration checks, AgentSight's refusal to use sudo, the OpenRouter adapter's tool-server refusal and file confinement, the end of a table when no agent is left, and the rating round on End.
+**Not inference gates:** these ordinary software safeguards:
+
+- the web API's chair token and address check
+- the seat tool tokens
+- Roundtable's secrets removed from agents' environment
+- the registry launch-variable filter
+- the table configuration checks
+- AgentSight's refusal to use sudo
+- the OpenRouter adapter's tool-server refusal and file confinement
+- the end of a table when no agent is left
+- the rating round on End
 
 ## 2026-11-07-04: settings switch the gates
 

@@ -1,5 +1,5 @@
 //! Tests of the `metaform` binary through its public interface: stdio MCP via the forwarder.
-//! Budget (CLAUDE.md): five per feature. Five cover the server and standalone maps, two cover
+//! Budget (`context/topogee-repo/CLAUDE.md`): five per feature. Five cover the server and standalone maps, two cover
 //! announcements (R-4.10), one covers starting through the launcher (SL-6.1), two cover
 //! `metaform call`, the CLI (R-5.14, R-5.17), two cover a server closing or restarting under a
 //! forwarder, and the last covers settings through the CLI (R-4.8).

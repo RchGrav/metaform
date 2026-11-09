@@ -1,7 +1,7 @@
 //! Text sent to participants. The roundtable prompt and the participant prompt are the owner's
-//! templates, verbatim. The per-turn format is the owner's (O): the round line, the truncation
-//! notice, the rejection reasons, each agent's message, then the characters line. Everything sent to every agent costs once per seat (R §1.2), so the
-//! surrounding text is kept short.
+//! templates, verbatim. The per-turn format is the owner's (O): the round line, the notices
+//! (length, rejection, not evaluated), each agent's message, then `ask` when given. Everything
+//! sent to every agent costs once per seat (R §1.2), so the surrounding text is kept short.
 
 /// The owner's participant prompt (supplied 2026-11-05; supersedes the R §3 wording), kept
 /// verbatim in `resources/participant_prompt.md` so the owner can edit it directly.
@@ -20,7 +20,8 @@ pub fn too_long(length: usize, limit: usize) -> String {
 }
 
 /// JEV could not evaluate a message, so it was not shared. This is an operational failure,
-/// not a rejection (owner's spec §11). Builder wording, kept in
+/// not a rejection (`docs/gate-development-log.md`, "A message JEV could not evaluate is not
+/// shared"). Builder wording, kept in
 /// `resources/feedback/not_evaluated.md` for the owner to replace.
 pub fn not_evaluated(reason: &str) -> String {
     include_str!("../resources/feedback/not_evaluated.md").replace("{{reason}}", reason)
@@ -101,7 +102,7 @@ pub fn topic_proposal(limit: Option<usize>) -> String {
 pub const REVIEW: &str = "The other participants are working right now. While you wait, review the materials in the shared workspace.";
 
 /// The owner's roundtable scoring prompt, verbatim (spacing and punctuation included) from
-/// `archaeology/docs/reference/roundtable-agent-ratings.md`, "Exact roundtable scoring prompt".
+/// `roundtable/docs/owner-sources/roundtable-agent-ratings.md`, "Exact roundtable scoring prompt".
 /// `<seats/>` takes the other participants' names.
 pub const SESSION_SCORING: &str = include_str!("../resources/session_scoring.md");
 

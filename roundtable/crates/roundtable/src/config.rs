@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeatConfig {
-    /// Display name, unique within the table.
+    /// The chair's seat name, unique within the table. Agents see the seat's genesis name
+    /// instead.
     pub name: String,
-    /// Harness catalog id or label, for display.
+    /// Harness catalog id (such as `opencode`) or label, for display. Not the instance name
+    /// that acp-host's `HarnessId` holds.
     pub harness: String,
     pub launch: LaunchSpec,
     /// Advertised session options to set, in order (e.g. mode, then model). A setting that
@@ -22,8 +24,8 @@ pub struct SeatConfig {
     pub share_openrouter_key: bool,
     /// Resume this earlier session instead of opening a new one, so the agent keeps its
     /// identity: its genesis name follows from its first session's id, and "a resumed session
-    /// keeps its name" (owner, archaeology/rich/technical/agent_identity.md). The harness must
-    /// be the one that holds that session.
+    /// keeps its name" (owner, archaeology/rich/technical/agent_identity.md, not copied into this
+    /// repository). The harness must be the one that holds that session.
     #[serde(default)]
     pub resume_session: Option<String>,
 }
@@ -181,7 +183,7 @@ pub struct TableConfig {
     /// Completed rounds of discussion JEV sees (owner's spec: four).
     #[serde(default = "default_jev_history_rounds")]
     pub jev_history_rounds: u64,
-    /// JEV's confidence each gate question needs, from 0 to 1 (owner: 0.70).
+    /// JEV's confidence each of its three yes/no gates needs, from 0 to 1 (owner: 0.70).
     #[serde(default = "default_gate_pass")]
     pub gate_pass: f64,
     /// How each kind of permission request is answered.
@@ -193,7 +195,7 @@ pub struct TableConfig {
 }
 
 impl TableConfig {
-    /// A configuration with every setting at its default. Hosts then apply the owner's saved
+    /// A configuration with every setting at its default. Hosts then apply the chair's saved
     /// settings and the table's own values with [`crate::settings::Store::apply`].
     pub fn new(objective: impl Into<String>, workspace: PathBuf, seats: Vec<SeatConfig>) -> Self {
         let mut config = Self {
@@ -259,17 +261,14 @@ pub struct ToolsEndpoint {
     pub base_url: String,
 }
 
-/// Sensible session settings for well-known harnesses, so permission requests reach the
-/// Roundtable's scope policy (Claude: mode `default`, which asks for each permission) or an OS sandbox confines writes to the
-/// workspace (Codex: workspace-write).
 /// Environment a catalog harness needs so its permission requests reach Roundtable, which
 /// approves inside the workspace and refuses outside it (builder policy, T I-1; open with the
 /// owner, audit B28).
 /// OpenCode reads its configuration from `OPENCODE_CONFIG_CONTENT`; with every permission set
 /// to "ask" it sends each one to the ACP client instead of acting on its own (verified live:
 /// a write outside the workspace was asked for, refused, and not made).
-pub fn default_env(harness_id: &str) -> Vec<(String, String)> {
-    match harness_id {
+pub fn default_env(catalog_id: &str) -> Vec<(String, String)> {
+    match catalog_id {
         "opencode" | "opencode-v2" => vec![(
             PERMISSION_ROUTING_ENV[0].into(),
             r#"{"permission":{"edit":"ask","bash":"ask","webfetch":"ask","external_directory":"ask"}}"#.into(),
@@ -282,8 +281,11 @@ pub fn default_env(harness_id: &str) -> Vec<(String, String)> {
 /// Roundtable in place of a session mode (see [`default_env`]).
 pub const PERMISSION_ROUTING_ENV: [&str; 1] = ["OPENCODE_CONFIG_CONTENT"];
 
-pub fn default_settings(harness_id: &str) -> Vec<(String, String)> {
-    match harness_id {
+/// Default session settings for well-known harnesses, so permission requests reach the
+/// Roundtable's scope policy (Claude: mode `default`, which asks for each permission) or an OS
+/// sandbox confines writes to the workspace (Codex: workspace-write).
+pub fn default_settings(catalog_id: &str) -> Vec<(String, String)> {
+    match catalog_id {
         "claude-acp" => vec![("mode".into(), "default".into())],
         "codex-acp" => vec![("mode".into(), "workspace-write".into())],
         _ => Vec::new(),

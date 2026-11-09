@@ -1,7 +1,8 @@
 //! The Roundtable engine: one task per table, driven by events in the bus's global order.
 //!
-//! Every rule here traces to `docs/TRACEABILITY.md` (R = README.md, D = the ACP integration
-//! design, O = an owner decision):
+//! Every rule here traces to `context/roundtable-original-2026-11-05/docs/TRACEABILITY.md`
+//! from the repository root (R = README.md, D = the ACP integration design, O = an owner
+//! decision):
 //! - Turns are sequential in seat order (O: "Agent1 speaks… agent2, 3, 4 all speak…").
 //! - An agent is working when ACP reports tool activity during its turn; it is not asked to
 //!   announce work (O: "Saying work, thats not a thing"; D §6). The table moves on and its reply,
@@ -308,7 +309,7 @@ impl Table {
 
     pub(crate) fn ask_to_review(&mut self, i: usize) {
         self.seats[i].told_to_review = true;
-        // Its reply is a contribution, so the owner's final allowance line still applies (F13).
+        // Its reply is a contribution.
         if self.offer(i, Some(crate::prompts::REVIEW.to_string()), Activity::Reviewing) {
             self.bus.publish(ReviewAsked { table: self.id.clone(), seat: self.seats[i].label.clone() });
         }
@@ -365,11 +366,11 @@ impl Table {
             }
             self.round_no += 1;
             // gate: RT-G06 a table with no round limit ends when there is no more good input
-            // No round limit: the table ends when there is no more good input. Two rounds with
-            // nothing accepted end it without JEV (no topics), or with JEV when the current topic
-            // produced no accepted message and no file work at all.
+            // No round limit: the table ends when there is no more good input. `table.quiet_rounds`
+            // rounds in a row with nothing accepted end it when topics are off, or, with topics on,
+            // when the current topic produced no accepted message and no file work at all.
             if advance && self.cfg.rounds.is_none() && (!self.topics_active() || !self.topic_had_input()) {
-                self.notice("info", "The table ended: two rounds in a row brought no accepted message.");
+                self.notice("info", format!("The table ended: {} rounds in a row brought no accepted message.", self.cfg.quiet_rounds));
                 // gate: RT-G06 no more good input: the rating round starts
                 self.start_rating();
                 return;

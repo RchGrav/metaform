@@ -7,11 +7,11 @@
 | Prepared | 2026-11-08, by an agent, from the materials gathered into this folder |
 | Status | **Draft for the owner's review.** It is not an approved specification and does not replace `metaform/SPEC.md`. |
 | Evidence reviewed | `metaform/SPEC.md`, `metaform/docs/documentation-set.md`, `metaform/Intake.md`, the schema and tool contract, `metaform/docs/designs/metaform-rust.md`, `context/topogee-repo/DECISIONS.md`, `TOPOGEE.md`, the owner-statement files, `docs/designs/storage.md`, the owner's notes in `context/brain/`, and the git history up to b65dba2 |
-| Scope | Metaform: the intake, the functional map, the one tool and the map server. Roundtable is covered only where it touches Metaform (section 5). |
+| Scope | Metaform: the intake, the functional map, the one tool and the map server (the functional map server of `metaform/SPEC.md` section 4.2). Roundtable is covered only where it touches Metaform (section 5). |
 | Complete? | **Partial.** The earlier private Metaform repository and the old Roundtables module are not on this machine. Several owner decisions are still open. The newest owner notes in `~/brain` were never carried into the project (questions Q3 and Q4). |
 | Freshness | This reflects the materials as of 2026-11-08. `SPEC.md` says the owner has not reviewed it. |
 
-**Labels used:** **Confirmed** means the owner stated it (the source is given). **Proposed** means an agent or a working document suggested it and the owner has not confirmed it. **Open** means the owner must decide it.
+**Labels used:** **Confirmed** means the owner stated it (the source is given). **Proposed** means an agent or a working document suggested it and the owner has not confirmed it. **Open** means the owner must decide it. **Stated** means a source document says it. **Inferred** means the preparer's reading of the evidence. **Proposed by the owner** means the owner suggested it and has not confirmed it.
 
 ### Summary
 
@@ -158,7 +158,7 @@ Each question says what it affects.
 6. **Q6. Where the governing documents live now.** `DECISIONS.md`, `AGENTS.md` and `CLAUDE.md` governed both products in the old repository. Should Metaform get its own decisions file here, and should the stale lines (Node server, Python/Node language, `Intake.xml` as current, nonexistent `topogee metaform` commands) be corrected?
 7. **Q7. `collection` as a root scope.** The procedure has seven root scopes, and the documentation set has six. Which is right? (D-11)
 8. **Q8. Layers and chaining.** The layer section waits on your "unified layer approach", and chaining waits on your choice of contract form (proposed: an explicit `/` address form). When can these be specified?
-9. **Q9. Missing sources.** Should the earlier private `RchGrav/metaform` repository, the old Roundtables module (`metaform-tasks`, not on this machine) and the live map databases (`~/.metaform`, `~/.metaform-rust`) be brought into this folder?
+9. **Q9. Missing sources.** Should the earlier private repository (now `RchGrav/metaform-archive`), the old Roundtables module (`metaform-tasks`, not on this machine) and the live map databases (`~/.metaform`, `~/.metaform-rust`) be brought into this folder?
 10. **Q10. Server identity.** Which identity should the server trust, given that MCP client names are self-reported? This blocks per-agent projects and per-user focus. (D-8)
 
 ## 8. Traceability

@@ -1,4 +1,4 @@
-//! Public-interface tests for metaform-store. Budget (CLAUDE.md): five for this feature.
+//! Public-interface tests for metaform-store. Budget (`context/topogee-repo/CLAUDE.md`): five for this feature.
 
 use std::path::Path;
 

@@ -38,7 +38,7 @@ fn answer_now(store: &Store, request: &Value) -> Value {
         project(body).map(|id| json!({"ok": true, "settings": store.settings().list(id.as_deref())}))
     } else if let Some(body) = request.get("set") {
         let Some(key) = body["key"].as_str() else {
-            return json!({"ok": false, "error": "set needs a key"});
+            return json!({"ok": false, "error": "set must name a key"});
         };
         project(body).and_then(|id| {
             let value = body.get("value").filter(|v| !v.is_null()).cloned();
@@ -59,7 +59,7 @@ pub async fn request(home: &Path, server_exe: &Path, body: Value) -> Result<Valu
     write.write_all(format!("{}\n", json!({"admin": body})).as_bytes()).await.map_err(|e| e.to_string())?;
     let mut line = String::new();
     BufReader::new(read).read_line(&mut line).await.map_err(|e| e.to_string())?;
-    let answer: Value = serde_json::from_str(&line).map_err(|_| format!("the server answered {line:?}"))?;
+    let answer: Value = serde_json::from_str(&line).map_err(|_| format!("the server's admin answer is not JSON: {line:?}"))?;
     if answer["ok"] == json!(true) {
         Ok(answer)
     } else {

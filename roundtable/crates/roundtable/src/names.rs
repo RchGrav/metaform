@@ -1,4 +1,5 @@
-//! Agent names from the genesis session (owner doc `archaeology/rich/technical/agent_identity.md`):
+//! Agent names from the genesis session (owner doc `archaeology/rich/technical/agent_identity.md`,
+//! not copied into this repository):
 //! "An agent is born with its genesis context, the first session a harness opens for it. The id
 //! of that session is the seed of the agent's identity." 32-bit FNV-1a of the id's UTF-8 bytes,
 //! XOR-folded to 16 bits; the high byte picks one of 256 adjectives, the low byte one of 256

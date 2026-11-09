@@ -78,7 +78,7 @@ function apply(line) {
     case "roundtable.work.started": seat(name).state = "working"; push({ kind: "sys", text: `${name} is working in the workspace` }); break;
     case "roundtable.review": { const s = seat(name); s.state = "reviewing"; push({ kind: "sys", text: `${name} is the only one free and was asked to review the materials while the others work` }); break; }
     case "roundtable.background": { const s = seat(name); s.state = d.items ? "working" : "ready"; push({ kind: "sys", text: d.items ? `${name} reports ${d.items} background job${d.items > 1 ? "s" : ""} still running; its turns are skipped until they end` : `${name}'s background work ended` }); break; }
-    case "roundtable.skipped": { push({ kind: "sys", text: `${name} skipped (${d.reason}); its next reply may use the larger limit` }); break; }
+    case "roundtable.skipped": { push({ kind: "sys", text: `${name} skipped (${d.reason})${t.base ? "; its next reply may use the recovery limit" : ""}` }); break; }
     case "roundtable.ratings.asked": push({ kind: "sys", text: `Rating round: ${d.seats.join(", ")} are rating each other` }); break;
     case "roundtable.rating": push({ kind: "sys", text: `${d.from_name} rated ${d.to_name}: ${d.points.toFixed(1)} points (${Object.entries(d.ratings).map(([k, v]) => k + " " + v).join(", ")})` }); break;
     case "roundtable.turn.failed": { const s = seat(name); if (s.state === "floor") s.state = "ready"; push({ kind: "sys", level: "warn", text: `${name}: turn failed: ${d.error}` }); break; }
@@ -182,7 +182,7 @@ function renderItem(item) {
     case "msg": case "veto": {
       const m = el("div", "msg" + (item.kind === "veto" ? " veto" : "")); const who = el("div", "who");
       who.appendChild(el("b", "", item.who || item.seat)); if (item.who) who.appendChild(el("span", "badge", item.seat)); if (item.id) who.appendChild(el("span", "id", item.id));
-      if (item.kind === "veto") who.appendChild(el("span", "badge", "vetoed: " + item.reasons.join("; ")));
+      if (item.kind === "veto") who.appendChild(el("span", "badge", (item.judged ? "rejected: " : "not shared: ") + item.reasons.join("; ")));
       if (!item.judged && item.kind === "msg") who.appendChild(el("span", "badge", "unjudged"));
       if (item.after) who.appendChild(el("span", "badge", "after work"));
       // Length against the allowance it was measured by (Unicode characters, as the engine counts).
@@ -315,7 +315,7 @@ $("newBtn").onclick = async () => {
   await fillFromSettings(f);
   $("newDialog").showModal();
 };
-// The form starts from the owner's saved settings (/settings), so a new table follows them
+// The form starts from the chair's saved settings (/settings), so a new table follows them
 // unless the form is changed for that table.
 async function fillFromSettings(f) {
   const r = await authed("/api/settings/list").then(r => r.json()).catch(() => null);

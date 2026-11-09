@@ -5,7 +5,7 @@
 //! transaction ended the process. Every write is a job sent to the writer.
 //!
 //! Jobs wait in a queue for each client. The writer serves the clients in turn, one job at
-//! a time, so a client that sends many writes at once cannot starve another. Each job runs
+//! a time, so a client that sends many writes at once cannot starve another. Each job performs
 //! its own transaction and answers after commit.
 
 use std::collections::{HashMap, VecDeque};
@@ -24,7 +24,7 @@ pub(crate) struct Job {
     pub task: Task,
 }
 
-/// A running writer. Dropping it stops the thread after the queued jobs finish.
+/// A running writer. Dropping it ends the thread after the queued jobs finish.
 pub(crate) struct Writer {
     queue: Option<mpsc::Sender<Job>>,
     thread: Option<JoinHandle<()>>,
@@ -99,7 +99,7 @@ fn serve(conn: &Connection, recv: &mpsc::Receiver<Job>) {
     }
 }
 
-/// Run `body` in one transaction on the writer's connection.
+/// Perform `body` in one transaction on the writer's connection.
 pub(crate) fn transact<T>(
     conn: &Connection,
     body: impl FnOnce(&Connection) -> Result<T, StoreError>,

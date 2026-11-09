@@ -43,7 +43,7 @@ fn whole_number_from_one(value: &Value) -> Result<(), String> {
 /// Every setting the server has.
 pub const SETTINGS: &[Setting] = &[Setting {
     key: "stores.max_open_databases",
-    about: "Databases kept open at once; the least recently used closes first. Each holds about 30 MB (docs/designs/storage.md, risk 5).",
+    about: "Databases kept open at once; the least recently used closes first. Each holds about 28 MB (docs/designs/storage.md, risk 5).",
     at_start: true,
     global_only: true,
     default: || json!(crate::DEFAULT_MAX_OPEN),

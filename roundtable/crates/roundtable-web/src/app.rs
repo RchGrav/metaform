@@ -51,7 +51,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// The chair credential for this run.
     pub token: String,
-    /// The owner's saved settings (see `roundtable::settings`).
+    /// The chair's saved settings (see `roundtable::settings`).
     pub settings: Arc<roundtable::settings::Store>,
 }
 
@@ -420,7 +420,7 @@ pub async fn print_chat(state: &AppState, id: &str) {
         let seat = data["seat"].as_str().unwrap_or("");
         match envelope.name {
             "roundtable.contribution" if data["accepted"] == true => println!("[{}] {seat}: {}", data["id"].as_str().unwrap_or(""), data["text"].as_str().unwrap_or("")),
-            "roundtable.contribution" => println!("  (vetoed {seat}: {})", data["reasons"]),
+            "roundtable.contribution" => println!("  ({} {seat}: {})", if data["judged"] == true { "rejected" } else { "not shared" }, data["reasons"]),
             "roundtable.topic" => println!("\n== Topic #{}: {}\n", data["index"], data["topic"].as_str().unwrap_or("")),
             "roundtable.chair" => println!("CHAIR: {}", data["text"].as_str().unwrap_or("")),
             "roundtable.pass" | "roundtable.work.started" | "roundtable.work.finished" | "roundtable.skipped"

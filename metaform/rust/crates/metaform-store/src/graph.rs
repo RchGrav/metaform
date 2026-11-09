@@ -37,7 +37,8 @@ const DDL: &[&str] = &[
     "CREATE REL TABLE IF NOT EXISTS WANTS(FROM Element TO Element, why STRING, how STRING, intent STRING, extra STRING)",
 ];
 
-/// Open a grouping database with tuned settings and its schema.
+/// Open a grouping database with the buffer pool, size limit and thread count above, and create
+/// its schema.
 pub fn open(path: &std::path::Path) -> Result<Database, StoreError> {
     let config = SystemConfig::default()
         .buffer_pool_size(BUFFER_POOL)

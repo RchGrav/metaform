@@ -146,7 +146,7 @@ async fn settings(home: &std::path::Path, command: &str, folder: Option<PathBuf>
         Ok(answer) => {
             match command {
                 "settings" => println!("{}", serde_json::to_string_pretty(&answer["settings"]).unwrap_or_default()),
-                _ => println!("done; it applies {}", answer["applies"].as_str().unwrap_or("at once")),
+                _ => println!("saved; the setting takes effect {}", answer["applies"].as_str().unwrap_or("at once")),
             }
             ExitCode::SUCCESS
         }
