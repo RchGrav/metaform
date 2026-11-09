@@ -20,12 +20,12 @@ fn usage(problem: &str) -> ExitCode {
 async fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     let mut home = metaform_server::default_home();
-    let mut assets = PathBuf::from("metaform/workspace/dist");
+    let mut assets: Option<PathBuf> = None;
     let mut port: u16 = 0;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--home") => match args.next() { Some(v) => home = v.into(), None => return usage("--home needs a folder") },
-            Some("--assets") => match args.next() { Some(v) => assets = v.into(), None => return usage("--assets needs a folder") },
+            Some("--assets") => match args.next() { Some(v) => assets = Some(v.into()), None => return usage("--assets needs a folder") },
             Some("--port") => match args.next().and_then(|v| v.to_str()?.parse().ok()) {
                 Some(p) => port = p,
                 None => return usage("--port needs a number"),
@@ -33,8 +33,18 @@ async fn main() -> ExitCode {
             _ => return usage(&format!("unexpected argument {}", PathBuf::from(&arg).display())),
         }
     }
+    // Without --assets: a `workspace` folder installed beside this binary, then the source tree
+    // this binary was built from (metaform/workspace/dist), so `metaform gui` works from any folder.
+    let assets = match assets {
+        Some(dir) => dir,
+        None => {
+            let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.join("workspace")));
+            let built = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../workspace/dist");
+            beside.filter(|d| d.join("index.html").is_file()).unwrap_or(built)
+        }
+    };
     if !assets.join("index.html").is_file() {
-        return usage(&format!("{} has no index.html; build the workspace first (npm run build)", assets.display()));
+        return usage(&format!("{} has no index.html; build the workspace first (npm run build in metaform/workspace)", assets.display()));
     }
     // The server binary sits beside this one in a cargo build.
     let server_exe = match std::env::current_exe() {
