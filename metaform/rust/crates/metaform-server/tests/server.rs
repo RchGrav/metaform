@@ -14,6 +14,9 @@ use std::time::Duration;
 use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
+/// Bytes of the compact `tools/list` result (R-1.3 baseline). Recorded 2026-11-09.
+const TOOLS_LIST_BYTES: usize = 11_762;
+
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]
 fn one_tool_over_mcp_2026_07_28() {
@@ -36,6 +39,14 @@ fn one_tool_over_mcp_2026_07_28() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["project-map"], "Metaform has one tool");
+    // R-1.3 baseline: the fixed cost every agent pays before its first call. Bytes of the
+    // compact `tools/list` result are consistent across runs, unlike any one tokenizer.
+    // A change to the tool definition must update this number in the same commit.
+    let tools_list_bytes = serde_json::to_string(&tools["result"]).unwrap().len();
+    assert_eq!(
+        tools_list_bytes, TOOLS_LIST_BYTES,
+        "tools/list size changed; update TOOLS_LIST_BYTES and say why in the commit"
+    );
     assert!(
         !agent
             .call(json!({"update": {"code.part": {"name": "part"}}}))

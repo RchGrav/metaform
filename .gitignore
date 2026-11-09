@@ -16,3 +16,8 @@ __pycache__/
 
 # Regenerated on each contract check (ignored in the original repository too)
 metaform/verification/latest-schema-check-results.json
+
+# Agent notes folders (local working notes, not shared)
+.ida/
+.marcus/
+.jorge/
