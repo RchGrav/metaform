@@ -81,19 +81,24 @@ describe("MockSource reads", () => {
     expect(Object.keys(((await source.dump("metaform"))["."]) as object)).toContain("code");
   });
 
-  it("lists an outside project as one element, and answers its own map in its own addresses", async () => {
+  it("lists an outside project as one element, and answers its own map under its own id", async () => {
     const source = fixed();
     const graph = await source.map("metaform");
     expect(graph.addresses.filter((a) => a.startsWith("upstream.code.engine.workflow"))).toEqual(["upstream.code.engine.workflow"]);
-    const element = (await source.goto("metaform", "upstream.code.engine.workflow")).element;
-    expect(element.uri).toMatch(/^https:\/\/example\.invalid\//);
-    const outside = await source.map("metaform", "upstream.code.engine.workflow");
+    const ref = await source.outsideMap("metaform", "upstream.code.engine.workflow");
+    expect(ref).toEqual({
+      id: "outside:https://example.invalid/mock/workflow-engine",
+      name: "workflow-engine",
+      uri: "https://example.invalid/mock/workflow-engine",
+    });
+    const outside = await source.map(ref!.id);
     expect(outside.definitive).toBe("code.engine.workflow");
-    expect(outside.addresses).toContain("code.interpreter.flow");
-    expect(outside.addresses.some((a) => a.startsWith("upstream.code.engine.workflow"))).toBe(false);
     expect(outside.edges).toContainEqual(["code.engine.workflow", "code.interpreter.flow"]);
-    const refused = await source.map("metaform", "code.store").catch((e: unknown) => e);
-    expect(refused).toBeInstanceOf(RefusalError);
+    expect(outside.addresses.some((a) => a.startsWith("upstream.code.engine.workflow"))).toBe(false);
+    expect((await source.goto(ref!.id, "code.transport.call")).wanted_by).toHaveProperty("code.interpreter.flow");
+    expect(Object.keys(((await source.dump(ref!.id))["."]) as object)).toContain("code");
+    expect(await source.outsideMap("metaform", "code.store")).toBeNull();
+    expect((await source.projects()).map((p) => p.id)).not.toContain(ref!.id);
   });
 
   it("names cross-project links with the map URI and the element as fragment", async () => {
@@ -124,6 +129,37 @@ describe("MockSource simulated updates", () => {
     stop();
     run[1]?.();
     expect(events).toHaveLength(4);
+  });
+
+  it("starts a first run with no projects, and fills the sample over the simulated intake", async () => {
+    const run: (() => void)[] = [];
+    const source = new MockSource(workspace, {
+      firstRun: true,
+      playEvents: false,
+      schedule: (fn) => {
+        run.push(fn);
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      },
+    });
+    expect(await source.projects()).toEqual([]);
+    const events: WorkspaceEvent[] = [];
+    source.subscribe("mashtrac", (e) => events.push(e));
+    const sample = await source.simulateIntake();
+    expect(sample.id).toBe("mashtrac");
+    expect((await source.projects()).map((p) => p.id)).toEqual(["mashtrac"]);
+    expect((await source.map("mashtrac")).addresses).toEqual([]);
+    run[0]?.();
+    expect((await source.map("mashtrac")).addresses).toHaveLength(1);
+    for (const step of run.slice(1)) step();
+    const full = await new MockSource(workspace, { playEvents: false }).map("mashtrac");
+    expect(await source.map("mashtrac")).toEqual(full);
+    expect(events.filter((e) => e.kind === "map-changed")).toHaveLength(run.length + 1);
+  });
+
+  it("sends each agent's name with its presence", () => {
+    const events: WorkspaceEvent[] = [];
+    new MockSource(workspace, { playEvents: false }).subscribe("metaform", (e) => events.push(e));
+    expect(events.map((e) => (e.kind === "agent-presence" ? e.name : null))).toEqual(["Ida", "Marcus"]);
   });
 
   it("never changes the imported workspace data", () => {
