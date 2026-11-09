@@ -138,6 +138,8 @@ export interface RendererEvents {
  * 3. Every node is focusable and has an accessible name: "<label>, <role>, <beneath> beneath".
  * 4. Feedback lasts at most MAX_ANIMATION_MS, camera moves CAMERA_MS and layout motion LAYOUT_MS,
  *    eased with EASING and interruptible; nothing moves under prefers-reduced-motion.
+ * 5. Every node's element carries `data-address="<address>"`, so the shell can find a node on screen
+ *    (arrow-key navigation, UX section 12a).
  */
 export interface GraphRenderer {
   mount(host: HTMLElement, events: RendererEvents): void;

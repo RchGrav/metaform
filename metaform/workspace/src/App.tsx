@@ -11,6 +11,7 @@ import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
+import { connected, isArrow, nearestInDirection, nodeCentres } from "./views/navigate";
 
 export interface AppProps {
   source: GraphSource;
@@ -235,10 +236,16 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
         case e.key === "m" || e.key === "M":
           setRailOpen(true);
           break;
-        case state.mode === "present" && ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key) && sheet !== null: {
-          const forward = e.key === "ArrowRight" || e.key === "ArrowDown";
-          const next = Object.keys(forward ? sheet?.wants ?? {} : sheet?.wanted_by ?? {})[0];
-          if (next) dispatch({ type: "select", address: next });
+        case isArrow(e.key) && selection !== null: {
+          // Along wants, to the connected element most nearly in the arrow's direction; nothing
+          // happens when none lies that way. focusNode eases the view only if it is off screen.
+          if (!selection || !isArrow(e.key)) break;
+          e.preventDefault();
+          const next = nearestInDirection(selection, connected(scene, selection), nodeCentres(), e.key);
+          if (next) {
+            dispatch({ type: "select", address: next });
+            renderer.focusNode(next);
+          }
           break;
         }
         default:
@@ -247,7 +254,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys]);
+  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys, scene, renderer]);
 
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
