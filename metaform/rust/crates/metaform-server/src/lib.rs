@@ -16,6 +16,7 @@ pub mod call;
 pub mod relay;
 pub mod start;
 pub mod tool;
+pub mod watch;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

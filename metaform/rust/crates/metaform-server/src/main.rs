@@ -75,6 +75,12 @@ async fn main() -> ExitCode {
         }
         return projects(&home).await;
     }
+    if command == Some("gui") {
+        if !positional.is_empty() {
+            return usage("gui takes no arguments");
+        }
+        return gui(&home);
+    }
     if command == Some("specification") {
         return specification(&home, &target, &positional, check).await;
     }
@@ -93,7 +99,7 @@ async fn main() -> ExitCode {
             Ok(exe) => metaform_server::forward(&home, &target, &exe).await,
             Err(e) => Err(e.to_string()),
         },
-        _ => return usage("expected serve, mcp, call, projects, settings, set, unset or specification"),
+        _ => return usage("expected serve, mcp, call, projects, gui, settings, set, unset or specification"),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -311,9 +317,27 @@ async fn import(home: &std::path::Path, exe: &std::path::Path, mut body: serde_j
     }
 }
 
+/// `metaform gui` opens the graph workspace for every project in the home (owner decision,
+/// 2026-11-09). It runs the `metaform-web` host installed beside this binary, which serves the
+/// built workspace and asks this home's server for its projects; it runs until Ctrl-C.
+fn gui(home: &std::path::Path) -> ExitCode {
+    let host = match std::env::current_exe() {
+        Ok(exe) => exe.with_file_name("metaform-web"),
+        Err(e) => return usage(&e.to_string()),
+    };
+    match std::process::Command::new(&host).arg("--home").arg(home).status() {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) => ExitCode::from(status.code().map_or(1, |c| c.clamp(1, 255) as u8)),
+        Err(e) => {
+            eprintln!("metaform: cannot start {}: {e}", host.display());
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn usage(problem: &str) -> ExitCode {
     eprintln!(
-        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]\n       metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -"
+        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform gui [--home DIR]\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]\n       metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -"
     );
     ExitCode::from(2)
 }

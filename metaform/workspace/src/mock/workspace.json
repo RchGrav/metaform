@@ -1,0 +1,1716 @@
+{
+ "simulated": true,
+ "projects": {
+  "metaform": {
+   "id": "metaform",
+   "name": "metaform",
+   "folder": "~/metaform",
+   "dump": {
+    "code": {
+     "adapter": {
+      "context": {
+       "technical_name": "context adapter",
+       "name": "Gateway issue context",
+       "role": "Supportive"
+      }
+     },
+     "assistant": {
+      "navigation": {
+       "technical_name": "navigation assistant",
+       "name": "Agent embodiment",
+       "role": "Supportive"
+      }
+     },
+     "builder": {
+      "package": {
+       "technical_name": "package builder",
+       "name": "Build",
+       "role": "Supportive",
+       "wants": {
+        "code.exchange.data": {
+         "why": "Carry project identity, map history and remote work between environments without silently overwriting the local workpiece.",
+         "how": "Exports and imports versioned records and declared module tables. Archives bundle map data and optional origin files; remote returns carry working layers, file variations and notes, and import writes source changes into a separate review folder.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "bus": {
+      "event": {
+       "technical_name": "event bus",
+       "name": "Events",
+       "role": "Supportive",
+       "wants": {
+        "code.bus.event.relay": {
+         "why": "Deliver map changes across processes sharing the Metaform home.",
+         "how": "Transports authenticated map.changed events through loopback listeners, acknowledges receipt and removes refused listener records.",
+         "direction": "two-way"
+        }
+       },
+       "relay": {
+        "technical_name": "relay event",
+        "name": "Event relay",
+        "role": "Supportive"
+       }
+      }
+     },
+     "coordination": {
+      "reservation": {
+       "technical_name": "reservation coordination",
+       "name": "Work claims",
+       "role": "Supportive"
+      }
+     },
+     "coordinator": {
+      "discussion": {
+       "technical_name": "discussion coordinator",
+       "name": "Roundtables",
+       "role": "Supportive"
+      }
+     },
+     "dispatcher": {
+      "agent": {
+       "technical_name": "agent dispatcher",
+       "name": "dispatch",
+       "role": "Supportive",
+       "wants": {
+        "code.coordination.reservation": {
+         "why": "Keep accepted changes from competing over the same project functions.",
+         "how": "Reserves proposal addresses across related tickets and delays conflicting work until their tickets finish.",
+         "direction": "inbound"
+        },
+        "code.monitor.progress": {
+         "why": "Recognize repeated unsuccessful work so the assigned workflow can recover.",
+         "how": "Counts executed attempts lacking completed-step progress. Excludes explicit stops. Pauses automatic execution at configured limit. Resets counts when completed steps advance. Emits rework-limit signals through existing events.",
+         "direction": "inbound"
+        },
+        "upstream.code.harness.agent": {
+         "why": "Run assigned work in the person's installed agent environment and receive activity, results and requests for permission.",
+         "how": "Runs assigned work through Claude, Codex or official Antigravity ACP agents using their own host authentication, while dispatch supplies assignments and receives session updates.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "editor": {
+      "prompt": {
+       "technical_name": "prompt editor",
+       "name": "Prompt review",
+       "role": "Supportive"
+      }
+     },
+     "engine": {
+      "workflow": {
+       "technical_name": "workflow engine",
+       "name": "workflow",
+       "role": "Supportive",
+       "wants": {
+        "code.preprocessor.prompt": {
+         "why": "Supply the lexicalized operation with knowledge applicable at its addressed elements.",
+         "how": "Preserves supplied wording, assembles visible knowledge and properties by layer, includes always-show records and appends canonical name-to-address references.",
+         "direction": "inbound"
+        },
+        "code.router.assignment": {
+         "why": "Assign functionally grounded work to suitable expertise and retain responsibility through specialist calls and returns.",
+         "how": "Routes unassigned tickets to registered specialists or a Facilitator, preserves existing assignments, records operative revisions and resumes callers through durable continuations.",
+         "direction": "two-way"
+        },
+        "code.scheduler.task": {
+         "why": "Keep requested changes, findings, progress and questions attached to the functional parts they concern and available for execution.",
+         "how": "Tracks condition separately from task kind, board position, ownership, agent eligibility, planned steps, completed history and linked nodes. Questions and permission requests remain reviewable at their nodes; claims and role permissions govern agent writes.",
+         "direction": "two-way"
+        },
+        "document.procedure": {
+         "why": "Supply reusable instructions whose semantic decisions can be prepared once and applied through later addressed calls.",
+         "how": "Specifies agent interpretation, authoring, ingest, evaluation and task preparation. Example source workflows and definitions illustrate reusable procedures; the prompts collection supplies additional candidate procedures and is not itself a shipped runtime catalog.",
+         "direction": "inbound"
+        },
+        "upstream.code.harness.agent": {
+         "why": "Interpret authored Axiom control flow and perform each procedure's reasoning while retaining deterministic call transport.",
+         "how": "Interprets Choice, Map, Retry, Catch and verification in the supplied logic, calls the workflow transport, and returns its computed values or errors.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "exchange": {
+      "data": {
+       "technical_name": "data exchange",
+       "name": "Project archive",
+       "role": "Supportive",
+       "wants": {
+        "code.verifier.integrity": {
+         "why": "Detect whether visible packet work and its carried provenance still correspond when a sealed packet is exchanged.",
+         "how": "Seals and checks ZIP packets: hashes bind visible work to a manifest, and a derived-key authenticated envelope binds the hidden data to that manifest and packet lineage. Its supplied evidence enables tamper detection rather than secrecy. Current build archives use a separate unsealed exchange path.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "exporter": {
+      "document": {
+       "technical_name": "document exporter",
+       "name": "Map export",
+       "role": "Supportive"
+      }
+     },
+     "framework": {
+      "plugin": {
+       "technical_name": "plugin framework",
+       "name": "Chassis",
+       "role": "Supportive",
+       "wants": {
+        "code.builder.package": {
+         "why": "Distribute the selected Metaform capabilities and, when requested, carry a workpiece and assignment to another execution environment.",
+         "how": "Assembles installer, full, project-wheel and archive outputs, carries declared dependencies, emits stage progress and includes an isolated wheel bootstrap. Project wheels import their carried map and print the bound remote assignment on first run.",
+         "direction": "outbound"
+        },
+        "code.bus.event": {
+         "why": "Deliver module events and retain each subscriber's outcome.",
+         "how": "Runs synchronous or asynchronous subscriptions with separate contexts and payload copies, returning completed, failed or cancelled delivery records.",
+         "direction": "two-way"
+        },
+        "code.installer.package": {
+         "why": "Connect Metaform's declared capabilities to supported agent hosts from either the source checkout or a built distribution.",
+         "how": "Detects host configuration locations, stages versions without downgrading, merges MCP registration, writes the Metaform pointer skill and passive reminders, probes the server, records installed ownership and supports backed-up removal.",
+         "direction": "outbound"
+        },
+        "code.interface.command_line": {
+         "why": "Make the active project's available operations and settings discoverable and executable with consistent contextual help.",
+         "how": "Parses declared operations, resolves project, folder and session context, and supplies contextual help, settings views, reports, builds and installation commands.",
+         "direction": "two-way"
+        },
+        "code.manager.configuration": {
+         "why": "Resolve each operation's module-owned settings with declared defaults and folder inheritance.",
+         "how": "Declares typed settings, validates values, resolves folder and global inheritance, and supplies settings to command, MCP, help and settings views.",
+         "direction": "inbound"
+        },
+        "code.manager.repository": {
+         "why": "Maintain user-authored modules against the released chassis without requiring a fork of the chassis implementation.",
+         "how": "Initializes module repositories, records source-bound cross-platform checks, dispatches per-module quality reviews before wheel assembly, and starts template upkeep as pull requests. Demonstrates the module contract through template and hello. Runs upkeep manually and after successful newer installations for registered module repositories.",
+         "direction": "two-way"
+        },
+        "code.registry.project": {
+         "why": "Resolve the intended workpiece and its active metaform while keeping project records separate from its source files.",
+         "how": "Registers project source locations, maps folders to projects, keeps settings and active bases, and supports backup, restore and clearing of project stores. Origins, variants and extraction retain and reconstruct artifact history.",
+         "direction": "two-way"
+        },
+        "code.server.tool": {
+         "why": "Expose the current modules and project context to an agent host without requiring the agent to infer command syntax.",
+         "how": "Derives tools, command schemas, resources, slash prompts and live instructions from declarations, validates calls with the shared grammar, dispatches each through its own context and preserves stdio service across supported code upgrades.",
+         "direction": "two-way"
+        },
+        "code.store.prompt": {
+         "why": "Serve authored agent instructions with traceable revisions and permit deliberate review of the text a process receives.",
+         "how": "Versions shipped and edited text, retains provenance uses, fills declared resource placeholders, and provides prompt review, packet editing, source update and structural notices without substituting code for semantic judgment.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "gateway": {
+      "messaging": {
+       "technical_name": "messaging gateway",
+       "name": "A2A",
+       "role": "Supportive"
+      }
+     },
+     "graph": {
+      "knowledge": {
+       "technical_name": "knowledge graph",
+       "name": "Inference Metaform",
+       "role": "Supportive",
+       "wants": {
+        "code.exporter.document": {
+         "why": "Make the visible functional map readable outside a live interface.",
+         "how": "Produces address-preserving Markdown, Mermaid and XML from contextual Store reads, retaining roles, references and encounter records.",
+         "direction": "inbound"
+        },
+        "code.processor.intake": {
+         "why": "Acquire the artifact's functional shape from an examining agent without replacing semantic judgment with storage validation.",
+         "how": "Serves the authored intake procedure and schema. Records elements and joins immediately. Stores references in the sources layer and findings in work records. Provides whole-map readback. Refines the active map by default. Finishes separate intakes without switching the active base.",
+         "direction": "inbound"
+        },
+        "code.resolver.context": {
+         "why": "Return knowledge that applies at the requested functional address while retaining alternate knowledge and previous interpretations.",
+         "how": "Walks namespace prefixes, applies selected and masked layers, excludes building layers and hidden descendants, and returns applicable properties and knowledge. Layer operations retain provenance, source relationships, tags and re-examination state.",
+         "direction": "inbound"
+        },
+        "code.service.query": {
+         "why": "Expose map, layer context and record history through consistent paged reads.",
+         "how": "Routes named questions to Store reads for roots, joins, citations, provenance, versions and operations.",
+         "direction": "inbound"
+        },
+        "code.store.event": {
+         "why": "Preserve graph identity and every recorded change across processes, concurrent writers, migrations and refinements.",
+         "how": "Appends transactional operations to SQLite, replays them into an in-memory graph with snapshots, exposes immutable record views and module-owned tables, and retains previous versions for reconstruction and read history.",
+         "direction": "two-way"
+        },
+        "code.store.memory": {
+         "why": "Reuse findings and corrections at the functional place they concern across agent sessions and replacement maps.",
+         "how": "Keeps a project-level entity, relation and observation graph plus node notes, joins it to element addresses or receiver/provider address pairs, applies contextual layer visibility, and exposes orphaned joins for reattachment.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "host": {
+      "application": {
+       "technical_name": "application host",
+       "name": "MCP Apps",
+       "role": "Supportive"
+      }
+     },
+     "installer": {
+      "package": {
+       "technical_name": "package installer",
+       "name": "Installer",
+       "role": "Supportive",
+       "wants": {
+        "code.manager.repository": {
+         "why": "Bring user modules forward when a newer installation changes the module template contract.",
+         "how": "Compares template versions and dispatches module upkeep after successful newer installations. Retains manual upkeep for retries.",
+         "direction": "inbound"
+        },
+        "code.registry.skill": {
+         "why": "Deploy each authored skill once with consistent discoverability and addressed access in every supported harness.",
+         "how": "Lists skills from canonical folders. Loads procedures by name or unversioned address with current prompt-store libraries. Deploys discoverable skills to native harness folders. Supplies fallback MCP discovery where native deployment is unproven.",
+         "direction": "inbound"
+        },
+        "code.service.provisioning": {
+         "why": "Establish supported Metaform entry points for an unfamiliar agent harness.",
+         "how": "Identifies the harness location, emits first-run instructions, records completion and previews backed-up host registration and owned reminders.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "integration": {
+      "tracking": {
+       "issue": {
+        "technical_name": "issue tracking integration",
+        "name": "paperclip",
+        "role": "Supportive",
+        "wants": {
+         "code.adapter.context": {
+          "why": "Resolve the correct issue and run for each gateway call without repeating context across distinct runs.",
+          "how": "Copies gateway identity into request context. Includes agent, issue and run identifiers. Scopes delivery by agent and run. Uses agent and issue without run. Preserves server environment.",
+          "direction": "inbound"
+         }
+        }
+       }
+      }
+     },
+     "interface": {
+      "command_line": {
+       "technical_name": "command line interface",
+       "name": "Command line",
+       "role": "Supportive"
+      },
+      "graphical": {
+       "technical_name": "graphical interface",
+       "name": "Web GUI",
+       "role": "Supportive",
+       "skills": [
+        {
+         "frontmatter": {
+          "name": "graph-workspace",
+          "description": "(mock) How to work on the graph workspace."
+         },
+         "uri": "skill://graph-workspace"
+        }
+       ],
+       "specification": [
+        [
+         {
+          "level": 1,
+          "title": "Graph workspace",
+          "text": "(mock) The web interface for the map."
+         }
+        ]
+       ],
+       "wants": {
+        "code.assistant.navigation": {
+         "why": "Coordinate project conversation and attention on the person's current view.",
+         "how": "Lets agents inspect the shared view and pointer, indicate map parts, capture evidence and act through a visible figure.",
+         "direction": "two-way"
+        },
+        "upstream.code.browser.web": {
+         "why": "Present and interact with the live workbench on the person's machine.",
+         "how": "Executes the local page, renders graph and agent views with bundled visualization libraries, sends user actions to the local server and receives streamed updates and downloadable artifacts.",
+         "direction": "two-way"
+        }
+       }
+      },
+      "speech": {
+       "technical_name": "speech interface",
+       "name": "voice",
+       "role": "Supportive",
+       "wants": {
+        "code.service.speech": {
+         "why": "Offer service transcription and synthesis alongside local speech engines.",
+         "how": "Provides account-selected streaming voices and Scribe transcription through the voice.engine contract.",
+         "direction": "two-way"
+        }
+       }
+      },
+      "telephone": {
+       "technical_name": "telephone interface",
+       "name": "twilio",
+       "role": "Supportive",
+       "wants": {
+        "upstream.service.telephony": {
+         "why": "Carry project calls, texts and notifications through a telephone service.",
+         "how": "Delivers signed call and message webhooks and places configured outbound notifications through Twilio.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "manager": {
+      "configuration": {
+       "technical_name": "configuration manager",
+       "name": "Settings",
+       "role": "Supportive"
+      },
+      "repository": {
+       "technical_name": "repository manager",
+       "name": "fork",
+       "role": "Supportive"
+      }
+     },
+     "monitor": {
+      "fault": {
+       "technical_name": "fault monitor",
+       "name": "Automatic fault tickets",
+       "role": "Supportive"
+      },
+      "progress": {
+       "technical_name": "progress monitor",
+       "name": "Rework counter",
+       "role": "Supportive"
+      }
+     },
+     "preprocessor": {
+      "prompt": {
+       "technical_name": "prompt preprocessor",
+       "name": "Prompt lexicalization",
+       "role": "Supportive"
+      }
+     },
+     "processor": {
+      "intake": {
+       "technical_name": "intake processor",
+       "name": "intake",
+       "role": "Supportive",
+       "wants": {
+        "upstream.code.harness.agent": {
+         "why": "Obtain semantic analysis of the actual workpiece from an agent able to examine its artifacts and follow the authored intake.",
+         "how": "Reads the procedure and schema, traces source functionality, reasons type identities and receiver purposes, and records its analysis through Metaform's tools. The intake module supplies the procedure and storage rather than performing that reasoning itself.",
+         "direction": "inbound"
+        }
+       }
+      }
+     },
+     "proxy": {
+      "tunnel": {
+       "technical_name": "tunnel proxy",
+       "name": "cloud",
+       "role": "Supportive",
+       "wants": {
+        "code.proxy.tunnel.broker": {
+         "why": "Route each authorized hosted client to its account's machine.",
+         "how": "Terminates client OAuth, signs caller assertions and multiplexes streams to the selected machine without retaining maps or call results.",
+         "direction": "two-way"
+        }
+       },
+       "broker": {
+        "technical_name": "broker tunnel",
+        "name": "Broker",
+        "role": "Supportive"
+       }
+      }
+     },
+     "registry": {
+      "project": {
+       "technical_name": "project registry",
+       "name": "Projects",
+       "role": "Supportive",
+       "wants": {
+        "code.service.backup": {
+         "why": "Make clearing and restoring project stores recoverable.",
+         "how": "Copies consistent stores, reports and base registry metadata into home backups, backs up replaced state and restores activation.",
+         "direction": "two-way"
+        },
+        "code.store.history": {
+         "why": "Keep registered project origins and work variants reconstructable after their source is unavailable.",
+         "how": "Records origins, changed files or diffs and producer context, then reconstructs selected variants.",
+         "direction": "two-way"
+        }
+       }
+      },
+      "role": {
+       "technical_name": "role registry",
+       "name": "Agent roles",
+       "role": "Supportive"
+      },
+      "skill": {
+       "technical_name": "skill registry",
+       "name": "Universal skills",
+       "role": "Supportive"
+      }
+     },
+     "resolver": {
+      "context": {
+       "technical_name": "context resolver",
+       "name": "Layer selection",
+       "role": "Supportive"
+      }
+     },
+     "router": {
+      "assignment": {
+       "technical_name": "assignment router",
+       "name": "Specialist assignment routing",
+       "role": "Supportive",
+       "wants": {
+        "code.registry.role": {
+         "why": "Select reusable expertise and deliver the exact authored duty assigned to each specialist.",
+         "how": "Lists specialist purposes and role URLs, versions authored duties, exposes role resources and records prompt revisions delivered to agent sessions.",
+         "direction": "inbound"
+        }
+       }
+      }
+     },
+     "scheduler": {
+      "task": {
+       "technical_name": "task scheduler",
+       "name": "Work queue",
+       "role": "Supportive",
+       "wants": {
+        "code.dispatcher.agent": {
+         "why": "Execute eligible tickets with observable agent ownership and preserve session state when work is interrupted or needs human input.",
+         "how": "Runs ticket-owned ACP sessions, tracks activity, budgets and drift, queues messages and attachments, and supports editor proxying, wake timers, interruption, recovery and configured worktree review.",
+         "direction": "two-way"
+        },
+        "code.integration.tracking.issue": {
+         "why": "Keep external issue orchestration and project-addressed work consistent.",
+         "how": "Links issues to tickets, exchanges comments and questions, synchronizes outcomes, and hands heartbeat assignments to dispatch with retained ownership.",
+         "direction": "two-way"
+        },
+        "code.monitor.fault": {
+         "why": "Turn repeated runtime faults into functionally located repair work and retain evidence that fixes hold.",
+         "how": "Groups faults and watched log errors, files deduplicated tickets at source-linked elements, counts recurrences and verifies repairs through quiet deadlines or named tests.",
+         "direction": "inbound"
+        }
+       }
+      },
+      "tool": {
+       "technical_name": "tool scheduler",
+       "name": "MCP tasks",
+       "role": "Supportive"
+      }
+     },
+     "server": {
+      "hosting": {
+       "technical_name": "hosting server",
+       "name": "node",
+       "role": "Supportive"
+      },
+      "tool": {
+       "technical_name": "tool server",
+       "name": "MCP server",
+       "role": "Supportive",
+       "memory": [
+        {
+         "name": "project-map",
+         "entityType": "fact",
+         "observations": [
+          "(mock) goto keeps record counts, not records."
+         ]
+        }
+       ],
+       "specification": [
+        [
+         {
+          "level": 1,
+          "title": "Project map tool",
+          "text": "(mock) One MCP tool, project-map, carries every map command."
+         }
+        ]
+       ],
+       "wants": {
+        "code.gateway.messaging": {
+         "why": "Exchange project-addressed work with external agents while retaining requests, progress and returns.",
+         "how": "Receives A2A messages as tracked tickets, sends addressed work to configured peers, and retains exchange status, cancellation, input requests and returned artifacts.",
+         "direction": "two-way"
+        },
+        "code.host.application": {
+         "why": "Present interactive tool results with the map and agent conversation.",
+         "how": "Serves embedded map, node, trace and glossary views and transports application context and tool interactions.",
+         "direction": "two-way"
+        },
+        "code.scheduler.tool": {
+         "why": "Keep long-running tool results observable without holding an interactive call open.",
+         "how": "Creates asynchronous tool tasks with progress, status, cancellation and retained results.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "service": {
+      "backup": {
+       "technical_name": "backup service",
+       "name": "Backup and restore",
+       "role": "Supportive"
+      },
+      "decision": {
+       "technical_name": "decision service",
+       "name": "Jev",
+       "role": "Supportive",
+       "memory": [
+        {
+         "name": "Jev",
+         "entityType": "fact",
+         "observations": [
+          "(mock) The decision service in the earlier system."
+         ]
+        }
+       ],
+       "wants": {
+        "upstream.service.inference": {
+         "why": "Obtain typed judgments over supplied project state.",
+         "how": "Returns Choice, Noul or Score answers with probabilities and confidence through the configured decision endpoint.",
+         "direction": "inbound"
+        }
+       }
+      },
+      "provisioning": {
+       "technical_name": "provisioning service",
+       "name": "Harness provisioning",
+       "role": "Supportive"
+      },
+      "query": {
+       "technical_name": "query service",
+       "name": "Queries",
+       "role": "Supportive"
+      },
+      "report": {
+       "technical_name": "report service",
+       "name": "Reports",
+       "role": "Supportive"
+      },
+      "speech": {
+       "technical_name": "speech service",
+       "name": "elevenlabs",
+       "role": "Supportive",
+       "wants": {
+        "upstream.service.speech": {
+         "why": "Obtain account-selected remote voices and transcription.",
+         "how": "Streams synthesized speech and Scribe transcription through authenticated API calls.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "store": {
+      "event": {
+       "technical_name": "event store",
+       "name": "Data access object",
+       "role": "Supportive",
+       "wants": {
+        "code.store.event.projection": {
+         "why": "Answer graph reads from committed changes without replaying the entire log for each operation.",
+         "how": "Rebuilds and indexes the graph from snapshots and ordered operations, catches up at transactions and reloads replaced stores.",
+         "direction": "inbound"
+        },
+        "code.store.provenance": {
+         "why": "Retain each knowledge layer's producing context and exact prompt revision.",
+         "how": "Stores production metadata, fills missing fields while building, and resolves immutable prompt-use references.",
+         "direction": "inbound"
+        },
+        "upstream.code.engine.database": {
+         "why": "Commit durable record changes and coordinate process access to local stores.",
+         "how": "Provides transactional local persistence for operation logs, snapshots, registries and module tables, with the shared connection layer applying schema versions, write locking and connection settings.",
+         "direction": "two-way"
+        }
+       },
+       "projection": {
+        "technical_name": "projection event",
+        "name": "Graph projection",
+        "role": "Supportive"
+       }
+      },
+      "history": {
+       "technical_name": "history store",
+       "name": "Artifact history",
+       "role": "Supportive"
+      },
+      "memory": {
+       "technical_name": "memory store",
+       "name": "memory",
+       "role": "Supportive",
+       "specification": [
+        [
+         {
+          "level": 1,
+          "title": "Memory store",
+          "text": "(mock) Durable facts kept at the address they come from."
+         }
+        ]
+       ]
+      },
+      "prompt": {
+       "technical_name": "prompt store",
+       "name": "Prompt store",
+       "role": "Supportive",
+       "wants": {
+        "code.editor.prompt": {
+         "why": "Review and revise authored agent prompts while retaining their exact prior revisions.",
+         "how": "Catalogs prompt text, purpose comments and load sites, appends edited versions and updates source or emits reviewable edit packets.",
+         "direction": "two-way"
+        }
+       }
+      },
+      "provenance": {
+       "technical_name": "provenance store",
+       "name": "Provenance",
+       "role": "Supportive",
+       "wants": {
+        "code.service.report": {
+         "why": "Retain intake reports and execution feedback with their producing context.",
+         "how": "Stores report bodies, records their paths, appends locked feedback with layer and prompt context, and lists or reads saved reports.",
+         "direction": "inbound"
+        }
+       }
+      }
+     },
+     "suite": {
+      "test": {
+       "technical_name": "test suite",
+       "name": "Tests and CI",
+       "role": "Supportive"
+      }
+     },
+     "system": {
+      "management": {
+       "knowledge": {
+        "technical_name": "knowledge management system",
+        "name": "Metaform",
+        "role": "Definitive",
+        "wants": {
+         "code.coordinator.discussion": {
+          "why": "Examine project questions through agent discussion and preserve inspectable outcomes for later decisions.",
+          "how": "Opens discussions through the bundled Roundtable engine, streams events, preserves inspectable results and commissions Planner proposals for the person's decision.",
+          "direction": "two-way"
+         },
+         "code.engine.workflow": {
+          "why": "Keep authored procedures callable and resumable with each call's map and folder context.",
+          "how": "Registers addressed prompts. Binds variables and element values. Persists call frames, child handoffs and parallel results in project run records.",
+          "direction": "two-way"
+         },
+         "code.framework.plugin": {
+          "why": "Extend Metaform's capabilities while retaining one consistent command, context, settings and lifecycle contract.",
+          "how": "Discovers bundled, user, entry-point and project modules, reads declarations, loads enabled modules and withdraws their resources on unload. Shared context, settings, grammar, result formatting, reports, owned tasks and event delivery let modules supply features through the same surfaces.",
+          "direction": "inbound"
+         },
+         "code.graph.knowledge": {
+          "why": "Provide a stable functional representation that relates each workpiece element to the receiving purpose its encounter serves.",
+          "how": "Stores canonical names, type addresses and CQU/DE/SE/NE roles, receiver-owned purpose joins, and versioned refinements. Reads expose entry roots, requirements, providers, namespace children, references, history, textual export and Cypher queries. Knowledge-layer operations and critic/challenge prompts support contextual analysis and recorded answers without treating semantic analysis as a storage gate.",
+          "direction": "two-way"
+         },
+         "code.interface.graphical": {
+          "why": "Let the person inspect the functional map and direct knowledge, work and agent activity from one persistent view.",
+          "how": "Serves live graph, node and layer views, source and memory inspection, work board, agent chat, attachments, diagrams, embedded apps, permissions, workspaces and build downloads.",
+          "direction": "two-way"
+         },
+         "code.interface.speech": {
+          "why": "Converse with project agents through speech.",
+          "how": "Transcribes microphone utterances into editable agent messages and speaks replies through selected speech engines.",
+          "direction": "two-way"
+         },
+         "code.interface.telephone": {
+          "why": "Keep project conversation and requests for attention available away from the screen.",
+          "how": "Bridges authenticated calls and texts to the system agent and sends selected project notifications to configured owner numbers.",
+          "direction": "two-way"
+         },
+         "code.proxy.tunnel": {
+          "why": "Let cloud AI tools reach the local map through an outbound connection.",
+          "how": "Signs the machine into the broker and carries authorized MCP requests over an outbound tunnel with local auditing and revocation.",
+          "direction": "two-way"
+         },
+         "code.server.hosting": {
+          "why": "Expose project context from a host controlled by its owner.",
+          "how": "Deploys the container host and manages TLS, authenticated MCP and web access, passkeys, accounts and relays.",
+          "direction": "two-way"
+         },
+         "code.service.decision": {
+          "why": "Reuse typed judgments for agent allocation, knowledge ordering, triage, intake coverage and session diagnostics.",
+          "how": "Asks typed decisions, caches answers and records actionable judgments at their addresses while preserving ordinary behavior when disabled or unavailable.",
+          "direction": "inbound"
+         },
+         "document.specification": {
+          "why": "Preserve the settled semantics, reasons and observable requirements that determine which changes retain Metaform's intended behavior.",
+          "how": "Defines map identity, layers, storage, chassis modules, CLI, MCP installation, quality, projects and viewer behavior, with acceptance conditions, status and open decisions. Trace, capture, change orders and build/review records preserve the decision trail.",
+          "direction": "inbound"
+         }
+        }
+       }
+      }
+     },
+     "verifier": {
+      "integrity": {
+       "technical_name": "integrity verifier",
+       "name": "packet",
+       "role": "Supportive"
+      }
+     }
+    },
+    "document": {
+     "manual": {
+      "technical_name": "manual",
+      "name": "Metaform documentation",
+      "role": "Supportive"
+     },
+     "procedure": {
+      "technical_name": "procedure",
+      "name": "Authored workflows",
+      "role": "Supportive"
+     },
+     "specification": {
+      "technical_name": "specification",
+      "name": "Metaform specification",
+      "role": "Supportive",
+      "wants": {
+       "code.suite.test": {
+        "why": "Provide executable evidence for the behavior promised by each requirement and detect regressions at public and persistence boundaries.",
+        "how": "Uses isolated Metaform homes, requirement-tagged fixtures, real CLI/MCP round trips, storage migrations and concurrency tests, fake ACP agents and browser scenarios. CI runs strict typing, lint and pytest across operating systems and Python versions, with the browser exclusion recorded as a finding.",
+        "direction": "inbound"
+       },
+       "document.manual": {
+        "why": "Make the project's functional model, operating procedures and implementation boundaries understandable to people applying or extending Metaform.",
+        "how": "Explains functional mapping and operational use. Historical edition statements, examples and review exports provide comparison evidence rather than overriding the current specification or code.",
+        "direction": "inbound"
+       }
+      }
+     }
+    },
+    "downstream": {
+     "coordinator": {
+      "roundtable": {
+       "technical_name": "roundtable coordinator",
+       "name": "Roundtable",
+       "role": "Notable",
+       "uri": "metaform://map/project/roundtable/main#code.adapter.agent"
+      }
+     },
+     "cqu": {
+      "developer": {
+       "module": {
+        "technical_name": "module developer",
+        "name": "Module developer",
+        "wants": {
+         "code.system.management.knowledge": {
+          "why": "Add and maintain project-specific Metaform capabilities using a stable extension contract and distributable modules.",
+          "how": "Supplies the public chassis contract, runnable examples and template, contextual command and MCP exposure, module-owned storage, and fork checks and packaging over the released chassis.",
+          "direction": "two-way"
+         }
+        }
+       }
+      },
+      "engineer": {
+       "automation": {
+        "technical_name": "automation engineer",
+        "name": "Automation engineer",
+        "wants": {
+         "code.system.management.knowledge": {
+          "why": "Run repeatable improvement procedures with the workpiece's actual context, durable handoffs and visible responsibility for unfinished work.",
+          "how": "Binds callable Axiom procedures to the functional map, transports agent-interpreted calls and returns, and coordinates ticket-based agent sessions through the work board and dispatch.",
+          "direction": "two-way"
+         }
+        }
+       },
+       "knowledge": {
+        "technical_name": "knowledge engineer",
+        "name": "Knowledge engineer",
+        "wants": {
+         "code.system.management.knowledge": {
+          "why": "Keep a workpiece's functional identity, receiving purposes and encounter functions reusable as context so later analysis and improvement start from retained understanding.",
+          "how": "Records the Inference Metaform as addressed elements and receiver-owned purpose joins, then serves the relevant map, selected knowledge, provenance and memories through agent and human interfaces.",
+          "direction": "two-way"
+         }
+        }
+       }
+      }
+     }
+    },
+    "layer": {
+     "document": {
+      "specification": {
+       "technical_name": "specification document layer",
+       "name": "Specification",
+       "role": "Supportive",
+       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
+       "format": "markdown_blocks",
+       "instruction": "(mock) The server seeds this definition; the real instruction is metaform_core::specification::INSTRUCTION.",
+       "template": "{title}: {text}"
+      }
+     }
+    },
+    "upstream": {
+     "code": {
+      "browser": {
+       "web": {
+        "technical_name": "web browser",
+        "name": "Web browser",
+        "role": "Notable"
+       }
+      },
+      "engine": {
+       "database": {
+        "technical_name": "database engine",
+        "name": "SQLite",
+        "role": "Notable"
+       },
+       "workflow": {
+        "technical_name": "workflow engine",
+        "name": "workflow (mock)",
+        "role": "Supportive",
+        "uri": "https://example.invalid/mock/workflow-engine"
+       }
+      },
+      "harness": {
+       "agent": {
+        "technical_name": "agent harness",
+        "name": "Agent harness",
+        "role": "Notable"
+       }
+      }
+     },
+     "service": {
+      "inference": {
+       "technical_name": "inference service",
+       "name": "TypeSafe Jev",
+       "role": "Notable"
+      },
+      "speech": {
+       "technical_name": "speech service",
+       "name": "ElevenLabs API",
+       "role": "Notable"
+      },
+      "telephony": {
+       "technical_name": "telephony service",
+       "name": "Twilio",
+       "role": "Notable"
+      }
+     }
+    }
+   }
+  },
+  "roundtable": {
+   "id": "roundtable",
+   "name": "roundtable",
+   "folder": "~/roundtable",
+   "dump": {
+    "code": {
+     "adapter": {
+      "agent": {
+       "name": "OpenRouter ACP adapter",
+       "role": "Supportive",
+       "uri": "Roundtable_ACP_Integration_Design.md#73-openrouter-models-are-selected-by-their-published-identifiers",
+       "memory": [
+        {
+         "name": "adapter",
+         "entityType": "fact",
+         "observations": [
+          "(mock) Two routes exist; the first to build is not decided."
+         ]
+        }
+       ],
+       "specification": [
+        [
+         {
+          "level": 1,
+          "title": "Agent adapter",
+          "text": "(mock) Runs a model as an ACP participant."
+         }
+        ]
+       ],
+       "wants": {
+        "upstream.gateway.llm": {
+         "why": "Run inference for the participant's selected model id.",
+         "how": "Routes chat completions to the selected provider model.",
+         "direction": "two-way"
+        },
+        "upstream.sdk.agent": {
+         "why": "Run an OpenRouter-selected model as a full agent with tools and conversation state.",
+         "how": "Supplies the agent loop, tool execution and conversational state.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "builder": {
+      "prompt": {
+       "name": "participant turn prompt",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/turn.rs",
+       "wants": {
+        "code.quota.character": {
+         "why": "Tell the participant how many characters it may contribute.",
+         "how": "Reports the participant's current speaking allowance.",
+         "direction": "inbound"
+        },
+        "data.log.discussion": {
+         "why": "Tell the participant what happened since its last turn.",
+         "how": "Provides the accepted contributions since that participant's last turn, its own pending veto or truncation disposition, and the current topic and objective.",
+         "direction": "inbound"
+        },
+        "document.prompt.system": {
+         "why": "Give every participant the same explanation of the Roundtable process.",
+         "how": "Supplies the common participant instructions for the first turn of each session.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "bus": {
+      "event": {
+       "name": "event bus",
+       "role": "Supportive",
+       "uri": "crates/bus/src/lib.rs",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "catalog": {
+      "model": {
+       "name": "OpenRouter model selection",
+       "role": "Supportive",
+       "uri": "crates/acp-host/src/models.rs",
+       "wants": {
+        "upstream.gateway.llm": {
+         "why": "Obtain the current list of selectable models instead of a fixed list.",
+         "how": "Publishes model identifiers and metadata through GET /api/v1/models.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "client": {
+      "agent": {
+       "name": "ACP client",
+       "role": "Supportive",
+       "uri": "crates/acp-host/src/harness.rs",
+       "wants": {
+        "code.adapter.agent": {
+         "why": "Talk to OpenRouter-model participants through the same ACP lifecycle as every other harness.",
+         "how": "Serves the ACP agent side for any OpenRouter model id.",
+         "direction": "two-way"
+        },
+        "code.bus.event": {
+         "why": "Surface every session change as it happens so nothing has to poll.",
+         "how": "Carries session updates, tool activity, completion, permission decisions and process exits as events.",
+         "direction": "outbound"
+        },
+        "code.launcher.agent": {
+         "why": "Start each selected participant's harness.",
+         "how": "Resolves the harness to a launch command and spawns it with stdio for newline-delimited JSON-RPC.",
+         "direction": "inbound"
+        },
+        "code.server.tool": {
+         "why": "Give every participant the Roundtable tools in its own harness.",
+         "how": "Supplies the MCP server configuration passed in session/new (and session/resume) mcpServers.",
+         "direction": "outbound"
+        },
+        "collection.workspace.shared": {
+         "why": "Put every participant in the same working directory.",
+         "how": "Supplies the directory passed as cwd on session/new.",
+         "direction": "outbound"
+        },
+        "upstream.agent.coding": {
+         "why": "Hold a continuing working session with each participant.",
+         "how": "Accepts initialize, session/new with the shared cwd, set_config_option and session/prompt, and streams session/update messages, tool activity and completion.",
+         "direction": "two-way"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "gate": {
+      "quality": {
+       "name": "JEV contribution evaluation",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/jev.rs",
+       "wants": {
+        "upstream.judge.llm": {
+         "why": "Decide before broadcast whether a contribution is worth every other participant's input tokens.",
+         "how": "Returns a confidence for each of the three contribution conditions, with reasons for any that fall short, in one request through OpenRouter.",
+         "direction": "two-way"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "identity": {
+      "agent": {
+       "name": "agent genesis names",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/names.rs",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "launcher": {
+      "agent": {
+       "name": "ACP autoselection",
+       "role": "Supportive",
+       "uri": "crates/acp-host/src/launch.rs",
+       "wants": {
+        "upstream.registry.agent": {
+         "why": "Resolve a selected harness name to a launch command without a bespoke integration per harness.",
+         "how": "Lists published ACP agents and their distributions (binary, npx, uvx), as used by acpr.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "manager": {
+      "chat": {
+       "group": {
+        "name": "Roundtable",
+        "role": "Definitive",
+        "uri": "crates/roundtable/src/engine.rs",
+        "wants": {
+         "code.builder.prompt": {
+          "why": "Brief the next participant for its turn.",
+          "how": "Assembles the participant's turn: the round line, its pending rejection reasons, and the other agents' new accepted messages; on its first turn, the owner's prompts.",
+          "direction": "inbound"
+         },
+         "code.bus.event": {
+          "why": "Run without blocking on any participant and without polling.",
+          "how": "Carries Roundtable events out and delivers commands, ACP updates and observations in as events.",
+          "direction": "two-way"
+         },
+         "code.client.agent": {
+          "why": "Give each participant its turn and collect its action without waiting on the others.",
+          "how": "Delivers turn prompts over each participant's continuing ACP session and returns the participant's reply, or reports that its previous prompt is still in progress (occupied).",
+          "direction": "two-way"
+         },
+         "code.gate.quality": {
+          "why": "Distribute only contributions worth the group's attention.",
+          "how": "Accepts or vetoes each transmitted contribution against the three 70% conditions, with veto reasons.",
+          "direction": "two-way"
+         },
+         "code.identity.agent": {
+          "why": "Give each agent a stable identity across tables.",
+          "how": "Derives the agent's name from its first session id.",
+          "direction": "inbound"
+         },
+         "code.monitor.activity": {
+          "why": "Show whether a silent participant is working, waiting, gone or unknown.",
+          "how": "Provides independent activity observations correlated to each participant.",
+          "direction": "inbound"
+         },
+         "code.quota.character": {
+          "why": "Keep messages concise without cutting them.",
+          "how": "Gives each discussion turn its reply limit (none by default; 1,024 once after a busy skip) and blocks a message over a set limit.",
+          "direction": "two-way"
+         },
+         "code.rating.peer": {
+          "why": "Record how each agent performed when the table ends.",
+          "how": "Collects every agent's ratings of the others and returns the results.",
+          "direction": "two-way"
+         },
+         "code.roster.participant": {
+          "why": "Seat the participants the chair selected.",
+          "how": "Provides each seat's harness and, where applicable, its OpenRouter model id.",
+          "direction": "inbound"
+         },
+         "code.selector.topic": {
+          "why": "When topics are on, move the group to its next shared focus once a topic is exhausted.",
+          "how": "Polls every participant for a proposal and returns the winning topic by summed pairwise sameness.",
+          "direction": "two-way"
+         },
+         "collection.workspace.shared": {
+          "why": "Produce the chair's deliverable, not a discussion summary.",
+          "how": "Holds the artifacts the participants create and refine independently or together.",
+          "direction": "inbound"
+         },
+         "data.log.discussion": {
+          "why": "Keep the continuing collaboration, every disposition and every topic change.",
+          "how": "Stores each turn outcome in order with its canonical turn number.",
+          "direction": "outbound"
+         }
+        },
+        "elephant": {},
+        "goldfish": {
+         "paraphrase": {}
+        },
+        "roundtable": {}
+       }
+      }
+     },
+     "monitor": {
+      "activity": {
+       "name": "agent activity monitoring",
+       "role": "Supportive",
+       "uri": "README.md#10-asynchronous-agent-operation-and-activity-monitoring",
+       "wants": {
+        "code.bus.event": {
+         "why": "Make activity observations available to subscribers as they happen.",
+         "how": "Carries observation events to subscribers.",
+         "direction": "outbound"
+        },
+        "code.client.agent": {
+         "why": "Relate observations to the right participant.",
+         "how": "Provides the launched harness process id and its ACP session ids.",
+         "direction": "inbound"
+        },
+        "upstream.tracer.agent": {
+         "why": "See what a participant's harness is doing when ACP reports nothing.",
+         "how": "Captures process, subprocess, file, network and observable model-provider activity through agentsight-capture.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "quota": {
+      "character": {
+       "name": "reply limit",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/rules.rs",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "rating": {
+      "peer": {
+       "name": "peer rating round",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/turn.rs",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "roster": {
+      "participant": {
+       "name": "participant selection",
+       "role": "Supportive",
+       "uri": "crates/roundtable-web/src/tables.rs",
+       "wants": {
+        "code.catalog.model": {
+         "why": "Offer the OpenRouter models a participant can use.",
+         "how": "Lists current OpenRouter model ids.",
+         "direction": "inbound"
+        },
+        "code.launcher.agent": {
+         "why": "Offer the harnesses a participant can run in.",
+         "how": "Lists registered harnesses, catalog aliases and user-supplied ACP commands.",
+         "direction": "inbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "selector": {
+      "topic": {
+       "name": "next-topic selection",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/turn.rs",
+       "wants": {
+        "upstream.judge.llm": {
+         "why": "Find which proposed topic best expresses the group's shared intent.",
+         "how": "Judges whether two proposed topics express the same underlying intent and returns a confidence for each pair; pairs may be batched in one request.",
+         "direction": "two-way"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "server": {
+      "tool": {
+       "name": "participant tools",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/mcp.rs",
+       "wants": {
+        "code.manager.chat.group": {
+         "why": "Let a participant, normally the elected head of the table, move the group forward.",
+         "how": "Ends the current topic and starts the next one, either with a topic chosen by the caller or through the normal poll.",
+         "direction": "outbound"
+        },
+        "upstream.system.reputation": {
+         "why": "Let participants reward one another's good conduct.",
+         "how": "Records a participant's rating of another participant's behavior toward accolades and identity.",
+         "direction": "outbound"
+        }
+       },
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     }
+    },
+    "collection": {
+     "workspace": {
+      "shared": {
+       "name": "shared workspace",
+       "role": "Supportive",
+       "uri": "README.md#2-participants-and-shared-workspace",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     }
+    },
+    "data": {
+     "log": {
+      "discussion": {
+       "name": "discussion record",
+       "role": "Supportive",
+       "uri": "crates/roundtable/src/record.rs",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     }
+    },
+    "document": {
+     "prompt": {
+      "system": {
+       "name": "Participant System Prompt",
+       "role": "Supportive",
+       "uri": "crates/roundtable/resources/roundtable_prompt.md",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     }
+    },
+    "downstream": {
+     "chair": {
+      "name": "user",
+      "wants": {
+       "code.manager.chat.group": {
+        "why": "Get a substantive deliverable for an objective (a specification, a design, software) from several independently reasoning models working together.",
+        "how": "Runs a turn-based, judged discussion among heterogeneous agents who share a workspace, continuing across topics until the work is produced.",
+        "direction": "two-way"
+       }
+      },
+      "elephant": {},
+      "goldfish": {
+       "paraphrase": {}
+      },
+      "roundtable": {}
+     }
+    },
+    "layer": {
+     "document": {
+      "specification": {
+       "technical_name": "specification document layer",
+       "name": "Specification",
+       "role": "Supportive",
+       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
+       "format": "markdown_blocks",
+       "instruction": "(mock) The server seeds this definition; the real instruction is metaform_core::specification::INSTRUCTION.",
+       "template": "{title}: {text}"
+      }
+     }
+    },
+    "upstream": {
+     "agent": {
+      "coding": {
+       "name": "ACP harness",
+       "uri": "https://agentclientprotocol.com/protocol/v1/overview",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "gateway": {
+      "llm": {
+       "name": "OpenRouter",
+       "uri": "https://openrouter.ai/docs/api/api-reference/models/get-models",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "judge": {
+      "llm": {
+       "name": "JEV",
+       "uri": "README.md#5-jev--judgment-engine",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "registry": {
+      "agent": {
+       "name": "ACP Registry",
+       "uri": "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "sdk": {
+      "agent": {
+       "name": "OpenRouter Agent SDK",
+       "uri": "https://openrouter.ai/docs/agent-sdk/overview",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "service": {
+      "metaform": {
+       "technical_name": "functional map server",
+       "name": "Metaform",
+       "role": "Supportive",
+       "uri": "metaform://map/project/metaform/main#code.server.tool"
+      }
+     },
+     "system": {
+      "reputation": {
+       "name": "accolades",
+       "uri": "archaeology/src/metaform/modules/roundtables/roundtable/resources/prompts.xml",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     },
+     "tracer": {
+      "agent": {
+       "name": "AgentSight",
+       "uri": "https://github.com/eunomia-bpf/agentsight/tree/master/agentsight-capture",
+       "elephant": {},
+       "goldfish": {
+        "paraphrase": {}
+       },
+       "roundtable": {}
+      }
+     }
+    }
+   }
+  },
+  "mashtrac": {
+   "id": "mashtrac",
+   "name": "mashtrac",
+   "folder": "~/mashtrac",
+   "dump": {
+    "code": {
+     "masher": {
+      "widget": {
+       "technical_name": "widget masher code",
+       "name": "mashbox",
+       "role": "Supportive",
+       "uri": "./src/widgets/mashbox.c"
+      }
+     },
+     "protocol": {
+      "network": {
+       "tracker": {
+        "cs": {
+         "technical_name": "cs tracker network protocol",
+         "name": "mashtrac",
+         "role": "Definitive",
+         "uri": "./src/network/mashtrac.c",
+         "wants": {
+          "code.masher.widget": {
+           "why": "Receive the mash data to relay it.",
+           "how": "Prepared mash data packets.",
+           "direction": "inbound"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "layer": {
+     "document": {
+      "specification": {
+       "technical_name": "specification document layer",
+       "name": "Specification",
+       "role": "Supportive",
+       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
+       "format": "markdown_blocks",
+       "instruction": "(mock) The server seeds this definition; the real instruction is metaform_core::specification::INSTRUCTION.",
+       "template": "{title}: {text}"
+      }
+     }
+    },
+    "upstream": {
+     "service": {
+      "metaform": {
+       "technical_name": "functional map server",
+       "name": "Metaform",
+       "role": "Supportive",
+       "uri": "metaform://map/project/metaform/main#code.server.tool"
+      }
+     }
+    }
+   }
+  }
+ },
+ "outside": {
+  "https://example.invalid/mock/workflow-engine": {
+   "name": "workflow-engine",
+   "dump": {
+    "code": {
+     "engine": {
+      "workflow": {
+       "technical_name": "workflow engine",
+       "name": "Workflow",
+       "role": "Definitive",
+       "wants": {
+        "code.interpreter.flow": {
+         "why": "(mock) Run authored procedures.",
+         "how": "(mock) Hands each procedure to the interpreter.",
+         "direction": "outbound"
+        }
+       }
+      }
+     },
+     "interpreter": {
+      "flow": {
+       "technical_name": "control flow interpreter",
+       "name": "Interpreter",
+       "role": "Supportive",
+       "wants": {
+        "code.transport.call": {
+         "why": "(mock) Run each step as a call.",
+         "how": "(mock) Sends one call per step and waits for its result.",
+         "direction": "outbound"
+        },
+        "code.verifier.step": {
+         "why": "(mock) Accept only checked results.",
+         "how": "(mock) Passes each result through the verifier.",
+         "direction": "outbound"
+        },
+        "document.procedure": {
+         "why": "(mock) Interpret the authored control flow.",
+         "how": "(mock) Reads each procedure's steps in order.",
+         "direction": "inbound"
+        }
+       }
+      }
+     },
+     "policy": {
+      "retry": {
+       "technical_name": "retry policy",
+       "name": "Retry",
+       "role": "Notable"
+      }
+     },
+     "store": {
+      "frame": {
+       "technical_name": "call frame store",
+       "name": "Frames",
+       "role": "Supportive"
+      }
+     },
+     "transport": {
+      "call": {
+       "technical_name": "procedure call transport",
+       "name": "Call transport",
+       "role": "Supportive",
+       "wants": {
+        "code.store.frame": {
+         "why": "(mock) Resume interrupted calls.",
+         "how": "(mock) Saves and restores call frames.",
+         "direction": "two-way"
+        },
+        "upstream.code.harness.agent": {
+         "why": "(mock) Reason inside each step.",
+         "how": "(mock) Calls the agent harness for the step's reasoning.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "verifier": {
+      "step": {
+       "technical_name": "step result verifier",
+       "name": "Verifier",
+       "role": "Notable",
+       "wants": {
+        "code.policy.retry": {
+         "why": "(mock) Recover from a failed check.",
+         "how": "(mock) Asks the retry policy whether to run the step again.",
+         "direction": "outbound"
+        }
+       }
+      }
+     }
+    },
+    "document": {
+     "procedure": {
+      "technical_name": "authored procedure",
+      "name": "Procedures",
+      "role": "Supportive"
+     }
+    },
+    "layer": {
+     "document": {
+      "specification": {
+       "technical_name": "specification document layer",
+       "name": "Specification",
+       "role": "Supportive",
+       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
+       "format": "markdown_blocks",
+       "instruction": "(mock) The server seeds this definition; the real instruction is metaform_core::specification::INSTRUCTION.",
+       "template": "{title}: {text}"
+      }
+     }
+    },
+    "upstream": {
+     "code": {
+      "harness": {
+       "agent": {
+        "technical_name": "agent harness",
+        "name": "Harness",
+        "role": "Supportive"
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "agents": [
+  {
+   "id": "ida",
+   "name": "Ida",
+   "project": "metaform",
+   "at": "code.store.memory",
+   "activity": "writing specification"
+  },
+  {
+   "id": "marcus",
+   "name": "Marcus",
+   "project": "metaform",
+   "at": "code.server.tool",
+   "activity": "reading goto"
+  },
+  {
+   "id": "jorge",
+   "name": "Jorge",
+   "project": "roundtable",
+   "at": "code.adapter.agent",
+   "activity": "idle"
+  }
+ ],
+ "events": [
+  {
+   "after_s": 6,
+   "agent": "ida",
+   "project": "metaform",
+   "address": "code.store.memory",
+   "write": {
+    "layer": "specification",
+    "record": {
+     "level": 2,
+     "title": "Recall",
+     "text": "(mock) Facts are read by presence."
+    }
+   }
+  },
+  {
+   "after_s": 14,
+   "agent": "marcus",
+   "project": "metaform",
+   "address": "code.server.tool",
+   "move": "code.server.hosting"
+  },
+  {
+   "after_s": 22,
+   "agent": "jorge",
+   "project": "roundtable",
+   "address": "code.adapter.agent",
+   "write": {
+    "layer": "memory",
+    "record": {
+     "name": "adapter",
+     "entityType": "fact",
+     "observations": [
+      "(mock) Pi + pi-acp is the existing route."
+     ]
+    }
+   }
+  }
+ ]
+}

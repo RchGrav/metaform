@@ -1,0 +1,163 @@
+// The boundary between the workspace's state and the graph drawing.
+// Ida (metaform-14) owns this file; Jorge (metaform-50) owns every renderer behind it.
+// Change it only by agreement between the two (dev/user_agent_interfaces-ux.md).
+//
+// The state layer decides everything about meaning: which elements are visible, which arrows
+// stand for wants to collapsed elements, what is dimmed, selected or unseen. The renderer only
+// lays out and draws a RenderScene, and reports raw input. It never reads a GraphSource.
+
+import type { Address, Role } from "../source";
+
+/** Where an element sits relative to the project boundary (UX section 7). */
+export type Band = "project" | "upstream" | "downstream";
+
+/** One layer mark on an element (UX section 8). `style` picks a colour and a shape, so marks work without colour vision. */
+export interface LayerMark {
+  layer: string;
+  records: number;
+  /** 0-based index into the renderer's layer palette; stable for one layer name. */
+  style: number;
+}
+
+/** One agent shown at an element (UX section 9). Always simulated in this prototype. */
+export interface AgentMark {
+  id: string;
+  /** The agent's name, for the mark's tooltip (presence.at), so "MA" says who it is. */
+  name: string;
+  initials: string;
+  active: boolean;
+  /** What the agent is doing there, such as "writing specification"; null when not reported. */
+  doing: string | null;
+}
+
+export interface RenderNode {
+  /** The element's full address; the node's identity across scenes. */
+  address: Address;
+  /** The last address segment (the terms sheet: a node's label is its last segment). */
+  label: string;
+  /** The element's technical_name, shown when zoomed close (UX section 12a). */
+  technicalName: string | null;
+  /** The expanded element that contains this node in the scene, or null at the container's top level. Lets a compound layout route wants into an expanded element in one pass. */
+  parent: Address | null;
+  role: Role | null;
+  status: string | null;
+  band: Band;
+  /** How many elements are beneath it in the map; 0 for a leaf. Leafs show no chevron. */
+  beneath: number;
+  /** True when its elements beneath are hidden (drawn as a stack); false when expanded. Ignored when beneath is 0. */
+  collapsed: boolean;
+  definitive: boolean;
+  selected: boolean;
+  /** The pivot element (UX section 10). Must never look like the Definitive element. */
+  focus: boolean;
+  /** Drawn at reduced opacity (isolate, pivot distance); still laid out in place. */
+  dimmed: boolean;
+  /** New activity the user has not seen (UX section 9). */
+  unseen: boolean;
+  /** Wants that leave the current container, as a count on the node. */
+  outside: number;
+  /** True when the element names another project (UX section 7). */
+  opensProject: boolean;
+  layers: LayerMark[];
+  agents: AgentMark[];
+}
+
+export interface RenderEdge {
+  /** Stable identity: `${from}->${to}`. */
+  id: string;
+  /** The holder of the want, or its nearest visible ancestor. */
+  from: Address;
+  /** The wanted element, or its nearest visible ancestor. */
+  to: Address;
+  /** How many wants this arrow stands for; 1 for a single want, more when it reaches a collapsed element. */
+  count: number;
+  /**
+   * The direction of the wants this arrow stands for, relative to the holder at `from` (R-3.6):
+   * `mixed` when they differ, null when none is recorded. Drives the direction flow (UX section 12a).
+   */
+  direction: "outbound" | "inbound" | "two-way" | "mixed" | null;
+  /** The want's `why` (OP), only when the arrow stands for exactly one want; shown when zoomed close. */
+  why: string | null;
+  /** The want's `how` (EF), under the same rule as `why`. */
+  how: string | null;
+  /**
+   * Whether the direction flows along this arrow (UX section 12a): on the selected element's wants,
+   * on wants that touch an element with unseen activity (the intake's new wants), and on every want
+   * in Present mode. Elsewhere the line is still, so the graph does not shimmer.
+   */
+  flowing: boolean;
+  dimmed: boolean;
+}
+
+export interface RenderScene {
+  /** Sorted by address, so the same scene always gives the same layout. A node's parent comes before it. */
+  nodes: RenderNode[];
+  edges: RenderEdge[];
+  /** The element the layered layout puts at the top, or null for the default (UX sections 10 and 13, UI-U4). */
+  top: Address | null;
+}
+
+/** Zoom 1 is 100%. x and y are the canvas translation in screen pixels. */
+export interface Viewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 4;
+/** Feedback motion (hover, selection, chips) is at most this long (UX section 12a). */
+export const MAX_ANIMATION_MS = 200;
+/** Camera moves: pan, zoom, fit and open, eased and interruptible (UX section 12a). */
+export const CAMERA_MS = 320;
+/** Layout motion: elements glide to new positions, new ones fade in, wants follow (UX section 12a). */
+export const LAYOUT_MS = 500;
+/** The easing for camera and layout motion, as the earlier map viewer used. */
+export const EASING = "cubic-bezier(.25, .8, .3, 1)";
+/** Fit may frame a small graph up to this zoom, so a start-up view fills the screen (UX section 12a). */
+export const MAX_FIT_ZOOM = 1.75;
+
+export interface Modifiers {
+  /** Ctrl on Linux and Windows, Cmd on macOS: "go up" (UX section 5). */
+  up: boolean;
+  shift: boolean;
+}
+
+/** Raw input the renderer reports. The state layer decides what each one means. */
+export interface RendererEvents {
+  nodeClick(address: Address, modifiers: Modifiers): void;
+  nodeDoubleClick(address: Address): void;
+  chevronClick(address: Address): void;
+  backgroundClick(): void;
+  /** Every pan or zoom the user makes, after it settles. */
+  viewportChange(viewport: Viewport): void;
+}
+
+/**
+ * Rules every renderer keeps:
+ * 1. Layout runs only when the set of node addresses or edge ids changes. A scene that changes
+ *    only marks, dimming, selection, focus flags or unseen flags redraws in place, so isolating a
+ *    layer or receiving activity never moves an element (UX sections 8 and 9).
+ * 2. The renderer never changes the viewport by itself, except when `setViewport` or `fit` is called.
+ * 3. Every node is focusable and has an accessible name: "<label>, <role>, <beneath> beneath".
+ * 4. Feedback lasts at most MAX_ANIMATION_MS, camera moves CAMERA_MS and layout motion LAYOUT_MS,
+ *    eased with EASING and interruptible; nothing moves under prefers-reduced-motion.
+ * 5. Every node's element carries `data-address="<address>"`, so the shell can find a node on screen
+ *    (arrow-key navigation, UX section 12a).
+ */
+export interface GraphRenderer {
+  mount(host: HTMLElement, events: RendererEvents): void;
+  /** Resolves once the scene is laid out and drawn; layout may run in a worker. A newer render supersedes an older one, which then resolves without drawing. */
+  render(scene: RenderScene): Promise<void>;
+  setViewport(viewport: Viewport, animate: boolean): void;
+  /** Frames every node with a 48 px margin, after any pending layout, and resolves to the resulting viewport. */
+  fit(animate: boolean): Promise<Viewport>;
+  /**
+   * The given addresses whose box lies wholly outside the viewport shown now, mid-move included
+   * (UX section 12a: the indicator of new elements outside the view). Added for climb step 6b.
+   */
+  outsideView(addresses: readonly Address[]): Address[];
+  /** Moves keyboard focus to a node, without changing the viewport unless the node is off screen. */
+  focusNode(address: Address): void;
+  unmount(): void;
+}
