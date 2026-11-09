@@ -19,6 +19,8 @@ import {
 /** What the scene needs that the state does not hold: the project's reads and the simulated agents. */
 export interface SceneInput {
   graph: ShallowGraph;
+  /** The whole map's addresses, for beneath counts when `graph` is a part of it (Element mode). */
+  fullAddresses?: readonly Address[];
   /** Element fields by address, from the raw dump; role and status drive node marks. */
   fields: ReadonlyMap<Address, SummarySheet["element"]>;
   /** Record counts per address per layer, from the raw dump. */
@@ -52,12 +54,16 @@ function nearestVisible(address: Address, visible: ReadonlySet<Address>): Addres
   return null;
 }
 
-export function buildScene(state: ViewState, input: SceneInput): RenderScene {
+/**
+ * The graph scene. `only` replaces the container's visible set with exactly these addresses
+ * (Element mode); beneath counts still come from the whole map.
+ */
+export function buildScene(state: ViewState, input: SceneInput, only?: readonly Address[]): RenderScene {
   const view = currentView(state);
   const addresses = graphAddresses(input.graph);
-  const counts = beneathCounts(addresses);
+  const counts = beneathCounts(only ? input.fullAddresses ?? addresses : addresses);
   const expanded = new Set(view.expanded);
-  const visible = visibleIn(addresses, view.container, expanded);
+  const visible = only ? new Set(only) : visibleIn(addresses, view.container, expanded);
   const { edges, outside } = sceneEdges(input.graph, visible);
 
   const reach = view.focus !== null && visible.has(view.focus) ? wantDistances(view.focus, edges, FOCUS_REACH) : null;
@@ -87,7 +93,7 @@ export function buildScene(state: ViewState, input: SceneInput): RenderScene {
     return {
       address,
       label: lastSegment(address),
-      parent: parent !== view.container && visible.has(parent) ? parent : null,
+      parent: !only && parent !== view.container && visible.has(parent) ? parent : null,
       role,
       status: typeof fields.status === "string" ? fields.status : null,
       band: bandOf(address),
@@ -118,4 +124,29 @@ export function buildScene(state: ViewState, input: SceneInput): RenderScene {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   return { nodes, edges: renderEdges, top: reach !== null ? view.focus : null };
+}
+
+/**
+ * The Element mode scene (UX section 3): the element in the middle, what it wants below it, and
+ * what wants it above it, each as a full address. Uses the same marks as the graph scene.
+ */
+export function elementScene(state: ViewState, input: SceneInput, at: Address, sheet: SummarySheet): RenderScene {
+  const wanted = Object.keys(sheet.wants);
+  const wanters = Object.keys(sheet.wanted_by);
+  const addresses = [...new Set([at, ...wanted, ...wanters])];
+  const edges: [Address, Address][] = [
+    ...wanters.map((holder): [Address, Address] => [holder, at]),
+    ...wanted.map((other): [Address, Address] => [at, other]),
+  ];
+  const graph = { addresses, edges, definitive: input.graph.definitive };
+  // Every address shown at the top level, with the element's wanters placed above it by the layout.
+  const flat: ViewState = {
+    ...state,
+    views: state.project === null ? state.views : {
+      ...state.views,
+      [state.project]: { ...currentView(state), container: TOP, focus: null, expanded: [] },
+    },
+  };
+  const scene = buildScene(flat, { ...input, graph, fullAddresses: graphAddresses(input.graph) }, addresses);
+  return { ...scene, top: wanters.length > 0 ? null : at };
 }

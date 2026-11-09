@@ -188,3 +188,21 @@ export function layerCounts(dump: RawDump, layers: readonly string[]): Map<Addre
   walk(dumpTree(dump), TOP);
   return counts;
 }
+
+/** Each element's scalar fields, from the raw dump: what a read of the element returns (R-5.10). */
+export function fieldsFromDump(dump: RawDump): Map<Address, Record<string, unknown>> {
+  const out = new Map<Address, Record<string, unknown>>();
+  const walk = (node: Record<string, unknown>, address: Address): void => {
+    const own: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (isObject(value)) {
+        if (key !== "wants") walk(value, address === TOP ? key : `${address}.${key}`);
+      } else if (!Array.isArray(value)) {
+        own[key] = value;
+      }
+    }
+    if (address !== TOP) out.set(address, own);
+  };
+  walk(dumpTree(dump), TOP);
+  return out;
+}
