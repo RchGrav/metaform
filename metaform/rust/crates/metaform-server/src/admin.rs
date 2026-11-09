@@ -142,7 +142,7 @@ fn import(store: &Store, body: &Value) -> Result<Value, String> {
                 refusal.code.as_str(),
                 refusal.reason
             ),
-            (_, failure) => format!("{failure}; the import may or may not be stored, so export the map before you import again"),
+            (_, failure) => format!("{failure}; the import may or may not be stored. Export the specification and compare it with your document before you import again"),
         });
     }
     let written: Vec<String> = commands.into_iter().map(|(address, _)| address).collect();
