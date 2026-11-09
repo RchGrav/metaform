@@ -3,9 +3,9 @@
 //!
 //! A separate process and an MCP client of the home's server, like `metaform call`. It serves
 //! the built web files and three routes:
-//! - `GET /api/projects`: the projects named on the command line. The server has no request
-//!   that lists its registry yet (seam gap 1), and the host must never open the store itself
-//!   (D-10), so the list comes from the host's own configuration.
+//! - `GET /api/projects`: every project registered in the home, from the server's admin request
+//!   `projects`. The host never opens the store itself (D-10), and it opens only registered
+//!   projects, because a connection from a new folder would register it.
 //! - `POST /api/projects/<id>/call`: forwards one read command to the server and returns the
 //!   result unchanged. A refusal comes back with HTTP 200, as the refusal JSON. Writes are
 //!   refused with 403: the workspace only reads, so a web page cannot change the map here.
@@ -31,7 +31,7 @@ use metaform_server::Target;
 use metaform_server::call::{Answer, call};
 use serde_json::{Value, json};
 
-/// One project the host serves. `id` is the host's own name for it, not the server's id.
+/// One registered project, as the server lists it. `id` is the server's, and opaque.
 #[derive(Clone, Debug)]
 pub struct Project {
     pub id: String,
@@ -47,32 +47,12 @@ pub struct Config {
     pub server_exe: PathBuf,
     /// The built web files (`metaform/workspace/dist`).
     pub assets: PathBuf,
-    pub projects: Vec<Project>,
 }
 
 #[derive(Clone)]
 struct AppState {
     config: Arc<Config>,
     addr: SocketAddr,
-}
-
-/// Gives each folder an id from its last segment, with a numeric suffix for repeats.
-pub fn projects_from(folders: &[PathBuf]) -> Vec<Project> {
-    let mut out: Vec<Project> = Vec::new();
-    for folder in folders {
-        let name = folder
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "project".into());
-        let mut id = name.clone();
-        let mut n = 2;
-        while out.iter().any(|p| p.id == id) {
-            id = format!("{name}-{n}");
-            n += 1;
-        }
-        out.push(Project { id, name, folder: folder.clone() });
-    }
-    out
 }
 
 /// Whether a command only reads (R-5.1): `map`, `goto`, `search`, `orphaned`, a raw dump
@@ -119,30 +99,60 @@ async fn require_host(State(state): State<AppState>, request: Request, next: Nex
     next.run(request).await
 }
 
-fn project(state: &AppState, id: &str) -> Option<Project> {
-    state.config.projects.iter().find(|p| p.id == id).cloned()
+/// The registered projects, read from the server each time, so a project registered after
+/// the host started is served without a restart.
+async fn registered(state: &AppState) -> Result<Vec<Project>, String> {
+    let answer = metaform_server::admin::request(&state.config.home, &state.config.server_exe, json!({"projects": {}})).await?;
+    let list = answer["projects"].as_array().ok_or("the server's project list is not a list")?;
+    Ok(list
+        .iter()
+        .filter_map(|p| {
+            Some(Project {
+                id: p["id"].as_str()?.to_string(),
+                name: p["name"].as_str().unwrap_or_default().to_string(),
+                folder: PathBuf::from(p["folder"].as_str()?),
+            })
+        })
+        .collect())
+}
+
+/// The registered project with this id. `Err` is a response for a missing project or a server
+/// failure (boxed, because a response is large).
+async fn project(state: &AppState, id: &str) -> Result<Project, Box<Response>> {
+    match registered(state).await {
+        Ok(all) => all.into_iter().find(|p| p.id == id).ok_or_else(|| Box::new(unknown(id))),
+        Err(reason) => Err(Box::new(unreachable(reason))),
+    }
+}
+
+fn unreachable(reason: String) -> Response {
+    (StatusCode::BAD_GATEWAY, Json(json!({"error": reason}))).into_response()
 }
 
 fn unknown(id: &str) -> Response {
     (StatusCode::NOT_FOUND, Json(json!({"error": format!("no project '{id}' in this host")}))).into_response()
 }
 
-async fn projects(State(state): State<AppState>) -> Json<Value> {
-    Json(Value::Array(
-        state
-            .config
-            .projects
-            .iter()
-            .map(|p| json!({"id": p.id, "name": p.name, "folder": p.folder.to_string_lossy()}))
-            .collect(),
-    ))
+async fn projects(State(state): State<AppState>) -> Response {
+    match registered(&state).await {
+        Ok(all) => Json(Value::Array(
+            all.iter()
+                .map(|p| json!({"id": p.id, "name": p.name, "folder": p.folder.to_string_lossy()}))
+                .collect(),
+        ))
+        .into_response(),
+        Err(reason) => unreachable(reason),
+    }
 }
 
 async fn forward(State(state): State<AppState>, Path(id): Path<String>, Json(command): Json<Value>) -> Response {
-    let Some(project) = project(&state, &id) else { return unknown(&id) };
     if !is_read(&command) {
         return (StatusCode::FORBIDDEN, Json(json!({"error": "this host forwards reads only"}))).into_response();
     }
+    let project = match project(&state, &id).await {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let target = Target::Project(project.folder.clone());
     match call(&state.config.home, &target, &state.config.server_exe, command).await {
         Ok(Answer::Ok(text)) | Ok(Answer::Refused(text)) => match serde_json::from_str::<Value>(&text) {
@@ -154,11 +164,14 @@ async fn forward(State(state): State<AppState>, Path(id): Path<String>, Json(com
 }
 
 async fn events(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let Some(project) = project(&state, &id) else { return unknown(&id) };
+    let project = match project(&state, &id).await {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let target = Target::Project(project.folder.clone());
     match metaform_server::watch::watch(&state.config.home, &target, &state.config.server_exe).await {
         Ok(changes) => Sse::new(map_changed(changes)).keep_alive(KeepAlive::default()).into_response(),
-        Err(reason) => (StatusCode::BAD_GATEWAY, Json(json!({"error": reason}))).into_response(),
+        Err(reason) => unreachable(reason),
     }
 }
 
@@ -242,14 +255,5 @@ mod tests {
         ] {
             assert!(!is_read(&write), "{write}");
         }
-    }
-
-    #[test]
-    fn repeated_folder_names_get_distinct_ids() {
-        let ids: Vec<String> = projects_from(&["/a/metaform".into(), "/b/metaform".into(), "/c/roundtable".into()])
-            .into_iter()
-            .map(|p| p.id)
-            .collect();
-        assert_eq!(ids, ["metaform", "metaform-2", "roundtable"]);
     }
 }

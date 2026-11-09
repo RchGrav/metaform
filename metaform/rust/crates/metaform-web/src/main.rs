@@ -1,17 +1,18 @@
-//! `metaform-web [--home DIR] [--assets DIR] [--port N] FOLDER...`
+//! `metaform-web [--home DIR] [--assets DIR] [--port N]`
 //!
-//! Serves the graph workspace on http://127.0.0.1:<port>/ for the project folders given.
+//! Serves the graph workspace on http://127.0.0.1:<port>/ for every project registered in the
+//! home. A project is registered when an agent first connects from its folder.
 //! The command that users type to open the workspace is not decided (an owner decision in
 //! dev/graph_workspace_graph.md); until then this binary is the host.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use metaform_web::{Config, projects_from, serve};
+use metaform_web::{Config, serve};
 
 fn usage(problem: &str) -> ExitCode {
     eprintln!("metaform-web: {problem}");
-    eprintln!("usage: metaform-web [--home DIR] [--assets DIR] [--port N] FOLDER...");
+    eprintln!("usage: metaform-web [--home DIR] [--assets DIR] [--port N]");
     ExitCode::from(2)
 }
 
@@ -21,7 +22,6 @@ async fn main() -> ExitCode {
     let mut home = metaform_server::default_home();
     let mut assets = PathBuf::from("metaform/workspace/dist");
     let mut port: u16 = 0;
-    let mut folders = Vec::new();
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--home") => match args.next() { Some(v) => home = v.into(), None => return usage("--home needs a folder") },
@@ -30,15 +30,8 @@ async fn main() -> ExitCode {
                 Some(p) => port = p,
                 None => return usage("--port needs a number"),
             },
-            Some(flag) if flag.starts_with("--") => return usage(&format!("unknown option {flag}")),
-            _ => match std::fs::canonicalize(&arg) {
-                Ok(folder) => folders.push(folder),
-                Err(e) => return usage(&format!("{}: {e}", PathBuf::from(&arg).display())),
-            },
+            _ => return usage(&format!("unexpected argument {}", PathBuf::from(&arg).display())),
         }
-    }
-    if folders.is_empty() {
-        return usage("name at least one project folder");
     }
     if !assets.join("index.html").is_file() {
         return usage(&format!("{} has no index.html; build the workspace first (npm run build)", assets.display()));
@@ -52,14 +45,10 @@ async fn main() -> ExitCode {
         Ok(l) => l,
         Err(e) => return usage(&format!("cannot listen on 127.0.0.1:{port}: {e}")),
     };
-    let projects = projects_from(&folders);
     if let Ok(addr) = listener.local_addr() {
         println!("Graph workspace: http://{addr}/");
-        for p in &projects {
-            println!("  {} -> {}", p.id, p.folder.display());
-        }
     }
-    let config = Config { home, server_exe, assets, projects };
+    let config = Config { home, server_exe, assets };
     match serve(config, listener).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
