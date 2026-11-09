@@ -222,18 +222,35 @@ export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<A
   const routes = new Map<string, Point[]>();
   const separators: Layout["separators"] = [];
   const crossing: RenderEdge[] = [];
-  let x = 0;
-  let height = 0;
-  let previous: Band | null = null;
+  // Lay out each band, then place them. The project band is anchored at x = 0, so a band
+  // appearing on the left (upstream) grows into negative x instead of shifting every project
+  // element right (climb step 6a2; viewer plan: positions stay stable). Downstream follows the
+  // project band, or upstream when there is no project band.
+  const laid = new Map<Band, ElkGraph>();
   for (const [band, { graph, crossing: across }] of toElk(scene, widths)) {
     crossing.push(...across);
-    if ((graph.children ?? []).length === 0) continue;
-    const result = await elk.layout(graph);
-    if (previous !== null) {
-      // The separator sits in the middle of the gap; it is labelled with the outer band.
-      separators.push({ x: x + BAND_GAP / 2, band: band === "downstream" ? "downstream" : previous });
-      x += BAND_GAP;
-    }
+    if ((graph.children ?? []).length > 0) laid.set(band, await elk.layout(graph));
+  }
+  const widthOf = (band: Band) => laid.get(band)?.width ?? 0;
+  const origin = new Map<Band, number>();
+  const up = laid.has("upstream");
+  const project = laid.has("project");
+  if (project) origin.set("project", 0);
+  if (up) origin.set("upstream", project ? -(widthOf("upstream") + BAND_GAP) : 0);
+  if (laid.has("downstream")) {
+    const after = project ? widthOf("project") : up ? widthOf("upstream") : -BAND_GAP;
+    origin.set("downstream", after + BAND_GAP);
+  }
+  if (up && (project || laid.has("downstream"))) {
+    const at = (project ? 0 : origin.get("downstream")!) - BAND_GAP / 2;
+    separators.push({ x: at, band: "upstream" });
+  }
+  if (laid.has("downstream") && (project || up)) {
+    separators.push({ x: origin.get("downstream")! - BAND_GAP / 2, band: "downstream" });
+  }
+  let height = 0;
+  for (const [band, result] of laid) {
+    const x = origin.get(band) ?? 0;
     collectBoxes(result, x, boxes);
     for (const edge of result.edges ?? []) {
       const section = edge.sections?.[0];
@@ -241,10 +258,10 @@ export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<A
       const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint];
       routes.set(edge.id, points.map((p) => ({ x: p.x + x, y: p.y })));
     }
-    x += result.width ?? 0;
     height = Math.max(height, result.height ?? 0);
-    previous = band;
   }
+  const left = Math.min(0, ...[...origin.values()]);
+  const right = Math.max(0, ...[...laid.keys()].map((band) => (origin.get(band) ?? 0) + widthOf(band)));
   for (const edge of crossing) {
     const from = boxes.get(edge.from);
     const to = boxes.get(edge.to);
@@ -254,5 +271,5 @@ export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<A
     const end = { x: rightward ? to.x : to.x + to.width, y: to.y + to.height / 2 };
     routes.set(edge.id, [start, end]);
   }
-  return { key, boxes, routes, separators, bounds: { x: 0, y: 0, width: x, height } };
+  return { key, boxes, routes, separators, bounds: { x: left, y: 0, width: right - left, height } };
 }

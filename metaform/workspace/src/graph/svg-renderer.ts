@@ -216,6 +216,21 @@ export class ElkRenderer implements GraphRenderer {
     return { ...this.viewport };
   }
 
+  /** The addresses whose box lies wholly outside the viewport on screen now, mid-move included. */
+  outsideView(addresses: readonly Address[]): Address[] {
+    const size = this.host?.getBoundingClientRect();
+    const boxes = this.current?.boxes;
+    if (!size || !boxes) return [];
+    const { x, y, zoom } = this.camera.current;
+    return addresses.filter((address) => {
+      const box = boxes.get(address);
+      if (!box) return false;
+      const left = box.x * zoom + x;
+      const top = box.y * zoom + y;
+      return left + box.width * zoom <= 0 || top + box.height * zoom <= 0 || left >= size.width || top >= size.height;
+    });
+  }
+
   focusNode(address: Address): void {
     const node = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(address)}"]`);
     const box = this.current?.boxes.get(address);
