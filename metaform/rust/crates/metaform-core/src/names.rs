@@ -9,7 +9,7 @@ use crate::refusal::{Code, Refusal};
 pub const ROOT: &str = ".";
 
 /// The valid root scopes (R-3.3).
-pub const ROOT_SCOPES: [&str; 7] = [
+pub const ROOT_SCOPES: [&str; 8] = [
     "code",
     "document",
     "media",
@@ -17,6 +17,7 @@ pub const ROOT_SCOPES: [&str; 7] = [
     "collection",
     "upstream",
     "downstream",
+    "layer",
 ];
 
 pub(crate) fn to_camel(snake: &str) -> String {

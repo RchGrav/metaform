@@ -7,6 +7,7 @@ use serde_json::{Map as JsonMap, Value, json};
 use crate::model::Map;
 use crate::names::ROOT;
 use crate::refusal::{Code, Refusal};
+use crate::specification;
 
 /// Role values that mark the Definitive element: `DE`, as the intake writes it today; `defining`,
 /// the earlier spelled-out name of DE in the canonical map; `definitive`, R-3.13's name.
@@ -19,8 +20,17 @@ pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
 }
 
 /// `{"<address>": {}}` returns that element's own fields, keyed by its address.
-pub(crate) fn read(map: &Map, address: &str) -> Result<Value, Refusal> {
-    if address == ROOT {
+/// `{"<address>": {"layers": [...]}}` adds the named layers held there (R-5.21): `wants`, or an
+/// array field such as `specification`. A named layer the element does not hold comes back empty
+/// when it is a layer that applies there, and is left out otherwise. At the root, a read that
+/// names layers returns the root's own fields and those layers instead of the index.
+pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refusal> {
+    let named: Vec<&str> = body
+        .get("layers")
+        .and_then(Value::as_array)
+        .map(|names| names.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if address == ROOT && named.is_empty() {
         return Ok(index(map));
     }
     let Some(element) = map.element(address) else {
@@ -30,9 +40,21 @@ pub(crate) fn read(map: &Map, address: &str) -> Result<Value, Refusal> {
             Some(json!({".": {}})),
         ));
     };
+    let mut fields = element.base_fields();
+    for name in named {
+        if name == "wants" {
+            fields.insert("wants".into(), element.wants_json());
+        } else if let Some(value) = element.fields.get(name).filter(|v| v.is_array()) {
+            fields.insert(name.into(), value.clone());
+        } else if specification::definition_of(map, name).is_some()
+            && specification::records_allowed(map, address)
+        {
+            fields.insert(name.into(), Value::Array(Vec::new()));
+        }
+    }
     Ok(Value::Object(JsonMap::from_iter([(
         address.to_string(),
-        Value::Object(element.base_fields()),
+        Value::Object(fields),
     )])))
 }
 
@@ -101,7 +123,7 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
                 .map(|record| (holder.to_string(), Value::Object(record.clone())))
         })
         .collect();
-    let layers: JsonMap<String, Value> = element
+    let mut layers: JsonMap<String, Value> = element
         .fields
         .iter()
         .filter(|(key, value)| value.is_array() && !OWN_PARTS.contains(&key.as_str()))
@@ -112,6 +134,18 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
             )
         })
         .collect();
+    // Every defined layer is listed wherever its records are allowed, even with none yet, so the
+    // agent sees where records are due once intake has placed the element (R-6.27).
+    let defined = if specification::records_allowed(map, address) {
+        specification::definitions(map)
+    } else {
+        Vec::new()
+    };
+    for definition in &defined {
+        layers
+            .entry(definition.layer.clone())
+            .or_insert_with(|| json!({"records": 0}));
+    }
     let mut skills = JsonMap::new();
     let root = map.element(ROOT).filter(|_| address != ROOT);
     for holder in root.into_iter().chain(std::iter::once(element)) {
@@ -142,7 +176,7 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         .get("memory")
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
-    Ok(json!({
+    let mut sheet = json!({
         "at": address,
         "element": element.base_fields(),
         "wants": element.wants_json(),
@@ -150,5 +184,16 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         "layers": layers,
         "skills": skills,
         "memory": {"records": memory},
-    }))
+    });
+    // How to write the layers listed here. The server delivers this part once per context, not
+    // once per address (R-6.27).
+    if !defined.is_empty() {
+        sheet["instructions"] = Value::Object(
+            defined
+                .iter()
+                .map(|d| (d.layer.clone(), Value::String(d.guidance())))
+                .collect(),
+        );
+    }
+    Ok(sheet)
 }

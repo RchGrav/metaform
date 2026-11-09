@@ -42,7 +42,14 @@ pub struct MapTool {
 struct Presence {
     at: Option<String>,
     delivered: HashMap<String, serde_json::Map<String, Value>>,
+    /// Sheet parts that hold the same text at every address, delivered once per context rather
+    /// than once per address: the layer `instructions` (R-6.27).
+    once: serde_json::Map<String, Value>,
 }
+
+/// Sheet parts whose entries are the same wherever they appear, so each entry is delivered once
+/// per context.
+const ONCE_PER_CONTEXT: [&str; 1] = ["instructions"];
 
 impl Presence {
     /// Record an arrival and return only the parts of the sheet not yet delivered unchanged in
@@ -60,6 +67,18 @@ impl Presence {
         let mut out = serde_json::Map::new();
         out.insert("at".into(), Value::String(at.clone()));
         for (part, value) in sheet {
+            if ONCE_PER_CONTEXT.contains(&part.as_str()) {
+                let Value::Object(entries) = value else { continue };
+                let fresh: serde_json::Map<String, Value> = entries
+                    .into_iter()
+                    .filter(|(name, text)| self.once.get(name) != Some(text))
+                    .collect();
+                if !fresh.is_empty() {
+                    self.once.extend(fresh.clone());
+                    out.insert(part, Value::Object(fresh));
+                }
+                continue;
+            }
             if part != "at" && seen.get(&part) != Some(&value) {
                 seen.insert(part.clone(), value.clone());
                 out.insert(part, value);

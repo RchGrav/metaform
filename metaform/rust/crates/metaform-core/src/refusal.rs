@@ -24,6 +24,11 @@ pub enum Code {
     NotFound,
     ElementsBeneath,
     WantIncomplete,
+    ElementNotInSkeleton,
+    HeadingLevelInvalid,
+    HeadingInText,
+    LayerDefinitionLocked,
+    CodeNotUnique,
     InternalError,
 }
 
@@ -44,6 +49,11 @@ impl Code {
             Code::NotFound => "NOT_FOUND",
             Code::ElementsBeneath => "ELEMENTS_BENEATH",
             Code::WantIncomplete => "WANT_INCOMPLETE",
+            Code::ElementNotInSkeleton => "ELEMENT_NOT_IN_SKELETON",
+            Code::HeadingLevelInvalid => "HEADING_LEVEL_INVALID",
+            Code::HeadingInText => "HEADING_IN_TEXT",
+            Code::LayerDefinitionLocked => "LAYER_DEFINITION_LOCKED",
+            Code::CodeNotUnique => "CODE_NOT_UNIQUE",
             Code::InternalError => "INTERNAL_ERROR",
         }
     }
@@ -78,6 +88,21 @@ impl Code {
                 "R-3.1: an element with elements beneath it cannot be deleted before them."
             }
             Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
+            Code::ElementNotInSkeleton => {
+                "R-6.26: specification blocks are written only at an element with technical_name, name and role, or at the root once the map has a Definitive element."
+            }
+            Code::HeadingLevelInvalid => {
+                "R-6.25: the first titled block is level 1, each level is at most one more than the level before it, and no level is above 4."
+            }
+            Code::CodeNotUnique => {
+                "R-6.25: a block's code is unique within its layer across the map, ignoring case, so other text can cite it."
+            }
+            Code::LayerDefinitionLocked => {
+                "R-6.24, R-6.11: a layer defined by the server's code keeps the definition the code gives it; only its records are written by agents."
+            }
+            Code::HeadingInText => {
+                "R-6.25: block text holds no Markdown heading line outside fenced code; the block's level and title set its heading."
+            }
             Code::InternalError => {
                 "Server design, Isolation: an unexpected error fails only the request that caused it."
             }

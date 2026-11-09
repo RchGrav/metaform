@@ -14,6 +14,7 @@ use crate::model::{Effect, Element, Map, flatten, is_want_updates};
 use crate::names::{self, ROOT};
 use crate::reads::{self, is_definitive};
 use crate::refusal::{Code, Refusal};
+use crate::specification;
 
 /// What an accepted command produced.
 #[derive(Clone, Debug, PartialEq)]
@@ -75,7 +76,7 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
                 result: Value::Object(result),
             }))
         }
-        address => reads::read(map, address).map(Outcome::Read),
+        address => reads::read(map, address, body).map(Outcome::Read),
     }
 }
 
@@ -280,7 +281,8 @@ impl Work<'_> {
     }
 
     /// Check every touched element against the rules that read the map, then build the effect.
-    fn finish(self) -> Result<(Map, Effect), Refusal> {
+    fn finish(mut self) -> Result<(Map, Effect), Refusal> {
+        self.normalize_specifications()?;
         for address in &self.touched {
             let Some(element) = self.elements.get(address) else {
                 continue;
@@ -298,6 +300,70 @@ impl Work<'_> {
             }
         }
         Ok((Map::from_elements(self.elements), effect))
+    }
+
+    /// Check the layer records a write changed, for every layer the map defines (R-6.24 to
+    /// R-6.26). Records must be a list and sit where records are allowed. Records of a
+    /// `markdown_blocks` layer are normalized and their heading rules checked; an empty list
+    /// removes the field. Records the write did not change are not checked again, so an intake
+    /// correction elsewhere is never refused because of them. The code-defined specification
+    /// layer definition can only be written as `specification::definition()` (R-6.11, R-6.22).
+    fn normalize_specifications(&mut self) -> Result<(), Refusal> {
+        if self.touched.contains(specification::DEFINITION_ADDRESS) {
+            let after = self.elements.get(specification::DEFINITION_ADDRESS);
+            let before = self.before.element(specification::DEFINITION_ADDRESS);
+            if after != before
+                && after.is_none_or(|e| e.fields != specification::definition() || !e.wants.is_empty())
+            {
+                return Err(Refusal::new(
+                    Code::LayerDefinitionLocked,
+                    format!(
+                        "'{}' is defined by the server; agents write its records at receiving elements, not its definition",
+                        specification::DEFINITION_ADDRESS
+                    ),
+                    None,
+                ));
+            }
+        }
+        let after = Map::from_elements(self.elements.clone());
+        let definitions = specification::definitions(&after);
+        let mut blocks = Vec::new();
+        for address in &self.touched {
+            let Some(element) = self.elements.get(address) else {
+                continue;
+            };
+            for definition in &definitions {
+                let layer = definition.layer.as_str();
+                let Some(value) = element.fields.get(layer) else {
+                    continue;
+                };
+                let before = self.before.element(address).and_then(|e| e.fields.get(layer));
+                if before == Some(value) {
+                    continue;
+                }
+                let records = specification::records(layer, address, value)?;
+                if !records.is_empty() {
+                    specification::check_allowed(&after, address, layer)?;
+                }
+                if definition.format.as_deref() == Some(specification::MARKDOWN_BLOCKS) {
+                    let found = specification::blocks_of(layer, address, value)?;
+                    specification::check_blocks(address, layer, &found)?;
+                    specification::check_codes(&after, address, layer, &found)?;
+                    blocks.push((address.clone(), layer.to_string(), found));
+                } else if records.is_empty() {
+                    blocks.push((address.clone(), layer.to_string(), Vec::new()));
+                }
+            }
+        }
+        for (address, layer, found) in blocks {
+            let fields = &mut self.elements.get_mut(&address).expect("touched and present").fields;
+            if found.is_empty() {
+                fields.remove(&layer);
+            } else {
+                fields.insert(layer, specification::to_json(&found));
+            }
+        }
+        Ok(())
     }
 
     /// `technical_name` is the same number of leading words of the reversed, space-separated

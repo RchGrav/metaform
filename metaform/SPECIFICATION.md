@@ -1010,7 +1010,14 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
           "pattern": "^(?:\\.|(?!(?:add|update|delete|orphaned|goto)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)$"
         },
         "additionalProperties": {
-          "$ref": "#/$defs/Empty"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Empty"
+            },
+            {
+              "$ref": "#/$defs/LayerRead"
+            }
+          ]
         }
       }
     ],
@@ -1286,6 +1293,25 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       "Empty": {
         "type": "object",
         "maxProperties": 0
+      },
+      "LayerRead": {
+        "type": "object",
+        "description": "Name the layers to read at the address, such as [\"wants\"] or [\"specification\"].",
+        "properties": {
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[^.$\\[\\]\\s]+$"
+            }
+          }
+        },
+        "required": [
+          "layers"
+        ],
+        "additionalProperties": false
       },
       "AddFields": {
         "allOf": [
