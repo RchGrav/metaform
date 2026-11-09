@@ -82,23 +82,28 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
     [source],
   );
 
+  /** Reads the project list again, as after a first intake registers a project. */
+  const reloadProjects = useCallback(async (): Promise<ProjectRef[] | null> => {
+    try {
+      const list = await source.projects();
+      setProjects(list);
+      return list;
+    } catch (error) {
+      dispatchRaw(failed(error));
+      return null;
+    }
+  }, [source]);
+
   useEffect(() => {
     let live = true;
-    source
-      .projects()
-      .then((list) => {
-        if (!live) return;
-        setProjects(list);
-        const first = list[0];
-        if (first) dispatchRaw({ type: "open-project", project: first.id });
-      })
-      .catch((error: unknown) => {
-        if (live) dispatchRaw(failed(error));
-      });
+    void reloadProjects().then((list) => {
+      const first = list?.[0];
+      if (live && first) dispatchRaw({ type: "open-project", project: first.id });
+    });
     return () => {
       live = false;
     };
-  }, [source]);
+  }, [reloadProjects]);
 
   // Load each project the first time it opens.
   useEffect(() => {
@@ -170,6 +175,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
       dispatch,
       projects: projects === null ? null : [...projects, ...outside.filter((ref) => !projects.some((p) => p.id === ref.id))],
       addOutside,
+      reloadProjects,
       current,
       agents: Object.values(agents),
       activity,
@@ -178,7 +184,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
       sheet,
       simulated,
     }),
-    [state, dispatch, projects, outside, addOutside, current, agents, activity, unseenActivity, sheet, simulated],
+    [state, dispatch, projects, outside, addOutside, reloadProjects, current, agents, activity, unseenActivity, sheet, simulated],
   );
 }
 

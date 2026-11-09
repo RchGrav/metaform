@@ -6,7 +6,8 @@ import { createMockSource } from "./mock";
 import "./styles.css";
 
 // The prototype runs on simulated data until the host routes exist (seam doc, Transport).
-const source = createMockSource();
+// `?first-run` starts with no projects, so onboarding and the simulated intake show (UX section 12).
+const source = createMockSource({ firstRun: new URLSearchParams(location.search).has("first-run") });
 const renderer = createRenderer();
 const root = document.getElementById("root");
 if (root) {

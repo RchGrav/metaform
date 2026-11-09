@@ -273,8 +273,18 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             startCommand={startCommand}
             onSimulateIntake={() => {
               setShowGuide(false);
-              const first = projects[0];
-              if (first) dispatch({ type: "open-project", project: first.id });
+              // The mock can register a sample project and fill it while the user watches. It is
+              // not part of GraphSource, because a real intake is run by an agent (Intake.md).
+              const intake = (source as Partial<{ simulateIntake: () => Promise<ProjectRef> }>).simulateIntake;
+              if (intake) {
+                void intake.call(source).then(async (project) => {
+                  await ws.reloadProjects();
+                  dispatch({ type: "open-project", project: project.id });
+                });
+              } else {
+                const first = projects[0];
+                if (first) dispatch({ type: "open-project", project: first.id });
+              }
             }}
             {...(firstRun ? {} : { onClose: () => setShowGuide(false) })}
           />
