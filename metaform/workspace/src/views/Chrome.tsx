@@ -268,6 +268,8 @@ export function BottomStrip(props: {
   onOpenActivity: () => void;
   dispatch: (action: Action) => void;
   onSelect: (project: string, address: Address) => void;
+  legendOpen: boolean;
+  onToggleLegend: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const { state, layers, dispatch } = props;
@@ -303,6 +305,9 @@ export function BottomStrip(props: {
         )}
       </div>
       <div className="activity">
+        <button type="button" className="link" aria-pressed={props.legendOpen} onClick={props.onToggleLegend}>
+          {props.legendOpen ? strings.legend.hide : strings.legend.show}
+        </button>
         <button
           type="button"
           aria-expanded={open}
@@ -335,6 +340,28 @@ export function BottomStrip(props: {
         )}
       </div>
     </footer>
+  );
+}
+
+/** Every mark the graph draws, with its meaning (climb step 1). The renderer gives each mark the same text as its tooltip. */
+const LEGEND_ENTRIES = [
+  "roleBar", "definitive", "stack", "chevron", "beneath", "outside", "layerMark",
+  "agent", "agentActive", "agentIdle", "unseen", "projectLink", "arrow", "arrowCount", "band",
+] as const;
+
+export function Legend({ onClose }: { onClose: () => void }) {
+  return (
+    <aside className="legend" aria-labelledby="legend-title">
+      <header>
+        <h2 id="legend-title">{strings.legend.title}</h2>
+        <button type="button" onClick={onClose} aria-label={strings.legend.hide} title={strings.legend.hide}>×</button>
+      </header>
+      <ul>
+        {LEGEND_ENTRIES.map((key) => (
+          <li key={key}>{strings.legend[key]}</li>
+        ))}
+      </ul>
+    </aside>
   );
 }
 

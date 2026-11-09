@@ -9,7 +9,7 @@ import { buildScene, elementScene, type SceneInput } from "./state/scene";
 import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
-import { BottomStrip, Details, FocusBanner, KeyboardHelp, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
+import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
 
 export interface AppProps {
@@ -37,6 +37,24 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showGuide, setShowGuide] = useState(false);
   const [showKeys, setShowKeys] = useState(false);
+  // The legend opens by default until the viewer closes it once (a per-browser convenience).
+  const [legendOpen, setLegendOpen] = useState(() => {
+    try {
+      return localStorage.getItem("mf-legend-closed") !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const toggleLegend = useCallback(() => {
+    setLegendOpen((open) => {
+      try {
+        localStorage.setItem("mf-legend-closed", open ? "1" : "0");
+      } catch {
+        // Storage can be unavailable; the toggle still works for this page.
+      }
+      return !open;
+    });
+  }, []);
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
   /** The selected outside element's own map, when the source can read it (seam gap 4). */
@@ -309,7 +327,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
         {!state.gestureHintDone && view.selection !== null && !present && (
           <p className="gesture-hint" role="note">{strings.hints.openOrGoUp(platform)}</p>
         )}
-        {!present && view.selection !== null && (
+        {!present && (view.selection !== null || (legendOpen && !firstRun)) && (
+          <div className="side">
+        {view.selection !== null && (
           <Details
             address={view.selection}
             sheet={sheet}
@@ -329,6 +349,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onSelect={(address) => dispatch({ type: "select", address })}
           />
         )}
+        {legendOpen && !firstRun && <Legend onClose={toggleLegend} />}
+          </div>
+        )}
       </main>
       {!present && (
         <BottomStrip
@@ -341,6 +364,8 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           simulated={simulated}
           projectName={projectName}
           onOpenActivity={ws.markActivitySeen}
+          legendOpen={legendOpen}
+          onToggleLegend={toggleLegend}
           dispatch={dispatch}
           onSelect={(project, address) => {
             if (project !== state.project) dispatch({ type: "open-project", project });
