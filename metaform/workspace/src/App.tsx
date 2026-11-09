@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
-import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
+import { CAMERA_MS, MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
 import { buildScene, elementScene, type SceneInput } from "./state/scene";
@@ -159,9 +159,11 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
 
   // The viewport on screen: every zoom control starts from it, and the zoom label follows it.
   const shown = useRef<Viewport | null>(null);
+  const [viewTick, setViewTick] = useState(0);
   const onViewport = useCallback((viewport: Viewport) => {
     shown.current = viewport;
     setZoom(viewport.zoom);
+    setViewTick((tick) => tick + 1);
   }, []);
 
   /** Zooms to `target` around the centre of the canvas, from the viewport on screen. */
@@ -189,6 +191,59 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       }),
     [renderer, onViewport, dispatch],
   );
+
+  // Climb step 6b: elements with new activity outside the view, counted at the canvas edge. The
+  // view never moves by itself; activating the chip moves it, because the user asked.
+  const [offView, setOffView] = useState<Address[]>([]);
+  useEffect(() => {
+    const unseen = scene.nodes.filter((node) => node.unseen).map((node) => node.address);
+    const measure = () => setOffView(unseen.length > 0 ? renderer.outsideView(unseen) : []);
+    // Once now, and again when an eased camera move started by this change has settled.
+    const frame = requestAnimationFrame(measure);
+    const settled = setTimeout(measure, CAMERA_MS + 60);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settled);
+    };
+  }, [scene, renderer, viewTick]);
+  const offViewArrow = useMemo(() => {
+    const canvas = document.querySelector<HTMLElement>(".canvas")?.getBoundingClientRect();
+    const centres = nodeCentres();
+    const points = offView.flatMap((address) => centres.get(address) ?? []);
+    if (!canvas || points.length === 0) return { arrow: "", dx: 0, dy: 0 };
+    const dx = points.reduce((sum, p) => sum + p.x, 0) / points.length - (canvas.left + canvas.width / 2);
+    const dy = points.reduce((sum, p) => sum + p.y, 0) / points.length - (canvas.top + canvas.height / 2);
+    const arrows = ["→", "↘", "↓", "↙", "←", "↖", "↑", "↗"];
+    const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+    return { arrow: arrows[(octant + 8) % 8] ?? "", dx, dy };
+  }, [offView]);
+  const showOffView = useCallback(() => {
+    const base = shown.current;
+    const canvas = document.querySelector<HTMLElement>(".canvas")?.getBoundingClientRect();
+    if (!base || !canvas) return;
+    // Centre the box around every element with new activity, so showing one does not hide another;
+    // when they do not all fit, centre the ones outside the view.
+    const boxes = (addresses: Address[]) =>
+      addresses.flatMap((address) => {
+        const node = document.querySelector(`.canvas [data-address="${CSS.escape(address)}"]`);
+        return node ? [node.getBoundingClientRect()] : [];
+      });
+    const all = boxes(scene.nodes.filter((node) => node.unseen).map((node) => node.address));
+    const span = (rects: DOMRect[]) => ({
+      left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)),
+      top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)),
+    });
+    const whole = all.length > 0 ? span(all) : null;
+    const fits = whole !== null && whole.right - whole.left < canvas.width - 48 && whole.bottom - whole.top < canvas.height - 48;
+    const target = fits ? whole : span(boxes(offView));
+    if (!Number.isFinite(target.left)) return;
+    const dx = (target.left + target.right) / 2 - (canvas.left + canvas.width / 2);
+    const dy = (target.top + target.bottom) / 2 - (canvas.top + canvas.height / 2);
+    const viewport = { ...base, x: base.x - dx, y: base.y - dy };
+    renderer.setViewport(viewport, true);
+    onViewport(viewport);
+    dispatch({ type: "viewport", viewport });
+  }, [renderer, scene, offView, onViewport, dispatch]);
 
   const openLinked = useCallback(
     (address: Address) => {
@@ -355,6 +410,11 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onSize={onCanvasSize}
             dispatch={dispatch}
           />
+        )}
+        {offView.length > 0 && !firstRun && (
+          <button type="button" className="off-view" aria-label={strings.offView.label(offView.length)} onClick={showOffView}>
+            {strings.offView.chip(offView.length, offViewArrow.arrow)}
+          </button>
         )}
         {!state.gestureHintDone && view.selection !== null && !present && (
           <p className="gesture-hint" role="note">{strings.hints.openOrGoUp(platform)}</p>

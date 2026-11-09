@@ -113,6 +113,12 @@ export const activity = {
     `${agent} wrote ${layer} at ${address}`,
 } as const;
 
+export const offView = {
+  // Climb step 6b (UX section 12a): elements with new activity that lie outside the view.
+  chip: (n: number, arrow: string) => `${n} new ${arrow}`,
+  label: (n: number) => `${n === 1 ? "1 element" : `${n} elements`} with new activity outside the view. Show them.`,
+} as const;
+
 export const presence = {
   // The server does not publish presence, so every presence line is simulated.
   at: (agent: string, address: string, doing?: string) =>
