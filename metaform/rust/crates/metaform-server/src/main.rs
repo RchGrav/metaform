@@ -67,7 +67,7 @@ async fn main() -> ExitCode {
         return specification(&home, &target, &positional, check).await;
     }
     if check {
-        return usage("--check belongs to specification export");
+        return usage("--check works only with specification export");
     }
     if command != Some("call") && !positional.is_empty() {
         return usage(&format!("unexpected argument {}", positional[0]));

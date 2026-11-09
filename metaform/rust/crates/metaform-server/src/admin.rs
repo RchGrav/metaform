@@ -55,7 +55,7 @@ fn answer_now(store: &Store, request: &Value) -> Value {
     } else if let Some(body) = request.get("export") {
         export(store, body)
     } else {
-        Err("an admin request is settings, set or export".into())
+        Err("an admin request must be `settings`, `set` or `export`".into())
     };
     result.unwrap_or_else(|error| json!({"ok": false, "error": error}))
 }
@@ -68,7 +68,7 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
             let id = store
                 .find_project(&folder)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("{} has no map yet; an agent creates one by working there through the project-map tool", folder.display()))?;
+                .ok_or_else(|| format!("{} has no map yet; an agent creates it by using the project-map tool in that folder", folder.display()))?;
             let title = folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             (MapKey::main(&id), title)
         }
@@ -76,7 +76,7 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
             crate::check_map_name(name)?;
             (MapKey::standalone(name), name.to_string())
         }
-        _ => return Err("an export names exactly one of a project folder or a map".into()),
+        _ => return Err("an export must name exactly one of: a project folder or a map".into()),
     };
     let map = store.snapshot(&key).map_err(|e| e.to_string())?;
     let mut answer = json!({

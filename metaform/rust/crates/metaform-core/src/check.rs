@@ -1,5 +1,5 @@
 //! `metaform specification export --check`: TASTE reports on the specification layer's text.
-//! The rules and their wording are Matthew's (metaform-38) proposal for the specification layer.
+//! The rules and their wording are the proposal in `metaform/docs/designs/specification-layer.md`.
 //! A report asks for a judgement; it is not an error, because TASTE treats length and wording as
 //! conditional targets. The tool itself refuses only what breaks export and import.
 //!
@@ -34,7 +34,9 @@ const SENTENCE_WORDS: usize = 25;
 const PARAGRAPH_SENTENCES: usize = 6;
 const REPEAT_MIN_WORDS: usize = 6;
 
-const CAPITAL_MODALS: [&str; 5] = ["MUST", "SHOULD", "MAY", "REQUIRED", "SHALL"];
+/// Capital modals that lowercase fixes. A capital SHALL gets the `SHALL` report instead, because
+/// lowercase "shall" is still not a TASTE modal.
+const CAPITAL_MODALS: [&str; 4] = ["MUST", "SHOULD", "MAY", "REQUIRED"];
 
 /// The project blacklist (TASTE.md): the words to avoid and the preferred term.
 const BLACKLIST: [(&str, &str); 16] = [
@@ -289,7 +291,7 @@ fn sentences(text: &str) -> Vec<Sentence> {
         }
         let core = token.trim_end_matches(['"', '\'', '”', '’', ')', ']']);
         let ends = core.ends_with(['.', '?', '!'])
-            && !NOT_SENTENCE_ENDS.contains(&core.to_lowercase().as_str());
+            && !NOT_SENTENCE_ENDS.contains(&core.trim_start_matches(['(', '[']).to_lowercase().as_str());
         if ends && !current.words.is_empty() {
             out.push(std::mem::take(&mut current));
         }
@@ -319,9 +321,15 @@ fn inflects(word: &str, base: &str) -> bool {
     })
 }
 
-/// The blacklist and capital-modal reports for a run of words, each distinct word once.
-fn word_reports(words: &[Word], with_style: bool, out: &mut Vec<(&'static str, String)>) {
-    let mut seen = BTreeSet::new();
+/// The word reports for a run of words. Each distinct word is reported once per block: `seen`
+/// is shared by the block's title and text. Titles get `CAPITAL_MODAL`, `SHALL` and `BLACKLIST`;
+/// text also gets `VAGUE_WORD`.
+fn word_reports(
+    words: &[Word],
+    in_text: bool,
+    seen: &mut BTreeSet<(&'static str, String)>,
+    out: &mut Vec<(&'static str, String)>,
+) {
     let mut push = |code: &'static str, key: String, message: String, out: &mut Vec<(&'static str, String)>| {
         if seen.insert((code, key)) {
             out.push((code, message));
@@ -341,7 +349,7 @@ fn word_reports(words: &[Word], with_style: bool, out: &mut Vec<(&'static str, S
                 bare.to_string()
             };
             push("CAPITAL_MODAL", shown.clone(), format!("uses \"{shown}\"; TASTE writes must, should, may, can and might in lowercase."), out);
-        } else if with_style && lower == "shall" {
+        } else if lower == "shall" {
             push("SHALL", lower.clone(), "uses \"shall\"; TASTE uses must for a requirement.".into(), out);
         }
         if inflects(&lower, "kick") && next.is_some_and(|n| n.eq_ignore_ascii_case("off")) {
@@ -351,15 +359,15 @@ fn word_reports(words: &[Word], with_style: bool, out: &mut Vec<(&'static str, S
         if let Some((_, preferred)) = BLACKLIST.iter().find(|(base, _)| inflects(&lower, base)) {
             push("BLACKLIST", lower.clone(), format!("uses \"{bare}\"; use \"{preferred}\" if it keeps the meaning."), out);
         }
-        if with_style && VAGUE.contains(&lower.as_str()) {
+        if in_text && VAGUE.contains(&lower.as_str()) {
             push("VAGUE_WORD", lower.clone(), format!("uses \"{bare}\"; state the behavior or a measurement instead."), out);
         }
     }
 }
 
 fn starts_with_phrase(text: &str, phrase: &str) -> bool {
-    text.len() >= phrase.len()
-        && text[..phrase.len()].eq_ignore_ascii_case(phrase)
+    // By bytes with `get`, so text that starts with a multi-byte character cannot split it.
+    text.get(..phrase.len()).is_some_and(|head| head.eq_ignore_ascii_case(phrase))
         && text[phrase.len()..].chars().next().is_none_or(|c| !c.is_alphanumeric())
 }
 
@@ -386,14 +394,13 @@ pub fn check(map: &Map) -> Vec<Report> {
         for (index, block) in blocks.iter().enumerate() {
             let n = index + 1;
             let mut found: Vec<(&'static str, String)> = Vec::new();
-            if let Some(title) = &block.title {
-                let words: Vec<Word> = sentences(&mask_code_and_urls(title))
-                    .into_iter()
-                    .flat_map(|s| s.words)
-                    .collect();
-                word_reports(&words, false, &mut found);
-            }
-            block_reports(address, n, block, &blocks, &mut found, &mut abbreviations_seen, &mut sentences_seen);
+            let title_words: Vec<Word> = block
+                .title
+                .iter()
+                .flat_map(|title| sentences(&mask_code_and_urls(title)))
+                .flat_map(|s| s.words)
+                .collect();
+            block_reports(address, n, block, &blocks, &title_words, &mut found, &mut abbreviations_seen, &mut sentences_seen);
             reports.extend(found.into_iter().map(|(code, message)| Report {
                 address: address.to_string(),
                 block: n,
@@ -406,11 +413,13 @@ pub fn check(map: &Map) -> Vec<Report> {
     reports
 }
 
+#[allow(clippy::too_many_arguments)]
 fn block_reports(
     address: &str,
     n: usize,
     block: &Block,
     blocks: &[Block],
+    title_words: &[Word],
     found: &mut Vec<(&'static str, String)>,
     abbreviations_seen: &mut BTreeSet<String>,
     sentences_seen: &mut BTreeMap<String, (String, usize, usize)>,
@@ -426,7 +435,9 @@ fn block_reports(
         .iter()
         .flat_map(|p| p.sentences.iter().flat_map(|s| s.words.clone()))
         .collect();
-    word_reports(&all_words, true, found);
+    let mut seen = BTreeSet::new();
+    word_reports(title_words, false, &mut seen, found);
+    word_reports(&all_words, true, &mut seen, found);
 
     let mut opened = false;
     for (p_index, paragraph) in paragraphs.iter().enumerate() {
@@ -446,7 +457,11 @@ fn block_reports(
         }
     }
     if !opened && let Some(first) = paragraphs.first().and_then(|p| p.sentences.first()) {
-        let word = |i: usize| first.words.get(i).map(Word::bare).unwrap_or_default();
+        // The part before an apostrophe, so "It's" and "They're" count as "It" and "They".
+        let word = |i: usize| {
+            let bare = first.words.get(i).map(Word::bare).unwrap_or_default();
+            bare.split(['\'', '’']).next().unwrap_or_default()
+        };
         let pronoun = matches!(word(0), "It" | "They")
             || (DEMONSTRATIVES.contains(&word(0)) && PRONOUN_VERBS.contains(&word(1)));
         if pronoun && first.words.first().is_some_and(|w| !w.text.starts_with(['"', '“'])) {
@@ -478,6 +493,17 @@ fn block_reports(
         }
     }
 
+    // A title can define an abbreviation, such as "Network card (NIC)". Titles get no
+    // ABBREVIATION report, so an undefined one in a title is neither reported nor marked as seen.
+    for (index, word) in title_words.iter().enumerate() {
+        let raw = word.text.as_str();
+        let defined_here = raw.starts_with('(') && raw.trim_end_matches(['.', ',', ';', ':']).ends_with(')');
+        let expanded_after = title_words.get(index + 1).is_some_and(|next| next.text.starts_with('('));
+        let bare = word.bare();
+        if (defined_here || expanded_after) && (2..=6).contains(&bare.len()) && bare.chars().all(|c| c.is_ascii_uppercase()) {
+            abbreviations_seen.insert(bare.to_string());
+        }
+    }
     for (index, word) in all_words.iter().enumerate() {
         let raw = word.text.as_str();
         let defined_here = raw.starts_with('(') && raw.trim_end_matches(['.', ',', ';', ':']).ends_with(')');
@@ -487,7 +513,7 @@ fn block_reports(
             && abbreviation.chars().all(|c| c.is_ascii_uppercase())
             && !KNOWN_ABBREVIATIONS.contains(&abbreviation)
             && !CAPITAL_MODALS.contains(&abbreviation)
-            && abbreviation != "NOT";
+            && !matches!(abbreviation, "NOT" | "SHALL");
         if !is_abbreviation || !abbreviations_seen.insert(abbreviation.to_string()) {
             continue;
         }
@@ -556,6 +582,21 @@ mod tests {
             {"level": 1, "title": "Use", "text": "The CLI prints `launch MUST` to the screen.\n\n```text\nThis section MUST launch.\n```\n\n| launch | MUST |\n|---|---|\n\nSee https://example.com/launch-fast for details."}
         ]));
         assert_eq!(reports, Vec::new());
+    }
+
+    #[test]
+    fn review_cases_from_matthew() {
+        let reports = reports_for(json!([
+            {"text": "Überblick über die Daten, e.g. frames (e.g. raw frames) and more."},
+            {"level": 1, "title": "SHALL change", "text": "The store SHALL change frames."},
+            {"level": 1, "title": "Network card (NIC)", "text": "It's the NIC that delivers frames."}
+        ]));
+        let lines: Vec<String> = reports.iter().map(Report::line).collect();
+        assert!(lines.contains(&"code block 2 (\"SHALL change\"): SHALL: uses \"shall\"; TASTE uses must for a requirement.".to_string()), "{lines:#?}");
+        assert_eq!(reports.iter().filter(|r| r.block == 2 && r.code == "BLACKLIST").count(), 1, "title and text share one report: {lines:#?}");
+        assert!(!reports.iter().any(|r| r.code == "CAPITAL_MODAL" || r.code == "ABBREVIATION"), "{lines:#?}");
+        assert!(lines.iter().any(|l| l.contains("START_PRONOUN: starts with \"It\"")), "{lines:#?}");
+        assert_eq!(reports.iter().filter(|r| r.block == 1).count(), 0, "{lines:#?}");
     }
 
     #[test]

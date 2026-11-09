@@ -341,6 +341,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
 
     let mut sections = vec![Section { address: ROOT.to_string(), heading_line: start, body: Vec::new() }];
     let mut fence: Option<(char, usize)> = None;
+    let mut fence_line = 0;
     for (index, line) in lines.iter().enumerate().skip(start) {
         let line_at = index + 1;
         if let Some((mark, length)) = fence {
@@ -349,6 +350,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
             }
         } else if let Some(opened) = opens_fence(line) {
             fence = Some(opened);
+            fence_line = line_at;
         } else if atx_level(line) == Some(ELEMENT_HASHES)
             && let Some(address) = heading_address(&atx_text(line))
         {
@@ -359,7 +361,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
                 return Err(parse_error(line_at, format!("'{address}' is not an element of the map; add it through intake first")));
             }
             if sections.iter().any(|section| section.address == address) {
-                return Err(parse_error(line_at, format!("'{address}' has a second section")));
+                return Err(parse_error(line_at, format!("'{address}' has more than one section; keep one")));
             }
             let expected = element_heading(map, address);
             if *line != expected {
@@ -371,7 +373,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         sections.last_mut().expect("the root section is first").body.push((line_at, line));
     }
     if fence.is_some() {
-        return Err(parse_error(lines.len(), "a code fence is opened and not closed"));
+        return Err(parse_error(fence_line, "a code fence is opened here and not closed"));
     }
 
     let mut out = BTreeMap::new();
