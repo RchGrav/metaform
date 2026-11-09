@@ -2,7 +2,7 @@
 // It reads no GraphSource and decides no meaning; it reports raw input to the state layer.
 
 import type { Address } from "../source/types";
-import { graph as text, intake, layers as layerText, legend } from "../strings";
+import { graph as text, intake, layers as layerText, legend, presence } from "../strings";
 import { Camera } from "./camera";
 import { Flow } from "./flow";
 import { Glide, type GlideItem } from "./glide";
@@ -387,7 +387,10 @@ export class ElkRenderer implements GraphRenderer {
     // sides, and wants within a band attach spread along the middle of the top and bottom.
     node.agents.forEach((agent, i) => {
       const a = el("g", { class: `mf-agent${agent.active ? " mf-agent-active" : ""}`, transform: `translate(${22 + i * 20},0)` }, g);
-      tip(a, legend.agent, agent.active ? legend.agentActive : legend.agentIdle);
+      // Who is here, and doing what, answers "MA?"; the circle's general meaning is in the legend
+      // panel (Matthew, climb step 1). Without a name, the general meaning stands in.
+      const who = agent.name ? presence.at(agent.name, node.address, agent.doing ?? undefined) : legend.agent;
+      tip(a, who, agent.active ? legend.agentActive : legend.agentIdle);
       el("circle", { r: 9 }, a);
       const initials = el("text", { "text-anchor": "middle", y: 3.5 }, a);
       initials.textContent = agent.initials;
