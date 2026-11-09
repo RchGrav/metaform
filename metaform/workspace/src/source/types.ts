@@ -57,6 +57,8 @@ export interface SummarySheet {
   memory: { records: number };
   /** Layer guidance; the server delivers each entry once per connection. */
   instructions?: Record<string, string>;
+  /** At a layer's definition element only: that layer's guidance, repeated on every read (R-5.30). */
+  guidance?: string;
 }
 
 /** The result of {".": {}} (R-5.34): {".": <the stored nested tree, every layer included>}. */

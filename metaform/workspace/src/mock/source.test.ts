@@ -49,6 +49,27 @@ describe("MockSource reads", () => {
     expect(second.instructions).toBeUndefined();
   });
 
+  it("names the address's own skills by their frontmatter", async () => {
+    const source = fixed();
+    expect((await source.goto("metaform", "code.interface.graphical")).skills).toEqual({
+      "graph-workspace": {
+        name: "graph-workspace",
+        description: "(mock) How to work on the graph workspace.",
+        uri: "skill://graph-workspace",
+      },
+    });
+    expect((await source.goto("metaform", "code.server.tool")).skills).toBeUndefined();
+  });
+
+  it("repeats a layer's guidance on every read of its definition element", async () => {
+    const source = fixed();
+    const first = await source.goto("metaform", "layer.document.specification");
+    const second = await source.goto("metaform", "layer.document.specification");
+    expect(first.guidance).toBeTruthy();
+    expect(second.guidance).toBe(first.guidance);
+    expect((await source.goto("metaform", "code.server.tool")).guidance).toBeUndefined();
+  });
+
   it("lists wanted_by as the reverse of the edges", async () => {
     const source = fixed();
     const graph = await source.map("metaform");

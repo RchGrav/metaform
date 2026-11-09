@@ -291,6 +291,22 @@ export class MockSource implements GraphSource, WorkspaceEvents {
       memory: { records: Array.isArray(memory) ? memory.length : 0 },
     };
 
+    // The frontmatter of the address's own skills, keyed by name (R-5.30).
+    const skills: NonNullable<SummarySheet["skills"]> = {};
+    const own = element.fields["skills"];
+    for (const skill of Array.isArray(own) ? own : []) {
+      if (!skill || typeof skill !== "object") continue;
+      const record = skill as Record<string, unknown>;
+      const front = (record["frontmatter"] ?? record) as Record<string, unknown>;
+      const name = front["name"];
+      if (typeof name !== "string") continue;
+      const entry: { name: string; description?: string; uri?: string } = { name };
+      if (typeof front["description"] === "string") entry.description = front["description"];
+      if (typeof record["uri"] === "string") entry.uri = record["uri"];
+      skills[name] = entry;
+    }
+    if (Object.keys(skills).length > 0) sheet.skills = skills;
+
     // The server delivers each layer's guidance once per connection; this source stands in for
     // one connection per project.
     const seen = this.delivered.get(project) ?? new Set<string>();
@@ -300,6 +316,11 @@ export class MockSource implements GraphSource, WorkspaceEvents {
       sheet.instructions = Object.fromEntries(fresh.map((d) => [d.layer, d.instruction]));
       for (const d of fresh) seen.add(d.layer);
     }
+    // At a layer's definition element the sheet always repeats that layer's guidance, so an agent
+    // whose context was reset can read it again (R-5.30). The server adds the format rules; the
+    // mock sends the instruction alone, as it does for `instructions`.
+    const definition = map.definitions().find((d) => d.address === at);
+    if (definition) sheet.guidance = definition.instruction;
     return sheet;
   }
 
