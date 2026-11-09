@@ -136,6 +136,24 @@ First run, when `projects()` is empty, shows one panel in the canvas:
 2. "Run a simulated intake". The button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`. The view fits once, when the first element arrives; later elements never refit it, because an update must not move the viewport (section 9). If an intake ever grows past the view, a quiet "N elements outside the view" hint is the right signal, not a move (not built; decided with Jorge, 2026-11-09).
 3. "Open this view again". The product's reopen command is `metaform gui` (owner, UI-U1; built by Jorge in 1a03bf2), shown beside the command that started this prototype. `metaform register` keeps its "Planned command" label, because it does not exist yet.
 
+## 12a. Motion, start-up and the live intake (owner feedback, 2026-11-09)
+
+The owner reviewed the running prototype and said: the live intake needs easing and smoothness; it starts up showing almost nothing and wastes the screen; wants have no direction animation; intake terms are missing from the graph; marks such as "MA" and small circles are unexplained; and the earlier designs should be the starting point. This section answers the motion, framing and intake parts. Matthew answers the legend and intake terms; Jorge draws the motion. Sources reused: the map viewer (`context/topogee-repo/experiments/map-viewer/index.html`: elements glide to new positions, new ones fade in, active wants flow), the earlier intake graph viewer plan (interruptible eased transitions, arrow keys between connected elements, want detail when close, stable positions), and the earlier graph (`context/brain/digital-typology-hhgg-graph-fixed.html`: legend, role pills, receiving element and providing element in details).
+
+**Start-up fills the screen.** On the first visit to a container, the view expands level by level while the visible elements stay within a budget set by the canvas size: one element per 34,000 px² of canvas, at least 12 and at most 60 (about 32 on a 1440 × 760 canvas). A level is expanded whole or not at all, so the picture stays balanced. Then the view fits. A container the user has visited keeps the user's own expansion. Fit leaves room for open panels and caps the zoom at 160%, so a small graph is not blown up.
+
+**Motion has two speeds.** Small feedback (hover, selection, chips, rail) takes at most 200 ms. Layout motion takes 500 ms with the curve `cubic-bezier(.25, .8, .3, 1)`: elements glide from their old position to their new one, new elements fade and grow in, removed ones fade out, and wants fade in after their ends arrive. Every motion can be interrupted: a new layout starts from where the elements are now. Under `prefers-reduced-motion`, everything jumps.
+
+**The live intake is choreographed, not jumped.** Each write during an intake: (1) the new element fades in at its laid-out place, and its neighbours glide; (2) its wants draw in from the holder toward the wanted element over 500 ms; (3) the writing agent's badge glides to the element; (4) one activity line is added. Writes that arrive within 300 ms are laid out together, so a burst does not shake the graph.
+
+**The viewport still never moves by itself (section 9), with two aids.** An indicator at the canvas edge counts new elements outside the view, with the direction they lie in ("3 new ↘"); activating it eases the view to show them. A **Follow** switch beside the activity count, off by default, keeps the newest element in view while an intake runs, with eased moves; the user turns it on, so moving the view is the user's choice. Any pan or zoom turns Follow off.
+
+**Want direction is animated where it helps.** A want's direction shows as a slow flow along the line (holder to wanted for `outbound`, the reverse for `inbound`, both ways for `two-way`). It runs on the selected element's wants, on wants drawn during the intake, and on every want in Present mode; elsewhere the line is still, so the graph does not shimmer. It stops under `prefers-reduced-motion`.
+
+**Detail grows with zoom.** Below 60% zoom, wants are lines only. From 60%, the want's direction mark shows. From 110%, Matthew's intake terms label the want: OP (`why`) and EF (`how`), in short form. Positions never change with zoom.
+
+**Arrow keys move along wants.** In Graph and Element modes, with an element selected, an arrow key selects the connected element that lies most nearly in that direction, and the view eases to keep it in view, because the user asked for the move.
+
 ## 13. Decisions and open questions
 
 Decided here, with reasons:
@@ -144,7 +162,7 @@ Decided here, with reasons:
 |---|---|---|
 | UI-U2 | Ctrl-click goes up one address level; Back follows history. | Up and back differ after a pivot or a project switch, and the prompt asks for both "return" (line 13) and "broader context". |
 | UI-U4 | A layered top-down layout, as Mermaid flowcharts draw ("TD"). | It is the common meaning of "Mermaid-style". Wants point down from the holder, so the Definitive element tends to sit at the top. Jorge chooses the layout engine. |
-| UI-05 | Measurable criteria: animation at most 200 ms; no event moves the viewport or takes focus; contrast at least WCAG 2.2 AA; one accent colour plus four role colours; layer marks distinct by shape as well as colour. | The prompt's adjectives cannot be checked as written. These numbers are Ida's proposals, not the owner's, and the owner may change them. |
+| UI-05 | Measurable criteria: feedback animation at most 200 ms and layout motion 500 ms (section 12a, after the owner asked for easing); no event moves the viewport or takes focus; contrast at least WCAG 2.2 AA; one accent colour plus four role colours; layer marks distinct by shape as well as colour. | The prompt's adjectives cannot be checked as written. These numbers are Ida's proposals, not the owner's, and the owner may change them. |
 | — | Layers dim rather than remove elements on isolate. | Removing elements would re-run the layout and lose the user's place (prompt: "preserve orientation cues"). |
 
 Open, for the owner:
