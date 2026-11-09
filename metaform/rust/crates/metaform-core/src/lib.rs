@@ -19,6 +19,8 @@ mod model;
 mod names;
 mod reads;
 mod refusal;
+pub mod markdown;
+pub mod specification;
 
 pub use commands::{Outcome, Write, execute};
 pub use contract::{Contract, ContractError};
