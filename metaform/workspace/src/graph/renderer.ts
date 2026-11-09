@@ -31,6 +31,8 @@ export interface RenderNode {
   address: Address;
   /** The last address segment (the terms sheet: a node's label is its last segment). */
   label: string;
+  /** The element's technical_name, shown when zoomed close (UX section 12a). */
+  technicalName: string | null;
   /** The expanded element that contains this node in the scene, or null at the container's top level. Lets a compound layout route wants into an expanded element in one pass. */
   parent: Address | null;
   role: Role | null;
@@ -65,6 +67,13 @@ export interface RenderEdge {
   to: Address;
   /** How many wants this arrow stands for; 1 for a single want, more when it reaches a collapsed element. */
   count: number;
+  /**
+   * The direction of the wants this arrow stands for, relative to the holder at `from` (R-3.6):
+   * `mixed` when they differ, null when none is recorded. Drives the direction flow (UX section 12a).
+   */
+  direction: "outbound" | "inbound" | "two-way" | "mixed" | null;
+  /** The want's `why` (OP), only when the arrow stands for exactly one want; shown when zoomed close. */
+  why: string | null;
   dimmed: boolean;
 }
 
@@ -85,8 +94,16 @@ export interface Viewport {
 
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
-/** Every renderer animation is at most this long; 0 under prefers-reduced-motion (UX section 4). */
+/** Feedback motion (hover, selection, chips) is at most this long (UX section 12a). */
 export const MAX_ANIMATION_MS = 200;
+/** Camera moves: pan, zoom, fit and open, eased and interruptible (UX section 12a). */
+export const CAMERA_MS = 320;
+/** Layout motion: elements glide to new positions, new ones fade in, wants follow (UX section 12a). */
+export const LAYOUT_MS = 500;
+/** The easing for camera and layout motion, as the earlier map viewer used. */
+export const EASING = "cubic-bezier(.25, .8, .3, 1)";
+/** Fit may frame a small graph up to this zoom, so a start-up view fills the screen (UX section 12a). */
+export const MAX_FIT_ZOOM = 1.75;
 
 export interface Modifiers {
   /** Ctrl on Linux and Windows, Cmd on macOS: "go up" (UX section 5). */
@@ -111,7 +128,8 @@ export interface RendererEvents {
  *    layer or receiving activity never moves an element (UX sections 8 and 9).
  * 2. The renderer never changes the viewport by itself, except when `setViewport` or `fit` is called.
  * 3. Every node is focusable and has an accessible name: "<label>, <role>, <beneath> beneath".
- * 4. Animations last at most MAX_ANIMATION_MS, and none under prefers-reduced-motion.
+ * 4. Feedback lasts at most MAX_ANIMATION_MS, camera moves CAMERA_MS and layout motion LAYOUT_MS,
+ *    eased with EASING and interruptible; nothing moves under prefers-reduced-motion.
  */
 export interface GraphRenderer {
   mount(host: HTMLElement, events: RendererEvents): void;

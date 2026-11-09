@@ -81,6 +81,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     return {
       graph: current.graph,
       fields: current.fields,
+      wants: current.wants,
       layerCounts: current.layerCounts,
       layers: current.layers,
       agents: ws.agents

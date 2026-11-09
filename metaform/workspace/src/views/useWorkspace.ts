@@ -4,13 +4,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Address, GraphSource, ProjectRef, RawDump, ShallowGraph, SummarySheet, WorkspaceEvents } from "../source";
 import { RefusalError, TransportError } from "../source";
-import { fieldsFromDump, graphAddresses, layerCounts, layerNames } from "../state/structure";
+import { fieldsFromDump, graphAddresses, layerCounts, layerNames, wantsFromDump } from "../state/structure";
 import { initialState, reduce, type Action, type ViewState } from "../state/view";
 
 export interface ProjectData {
   graph: ShallowGraph;
   dump: RawDump;
   fields: Map<Address, Record<string, unknown>>;
+  wants: Map<Address, Record<Address, Record<string, unknown>>>;
   layerCounts: Map<Address, Map<string, number>>;
   layers: string[];
 }
@@ -67,7 +68,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
       try {
         const [graph, dump] = await Promise.all([source.map(project), source.dump(project)]);
         const layers = layerNames(dump);
-        const loaded: ProjectData = { graph, dump, fields: fieldsFromDump(dump), layerCounts: layerCounts(dump, layers), layers };
+        const loaded: ProjectData = { graph, dump, fields: fieldsFromDump(dump), wants: wantsFromDump(dump), layerCounts: layerCounts(dump, layers), layers };
         setData((current) => ({ ...current, [project]: loaded }));
         dispatchRaw({ type: "connected" });
         // Check the view against the loaded map, so a place that no longer exists (or a link to an

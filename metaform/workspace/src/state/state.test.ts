@@ -45,7 +45,9 @@ describe("structure", () => {
   it("draws wants to collapsed elements as one arrow with a count, and counts wants that leave", () => {
     const visible = visibleIn(graph.addresses, "code", new Set());
     const { edges, outside } = sceneEdges(graph, visible);
-    expect(edges).toEqual([{ from: "code.server", to: "code.store", count: 2 }]);
+    expect(edges).toEqual([{ from: "code.server", to: "code.store", count: 2, members: [
+      ["code.server.relay", "code.store.memory"], ["code.server.relay", "code.store.cache"],
+    ] }]);
     expect(outside.get("code.server")).toBe(1);
   });
 
@@ -53,7 +55,7 @@ describe("structure", () => {
     const visible = visibleIn(graph.addresses, TOP, new Set());
     const { edges } = sceneEdges(graph, visible);
     expect(edges.find((e) => e.from === "code" && e.to === "code")).toBeUndefined();
-    expect(edges).toEqual([{ from: "code", to: "upstream", count: 1 }]);
+    expect(edges).toEqual([{ from: "code", to: "upstream", count: 1, members: [["code.server", "upstream.ladybug"]] }]);
   });
 
   it("finds an outside element's address in its own project's map", () => {
@@ -174,6 +176,22 @@ describe("scene", () => {
     const store = scene.nodes.find((n) => n.address === "code.store");
     expect(store).toMatchObject({ collapsed: false, beneath: 2, layers: [{ layer: "specification", records: 2, style: 1 }] });
     expect(scene.nodes.find((n) => n.address === "code.store.cache")?.unseen).toBe(true);
+  });
+
+  it("gives each arrow its direction and, for a single want, its why", () => {
+    const wants = new Map([
+      ["code.server.relay", {
+        "code.store.memory": { why: "keep facts", how: "holds them", direction: "outbound" },
+        "code.store.cache": { why: "reuse reads", how: "keeps them", direction: "inbound" },
+      }],
+      ["code.server", { "upstream.ladybug": { why: "store maps", how: "persists graphs", direction: "outbound" } }],
+    ]);
+    const expanded = run([{ type: "toggle-expanded", address: "code.server" }], inCode);
+    const scene = buildScene(expanded, input({ wants }));
+    const arrow = scene.edges.find((e) => e.from === "code.server.relay" && e.to === "code.store");
+    expect(arrow).toMatchObject({ count: 2, direction: "mixed", why: null });
+    const collapsed = buildScene(inCode, input({ wants }));
+    expect(collapsed.nodes.find((n) => n.address === "code.server")).toMatchObject({ outside: 1, technicalName: null });
   });
 
   it("dims without removing on isolate, so nothing moves", () => {

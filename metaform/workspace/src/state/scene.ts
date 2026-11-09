@@ -25,6 +25,8 @@ export interface SceneInput {
   fullAddresses?: readonly Address[];
   /** Element fields by address, from the raw dump; role and status drive node marks. */
   fields: ReadonlyMap<Address, SummarySheet["element"]>;
+  /** Want records per holder, from the raw dump: direction and why for each arrow. */
+  wants?: ReadonlyMap<Address, Record<Address, Record<string, unknown>>>;
   /** Record counts per address per layer, from the raw dump. */
   layerCounts: ReadonlyMap<Address, ReadonlyMap<string, number>>;
   /** Every layer name, in a stable order; a layer's index is its style. */
@@ -106,6 +108,7 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
     return {
       address,
       label: lastSegment(address),
+      technicalName: typeof fields.technical_name === "string" ? fields.technical_name : null,
       parent: !only && parent !== view.container && visible.has(parent) ? parent : null,
       role,
       status: typeof fields.status === "string" ? fields.status : null,
@@ -126,14 +129,28 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
     };
   });
 
+  const DIRECTIONS = ["outbound", "inbound", "two-way"] as const;
+  const recordOf = ([holder, wanted]: [Address, Address]) => input.wants?.get(holder)?.[wanted];
+  const directionOf = (members: [Address, Address][]): RenderEdge["direction"] => {
+    const found = new Set(
+      members.map((m) => recordOf(m)?.direction).filter((d): d is (typeof DIRECTIONS)[number] => DIRECTIONS.includes(d as never)),
+    );
+    if (found.size === 0) return null;
+    return found.size === 1 ? [...found][0] ?? null : "mixed";
+  };
   const renderEdges: RenderEdge[] = edges
-    .map((edge) => ({
+    .map((edge) => {
+      const single = edge.members.length === 1 && edge.members[0] ? recordOf(edge.members[0]) : undefined;
+      return {
       id: `${edge.from}->${edge.to}`,
       from: edge.from,
       to: edge.to,
       count: edge.count,
+      direction: directionOf(edge.members),
+      why: typeof single?.why === "string" ? single.why : null,
       dimmed: reach !== null && !(reach.has(edge.from) && reach.has(edge.to)),
-    }))
+      };
+    })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   return { nodes, edges: renderEdges, top: reach !== null ? view.focus : null };

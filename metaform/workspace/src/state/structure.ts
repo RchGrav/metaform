@@ -92,6 +92,8 @@ export interface SceneEdge {
   from: Address;
   to: Address;
   count: number;
+  /** The wants this arrow stands for, as [holder, wanted]. */
+  members: [Address, Address][];
 }
 
 /**
@@ -118,8 +120,10 @@ export function sceneEdges(
     if (from === to) continue;
     const id = `${from}->${to}`;
     const edge = merged.get(id);
-    if (edge) edge.count += 1;
-    else merged.set(id, { from, to, count: 1 });
+    if (edge) {
+      edge.count += 1;
+      edge.members.push([holder, wanted]);
+    } else merged.set(id, { from, to, count: 1, members: [[holder, wanted]] });
   }
   return { edges: [...merged.values()], outside };
 }
@@ -213,4 +217,23 @@ export function fieldsFromDump(dump: RawDump): Map<Address, Record<string, unkno
  */
 export function outsideAddress(address: Address): Address {
   return bandOf(address) === "project" ? address : address.slice(address.indexOf(".") + 1);
+}
+
+/** Each element's want records, from the raw dump: holder → wanted → record (R-3.5, R-3.6). */
+export function wantsFromDump(dump: RawDump): Map<Address, Record<Address, Record<string, unknown>>> {
+  const out = new Map<Address, Record<Address, Record<string, unknown>>>();
+  const walk = (node: Record<string, unknown>, address: Address): void => {
+    for (const [key, value] of Object.entries(node)) {
+      if (!isObject(value)) continue;
+      if (key === "wants") {
+        const records: Record<Address, Record<string, unknown>> = {};
+        for (const [other, record] of Object.entries(value)) if (isObject(record)) records[other] = record;
+        if (address !== TOP) out.set(address, records);
+      } else {
+        walk(value, address === TOP ? key : `${address}.${key}`);
+      }
+    }
+  };
+  walk(dumpTree(dump), TOP);
+  return out;
 }
