@@ -114,9 +114,9 @@ Nothing is exposed until all three are done.
 
 **R-3.2** An address is a dotted namespace path, such as `code.engine.game`. Each segment names functionality.
 
-**R-3.3** The valid root scopes are `code`, `document`, `media`, `data`, `collection`, `upstream`, `downstream` and `layer`. `layer` holds layer definitions, not project functionality (R-6.24).
+**R-3.3** The valid root scopes are `code`, `document`, `media`, `data`, `collection`, `upstream`, `downstream` and `layer`. Like `upstream` and `downstream` (R-3.7), `layer` holds what is not located in the project: here, layer definitions (R-6.24).
 
-**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24). `layer` is a root of its own, not a branch of a project root such as `data`, because definitions under a project root would mix with the project's functionality and read as part of the project (owner, 2026-11-09). Intake places nothing in `layer`: intake infers no layers, so the intake procedure does not list `layer` (owner, 2026-11-09).
+**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24). `layer` is a root of its own, like `upstream` and `downstream`, because a layer definition is not located in the project. Placed under a project root such as `data`, it would mix with the project's functionality and read as part of the project (owner, 2026-11-09). Intake places nothing in `layer`: intake infers no layers, so the intake procedure does not list `layer` (owner, 2026-11-09).
 
 **R-3.4** An element's fields are `technical_name`, `name`, `role`, `uri`, `status` and `wants`. `technical_name`, `name` and `role` are mandatory. `uri` and `status` are optional. A want record holds `why`, `how` and `direction` (formerly `intent`, R-3.6).
 
