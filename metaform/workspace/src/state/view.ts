@@ -39,7 +39,7 @@ export interface Place {
 export type Notice =
   | { kind: "moved"; missing: Address; showing: Address }
   | { kind: "not-connected"; reason: string }
-  | { kind: "refused"; reason: string };
+  | { kind: "refused"; message: string; code: string };
 
 export interface ViewState {
   project: string | null;
@@ -78,7 +78,7 @@ export type Action =
   | { type: "activity"; project: string; address: Address }
   | { type: "seen"; address: Address }
   | { type: "not-connected"; reason: string }
-  | { type: "refused"; reason: string }
+  | { type: "refused"; message: string; code: string }
   | { type: "connected" }
   | { type: "dismiss-notice" };
 
@@ -259,7 +259,7 @@ export function reduce(state: ViewState, action: Action): ViewState {
     case "not-connected":
       return { ...state, notice: { kind: "not-connected", reason: action.reason } };
     case "refused":
-      return { ...state, notice: { kind: "refused", reason: action.reason } };
+      return { ...state, notice: { kind: "refused", message: action.message, code: action.code } };
     case "connected":
       return state.notice?.kind === "not-connected" || state.notice?.kind === "refused" ? { ...state, notice: null } : state;
     case "dismiss-notice":

@@ -45,7 +45,7 @@ export function TopBar(props: {
           ))}
         </select>
       </label>
-      <nav className="breadcrumbs" aria-label={strings.topBar.projects}>
+      <nav className="breadcrumbs" aria-label={strings.topBar.address}>
         <button type="button" onClick={() => segments.length > 0 && dispatch({ type: "open", address: TOP, beneath: 1 })}>
           {project?.name ?? ""}
         </button>
@@ -238,7 +238,7 @@ export function NoticeBar({ notice, onDismiss }: { notice: Notice; onDismiss: ()
       ? strings.graph.containerGone(notice.missing, notice.showing)
       : notice.kind === "not-connected"
         ? strings.connection.notConnected(notice.reason)
-        : notice.reason;
+        : strings.connection.refused(notice.message, notice.code);
   return (
     <div className={`notice ${notice.kind}`} role={notice.kind === "moved" ? "status" : "alert"}>
       <span>{text}</span>
@@ -335,6 +335,26 @@ export function BottomStrip(props: {
         )}
       </div>
     </footer>
+  );
+}
+
+/** The keyboard shortcuts panel (UX sections 3 to 11), opened from the rail or with "?". */
+export function KeyboardHelp({ onClose }: { onClose: () => void }) {
+  return (
+    <section className="onboarding keyboard-help" aria-labelledby="keyboard-title">
+      <h2 id="keyboard-title">{strings.keyboard.title}</h2>
+      <dl className="keys">
+        {strings.keyboard.keys(platform).map((row) => (
+          <div key={row.keys}>
+            <dt>
+              <kbd>{row.keys}</kbd>
+            </dt>
+            <dd>{row.action}</dd>
+          </div>
+        ))}
+      </dl>
+      <button type="button" className="close" onClick={onClose} aria-label={strings.details.close}>×</button>
+    </section>
   );
 }
 

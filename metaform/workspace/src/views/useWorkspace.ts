@@ -42,7 +42,7 @@ const ACTIVITY_LIMIT = 50;
 
 /** A refusal (the server answered no) and a transport failure (no answer) are shown differently. */
 function failed(error: unknown): Action {
-  if (error instanceof RefusalError) return { type: "refused", reason: error.message };
+  if (error instanceof RefusalError) return { type: "refused", message: error.refusal.message, code: error.refusal.code };
   if (error instanceof TransportError) return { type: "not-connected", reason: error.message };
   return { type: "not-connected", reason: error instanceof Error ? error.message : String(error) };
 }

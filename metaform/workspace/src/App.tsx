@@ -9,7 +9,7 @@ import { buildScene, elementScene, type SceneInput } from "./state/scene";
 import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
-import { BottomStrip, Details, FocusBanner, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
+import { BottomStrip, Details, FocusBanner, KeyboardHelp, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
 
 export interface AppProps {
@@ -36,6 +36,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const [railOpen, setRailOpen] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showGuide, setShowGuide] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
   /** The selected outside element's own map, when the source can read it (seam gap 4). */
@@ -191,7 +192,8 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           dispatch({ type: "back" });
           break;
         case e.key === "Escape":
-          if (state.mode === "present") dispatch({ type: "mode", mode: "graph" });
+          if (showKeys) setShowKeys(false);
+          else if (state.mode === "present") dispatch({ type: "mode", mode: "graph" });
           else if (state.notice) dispatch({ type: "dismiss-notice" });
           else dispatch({ type: "select", address: null });
           break;
@@ -208,6 +210,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
         case (e.key === "f" || e.key === "F") && selection !== null:
           if (selection) dispatch({ type: "set-focus", address: selection });
           break;
+        case e.key === "?":
+          setShowKeys((open) => !open);
+          break;
         case e.key === "m" || e.key === "M":
           setRailOpen(true);
           break;
@@ -223,7 +228,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom]);
+  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys]);
 
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
@@ -264,11 +269,13 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onCollapseAll={() => dispatch({ type: "collapse-all" })}
             onExpandAll={() => dispatch({ type: "expand-all", addresses: addresses.filter((a) => (counts.get(a) ?? 0) > 0 && (view.container === TOP || a.startsWith(`${view.container}.`))) })}
             onTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-            onHelp={() => setShowGuide(true)}
+            onHelp={() => setShowKeys(true)}
             onGettingStarted={() => setShowGuide(true)}
           />
         )}
-        {firstRun || showGuide ? (
+        {showKeys && !firstRun ? (
+          <KeyboardHelp onClose={() => setShowKeys(false)} />
+        ) : firstRun || showGuide ? (
           <Onboarding
             startCommand={startCommand}
             onSimulateIntake={() => {

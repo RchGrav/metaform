@@ -79,6 +79,10 @@ button, select { font: inherit; color: inherit; }
 .onboarding ol { padding-left: 20px; } .onboarding h3 { margin: 12px 0 4px; font-size: 14px; }
 .onboarding code { background: var(--bg); padding: 2px 6px; border-radius: 4px; }
 .onboarding button { background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+.keys { display: grid; gap: 6px; margin: 12px 0 0; }
+.keys div { display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
+.keys dd { margin: 0; }
+kbd { font: 12px/1.6 ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
 .onboarding .close { position: absolute; top: 8px; right: 8px; border: 0; }
 .present .canvas { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
