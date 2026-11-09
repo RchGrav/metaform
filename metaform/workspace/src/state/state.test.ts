@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShallowGraph } from "../source";
-import { buildScene, type SceneInput } from "./scene";
+import { buildScene, elementScene, type SceneInput } from "./scene";
 import { TOP, beneathCounts, layerCounts, layerNames, openTarget, sceneEdges, visibleIn } from "./structure";
 import { currentView, initialState, reduce, type Action, type ViewState } from "./view";
 
@@ -56,11 +56,15 @@ describe("structure", () => {
     expect(edges).toEqual([{ from: "code", to: "upstream", count: 1 }]);
   });
 
-  it("opens an element's own map under upstream when the map holds it, else its subgraph", () => {
-    const addresses = new Set([...graph.addresses, "upstream.code.store", "upstream.code.store.engine"]);
-    expect(openTarget("code.store", addresses)).toBe("upstream.code.store");
-    expect(openTarget("code.server", addresses)).toBe("code.server");
-    expect(openTarget("upstream.code.store", addresses)).toBe("upstream.code.store");
+  it("opens a chained map only at a Definitive upstream element, never at a plain dependency", () => {
+    const fields = new Map<string, Record<string, unknown>>([
+      ["upstream.code.store", { role: "Definitive", uri: "https://example.com/store.git" }],
+      ["upstream.code", { role: "Supportive" }],
+    ]);
+    expect(openTarget("code.store", fields)).toBe("upstream.code.store");
+    expect(openTarget("code", fields)).toBe("code");
+    expect(openTarget("code.server", fields)).toBe("code.server");
+    expect(openTarget("upstream.code.store", fields)).toBe("upstream.code.store");
   });
 
   it("counts every address beneath an element", () => {
@@ -183,6 +187,14 @@ describe("scene", () => {
     const isolated = reduce(inCode, { type: "isolate", layer: "specification" });
     const store = buildScene(isolated, deep).nodes.find((n) => n.address === "code.store");
     expect(store).toMatchObject({ dimmed: false, layers: [{ layer: "specification", records: 4, style: 1 }] });
+  });
+
+  it("shows an element's wants in Element mode, including those held beneath it", () => {
+    const scene = elementScene(inCode, input(), "code.server");
+    expect(scene.nodes.map((n) => n.address).sort()).toEqual(["code.server", "code.store.cache", "code.store.memory", "upstream.ladybug"]);
+    expect(scene.edges.map((e) => e.id).sort()).toEqual([
+      "code.server->code.store.cache", "code.server->code.store.memory", "code.server->upstream.ladybug",
+    ]);
   });
 
   it("puts the pivot on top and dims what lies beyond reach", () => {

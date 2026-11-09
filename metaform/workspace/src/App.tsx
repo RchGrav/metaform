@@ -46,15 +46,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const addresses = useMemo(() => (current ? graphAddresses(current.graph) : []), [current]);
   const counts = useMemo(() => beneathCounts(addresses), [addresses]);
   const beneath = useCallback((address: Address) => counts.get(address) ?? 0, [counts]);
-  const known = useMemo(() => new Set(addresses), [addresses]);
-  // Double-click and Enter: an element's own map when the map holds one, else its address subgraph.
-  const open = useCallback(
-    (address: Address): Action => {
-      const target = openTarget(address, known);
-      return { type: "open", address: target, beneath: beneath(target) };
-    },
-    [known, beneath],
-  );
+  const fieldsByAddress = useMemo(() => current?.fields ?? new Map<Address, Record<string, unknown>>(), [current]);
 
   // The project an element's `uri` names, if any (seam gap 3, proposed form).
   const linkedProject = useCallback(
@@ -95,9 +87,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
 
   const scene = useMemo(() => {
     if (!sceneInput) return { nodes: [], edges: [], top: null };
-    if (state.mode === "element" && focusTarget !== null && sheet) return elementScene(state, sceneInput, focusTarget, sheet);
+    if (state.mode === "element" && focusTarget !== null) return elementScene(state, sceneInput, focusTarget);
     return buildScene(state, sceneInput);
-  }, [state, sceneInput, focusTarget, sheet]);
+  }, [state, sceneInput, focusTarget]);
 
   const viewportKey = state.mode === "element" ? `element:${focusTarget ?? ""}` : view.container;
   const storedViewport: Viewport | null = view.viewports[viewportKey] ?? null;
@@ -116,7 +108,14 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     },
     [renderer, view.viewports, view.container, zoom],
   );
-  const fit = useCallback(() => void renderer.fit(true).then((v) => setZoom(v.zoom)), [renderer]);
+  const fit = useCallback(
+    () =>
+      void renderer.fit(true).then((v) => {
+        setZoom(v.zoom);
+        dispatch({ type: "viewport", viewport: v });
+      }),
+    [renderer, dispatch],
+  );
 
   const openLinked = useCallback(
     (address: Address) => {
@@ -124,6 +123,18 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       if (project) dispatch({ type: "open-project", project, from: "link" });
     },
     [linkedProject, dispatch],
+  );
+
+  // Double-click and Enter: a link to another project opens that project (UX section 7); an element
+  // holding a chained map opens it; anything else opens its own address subgraph (UX section 5).
+  const open = useCallback(
+    (address: Address): Action => {
+      const project = linkedProject(address);
+      if (project) return { type: "open-project", project, from: "link" };
+      const target = openTarget(address, fieldsByAddress);
+      return { type: "open", address: target, beneath: beneath(target) };
+    },
+    [linkedProject, fieldsByAddress, beneath],
   );
 
   // The keyboard map (UX sections 3 to 11). Every action also has a pointer route.
@@ -159,8 +170,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           else dispatch({ type: "select", address: null });
           break;
         case e.key === "Enter" && selection !== null && !e.shiftKey:
-          if (selection && linkedProject(selection)) openLinked(selection);
-          else if (selection) dispatch(open(selection));
+          if (selection) dispatch(open(selection));
           break;
         case e.key === "Enter" && e.shiftKey:
           dispatch({ type: "up" });
