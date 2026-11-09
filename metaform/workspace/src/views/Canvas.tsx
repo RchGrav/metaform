@@ -47,7 +47,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: 
       // A container shown before gets its own viewport back; a new one is fitted (UX section 1).
       const stored = latest.current.viewport;
       if (stored) renderer.setViewport(stored, false);
-      else void renderer.fit(false);
+      else void renderer.fit(false).then((fitted) => latest.current.dispatch({ type: "viewport", viewport: fitted }));
     });
     return () => {
       live = false;

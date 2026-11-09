@@ -101,8 +101,11 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
   // One subscription per known project, so activity in other projects is counted too.
   useEffect(() => {
     if (!projects) return;
-    const stops = projects.map((project) =>
-      events.subscribe(project.id, (event) => {
+    const stops = projects.map((project) => {
+      // Presence the source announces while subscribing is where agents already are: state, not
+      // new activity. Only events after that count as activity.
+      let announcing = true;
+      const stop = events.subscribe(project.id, (event) => {
         const time = new Date();
         lineId.current += 1;
         if (event.kind === "map-changed") {
@@ -118,6 +121,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
             ...current,
             [event.agent]: { id: event.agent, project: event.project, at: event.at, activity: event.activity, lastSeen: time.getTime() },
           }));
+          if (announcing) return;
           setActivity((lines) => [
             { id: lineId.current, time, project: event.project, kind: "presence" as const, agent: event.agent, at: event.at, activity: event.activity, simulated: true },
             ...lines,
@@ -125,8 +129,10 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
           // New activity marks its element unseen; it never moves the viewport or the selection.
           if (event.at !== null) dispatchRaw({ type: "activity", project: event.project, address: event.at });
         }
-      }),
-    );
+      });
+      announcing = false;
+      return stop;
+    });
     return () => stops.forEach((stop) => stop());
   }, [projects, events, load]);
 

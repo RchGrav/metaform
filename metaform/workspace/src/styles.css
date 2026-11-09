@@ -82,8 +82,13 @@ button, select { font: inherit; color: inherit; }
 .onboarding .close { position: absolute; top: 8px; right: 8px; border: 0; }
 .present .canvas { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-/* Narrow screens (UX section 11): details become a bottom sheet, the strip wraps. */
+/* Narrow screens (UX section 11): the rail becomes a bottom bar that stays shown, details become a bottom sheet, the strip wraps. */
 @media (max-width: 900px) {
+  .workspace { padding-bottom: 48px; }
+  .rail { position: fixed; left: 0; right: 0; top: auto; bottom: 0; flex-direction: row; justify-content: center; border-radius: 0; border-width: 1px 0 0; }
+  .rail.hidden { opacity: 1; transform: none; pointer-events: auto; }
+  .rail-zone, .rail-handle { display: none; }
+  .rail-more { left: auto; right: 8px; bottom: 52px; }
   .details { position: absolute; left: 0; right: 0; bottom: 0; width: auto; max-height: 60%; border-left: 0; border-top: 1px solid var(--line); z-index: 4; }
   .bottom-strip { flex-direction: column; align-items: stretch; }
   .top-bar { flex-wrap: wrap; }

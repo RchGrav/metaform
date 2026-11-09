@@ -6,6 +6,8 @@ import type { AgentMark, RenderEdge, RenderNode, RenderScene } from "../graph/re
 import { FOCUS_REACH, currentView, layerShown, type ViewState } from "./view";
 import {
   TOP,
+  inLayerScope,
+  isBeneath,
   bandOf,
   beneathCounts,
   graphAddresses,
@@ -138,26 +140,25 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
 }
 
 /**
- * The Element mode scene (UX section 3): the element in the middle, what it wants below it, and
- * what wants it above it, each as a full address. Uses the same marks as the graph scene.
+ * The Element mode scene (UX section 3): the element, the elements it wants, and the elements that
+ * want it. Wants held by or aimed at elements beneath it count as its own, as the graph does for a
+ * collapsed element, so an element whose wants sit on its children is not shown alone.
  */
-export function elementScene(state: ViewState, input: SceneInput, at: Address, sheet: SummarySheet): RenderScene {
-  const wanted = Object.keys(sheet.wants);
-  const wanters = Object.keys(sheet.wanted_by);
-  const addresses = [...new Set([at, ...wanted, ...wanters])];
-  const edges: [Address, Address][] = [
-    ...wanters.map((holder): [Address, Address] => [holder, at]),
-    ...wanted.map((other): [Address, Address] => [at, other]),
-  ];
+export function elementScene(state: ViewState, input: SceneInput, at: Address): RenderScene {
+  const within = (address: Address) => address === at || isBeneath(address, at);
+  const edges = [...input.graph.edges.filter(([h, w]) => !inLayerScope(h) && !inLayerScope(w))]
+    .map(([h, w]): [Address, Address] => [within(h) ? at : h, within(w) ? at : w])
+    .filter(([from, to]) => from !== to && (from === at || to === at));
+  const addresses = [...new Set([at, ...edges.flat()])];
   const graph = { addresses, edges, definitive: input.graph.definitive };
-  // Every address shown at the top level, with the element's wanters placed above it by the layout.
   const flat: ViewState = {
     ...state,
-    views: state.project === null ? state.views : {
-      ...state.views,
-      [state.project]: { ...currentView(state), container: TOP, focus: null, expanded: [] },
-    },
+    views:
+      state.project === null
+        ? state.views
+        : { ...state.views, [state.project]: { ...currentView(state), container: TOP, focus: null, expanded: [] } },
   };
   const scene = buildScene(flat, { ...input, graph, fullAddresses: graphAddresses(input.graph) }, addresses);
-  return { ...scene, top: wanters.length > 0 ? null : at };
+  const wanters = edges.some(([, to]) => to === at);
+  return { ...scene, top: wanters ? null : at };
 }
