@@ -2,7 +2,7 @@
 // (dev/user_agent_interfaces-ux.md sections 2, 3, 7, 8, 9, 11 and 12). Every word comes from strings.ts.
 
 import { useEffect, useRef, useState } from "react";
-import type { Address, ProjectRef, SummarySheet } from "../source";
+import type { Address, ProjectRef, SummarySheet, Want } from "../source";
 import * as strings from "../strings";
 import { TOP } from "../state/structure";
 import { FOCUS_REACH, layerShown, type Mode, type Notice, type ViewState, type Action } from "../state/view";
@@ -143,6 +143,33 @@ export function Rail(props: {
   );
 }
 
+const IFD = ["outbound", "inbound", "two-way"] as const;
+
+/**
+ * One want in the intake's terms, as the earlier graph showed it (climb step 2): the receiving
+ * element (RE) holds the want, the providing element (PE) is what it names, OP is its `why`, EF
+ * its `how`, and IFD its `direction`, relative to the receiving element (R-3.6).
+ */
+function WantCard(props: { re: Address; pe: Address; want: Want; here: Address; onSelect: (address: Address) => void }) {
+  const { re, pe, want, here } = props;
+  const direction = IFD.find((d) => d === want.direction);
+  const element = (address: Address) =>
+    address === here ? <code>{address}</code> : (
+      <button type="button" className="link" onClick={() => props.onSelect(address)}>{address}</button>
+    );
+  return (
+    <li className="want-card">
+      <dl>
+        <div><dt>{strings.intake.re.long}</dt><dd>{element(re)}</dd></div>
+        <div><dt>{strings.intake.pe.long}</dt><dd>{element(pe)}</dd></div>
+        {typeof want.why === "string" && <div><dt>{strings.intake.op.long}</dt><dd>{want.why}</dd></div>}
+        {typeof want.how === "string" && <div><dt>{strings.intake.ef.long}</dt><dd>{want.how}</dd></div>}
+        {direction && <div><dt>{strings.intake.ifd.long}</dt><dd>{strings.intake.ifdLine(direction, re, pe)}</dd></div>}
+      </dl>
+    </li>
+  );
+}
+
 export function Details(props: {
   address: Address;
   sheet: SummarySheet | null;
@@ -195,12 +222,9 @@ export function Details(props: {
       {wants.length === 0 ? (
         <p className="empty">{strings.details.noWants}</p>
       ) : (
-        <ul>
+        <ul className="wants">
           {wants.map(([other, want]) => (
-            <li key={other}>
-              <button type="button" className="link" onClick={() => props.onSelect(other)}>{other}</button>
-              <span className="want">{[want.why, want.how, want.direction].filter(Boolean).join(" · ")}</span>
-            </li>
+            <WantCard key={other} re={address} pe={other} want={want} here={address} onSelect={props.onSelect} />
           ))}
         </ul>
       )}
@@ -208,11 +232,9 @@ export function Details(props: {
       {wantedBy.length === 0 ? (
         <p className="empty">{strings.details.notWanted}</p>
       ) : (
-        <ul>
-          {wantedBy.map(([other]) => (
-            <li key={other}>
-              <button type="button" className="link" onClick={() => props.onSelect(other)}>{other}</button>
-            </li>
+        <ul className="wants">
+          {wantedBy.map(([other, want]) => (
+            <WantCard key={other} re={other} pe={address} want={want} here={address} onSelect={props.onSelect} />
           ))}
         </ul>
       )}

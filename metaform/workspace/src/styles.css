@@ -52,6 +52,12 @@ button, select { font: inherit; color: inherit; }
 .details ul { list-style: none; padding: 0; margin: 0; }
 .details li { padding: 2px 0; }
 .details .want { display: block; color: var(--muted); font-size: 12px; padding-left: 4px; }
+.wants { display: grid; gap: 8px; }
+.want-card { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.want-card dl { margin: 0; display: grid; gap: 4px; }
+.want-card dt { font-size: 11px; color: var(--muted); }
+.want-card dd { margin: 0; }
+.want-card code { font-size: 12px; }
 .fields { display: grid; gap: 2px; margin: 8px 0; }
 .fields div { display: grid; grid-template-columns: 110px 1fr; }
 .fields dt { color: var(--muted); } .fields dd { margin: 0; }
