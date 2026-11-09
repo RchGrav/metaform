@@ -110,29 +110,13 @@
               "$ref": "#/$defs/NamespaceNode"
             }
           ],
-          "description": "An array is the functional knowledge layer. An object is a namespace branch and follows namespace rules."
+          "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
         },
         "why": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "how": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "project": {
           "anyOf": [
@@ -168,48 +152,16 @@
           "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
         },
         "op": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "ef": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "direction": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "ifd": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         }
       },
       "additionalProperties": {
@@ -222,7 +174,7 @@
     },
     "ComposedElementLayer": {
       "title": "Array-valued composed element layer",
-      "description": "An array at a plural-named namespace location is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+      "description": "An array at an element is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
       "type": "array",
       "items": true
     },
@@ -271,6 +223,17 @@
         "how"
       ],
       "additionalProperties": false
+    },
+    "RelationshipWord": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        }
+      ],
+      "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
     }
   },
   "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",
