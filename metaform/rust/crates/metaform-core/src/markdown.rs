@@ -373,7 +373,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         sections.last_mut().expect("the root section is first").body.push((line_at, line));
     }
     if fence.is_some() {
-        return Err(parse_error(fence_line, "a code fence is opened here and not closed"));
+        return Err(parse_error(fence_line, "a code fence opens here and is not closed"));
     }
 
     let mut out = BTreeMap::new();
@@ -384,7 +384,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         for (block, line_at) in blocks.iter().zip(&lines) {
             let Some(code) = &block.code else { continue };
             if let Some((first, first_line)) = codes.get(&code.to_ascii_lowercase()) {
-                return Err(parse_error(*line_at, format!("code '{code}' is already used at line {first_line}, under '{first}'; a code is unique across the specification")));
+                return Err(parse_error(*line_at, format!("code '{code}' is already used at line {first_line}, under '{first}'; each code must be unique across the specification")));
             }
             codes.insert(code.to_ascii_lowercase(), (section.address.clone(), *line_at));
         }

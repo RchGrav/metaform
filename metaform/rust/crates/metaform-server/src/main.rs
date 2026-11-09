@@ -203,9 +203,13 @@ async fn specification(
                 let shown = left_out.iter().take(5).copied().collect::<Vec<_>>().join(", ");
                 let more = left_out.len().saturating_sub(5);
                 let more = if more > 0 { format!(" and {more} more") } else { String::new() };
+                let (count, each) = if left_out.len() == 1 {
+                    ("1 element is".to_string(), "it lacks")
+                } else {
+                    (format!("{} elements are", left_out.len()), "each lacks")
+                };
                 eprintln!(
-                    "metaform: {} left out of the document, because the skeleton needs technical_name, name and role: {shown}{more}",
-                    if left_out.len() == 1 { "1 element is".to_string() } else { format!("{} elements are", left_out.len()) }
+                    "metaform: {count} left out of the document, because {each} technical_name, name or role: {shown}{more}. Intake sets these fields."
                 );
             }
             if check {
