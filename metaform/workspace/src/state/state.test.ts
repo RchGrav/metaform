@@ -89,25 +89,6 @@ describe("view state", () => {
     expect(back.gestureHintDone).toBe(true);
   });
 
-  it("opens a chained map, goes up out of it with the holder selected, and goes back into it", () => {
-    const inside = run([
-      { type: "open", address: "code", beneath: 6 },
-      { type: "open-map", address: "code.store" },
-      { type: "open", address: "engine", beneath: 3 },
-    ], start);
-    expect(inside.chain).toEqual(["code.store"]);
-    expect(currentView(inside).container).toBe("engine");
-    const top = reduce(inside, { type: "up" });
-    expect(top.chain).toEqual(["code.store"]);
-    const out = reduce(top, { type: "up" });
-    expect(out.chain).toEqual([]);
-    expect(currentView(out)).toMatchObject({ container: "code", selection: "code.store" });
-    const back = reduce(out, { type: "back" });
-    expect(back.chain).toEqual(["code.store"]);
-    expect(currentView(back).container).toBe(TOP);
-    expect(reduce(back, { type: "open-project", project: "other" }).chain).toEqual([]);
-  });
-
   it("opens a leaf in Element mode", () => {
     const leaf = reduce(start, { type: "open", address: "code.server-tools", beneath: 0 });
     expect(leaf.mode).toBe("element");

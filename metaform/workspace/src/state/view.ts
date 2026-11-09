@@ -22,7 +22,7 @@ export interface ProjectView {
   focus: Address | null;
   /** Elements whose elements beneath are shown. Everything else with elements beneath is collapsed. */
   expanded: Address[];
-  /** One viewport per container, keyed by container address. Each map has its own ProjectView. */
+  /** One viewport per container, keyed by container address. */
   viewports: Record<Address, Viewport>;
   /** Elements with activity the user has not seen. */
   unseen: Address[];
@@ -31,8 +31,6 @@ export interface ProjectView {
 /** A place in the workspace that Back returns to. */
 export interface Place {
   project: string;
-  /** The chained maps entered from the project's main map (R-4.15); [] is the main map. */
-  chain: Address[];
   container: Address;
   selection: Address | null;
   focus: Address | null;
@@ -45,11 +43,6 @@ export type Notice =
 
 export interface ViewState {
   project: string | null;
-  /**
-   * The chained maps entered from the project's main map, outermost first: each address is the
-   * element, in the map before it, that holds the next map (R-4.15). [] is the main map.
-   */
-  chain: Address[];
   mode: Mode;
   views: Record<string, ProjectView>;
   /** Visibility by layer name, shared by every project (UX section 8). Unknown layers are visible. */
@@ -68,8 +61,6 @@ export type Action =
   | { type: "open-project"; project: string; from?: "link" }
   | { type: "select"; address: Address | null }
   | { type: "open"; address: Address; beneath: number }
-  /** Opens the chained map an element holds (owner, 2026-11-09: a nested graph is the element's own map). */
-  | { type: "open-map"; address: Address }
   | { type: "up" }
   | { type: "back" }
   | { type: "mode"; mode: Mode }
@@ -95,7 +86,6 @@ export const HISTORY_LIMIT = 100;
 export function initialState(): ViewState {
   return {
     project: null,
-    chain: [],
     mode: "graph",
     views: {},
     layers: {},
@@ -111,14 +101,9 @@ export function emptyView(): ProjectView {
   return { container: TOP, selection: null, focus: null, expanded: [], viewports: {}, unseen: [] };
 }
 
-/** The key of one map's view: the project, and the chain of elements to the map. */
-export function viewKey(project: string, chain: readonly Address[]): string {
-  return chain.length === 0 ? project : `${project}>${chain.join(">")}`;
-}
-
-/** The current map's view; an empty one before any project is open. */
+/** The current project's view; an empty one before any project is open. */
 export function currentView(state: ViewState): ProjectView {
-  return (state.project !== null ? state.views[viewKey(state.project, state.chain)] : undefined) ?? emptyView();
+  return (state.project !== null ? state.views[state.project] : undefined) ?? emptyView();
 }
 
 export function layerShown(state: ViewState, layer: string): boolean {
@@ -129,7 +114,7 @@ export function layerShown(state: ViewState, layer: string): boolean {
 function place(state: ViewState): Place | null {
   if (state.project === null) return null;
   const view = currentView(state);
-  return { project: state.project, chain: state.chain, container: view.container, selection: view.selection, focus: view.focus };
+  return { project: state.project, container: view.container, selection: view.selection, focus: view.focus };
 }
 
 function pushHistory(state: ViewState): Place[] {
@@ -139,7 +124,7 @@ function pushHistory(state: ViewState): Place[] {
 
 function withView(state: ViewState, change: Partial<ProjectView>): ViewState {
   if (state.project === null) return state;
-  return { ...state, views: { ...state.views, [viewKey(state.project, state.chain)]: { ...currentView(state), ...change } } };
+  return { ...state, views: { ...state.views, [state.project]: { ...currentView(state), ...change } } };
 }
 
 /** The nearest address that still exists, walking up; TOP when none does. */
@@ -159,7 +144,6 @@ export function reduce(state: ViewState, action: Action): ViewState {
         ...state,
         history: pushHistory(state),
         project: action.project,
-        chain: [],
         views: { ...state.views, [action.project]: state.views[action.project] ?? emptyView() },
         // The return chip shows after a move through a link, and stays until a third project opens.
         returnTo: action.from === "link" ? here : state.returnTo?.project === action.project ? null : state.returnTo,
@@ -179,26 +163,8 @@ export function reduce(state: ViewState, action: Action): ViewState {
       }
       // A leaf opens in Element mode (UX section 5).
       return { ...withView(state, { selection: action.address }), mode: "element", gestureHintDone: true };
-    case "open-map": {
-      if (state.project === null) return state;
-      const chain = [...state.chain, action.address];
-      const key = viewKey(state.project, chain);
-      return {
-        ...state,
-        history: pushHistory(state),
-        chain,
-        views: { ...state.views, [key]: state.views[key] ?? emptyView() },
-        gestureHintDone: true,
-      };
-    }
     case "up": {
-      if (view.container === TOP) {
-        // At the top of a chained map, going up returns to the map that holds it, with the holding element selected.
-        const holder = state.chain[state.chain.length - 1];
-        if (holder === undefined) return state;
-        const outer: ViewState = { ...state, history: pushHistory(state), chain: state.chain.slice(0, -1), gestureHintDone: true };
-        return withView(outer, { selection: holder });
-      }
+      if (view.container === TOP) return state;
       return {
         ...withView({ ...state, history: pushHistory(state) }, {
           container: parentOf(view.container),
@@ -214,16 +180,14 @@ export function reduce(state: ViewState, action: Action): ViewState {
         ...state,
         history: state.history.slice(0, -1),
         project: last.project,
-        chain: last.chain,
         returnTo: state.returnTo?.project === last.project ? null : state.returnTo,
       };
-      const key = viewKey(last.project, last.chain);
-      const base = restored.views[key] ?? emptyView();
+      const base = restored.views[last.project] ?? emptyView();
       return {
         ...restored,
         views: {
           ...restored.views,
-          [key]: { ...base, container: last.container, selection: last.selection, focus: last.focus },
+          [last.project]: { ...base, container: last.container, selection: last.selection, focus: last.focus },
         },
       };
     }
@@ -256,7 +220,7 @@ export function reduce(state: ViewState, action: Action): ViewState {
     case "viewport":
       return withView(state, { viewports: { ...view.viewports, [view.container]: action.viewport } });
     case "map-changed": {
-      // A project's main map changed (the event names no chained map). Refetched map: keep every field, and move any address that disappeared to its nearest parent.
+      // Refetched map: keep every field, and move any address that disappeared to its nearest parent.
       const stored = state.views[action.project];
       if (stored === undefined) return state;
       const exists = new Set(action.addresses);
@@ -272,7 +236,7 @@ export function reduce(state: ViewState, action: Action): ViewState {
         unseen: stored.unseen.filter((a) => exists.has(a)),
       };
       const notice: Notice | null =
-        action.project === state.project && state.chain.length === 0 && container !== stored.container
+        action.project === state.project && container !== stored.container
           ? { kind: "moved", missing: stored.container, showing: container }
           : state.notice;
       return { ...state, views: { ...state.views, [action.project]: next }, notice };
