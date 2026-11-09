@@ -22,7 +22,8 @@ export interface AppProps {
   startCommand: string;
 }
 
-const PROJECT_LINK = /^metaform:\/\/map\/project\/([^/]+)\//;
+/** metaform://map/project/<id>/<map>#<address> (seam gap 3): the project, and the element named after #. */
+const PROJECT_LINK = /^metaform:\/\/map\/project\/([^/]+)\/[^#]*(?:#(.+))?$/;
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
@@ -49,14 +50,27 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const fieldsByAddress = useMemo(() => current?.fields ?? new Map<Address, Record<string, unknown>>(), [current]);
 
   // The project an element's `uri` names, if any (seam gap 3, proposed form).
-  const linkedProject = useCallback(
-    (address: Address): string | null => {
+  const linkTarget = useCallback(
+    (address: Address): { project: string; at: Address | null } | null => {
       const uri = current?.fields.get(address)?.uri;
       const match = typeof uri === "string" ? PROJECT_LINK.exec(uri) : null;
       const id = match?.[1];
-      return id !== undefined && ws.projects?.some((p) => p.id === id) ? id : null;
+      if (id === undefined || !ws.projects?.some((p) => p.id === id)) return null;
+      return { project: id, at: match?.[2] ?? null };
     },
     [current, ws.projects],
+  );
+  const linkedProject = useCallback((address: Address) => linkTarget(address)?.project ?? null, [linkTarget]);
+  /** The action that follows a link: open the project, at the linked element when the link names one. */
+  const followLink = useCallback(
+    (address: Address): Action | null => {
+      const target = linkTarget(address);
+      if (!target) return null;
+      return target.at === null
+        ? { type: "open-project", project: target.project, from: "link" }
+        : { type: "open-project", project: target.project, from: "link", at: target.at };
+    },
+    [linkTarget],
   );
 
   const sceneInput = useMemo((): SceneInput | null => {
@@ -119,22 +133,22 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
 
   const openLinked = useCallback(
     (address: Address) => {
-      const project = linkedProject(address);
-      if (project) dispatch({ type: "open-project", project, from: "link" });
+      const action = followLink(address);
+      if (action) dispatch(action);
     },
-    [linkedProject, dispatch],
+    [followLink, dispatch],
   );
 
   // Double-click and Enter: a link to another project opens that project (UX section 7); an element
   // holding a chained map opens it; anything else opens its own address subgraph (UX section 5).
   const open = useCallback(
     (address: Address): Action => {
-      const project = linkedProject(address);
-      if (project) return { type: "open-project", project, from: "link" };
+      const link = followLink(address);
+      if (link) return link;
       const target = openTarget(address, fieldsByAddress);
       return { type: "open", address: target, beneath: beneath(target) };
     },
-    [linkedProject, fieldsByAddress, beneath],
+    [followLink, fieldsByAddress, beneath],
   );
 
   // The keyboard map (UX sections 3 to 11). Every action also has a pointer route.

@@ -58,7 +58,8 @@ export interface ViewState {
 }
 
 export type Action =
-  | { type: "open-project"; project: string; from?: "link" }
+  /** `at`: the element a link names (UX section 7); the view opens its container and selects it. */
+  | { type: "open-project"; project: string; from?: "link"; at?: Address }
   | { type: "select"; address: Address | null }
   | { type: "open"; address: Address; beneath: number }
   | { type: "up" }
@@ -144,7 +145,13 @@ export function reduce(state: ViewState, action: Action): ViewState {
         ...state,
         history: pushHistory(state),
         project: action.project,
-        views: { ...state.views, [action.project]: state.views[action.project] ?? emptyView() },
+        views: {
+          ...state.views,
+          [action.project]:
+            action.at === undefined
+              ? state.views[action.project] ?? emptyView()
+              : { ...(state.views[action.project] ?? emptyView()), container: parentOf(action.at), selection: action.at, focus: null },
+        },
         // The return chip shows after a move through a link, and stays until a third project opens.
         returnTo: action.from === "link" ? here : state.returnTo?.project === action.project ? null : state.returnTo,
       };
