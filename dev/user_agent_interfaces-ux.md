@@ -134,7 +134,7 @@ First run, when `projects()` is empty, shows one panel in the canvas:
 
 1. "Register a project". The step that works today: connect an agent from the project's folder with `metaform mcp --project <folder>`; the first connection registers the folder. The prompt's `metaform register <project_name>` is shown beside it, labelled "Planned command" (Matthew's rule 6).
 2. "Run a simulated intake". The button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`. The view fits once, when the first element arrives; later elements never refit it, because an update must not move the viewport (section 9). If an intake ever grows past the view, a quiet "N elements outside the view" hint is the right signal, not a move (not built; decided with Jorge, 2026-11-09).
-3. "Open this view again". The product's reopen command is `metaform gui` (owner, UI-U1), shown as "Planned command" until the host provides it, beside the command that started this prototype.
+3. "Open this view again". The product's reopen command is `metaform gui` (owner, UI-U1; built by Jorge in 1a03bf2), shown beside the command that started this prototype. `metaform register` keeps its "Planned command" label, because it does not exist yet.
 
 ## 13. Decisions and open questions
 
@@ -151,7 +151,7 @@ Open, for the owner:
 
 | ID | Question | Recommendation |
 |---|---|---|
-| UI-U1 | The name of the command that reopens the view, and whether `metaform register` should exist. | Reopen command decided by the owner (2026-11-09, via Matthew): `metaform gui`. It shows as "Planned command" until the host provides it. `register` stays planned. |
+| UI-U1 | The name of the command that reopens the view, and whether `metaform register` should exist. | Reopen command decided by the owner (2026-11-09, via Matthew): `metaform gui`, built (Jorge, 1a03bf2). `register` stays planned. |
 | UI-U2 | Whether "broader graph context" means something wider than one level up. | One level up, as decided above, unless the owner says otherwise. |
 | UI-U3 | What "the Rust version as the premium experience" changes in the interface. | No difference in behaviour. The Rust host serves the same interface. Host framework decided by the owner (2026-11-09, via Matthew): axum 0.8.9, after a 4 of 4 team vote over actix-web. |
 | Seam 1 | How the GUI lists registered projects. No read or command lists the registry today. | Marcus: an admin request that lists the registry (id, name, folder) beside `settings`, outside the agent tool; a `metaform register <folder>` command only when the owner wants it. |

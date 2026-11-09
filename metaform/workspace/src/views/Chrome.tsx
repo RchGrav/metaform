@@ -379,6 +379,7 @@ export function Onboarding(props: { onSimulateIntake: () => void; startCommand: 
         </li>
         <li>
           <h3>{o.reopen.title}</h3>
+          <code>{o.reopen.command}</code>
           <p>{o.reopen.prototypeCommand(props.startCommand)}</p>
         </li>
       </ol>
