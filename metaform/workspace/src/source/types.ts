@@ -84,6 +84,8 @@ export type WorkspaceEvent =
       kind: "agent-presence";
       project: string;
       agent: string;
+      /** The agent's display name, when the source knows it. Show `name ?? agent`. */
+      name?: string;
       at: Address | null;
       activity: string;
       /** Always true: Metaform has no presence source yet (seam gap 2). */
