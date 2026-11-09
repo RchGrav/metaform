@@ -7,11 +7,16 @@ export type Address = string;
 
 export type Role = "Definitive" | "Supportive" | "Notable" | "Divergent";
 
-/** A project registered in the home. `id` is opaque: never parse it. */
+/**
+ * A map the workspace can open. `id` is opaque: never parse it. A project registered in the home
+ * has its `folder`. An outside project's map (SPEC R-4.15), reached from an `upstream` or
+ * `downstream` element, has the `uri` of its repository instead.
+ */
 export interface ProjectRef {
   id: string;
   name: string;
-  folder: string;
+  folder?: string;
+  uri?: string;
 }
 
 /** The result of {"map": {}} (R-5.11): addresses, want edges and the one Definitive element. */
@@ -75,6 +80,12 @@ export interface GraphSource {
   dump(project: string): Promise<RawDump>;
   goto(project: string, at: Address): Promise<SummarySheet>;
   layerRecords(project: string, at: Address, layer: string): Promise<unknown[]>;
+  /**
+   * The outside project's map behind an `upstream` or `downstream` element, or null when none is
+   * available (SPEC R-4.15, seam gap 4). The view opens it like another project, with the five
+   * reads above. Optional until the server's request is decided.
+   */
+  outsideMap?(project: string, at: Address): Promise<ProjectRef | null>;
 }
 
 /** `map-changed` carries no diff: the view refetches `map` and `dump` (seam rule 1). */
