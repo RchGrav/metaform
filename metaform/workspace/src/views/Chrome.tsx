@@ -164,7 +164,7 @@ function WantCard(props: { re: Address; pe: Address; want: Want; here: Address; 
         <div><dt>{strings.intake.pe.long}</dt><dd>{element(pe)}</dd></div>
         {typeof want.why === "string" && <div><dt>{strings.intake.op.long}</dt><dd>{want.why}</dd></div>}
         {typeof want.how === "string" && <div><dt>{strings.intake.ef.long}</dt><dd>{want.how}</dd></div>}
-        {direction && <div><dt>{strings.intake.ifd.long}</dt><dd>{strings.intake.ifdLine(direction, re, pe)}</dd></div>}
+        {direction && <div><dt>{strings.intake.ifd.long}</dt><dd>{strings.intake.ifdValue(direction, re, pe)}</dd></div>}
       </dl>
     </li>
   );
