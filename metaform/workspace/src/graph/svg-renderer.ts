@@ -402,14 +402,19 @@ export class ElkRenderer implements GraphRenderer {
   }
 
   private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, scene: RenderScene): void {
-    const g = el("g", { class: `mf-edge${edge.dimmed ? " mf-dimmed" : ""}`, "data-edge": edge.id }, parent);
+    // The base fades with its elements (climb step 9; viewer plan): a want between two dimmed
+    // elements is dimmed, and a want with one dimmed end is half faded, so a layer's elements
+    // keep their context while the rest of the skeleton recedes.
+    const dimmedEnds = [edge.from, edge.to].filter((a) => scene.nodes.find((n) => n.address === a)?.dimmed).length;
+    const fade = edge.dimmed || dimmedEnds === 2 ? " mf-dimmed" : dimmedEnds === 1 ? " mf-half" : "";
+    const g = el("g", { class: `mf-edge${fade}`, "data-edge": edge.id }, parent);
     const path = el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
     const direction = edge.direction;
     if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
       const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
       tip(g, intake.ifdLine(direction, label(edge.from), label(edge.to)));
       // UX section 12a: the flow runs where it helps; the scene marks those wants `flowing`.
-      if (!edge.dimmed && edge.flowing) this.flow.add(edge.id, path, direction);
+      if (!fade.includes("mf-dimmed") && edge.flowing) this.flow.add(edge.id, path, direction);
     } else {
       tip(g, legend.arrow);
     }

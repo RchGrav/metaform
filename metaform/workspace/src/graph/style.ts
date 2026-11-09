@@ -55,7 +55,8 @@ export const GRAPH_CSS = `
 .mf-chevron:hover .mf-chevron-mark { stroke: var(--mf-ink); }
 .mf-separator { stroke: var(--mf-separator); stroke-dasharray: 6 5; }
 .mf-edge path { fill: none; stroke: var(--mf-edge); stroke-width: 1.4; }
-.mf-edge.mf-dimmed { opacity: 0.3; }
+.mf-edge.mf-dimmed { opacity: 0.25; }
+.mf-edge.mf-half { opacity: 0.55; }
 .mf-arrowhead { fill: var(--mf-edge); }
 .mf-layer-0 { fill: var(--mf-l0); } .mf-layer-1 { fill: var(--mf-l1); }
 .mf-layer-2 { fill: var(--mf-l2); } .mf-layer-3 { fill: var(--mf-l3); }
