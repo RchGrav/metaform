@@ -570,7 +570,7 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     assert!(second.get("instructions").is_none(), "instructions arrive once per context: {second}");
 
     stop_server(&home);
-    let (refused, read) = agent.call(json!({"code.engine": {"layers": ["specification"]}}));
+    let (refused, read) = agent.call(json!({"code.engine": {"specification": {}}}));
     assert!(!refused, "{read}");
     assert_eq!(read["code.engine"]["specification"], blocks, "the blocks survive a restart unchanged");
     agent.stop();

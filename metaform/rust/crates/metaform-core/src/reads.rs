@@ -20,15 +20,15 @@ pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
 }
 
 /// `{"<address>": {}}` returns that element's own fields, keyed by its address.
-/// `{"<address>": {"layers": [...]}}` adds the named layers held there (R-5.21): `wants`, or an
-/// array field such as `specification`. A named layer the element does not hold comes back empty
-/// when it is a layer that applies there, and is left out otherwise. At the root, a read that
-/// names layers returns the root's own fields and those layers instead of the index.
+/// `{"<address>": {"<layer>": {}, ...}}` adds each named layer held there (R-5.21). A layer is
+/// named in the slot where it is written: `{"wants": {}}`, `{"specification": {}}`. A named layer
+/// the element does not hold comes back empty when it is a layer that applies there, and is left
+/// out otherwise. At the root, a read that names layers returns the root's own fields and those
+/// layers instead of the index.
 pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refusal> {
     let named: Vec<&str> = body
-        .get("layers")
-        .and_then(Value::as_array)
-        .map(|names| names.iter().filter_map(Value::as_str).collect())
+        .as_object()
+        .map(|names| names.keys().map(String::as_str).collect())
         .unwrap_or_default();
     if address == ROOT && named.is_empty() {
         return Ok(index(map));

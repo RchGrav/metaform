@@ -428,7 +428,7 @@ fn a_batch_is_stored_whole_or_not_at_all() {
     assert_eq!(announced.try_iter().count(), 1, "one announcement for the batch");
     let read = |store: &Store| {
         store
-            .execute(B, &map, &json!({"code.pipeline": {"layers": ["specification"]}}))
+            .execute(B, &map, &json!({"code.pipeline": {"specification": {}}}))
             .unwrap()
     };
     let before = read(&store);

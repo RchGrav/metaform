@@ -246,13 +246,24 @@ fn the_layer_is_readable_and_listed_by_goto() {
     let (_, read) = run(
         &contract,
         &map,
-        json!({MASHER: {"layers": ["specification"]}}),
+        json!({MASHER: {"specification": {}}}),
     )
     .unwrap();
     assert_eq!(
         read[MASHER]["specification"],
         json!([]),
         "an applicable layer with no blocks reads empty"
+    );
+    let wrapped = run(
+        &contract,
+        &map,
+        json!({MASHER: {"layers": ["specification"]}}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        wrapped.code,
+        Code::FieldMismatch,
+        "a layer is named in its own slot, not in a list"
     );
     let (_, plain) = run(&contract, &map, json!({MASHER: {}})).unwrap();
     assert!(
@@ -262,7 +273,7 @@ fn the_layer_is_readable_and_listed_by_goto() {
     let (_, trunk) = run(
         &contract,
         &map,
-        json!({"code.masher": {"layers": ["specification", "wants"]}}),
+        json!({"code.masher": {"specification": {}, "wants": {}}}),
     )
     .unwrap();
     assert_eq!(
@@ -281,11 +292,11 @@ fn the_layer_is_readable_and_listed_by_goto() {
     let (_, read) = run(
         &contract,
         &map,
-        json!({MASHER: {"layers": ["specification"]}}),
+        json!({MASHER: {"specification": {}}}),
     )
     .unwrap();
     assert_eq!(read[MASHER]["specification"], sent);
-    let (_, root) = run(&contract, &map, json!({".": {"layers": ["specification"]}})).unwrap();
+    let (_, root) = run(&contract, &map, json!({".": {"specification": {}}})).unwrap();
     assert_eq!(
         root["."]["specification"],
         json!([]),
@@ -376,7 +387,7 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
     let (_, read) = run(
         &contract,
         &map,
-        json!({MASHER: {"layers": ["specification"]}}),
+        json!({MASHER: {"specification": {}}}),
     )
     .unwrap();
     assert_eq!(

@@ -1010,14 +1010,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
           "pattern": "^(?:\\.|(?!(?:add|update|delete|orphaned|goto)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)$"
         },
         "additionalProperties": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/Empty"
-            },
-            {
-              "$ref": "#/$defs/LayerRead"
-            }
-          ]
+          "$ref": "#/$defs/LayerRead"
         }
       }
     ],
@@ -1296,22 +1289,14 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       "LayerRead": {
         "type": "object",
-        "description": "Name the layers to read at the address, such as [\"wants\"] or [\"specification\"].",
-        "properties": {
-          "layers": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "pattern": "^[^.$\\[\\]\\s]+$"
-            }
-          }
+        "description": "Name each layer to read at the address where it is written, with {} as its value, such as {\"wants\": {}} or {\"specification\": {}}. An empty object reads only the element's own fields.",
+        "propertyNames": {
+          "pattern": "^[^.$\\[\\]\\s]+$",
+          "description": "One layer name: one namespace segment."
         },
-        "required": [
-          "layers"
-        ],
-        "additionalProperties": false
+        "additionalProperties": {
+          "$ref": "#/$defs/Empty"
+        }
       },
       "AddFields": {
         "allOf": [
