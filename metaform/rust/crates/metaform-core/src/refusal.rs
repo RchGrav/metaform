@@ -89,7 +89,7 @@ impl Code {
             }
             Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
             Code::ElementNotInSkeleton => {
-                "R-6.26: specification blocks are written only at an element with technical_name, name and role, or at the root once the map has a Definitive element."
+                "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Definitive element."
             }
             Code::HeadingLevelInvalid => {
                 "R-6.25: the first titled block is level 1, each level is at most one more than the level before it, and no level is above 4."
@@ -98,7 +98,7 @@ impl Code {
                 "R-6.25: a block's code is unique within its layer across the map, ignoring case, so other text can cite it."
             }
             Code::LayerDefinitionLocked => {
-                "R-6.24, R-6.11: a layer defined by the server's code keeps the definition the code gives it; only its records are written by agents."
+                "R-6.24, R-6.11: a layer defined by the server's code keeps the definition the code gives it; agents write only its records."
             }
             Code::HeadingInText => {
                 "R-6.25: block text holds no Markdown heading line outside fenced code; the block's level and title set its heading."
