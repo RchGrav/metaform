@@ -18,4 +18,5 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "signal"] }
 
 [dev-dependencies]
+metaform-core = { path = "../metaform-core" }
 tempfile = "3"

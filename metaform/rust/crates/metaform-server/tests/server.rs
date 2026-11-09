@@ -529,3 +529,50 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     assert!(why.contains("has no map yet"), "{why}");
     stop_server(&home);
 }
+
+/// The specification layer over MCP (R-6.25 to R-6.27): blocks written at a skeleton element come
+/// back byte for byte after a server restart, and `goto` delivers the layer's instructions once per
+/// context, not once per address.
+#[test]
+fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, project) = (dir.path().join("home"), dir.path().join("proj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let mut agent = Agent::start(&home, &project);
+    agent.request("server/discover", json!({}));
+    // The store seeds this definition into main maps (Jorge's branch); until then the test writes
+    // it, which the definition lock allows because it equals the code's definition.
+    let seed = json!({"update": {metaform_core::specification::DEFINITION_ADDRESS:
+        serde_json::Value::Object(metaform_core::specification::definition())}});
+    let (refused, answer) = agent.call(seed);
+    assert!(!refused, "{answer}");
+    for (address, technical, name, role) in [
+        ("code.engine", "engine", "main loop", "Definitive"),
+        ("code.render", "render", "painter", "Supportive"),
+    ] {
+        let fields = json!({"technical_name": technical, "name": name, "role": role});
+        let (refused, answer) = agent.call(json!({"update": {address: fields}}));
+        assert!(!refused, "{answer}");
+    }
+    let blocks = json!([
+        {"text": "The `main loop` paces every frame — naïve timing is avoided ✓."},
+        {"level": 1, "title": "Timing \"budget\"", "text": "Line one.\nLine two with a 'quote' and \\ backslash.\n\n```sh\n# not a heading\n```"},
+        {"level": 2, "title": "Limits", "text": ""}
+    ]);
+    let (refused, answer) = agent.call(json!({"update": {"code.engine": {"specification": blocks.clone()}}}));
+    assert!(!refused, "{answer}");
+
+    let (_, first) = agent.call(json!({"goto": "code.engine"}));
+    assert!(first["instructions"]["specification"].as_str().unwrap().contains("TASTE"));
+    assert_eq!(first["layers"]["specification"], json!({"records": 3}));
+    let (_, second) = agent.call(json!({"goto": "code.render"}));
+    assert_eq!(second["layers"]["specification"], json!({"records": 0}));
+    assert!(second.get("instructions").is_none(), "instructions arrive once per context: {second}");
+
+    stop_server(&home);
+    let (refused, read) = agent.call(json!({"code.engine": {"layers": ["specification"]}}));
+    assert!(!refused, "{read}");
+    assert_eq!(read["code.engine"]["specification"], blocks, "the blocks survive a restart unchanged");
+    agent.stop();
+    stop_server(&home);
+}

@@ -25,13 +25,12 @@
 //! map is stale, and the parse refuses it, because the skeleton changes through intake, not
 //! through the prose.
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 
 use crate::model::{Element, Map};
-use crate::names::{ROOT, ROOT_SCOPES};
+use crate::names::ROOT;
 use crate::specification::{self, Block, LAYER};
 
 /// Markdown levels: the project heading, and each element heading.
@@ -69,20 +68,11 @@ fn atx_text(line: &str) -> String {
 fn split_code(text: &str) -> (Option<String>, String) {
     if let Some(rest) = text.strip_prefix('`')
         && let Some((code, title)) = rest.split_once('`')
-        && !code.is_empty()
+        && specification::is_code(code)
     {
         return (Some(code.to_string()), title.trim().to_string());
     }
     (None, text.to_string())
-}
-
-/// A line of only `=` or only `-`, which makes the line above it a heading.
-pub(crate) fn is_setext_underline(line: &str) -> bool {
-    let Some(rest) = unindented(line) else {
-        return false;
-    };
-    let rest = rest.trim_end();
-    !rest.is_empty() && (rest.chars().all(|c| c == '=') || rest.chars().all(|c| c == '-'))
 }
 
 /// The mark and length of a line that opens a code fence.
@@ -112,19 +102,6 @@ fn heading_address(text: &str) -> Option<&str> {
 
 // ---- The document's content ----
 
-/// Order addresses as a tree: the root first, then the root scopes in R-3.3 order, and each
-/// element directly before what is beneath it.
-fn tree_order(a: &str, b: &str) -> Ordering {
-    let key = |address: &str| {
-        let scope = address.split('.').next().unwrap_or_default();
-        let rank = ROOT_SCOPES.iter().position(|s| *s == scope).unwrap_or(ROOT_SCOPES.len());
-        (address != ROOT, rank)
-    };
-    key(a)
-        .cmp(&key(b))
-        .then_with(|| a.split('.').cmp(b.split('.')))
-}
-
 fn has_blocks(element: &Element) -> bool {
     element
         .fields
@@ -136,10 +113,7 @@ fn has_blocks(element: &Element) -> bool {
 /// An element is in the document if it is part of the skeleton (R-3.4's mandatory fields) or
 /// still holds blocks.
 fn in_document(element: &Element) -> bool {
-    let skeleton = ["technical_name", "name", "role"]
-        .iter()
-        .all(|key| element.fields.contains_key(*key));
-    skeleton || has_blocks(element)
+    specification::is_skeleton(element) || has_blocks(element)
 }
 
 fn text_field<'a>(element: &'a Element, key: &str) -> Option<&'a str> {
@@ -220,7 +194,7 @@ fn block_paragraphs(address: &str, element: &Element) -> Vec<String> {
     let Some(value) = element.fields.get(LAYER) else {
         return Vec::new();
     };
-    match specification::blocks(value) {
+    match specification::blocks(address, value) {
         Ok(blocks) => blocks
             .iter()
             .flat_map(|block| {
@@ -263,7 +237,7 @@ pub(crate) fn document_addresses(map: &Map) -> Vec<&str> {
         })
         .map(|(address, _)| address)
         .collect();
-    addresses.sort_by(|a, b| tree_order(a, b));
+    addresses.sort_by_key(|address| specification::scope_order(address));
     addresses
 }
 
@@ -380,7 +354,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
     let mut codes: BTreeMap<String, (String, usize)> = BTreeMap::new();
     for section in sections {
         let body = strip_facts(map, &section)?;
-        let (blocks, lines) = read_blocks(&section.address, section.heading_line, &body)?;
+        let (blocks, lines) = read_blocks(map, &section.address, section.heading_line, &body)?;
         for (block, line_at) in blocks.iter().zip(&lines) {
             let Some(code) = &block.code else { continue };
             if let Some((first, first_line)) = codes.get(&code.to_ascii_lowercase()) {
@@ -423,7 +397,7 @@ fn strip_facts<'a>(map: &Map, section: &Section<'a>) -> Result<Vec<(usize, &'a s
 
 /// Read a section's body, after its skeleton facts, as blocks, and check them with the layer's
 /// write rules, so a document that parses can be written.
-fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Result<(Vec<Block>, Vec<usize>), ParseError> {
+fn read_blocks(map: &Map, address: &str, heading_line: usize, body: &[(usize, &str)]) -> Result<(Vec<Block>, Vec<usize>), ParseError> {
     struct Open<'a> {
         line: usize,
         level: Option<u8>,
@@ -473,9 +447,13 @@ fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Re
     }
     close(open, &mut blocks, &mut lines);
     let value = Value::Array(blocks.iter().map(Block::to_json).collect());
-    let checked = specification::blocks(&value).map_err(|refusal| {
-        parse_error(body.first().map_or(heading_line, |(line_at, _)| *line_at), format!("'{address}': {}", refusal.reason))
-    })?;
+    let at = body.first().map_or(heading_line, |(line_at, _)| *line_at);
+    let refused = |refusal: crate::Refusal| parse_error(at, refusal.reason);
+    let checked = specification::blocks(address, &value).map_err(refused)?;
+    specification::check_blocks(address, LAYER, &checked).map_err(refused)?;
+    if !checked.is_empty() {
+        specification::check_allowed(map, address, LAYER).map_err(refused)?;
+    }
     Ok((checked, lines))
 }
 
@@ -584,7 +562,7 @@ mod tests {
             (document.replace("Role: Supportive. Technical name: pipeline code", "Role: Notable. Technical name: pipeline code"), "skeleton facts"),
             (format!("{document}\n## Ghost (`code.ghost`)\n"), "not an element"),
             (document.replace("## Frame Store (`code.store`)", "## Store (`code.store`)"), "must read"),
-            (document.replace("#### Limits", "##### Limits"), "skips a heading level"),
+            (document.replace("#### Limits", "##### Limits"), "level 3 follows level 1"),
             (document.replace("# packet-lab", "# other"), "project heading"),
             (format!("{document}\n## Loose heading\n"), "element heading ends with its address"),
             (document.replace("#### Limits", "#### `pl-1` Limits"), "code 'pl-1' is already used at line"),

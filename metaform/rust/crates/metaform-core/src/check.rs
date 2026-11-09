@@ -388,7 +388,7 @@ pub fn check(map: &Map) -> Vec<Report> {
     let mut sentences_seen: BTreeMap<String, (String, usize, usize)> = BTreeMap::new();
     for address in document_addresses(map) {
         let element = map.element(address).expect("listed from the map");
-        let Some(Ok(blocks)) = element.fields.get(LAYER).map(specification::blocks) else {
+        let Some(Ok(blocks)) = element.fields.get(LAYER).map(|value| specification::blocks(address, value)) else {
             continue;
         };
         for (index, block) in blocks.iter().enumerate() {
