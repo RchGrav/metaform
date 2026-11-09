@@ -439,7 +439,7 @@ A project has exactly one Definitive element.
 
 **R-6.27** `goto` lists every defined layer whose records are allowed at the address, with its record count, and delivers each layer's guidance once per context. A read names a layer in the slot where it is written, with `{}` as its value, and returns its records: `{"<address>": {"specification": {}}}`, `{"<address>": {"wants": {}}}`.
 
-**Status:** Decided, owner, 2026-11-09: agents use the MCP server to keep specifications up to date. The `goto` part `instructions` and the layer read are Proposed. The read form is Decided, owner, 2026-11-09: every layer is named in a read where it is written, because that is consistent with the other commands. It changes the protected tool contract on the owner's instruction.
+**Status:** Decided, owner, 2026-11-09: agents use the MCP server to keep specifications up to date. The `goto` part `instructions` and the layer read are Proposed. The read form is Decided, owner, 2026-11-09: every layer is named in a read where it is written, because that is consistent with the other commands. **Source:** "its consistent with the rest thats key"; "as soon as you see it anything else seems wrong". It changes the protected tool contract on the owner's instruction.
 
 **R-6.28** `metaform specification export` prints the map and its specification layer as one Markdown document. The export can be imported again: a heading for each element names its address, block levels are relative to that heading, and a stale document is refused on import. `--check` reports the TASTE targets without failing.
 
