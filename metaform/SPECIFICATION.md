@@ -726,29 +726,13 @@ Machine-readable file: [metaform.schema.json](metaform.schema.json). Validate a 
               "$ref": "#/$defs/NamespaceNode"
             }
           ],
-          "description": "An array is the functional knowledge layer. An object is a namespace branch and follows namespace rules."
+          "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
         },
         "why": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "how": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "project": {
           "anyOf": [
@@ -784,48 +768,16 @@ Machine-readable file: [metaform.schema.json](metaform.schema.json). Validate a 
           "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
         },
         "op": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "ef": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "direction": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         },
         "ifd": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-              "$ref": "#/$defs/ComposedElementLayer"
-            }
-          ],
-          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+          "$ref": "#/$defs/RelationshipWord"
         }
       },
       "additionalProperties": {
@@ -838,7 +790,7 @@ Machine-readable file: [metaform.schema.json](metaform.schema.json). Validate a 
     },
     "ComposedElementLayer": {
       "title": "Array-valued composed element layer",
-      "description": "An array at a plural-named namespace location is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+      "description": "An array at an element is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
       "type": "array",
       "items": true
     },
@@ -887,6 +839,17 @@ Machine-readable file: [metaform.schema.json](metaform.schema.json). Validate a 
         "how"
       ],
       "additionalProperties": false
+    },
+    "RelationshipWord": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        }
+      ],
+      "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
     }
   },
   "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",
@@ -903,11 +866,11 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
 ```json
 {
   "name": "project-map",
-  "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations. Tool name is provisional.",
+  "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations.",
   "inputSchema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "description": "One operation on one receiving address, an orphan query, a goto, the map, a raw dump, or an addressed read. A key without a period is a command. A key that starts with a period is a raw dump. Any other key with a period is an addressed read. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace. Validate this input before any mutation.",
+    "description": "A command name (add, update, delete, orphaned, goto, map) is a command. A key that starts with a period is a raw dump. Any other key is an address, and reads that element. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace.",
     "oneOf": [
       {
         "type": "object",
@@ -990,7 +953,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       {
         "type": "object",
-        "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed (metaform/SPEC.md R-5.30).",
+        "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
         "properties": {
           "goto": {
             "type": "string",
@@ -1004,7 +967,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       {
         "type": "object",
-        "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and the one Definitive element. No fields and no layers (metaform/SPEC.md R-5.11).",
+        "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and the one Definitive element. No fields and no layers.",
         "properties": {
           "map": {
             "$ref": "#/$defs/Empty"
@@ -1017,7 +980,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       {
         "type": "object",
-        "description": "A key that starts with a period is a raw dump: the stored nested JSON at that path, which is the JSON path $.<project><path> with $.<project> left off. \".\" dumps the whole project; \".code.server\" dumps that element and everything beneath it. Every layer is included (metaform/SPEC.md R-5.34).",
+        "description": "A key that starts with a period is a raw dump: the stored nested JSON at that path, which is the JSON path $.<project><path> with $.<project> left off. \".\" dumps the whole project; \".code.server\" dumps that element and everything beneath it. Every layer is included.",
         "minProperties": 1,
         "maxProperties": 1,
         "propertyNames": {
@@ -1037,7 +1000,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
         "additionalProperties": {
           "$ref": "#/$defs/LayerRead"
         },
-        "description": "An addressed read: the element's own fields, plus each layer named with {} as its value (metaform/SPEC.md R-5.10, R-6.27)."
+        "description": "An addressed read: the element's own fields, plus each layer named with {} as its value."
       }
     ],
     "$defs": {
@@ -1147,29 +1110,13 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
                 "$ref": "#/$defs/NamespaceNode"
               }
             ],
-            "description": "An array is the functional knowledge layer. An object is a namespace branch and follows namespace rules."
+            "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
           },
           "why": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           },
           "how": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           },
           "project": {
             "anyOf": [
@@ -1205,48 +1152,16 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
             "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
           },
           "op": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           },
           "ef": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           },
           "direction": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           },
           "ifd": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NamespaceNode"
-              },
-              {
-                "$ref": "#/$defs/ComposedElementLayer"
-              }
-            ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "$ref": "#/$defs/RelationshipWord"
           }
         },
         "additionalProperties": {
@@ -1259,7 +1174,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       "ComposedElementLayer": {
         "title": "Array-valued composed element layer",
-        "description": "An array at a plural-named namespace location is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+        "description": "An array at an element is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
         "type": "array",
         "items": true
       },
@@ -1354,15 +1269,13 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
           }
         },
         "additionalProperties": false,
-        "description": "Supplied fields change one want. Validate the complete resulting want before storing it."
+        "description": "Supplied fields change one want."
       },
       "WantsUpdate": {
-        "title": "Functional knowledge layer",
         "type": "object",
-        "description": "Relationships owned by this receiver, keyed by the provider's address: one relationship per provider. Each key refers to the actual provider in the nested tree. The provider keeps its properties and knowledge at its own location.",
+        "description": "Like Wants; each record holds only the fields to change.",
         "propertyNames": {
-          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
-          "description": "Project-relative reference to an element in the actual nested namespace."
+          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$"
         },
         "additionalProperties": {
           "$ref": "#/$defs/WantUpdate"
@@ -1532,6 +1445,17 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
           "wants"
         ],
         "additionalProperties": false
+      },
+      "RelationshipWord": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NamespaceNode"
+          },
+          {
+            "$ref": "#/$defs/ComposedElementLayer"
+          }
+        ],
+        "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
       }
     }
   }
