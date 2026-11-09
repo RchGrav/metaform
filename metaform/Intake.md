@@ -11,7 +11,7 @@ contracts:
 
 Map the functional shape of an Artifact Under Examination (AUE) into a nested typological ontology[cite: 1]. Perform an element-by-element trace focused strictly on observed functionality—avoiding genre, medium, encoding, language, and style[cite: 1]. Do not perform a deeper intake based on variants that do not describe functionality on the leaf[cite: 1].
 
-Process entities one at a time by standing at a `local_address`, identifying every `remote_address` it encounters or depends on, and recording each relationship in the `local_address`'s `wants` dictionary using `why`, `how`, and `intent`[cite: 1].
+Process entities one at a time by standing at a `local_address`, identifying every `remote_address` it encounters or depends on, and recording each relationship in the `local_address`'s `wants` dictionary using `why`, `how`, and `direction`[cite: 1].
 
 ## Target Prompt
 
@@ -26,13 +26,13 @@ The prompt may state a target or a task[cite: 1]. Assume the target is the curre
 * **Element Filter:** An element is any nameable part of an entity as a type; however, just because an element can be named does not mean it is interesting, remarkable, or deserving of special attention[cite: 1]. Only map elements that must be named to understand the artifact's functionality[cite: 1].
 * **Local Address:** The namespace address of the element currently under active examination. The Local Address owns the `wants` dictionary and holds the `why` for every encounter it initiates or requires[cite: 1].
 * **Remote Address:** The namespace address of an element that the Local Address encounters or depends on to fulfill a `why`. Recorded as the key inside the Local Address's `wants` dictionary[cite: 1]. Both endpoints must resolve to actual elements in the project namespace[cite: 1].
-* **Want:** A directed encounter record stored inside the Local Address's `wants` dictionary, keyed by the `remote_address`, containing `why`, `how`, and `intent`[cite: 1].
+* **Want:** A directed encounter record stored inside the Local Address's `wants` dictionary, keyed by the `remote_address`, containing `why`, `how`, and `direction`[cite: 1].
 * **Why:** The active **goal** held by the Local Address—what the Local Address intends to accomplish through its encounter with the Remote Address[cite: 1].
 * **How:** The **function** of what is delivered[cite: 1]. Depending on the contextual understanding of the artifact, this may be understood as the *function of an encounter* or the *encounter of a function*[cite: 1]. It is the mechanism, interface, relationship, or method through which the Remote Address satisfies the Local Address's `goal`, explaining how the effect is encountered, used, or experienced[cite: 1]. Because a single Remote Address may satisfy different Local Addresses through different functions, record the encounter-specific `function` inside the Local Address's `want` record rather than as a static property on the Remote Address[cite: 1].
-* **Intent:** The direction (`send`, `receive`, or `send_receive`) of the substantial exchange relative to the Local Address that satisfies its `why`—strictly excluding the request parameters, invocation call, or delivery receipt[cite: 1].
-  * *Receive Example:* `code.loop.main` wants `code.registry.tool` -> **`receive`**. Passing a lookup key is merely the request; receiving the resolved tool schema is the substance that satisfies the main loop's goal[cite: 1].
-  * *Send Example:* `code.bus.data.event` wants `code.queue.dead_letter` -> **`send`**. A delivery receipt is incidental; sending the undeliverable event substance into quarantine satisfies the event bus's goal[cite: 1].
-  * *Send & Receive Example:* `code.client.email` wants `upstream.server.email` -> **`send_receive`**. An email client requires both sending outbound messages and receiving inbound messages to satisfy its goal[cite: 1].
+* **Direction:** The direction (`outbound`, `inbound`, or `two-way`) of the substantial exchange relative to the Local Address that satisfies its `why`—strictly excluding the request parameters, invocation call, or delivery receipt[cite: 1].
+  * *Inbound Example:* `code.loop.main` wants `code.registry.tool` -> **`inbound`**. Passing a lookup key is merely the request; receiving the resolved tool schema is the substance that satisfies the main loop's goal[cite: 1].
+  * *Outbound Example:* `code.bus.data.event` wants `code.queue.dead_letter` -> **`outbound`**. A delivery receipt is incidental; sending the undeliverable event substance into quarantine satisfies the event bus's goal[cite: 1].
+  * *Two-Way Example:* `code.client.email` wants `upstream.server.email` -> **`two-way`**. An email client requires both sending outbound messages and receiving inbound messages to satisfy its goal[cite: 1].
 * **Roles (`Definitive`, `Supportive`, `Notable`, `Divergent`):** Every element inside the AUE carries exactly one role: `Definitive` (`DE`), `Supportive` (`SE`), `Notable` (`NE`), or `Divergent`[cite: 1].
   * **Definitive (DE):** The notable element of this AUE whose loss would prevent the AUE from remaining the same type[cite: 1]. Its function services the `why` of a `CQU` outside the AUE and names the functional type of the AUE independent of medium, encoding, genre, and style[cite: 1].
   * **Supportive (SE):** An element inside the AUE whose function helps the `DE` serve the `CQU`'s `why`[cite: 1]. It counts as substantial because of what it is meant to contribute to the AUE, even when that contribution is subversive, weak, replaceable, or should be improved[cite: 1].
@@ -105,7 +105,7 @@ Every `remote_address` referenced in `wants` must resolve to an existing element
         "code.bus.data.event": {
           "why": "Receive player input and collision telemetry for frame simulation.",
           "how": "Dispatches subscribed runtime event streams.",
-          "intent": "receive"
+          "direction": "inbound"
         }
       }
     }
@@ -160,14 +160,14 @@ Record each element and `want` record with the working tool as soon as it is rea
 2. **Anchor the CQU(s) and Defining Element (DE):**
    * For each Artifact Type (`AT`) group, identify the `DE` and enumerate the external `downstream.*` party types that drive improvements to the artifact[cite: 1].
    * `add` the `DE` at its functional namespace address (`role: "Definitive"`, `technical_name`, `name`, `uri`)[cite: 1].
-   * For each identified CQU, `add` its `downstream.*` element as a `local_address` and record a `want` pointing to the `DE` (`remote_address`), setting `why` to the CQU's active objective, `how` to the DE's overarching encounter function, and `intent` (`send`, `receive`, or `send_receive`)[cite: 1]. Every downstream `want` in the graph will trace back to these root CQU records[cite: 1].
+   * For each identified CQU, `add` its `downstream.*` element as a `local_address` and record a `want` pointing to the `DE` (`remote_address`), setting `why` to the CQU's active objective, `how` to the DE's overarching encounter function, and `direction` (`outbound`, `inbound`, or `two-way`)[cite: 1]. Every downstream `want` in the graph will trace back to these root CQU records[cite: 1].
 
 3. **Trace Local-to-Remote Encounters:**
    * Start with the `DE` as your current `local_address`[cite: 1].
    * Decompose what the current `local_address` needs, wants, or encounters from other elements inside the AUE (`SE`, `NE`) or outside it (`upstream.*`) in order to deliver its own function[cite: 1]. Ignore parametrics and unremarkable parts that do not need to be named to understand the artifact[cite: 1].
    * For each notable encountered element (`remote_address`):
      1. `add` the `remote_address` at its reusable type-level namespace address (`technical_name`, `name`, `role`, `uri`) if it does not already exist[cite: 1].
-     2. `update` the `local_address` to add the `want` record keyed by `remote_address` with its AUE-specific `why`, `how`, `intent` (`send`, `receive`, or `send_receive`, excluding request parameters and delivery receipts)[cite: 1].
+     2. `update` the `local_address` to add the `want` record keyed by `remote_address` with its AUE-specific `why`, `how`, `direction` (`outbound`, `inbound`, or `two-way`, excluding request parameters and delivery receipts)[cite: 1].
    * Move to the next encountered element that bears its own functional requirements (`why`) and repeat this step, treating it as the new `local_address` without creating duplicate namespace records, until no unsatisfied `why`s or unmapped `NE`s remain[cite: 1].
 
 4. **Completeness Pass Against Survey:**

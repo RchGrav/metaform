@@ -28,7 +28,7 @@ sequenceDiagram
     Note over Agent,Map: 4. Initialize each AT
     loop Each AT
         Agent->>Map: Create CQU namespace entry
-        Agent->>Map: Record PE in wants; OP as goal; EF as function; IFD as intent<br/>Set one source uri on each actual element; keep member refs in knowledge
+        Agent->>Map: Record PE in wants; OP as goal; EF as function; IFD as direction<br/>Set one source uri on each actual element; keep member refs in knowledge
         Agent->>Map: Record established ICE and check un_built
     end
 
@@ -56,7 +56,7 @@ sequenceDiagram
             Agent->>Map: Record each newly reasoned element immediately<br/>One object at a time
             loop Each EF serving the active OP
                 Agent->>Map: Create purpose record under RE, keyed by PE address in wants<br/>Record OP as goal; encounter-specific EF as function<br/>Record source uri on actual element; retain ICE evidence
-                Agent->>Map: Record IFD as intent: send, receive, or send_receive<br/>Use the substantial flow of information which satisfies the (OP) goal not including the request
+                Agent->>Map: Record IFD as direction: outbound, inbound, or two-way<br/>Use the substantial flow of information which satisfies the (OP) goal not including the request
             end
             Agent->>Agent: Move to next element and recurse into its requirements
         end

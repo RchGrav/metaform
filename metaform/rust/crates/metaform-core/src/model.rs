@@ -268,7 +268,7 @@ pub(crate) fn is_want_updates(map: &JsonMap<String, Value>) -> bool {
         && map.values().all(|change| {
             change
                 .as_object()
-                .is_some_and(|c| ["why", "how", "intent"].iter().any(|f| c.contains_key(*f)))
+                .is_some_and(|c| ["why", "how", "direction"].iter().any(|f| c.contains_key(*f)))
         })
 }
 

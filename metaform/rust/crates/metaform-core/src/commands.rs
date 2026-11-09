@@ -131,7 +131,7 @@ impl Work<'_> {
                 .and_then(Value::as_str)
                 .is_some_and(|text| !text.trim().is_empty())
         };
-        let missing: Vec<&str> = ["why", "how", "intent"]
+        let missing: Vec<&str> = ["why", "how", "direction"]
             .into_iter()
             .filter(|key| !filled(key))
             .collect();

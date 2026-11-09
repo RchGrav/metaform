@@ -8,7 +8,7 @@
             "code.masher.widget": {
               "why": "Receive the mash data to relay it.",
               "how": "Prepared mash data packets.",
-              "intent": "receive"
+              "direction": "inbound"
             }
           }
         }
@@ -102,7 +102,7 @@
         "code.protocol.network.tracker.cs": {
           "why": "Receive the mash data to relay it.",
           "how": "Prepared mash data packets.",
-          "intent": "receive"
+          "direction": "inbound"
         }
       },
       "layers": {},

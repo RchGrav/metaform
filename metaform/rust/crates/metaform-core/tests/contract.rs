@@ -172,7 +172,7 @@ fn refusals_name_the_rule_and_change_nothing() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
     let want =
-        |intent: &str| json!({"why": "Relay it.", "how": "Supplies data.", "intent": intent});
+        |direction: &str| json!({"why": "Relay it.", "how": "Supplies data.", "direction": direction});
     let table = [
         (
             json!({"add": {"Code.relay": {"role": "SE"}}}),
@@ -206,10 +206,10 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"update": {"code.masher.widget": {"name": null}}})),
         ),
         (
-            json!({"update": {"code.relay": {"wants": {"code.other": {"intent": "send"}}}}}),
+            json!({"update": {"code.relay": {"wants": {"code.other": {"direction": "outbound"}}}}}),
             Code::WantIncomplete,
             Some(
-                json!({"update": {"code.relay": {"wants": {"code.other": {"intent": "send", "why": "<why>", "how": "<how>"}}}}}),
+                json!({"update": {"code.relay": {"wants": {"code.other": {"direction": "outbound", "why": "<why>", "how": "<how>"}}}}}),
             ),
         ),
         (
@@ -265,7 +265,7 @@ fn refusals_name_the_rule_and_change_nothing() {
 fn writes_create_paths_and_the_root_read_is_the_index() {
     let contract = Contract::bundled().unwrap();
     let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "intent": "receive"});
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
     let mut map = Map::new();
     map = write(
         &contract,

@@ -3,7 +3,7 @@
 //!
 //! Every element is an `Element` node keyed by `<map id>|<stored address>`. Nesting is a
 //! `CONTAINS` relationship from each element to its children. Each want is a `WANTS`
-//! relationship from receiver to provider carrying `why`, `how` and `intent`. Stored keys and
+//! relationship from receiver to provider carrying `why`, `how` and `direction`. Stored keys and
 //! address segments are camelCase; the agent's snake_case form exists only in memory and on
 //! the wire (R-4.11).
 
@@ -26,7 +26,7 @@ const THREADS: u64 = 4;
 /// Element fields with their own column. Every other field is kept, camelCase, in `extra`.
 const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
 /// Want-record fields with their own property. Any other is kept in the record's `extra`.
-const WANT_COLUMNS: [&str; 3] = ["why", "how", "intent"];
+const WANT_COLUMNS: [&str; 3] = ["why", "how", "direction"];
 
 const DDL: &[&str] = &[
     "CREATE NODE TABLE IF NOT EXISTS Map(id STRING PRIMARY KEY)",
@@ -34,7 +34,7 @@ const DDL: &[&str] = &[
      technicalName STRING, name STRING, role STRING, uri STRING, status STRING, childMap STRING, extra STRING)",
     "CREATE REL TABLE IF NOT EXISTS ROOT(FROM Map TO Element)",
     "CREATE REL TABLE IF NOT EXISTS CONTAINS(FROM Element TO Element)",
-    "CREATE REL TABLE IF NOT EXISTS WANTS(FROM Element TO Element, why STRING, how STRING, intent STRING, extra STRING)",
+    "CREATE REL TABLE IF NOT EXISTS WANTS(FROM Element TO Element, why STRING, how STRING, direction STRING, extra STRING)",
 ];
 
 /// Open a grouping database with tuned settings and its schema.
@@ -106,7 +106,7 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
     let wants = rows(
         conn,
         "MATCH (a:Element)-[w:WANTS]->(b:Element) WHERE a.mapId = $m \
-         RETURN a.address, b.address, w.why, w.how, w.intent, w.extra",
+         RETURN a.address, b.address, w.why, w.how, w.direction, w.extra",
         vec![("m", map.into())],
     )?;
     for row in wants {
@@ -167,7 +167,7 @@ pub fn persist(conn: &Connection, map: &str, effect: &Effect) -> Result<(), Stor
                 run(
                     conn,
                     "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
-                     CREATE (a)-[:WANTS {why: $why, how: $how, intent: $intent, extra: $extra}]->(b)",
+                     CREATE (a)-[:WANTS {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
                     params,
                 )?;
             }

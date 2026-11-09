@@ -9,9 +9,9 @@ The stored JSON tree is the functional namespace. Read addresses backward. `name
 
 Work on one receiving element at a time. The single tool is named `project-map`; it handles reads as well as changes. Its input selects an operation and an address; it does not define storage layout. Use `add` or `update` with the receiving address as the key and the supplied fields as its value. Do not add a `data`, `properties`, or `layers` wrapper.
 
-Reason with the authored RE, PE, OP, EF, IFD, CQU, and other concepts. Record the PE's namespace address in the RE's `wants[]`, OP as `goal`, the encounter-specific EF as `function`, and IFD as `intent`. Field names do not replace the definitions or change the method.
+Reason with the authored RE, PE, OP, EF, IFD, CQU, and other concepts. Record the PE's namespace address in the RE's `wants[]`, OP as `goal`, the encounter-specific EF as `function`, and IFD as `direction`. Field names do not replace the definitions or change the method.
 
-`wants[]` is the receiver's functional knowledge layer. Each member maps a provider address to a want record. `goal` states what the receiver seeks to accomplish. `function` states how the provider serves that goal in this encounter. `intent` states the substantial flow of information which satisfies the (OP) goal not including the request: `send`, `receive`, or `send_receive`. Optional `ice` records indivisible coupling. CQU and the other authored concepts retain their meanings.
+`wants[]` is the receiver's functional knowledge layer. Each member maps a provider address to a want record. `goal` states what the receiver seeks to accomplish. `function` states how the provider serves that goal in this encounter. `direction` states the direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: `outbound`, `inbound`, or `two-way`. Optional `ice` records indivisible coupling. CQU and the other authored concepts retain their meanings.
 
 Every provider also exists at its own nested namespace location. Its properties, knowledge, and own wants live there. Do not copy them beneath a reference. Keep one want per provider address within a receiver. Set one source `uri` on the actual element, pointing to the entry point for its functionality. Keep extra evidence references with the findings that need them.
 

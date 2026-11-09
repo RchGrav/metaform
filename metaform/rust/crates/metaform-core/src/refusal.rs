@@ -77,7 +77,7 @@ impl Code {
             Code::ElementsBeneath => {
                 "R-3.1: an element with elements beneath it cannot be deleted before them."
             }
-            Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and intent.",
+            Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
             Code::InternalError => {
                 "Server design, Isolation: an unexpected error fails only the request that caused it."
             }

@@ -33,7 +33,7 @@ export function writeWants(wants: Want[]): Json {
 /** A wants update: a dictionary keyed by provider address whose values change want fields. */
 export function isWantUpdates(value: unknown): value is Record<string, Json> {
   return isObject(value) && Object.keys(value).length > 0 && Object.values(value).every(
-    (change) => isObject(change) && ['why', 'how', 'intent'].some((field) => field in change));
+    (change) => isObject(change) && ['why', 'how', 'direction'].some((field) => field in change));
 }
 
 /** The element as a caller sees it: its own fields and wants, without child elements. */

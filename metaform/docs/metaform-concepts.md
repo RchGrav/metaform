@@ -72,9 +72,9 @@ Each relationship records three things:
 
 - **goal:** what the receiver needs to achieve. Intake calls this the Operative Purpose (OP).
 - **function:** how this provider satisfies that goal in this relationship. Intake calls this the Encounter Function (EF).
-- **intent:** the substantial flow of information which satisfies the (OP) goal not including the request: send, receive or send_receive. Intake calls this the Information Flow Direction (IFD).
+- **direction:** the direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound, inbound or two-way. Intake calls this the Information Flow Direction (IFD).
 
-For example, an email client wants an email server. The goal is to send and receive mail. The function is the email server service. The intent is send_receive.
+For example, an email client wants an email server. The goal is to send and receive mail. The function is the email server service. The direction is two-way.
 
 Every chain of relationships traces back to the Cestui Que Use (CQU). This is the type of party with a vested interest in improving this kind of artifact. The term is unusual on purpose. Plain terms lead models to answer "the user" or "the developer", and those answers say nothing about the artifact.
 

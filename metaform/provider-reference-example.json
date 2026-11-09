@@ -5,7 +5,7 @@
         "code.sdk": {
           "why": "Use the required SDK capabilities.",
           "how": "Provides the required SDK capabilities.",
-          "intent": "receive"
+          "direction": "inbound"
         }
       }
     },

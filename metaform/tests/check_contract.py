@@ -39,7 +39,7 @@ class ContractChecks(unittest.TestCase):
 
     def test_provider_can_also_be_receiver(self):
         doc = deepcopy(BASE)
-        doc['code']['sdk']['wants'] = {'code.library': {'why': 'Read the data.', 'how': 'Supplies the data.', 'intent': 'receive'}}
+        doc['code']['sdk']['wants'] = {'code.library': {'why': 'Read the data.', 'how': 'Supplies the data.', 'direction': 'inbound'}}
         doc['code']['library'] = {}
         self.ok(doc)
 
@@ -49,9 +49,9 @@ class ContractChecks(unittest.TestCase):
         self.ok(doc)
 
     def test_all_three_flow_directions(self):
-        for direction in ('send', 'receive', 'send_receive'):
+        for direction in ('outbound', 'inbound', 'two-way'):
             with self.subTest(direction=direction):
-                self.ok(self.relationship(intent=direction))
+                self.ok(self.relationship(direction=direction))
 
     def test_unbuilt_spelling(self):
         self.ok({'code': {'status': 'un_built'}})
@@ -68,7 +68,7 @@ class ContractChecks(unittest.TestCase):
                     self.bad(self.relationship(**{field: blank}))
 
     def test_required_relationship_fields(self):
-        for field in ('why', 'how', 'intent'):
+        for field in ('why', 'how', 'direction'):
             doc = deepcopy(BASE)
             del doc['code']['application']['wants']['code.sdk'][field]
             self.bad(doc)
@@ -79,7 +79,7 @@ class ContractChecks(unittest.TestCase):
                 self.bad(self.relationship(**{field: {}}))
 
     def test_invalid_flow(self):
-        self.bad(self.relationship(intent='upstream'))
+        self.bad(self.relationship(direction='upstream'))
 
     def test_wants_as_a_list_is_rejected(self):
         doc = deepcopy(BASE)
@@ -180,6 +180,13 @@ class ContractChecks(unittest.TestCase):
             'op': 'Use SDK.', 'ef': 'SDK service.', 'ifd': 'receive'
         }
         self.bad(doc)
+        doc['code']['application']['wants']['code.sdk'] = {
+            'why': 'Use SDK.', 'how': 'SDK service.', 'intent': 'inbound'
+        }
+        self.bad(doc)
+        for old in ('send', 'receive', 'send_receive'):
+            with self.subTest(old=old):
+                self.bad(self.relationship(direction=old))
         self.bad({'code': {'providers': []}})
 
 

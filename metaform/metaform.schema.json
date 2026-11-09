@@ -189,7 +189,7 @@
           ],
           "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
         },
-        "intent": {
+        "direction": {
           "anyOf": [
             {
               "$ref": "#/$defs/NamespaceNode"
@@ -243,13 +243,13 @@
       "description": "Why this receiver wants this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
       "type": "object",
       "properties": {
-        "intent": {
+        "direction": {
           "type": "string",
-          "description": "The substantial flow of information which satisfies the (OP) goal not including the request.",
+          "description": "The direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound from the receiver, inbound to the receiver, or two-way.",
           "enum": [
-            "send",
-            "receive",
-            "send_receive"
+            "outbound",
+            "inbound",
+            "two-way"
           ]
         },
         "why": {
@@ -266,7 +266,7 @@
         }
       },
       "required": [
-        "intent",
+        "direction",
         "why",
         "how"
       ],

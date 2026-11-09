@@ -40,8 +40,8 @@ function check(contract: Contract, element: Element): void {
 async function writeWant(store: Store, address: string, provider: string, change: Partial<Want>): Promise<void> {
   const current = (await required(store, address)).wants.find((candidate) => candidate.provider === provider);
   const want = { ...current, ...change, provider };
-  if (!want.why?.trim() || !want.how?.trim() || !want.intent) {
-    throw new CommandError(`'${address}' wants '${provider}': a want needs why, how and intent`);
+  if (!want.why?.trim() || !want.how?.trim() || !want.direction) {
+    throw new CommandError(`'${address}' wants '${provider}': a want needs why, how and direction`);
   }
   await store.ensure(provider);
   await store.setWant(address, want as Want);

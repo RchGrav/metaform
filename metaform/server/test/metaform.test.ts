@@ -91,10 +91,10 @@ test('each project is a root object that survives import, storage and export', (
 test('a refused command changes nothing, and accepted changes survive a restart', async () => {
   const path = database(seed);
   const first = await connect(path);
-  const added = { add: { 'code.relay': { role: 'SE', wants: { 'code.masher.widget': { why: ' ', how: 'f', intent: 'send' } } } } };
+  const added = { add: { 'code.relay': { role: 'SE', wants: { 'code.masher.widget': { why: ' ', how: 'f', direction: 'outbound' } } } } };
   assert.equal((await first.call(added)).error, true);
   assert.deepEqual(await first.call({ 'code.relay': {} }).then(({ error }) => error), true);
-  assert.equal((await first.call({ add: { 'code.bad': { wants: { 'code.masher.widget': { why: ' ', how: 'f', intent: 'send' } } } } })).error, true);
+  assert.equal((await first.call({ add: { 'code.bad': { wants: { 'code.masher.widget': { why: ' ', how: 'f', direction: 'outbound' } } } } })).error, true);
   assert.equal((await first.call({ update: { 'code.masher.widget': { name: 'renamed' } } })).error, false);
   await first.client.close();
 
@@ -115,7 +115,7 @@ test('concurrent commands are all applied', async () => {
 test('the form does the work: one write creates every path it needs, and a read returns everything beneath it', async () => {
   const path = database(seed);
   const { client, call } = await connect(path);
-  const want = { why: 'Receive the part.', how: 'Supplies the part.', intent: 'receive' };
+  const want = { why: 'Receive the part.', how: 'Supplies the part.', direction: 'inbound' };
   assert.equal((await call({ update: { 'code.new.part': { name: 'part', wants: { 'code.other.part': want } } } })).error, false);
   assert.equal((await call({ add: { 'code.new.part': { name: 'renamed', wants: { 'code.third.part': want } } } })).error, false);
   assert.equal((await call({ update: { 'code.other.part': { status: 'not_built' } } })).error, false);
@@ -126,7 +126,7 @@ test('the form does the work: one write creates every path it needs, and a read 
   assert.deepEqual(whole.layers, ['investigations', 'couplings']);
   assert.equal(whole.code.new.part.name, 'renamed');
   assert.ok(whole.code.third.part);
-  const refused = await call({ update: { 'code.brand.new': { wants: { 'code.other.part': { intent: 'send' } } } } });
+  const refused = await call({ update: { 'code.brand.new': { wants: { 'code.other.part': { direction: 'outbound' } } } } });
   assert.equal(refused.error, true);
   assert.equal((await call({ 'code.brand.new': {} })).error, true);
   assert.equal((await call({ delete: { 'code.gone': {} } })).error, false);

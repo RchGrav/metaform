@@ -97,7 +97,7 @@ def technical_name_errors(label, segments, fields):
 def is_want_map(value):
     """A wants dictionary keyed by provider address, as opposed to a namespace branch named wants."""
     return (isinstance(value, dict) and bool(value)
-            and all(isinstance(record, dict) and ({'why', 'how', 'intent'} & set(record))
+            and all(isinstance(record, dict) and ({'why', 'how', 'direction'} & set(record))
                     for record in value.values()))
 
 

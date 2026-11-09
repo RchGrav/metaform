@@ -15,7 +15,7 @@ INPUT = next(tool['inputSchema'] for tool in REGISTRY['tools']
 RECEIVER = 'code.protocol.network.tracker.cs'
 PROVIDER = 'code.masher.widget'
 WANT = {'why': 'Receive the mash data to relay it.',
-        'how': 'Prepared mash data packets.', 'intent': 'receive'}
+        'how': 'Prepared mash data packets.', 'direction': 'inbound'}
 
 
 class ToolInputChecks(unittest.TestCase):
@@ -63,7 +63,7 @@ class ToolInputChecks(unittest.TestCase):
         self.bad({'delete': {PROVIDER: {'role': None}}})
 
     def test_partial_want_update(self):
-        self.ok({'update': {RECEIVER: {'wants': {PROVIDER: {'intent': 'send_receive'}}}}})
+        self.ok({'update': {RECEIVER: {'wants': {PROVIDER: {'direction': 'two-way'}}}}})
         self.bad({'update': {RECEIVER: {'wants': {PROVIDER: {}}}}})
         self.bad({'update': {RECEIVER: {'wants': {PROVIDER: {'why': None}}}}})
 
@@ -74,7 +74,7 @@ class ToolInputChecks(unittest.TestCase):
             self.bad({'add': {RECEIVER: {'wants': {PROVIDER: fields}}}})
         self.bad({'add': {RECEIVER: {'wants': [{PROVIDER: WANT}]}}})
         self.bad({'add': {RECEIVER: {'wants': [PROVIDER]}}})
-        self.bad({'add': {RECEIVER: {'wants': {PROVIDER: dict(WANT, intent='request')}}}})
+        self.bad({'add': {RECEIVER: {'wants': {PROVIDER: dict(WANT, direction='request')}}}})
 
     def test_one_operation_one_receiver(self):
         self.bad({})

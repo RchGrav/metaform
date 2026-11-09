@@ -67,7 +67,7 @@ fn two_agents_share_one_project() {
     let mut second = Agent::start(&home, &project);
     second.request("server/discover", json!({}));
     let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "intent": "receive"});
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
     assert!(
         !first
             .call(json!({"update": {"code.provider.part": {"name": "provider"}}}))
@@ -251,7 +251,7 @@ fn only_commits_are_announced() {
     let mut a = Agent::on_map(&home, "notes");
     a.request("server/discover", json!({}));
     let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "intent": "receive"});
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
     assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "wants": {"code.base.part": want}}}})).0);
     a.listen_to_map();
     assert!(

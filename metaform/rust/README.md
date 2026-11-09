@@ -4,7 +4,7 @@ Two crates. The founder has not yet confirmed the stored form (`metaform/docs/de
 
 - `crates/metaform-core`: the map model in memory, the address and naming rules, command validation against the contract, the commands and the refusals. It has no storage. The JSON file store it once had was never decided, and it has been removed (R-4.1).
 - `crates/metaform-store`: the store behind the one Metaform tool.
-  - Maps are realized as a graph in LadybugDB (R-4.16): `Element` nodes, `CONTAINS` for nesting, and `WANTS` carrying `why`, `how` and `intent`.
+  - Maps are realized as a graph in LadybugDB (R-4.16): `Element` nodes, `CONTAINS` for nesting, and `WANTS` carrying `why`, `how` and `direction`.
   - Maps are partitions of a grouping database: `projects/<id>/project.lbug`, or `maps/maps.lbug` (R-4.1 default).
   - One owner per home (`server.lock`, R-4.4).
   - One writer thread per database serves clients in turn (R-4.7).
@@ -24,4 +24,4 @@ Run it: `cargo build --release -p metaform-server`. This repository's `.mcp.json
 
 Not built yet: announcements on MCP subscriptions (R-4.10, R-5.32), layers, and starting the server through the service launcher.
 
-Field names follow R-3.4: `technical_name`, the four roles, and `why`, `how` and `intent` in want records.
+Field names follow R-3.4: `technical_name`, the four roles, and `why`, `how` and `direction` in want records.

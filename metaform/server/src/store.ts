@@ -15,7 +15,7 @@ export interface Want {
   provider: string;
   why: string;
   how: string;
-  intent: string;
+  direction: string;
 }
 
 export interface Element {
@@ -27,7 +27,7 @@ export interface Element {
 /** Fields stored in their own column. Every other field is a native layer, kept whole in `layers`. */
 const COLUMNS = ['id', 'name', 'name_length', 'role', 'uri', 'status'] as const;
 
-/** Want columns keep their first names, goal and function, so existing databases still open; they hold why and how (R-3.4). */
+/** Want columns keep their first names, goal, function and intent, so existing databases still open; they hold why, how and direction (R-3.4, R-3.6). */
 const SCHEMA = [
   `CREATE NODE TABLE IF NOT EXISTS Element(
      address STRING, id STRING, name STRING, name_length INT64, role STRING,
@@ -38,7 +38,7 @@ const SCHEMA = [
 const ROOT = '.';
 
 const ELEMENT_RETURN = [...COLUMNS, 'layers'].map((column) => `e.${column} AS ${column}`).join(', ');
-const WANT_RETURN = 'a.address AS receiver, b.address AS provider, w.goal AS goal, w.`function` AS function, w.intent AS intent, w.ice AS ice';
+const WANT_RETURN = 'a.address AS receiver, b.address AS provider, w.goal AS goal, w.`function` AS function, w.intent AS direction, w.ice AS ice';
 
 /** Every prefix of an address, nearest the root first, including the root and the address itself. */
 export function prefixes(address: string): string[] {
@@ -61,7 +61,7 @@ function toWant(row: Fields): Want {
     provider: String(row.provider),
     why: String(row.goal),
     how: String(row.function),
-    intent: String(row.intent),
+    direction: String(row.direction),
   };
   return want;
 }
@@ -188,13 +188,13 @@ export class Store {
     await this.removeWant(receiver, want.provider);
     await this.run(
       `MATCH (a:Element {address: $receiver}), (b:Element {address: $provider})
-       CREATE (a)-[:wants {goal: $goal, \`function\`: $function, intent: $intent, ice: $ice}]->(b)`,
+       CREATE (a)-[:wants {goal: $goal, \`function\`: $function, intent: $direction, ice: $ice}]->(b)`,
       {
         receiver: stored(receiver),
         provider: stored(want.provider),
         goal: want.why,
         function: want.how,
-        intent: want.intent,
+        direction: want.direction,
         ice: null,
       },
     );

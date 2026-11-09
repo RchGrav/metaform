@@ -39,14 +39,14 @@
               "upstream.gateway.llm": {
                 "goal": "Run inference for the participant's selected model id.",
                 "function": "Routes chat completions to the selected provider model.",
-                "intent": "send_receive"
+                "direction": "two-way"
               }
             },
             {
               "upstream.sdk.agent": {
                 "goal": "Run an OpenRouter-selected model as a full agent with tools and conversation state.",
                 "function": "Supplies the agent loop, tool execution and conversational state.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -258,21 +258,21 @@
               "code.quota.character": {
                 "goal": "Tell the participant how many characters it may contribute.",
                 "function": "Reports the participant's current speaking allowance.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             },
             {
               "data.log.discussion": {
                 "goal": "Tell the participant what happened since its last turn.",
                 "function": "Provides the accepted contributions since that participant's last turn, its own pending veto or truncation disposition, and the current topic and objective.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             },
             {
               "document.prompt.system": {
                 "goal": "Give every participant the same explanation of the Roundtable process.",
                 "function": "Supplies the common participant instructions for the first turn of each session.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -581,7 +581,7 @@
               "upstream.gateway.llm": {
                 "goal": "Obtain the current list of selectable models instead of a fixed list.",
                 "function": "Publishes model identifiers and metadata through GET /api/v1/models.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -804,42 +804,42 @@
               "code.adapter.agent": {
                 "goal": "Talk to OpenRouter-model participants through the same ACP lifecycle as every other harness.",
                 "function": "Serves the ACP agent side for any OpenRouter model id.",
-                "intent": "send_receive"
+                "direction": "two-way"
               }
             },
             {
               "code.bus.event": {
                 "goal": "Surface every session change as it happens so nothing has to poll.",
                 "function": "Carries session updates, tool activity, completion, permission decisions and process exits as events.",
-                "intent": "send"
+                "direction": "outbound"
               }
             },
             {
               "code.launcher.agent": {
                 "goal": "Start each selected participant's harness.",
                 "function": "Resolves the harness to a launch command and spawns it with stdio for newline-delimited JSON-RPC.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             },
             {
               "code.server.tool": {
                 "goal": "Give every participant the Roundtable tools in its own harness.",
                 "function": "Supplies the MCP server configuration passed in session/new (and session/resume) mcpServers.",
-                "intent": "send"
+                "direction": "outbound"
               }
             },
             {
               "collection.workspace.shared": {
                 "goal": "Put every participant in the same working directory.",
                 "function": "Supplies the directory passed as cwd on session/new.",
-                "intent": "send"
+                "direction": "outbound"
               }
             },
             {
               "upstream.agent.coding": {
                 "goal": "Hold a continuing working session with each participant.",
                 "function": "Accepts initialize, session/new with the shared cwd, set_config_option and session/prompt, and streams session/update messages, tool activity and completion.",
-                "intent": "send_receive"
+                "direction": "two-way"
               }
             }
           ],
@@ -1107,7 +1107,7 @@
               "upstream.judge.llm": {
                 "goal": "Decide before broadcast whether a contribution is worth every other participant's input tokens.",
                 "function": "Returns a confidence for each of the three contribution conditions, with reasons for any that fall short, in one request through OpenRouter.",
-                "intent": "send_receive"
+                "direction": "two-way"
               }
             }
           ],
@@ -1381,7 +1381,7 @@
               "upstream.registry.agent": {
                 "goal": "Resolve a selected harness name to a launch command without a bespoke integration per harness.",
                 "function": "Lists published ACP agents and their distributions (binary, npx, uvx), as used by acpr.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -1685,84 +1685,84 @@
                 "code.builder.prompt": {
                   "goal": "Brief the next participant for its turn.",
                   "function": "Assembles the participant's turn: the round line, its pending rejection reasons, and the other agents' new accepted messages; on its first turn, the owner's prompts.",
-                  "intent": "receive"
+                  "direction": "inbound"
                 }
               },
               {
                 "code.bus.event": {
                   "goal": "Run without blocking on any participant and without polling.",
                   "function": "Carries Roundtable events out and delivers commands, ACP updates and observations in as events.",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "code.client.agent": {
                   "goal": "Give each participant its turn and collect its action without waiting on the others.",
                   "function": "Delivers turn prompts over each participant's continuing ACP session and returns the participant's reply, or reports that its previous prompt is still in progress (occupied).",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "code.gate.quality": {
                   "goal": "Distribute only contributions worth the group's attention.",
                   "function": "Accepts or vetoes each transmitted contribution against the three 70% conditions, with veto reasons.",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "code.identity.agent": {
                   "goal": "Give each agent a stable identity across tables.",
                   "function": "Derives the agent's name from its first session id.",
-                  "intent": "receive"
+                  "direction": "inbound"
                 }
               },
               {
                 "code.monitor.activity": {
                   "goal": "Show whether a silent participant is working, waiting, gone or unknown.",
                   "function": "Provides independent activity observations correlated to each participant.",
-                  "intent": "receive"
+                  "direction": "inbound"
                 }
               },
               {
                 "code.quota.character": {
                   "goal": "Keep messages concise without cutting them.",
                   "function": "Gives each discussion turn its reply limit (none by default; 1,024 once after a busy skip) and blocks a message over a set limit.",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "code.rating.peer": {
                   "goal": "Record how each agent performed when the table ends.",
                   "function": "Collects every agent's ratings of the others and returns the results.",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "code.roster.participant": {
                   "goal": "Seat the participants the chair selected.",
                   "function": "Provides each seat's harness and, where applicable, its OpenRouter model id.",
-                  "intent": "receive"
+                  "direction": "inbound"
                 }
               },
               {
                 "code.selector.topic": {
                   "goal": "When topics are on, move the group to its next shared focus once a topic is exhausted.",
                   "function": "Polls every participant for a proposal and returns the winning topic by summed pairwise sameness.",
-                  "intent": "send_receive"
+                  "direction": "two-way"
                 }
               },
               {
                 "collection.workspace.shared": {
                   "goal": "Produce the chair's deliverable, not a discussion summary.",
                   "function": "Holds the artifacts the participants create and refine independently or together.",
-                  "intent": "receive"
+                  "direction": "inbound"
                 }
               },
               {
                 "data.log.discussion": {
                   "goal": "Keep the continuing collaboration, every disposition and every topic change.",
                   "function": "Stores each turn outcome in order with its canonical turn number.",
-                  "intent": "send"
+                  "direction": "outbound"
                 }
               }
             ],
@@ -1948,21 +1948,21 @@
               "code.bus.event": {
                 "goal": "Make activity observations available to subscribers as they happen.",
                 "function": "Carries observation events to subscribers.",
-                "intent": "send"
+                "direction": "outbound"
               }
             },
             {
               "code.client.agent": {
                 "goal": "Relate observations to the right participant.",
                 "function": "Provides the launched harness process id and its ACP session ids.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             },
             {
               "upstream.tracer.agent": {
                 "goal": "See what a participant's harness is doing when ACP reports nothing.",
                 "function": "Captures process, subprocess, file, network and observable model-provider activity through agentsight-capture.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -2489,14 +2489,14 @@
               "code.catalog.model": {
                 "goal": "Offer the OpenRouter models a participant can use.",
                 "function": "Lists current OpenRouter model ids.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             },
             {
               "code.launcher.agent": {
                 "goal": "Offer the harnesses a participant can run in.",
                 "function": "Lists registered harnesses, catalog aliases and user-supplied ACP commands.",
-                "intent": "receive"
+                "direction": "inbound"
               }
             }
           ],
@@ -2761,7 +2761,7 @@
               "upstream.judge.llm": {
                 "goal": "Find which proposed topic best expresses the group's shared intent.",
                 "function": "Judges whether two proposed topics express the same underlying intent and returns a confidence for each pair; pairs may be batched in one request.",
-                "intent": "send_receive"
+                "direction": "two-way"
               }
             }
           ],
@@ -2938,14 +2938,14 @@
               "code.manager.chat.group": {
                 "goal": "Let a participant, normally the elected head of the table, move the group forward.",
                 "function": "Ends the current topic and starts the next one, either with a topic chosen by the caller or through the normal poll.",
-                "intent": "send"
+                "direction": "outbound"
               }
             },
             {
               "upstream.system.reputation": {
                 "goal": "Let participants reward one another's good conduct.",
                 "function": "Records a participant's rating of another participant's behavior toward accolades and identity.",
-                "intent": "send"
+                "direction": "outbound"
               }
             }
           ],
@@ -3556,7 +3556,7 @@
             "code.manager.chat.group": {
               "goal": "Get a substantive deliverable for an objective (a specification, a design, software) from several independently reasoning models working together.",
               "function": "Runs a turn-based, judged discussion among heterogeneous agents who share a workspace, continuing across topics until the work is produced.",
-              "intent": "send_receive"
+              "direction": "two-way"
             }
           }
         ],
