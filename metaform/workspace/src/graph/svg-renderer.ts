@@ -22,6 +22,12 @@ import { GRAPH_CSS } from "./style";
 
 const SVG = "http://www.w3.org/2000/svg";
 const FIT_MARGIN = 48;
+/** From this zoom, single wants show their OP and EF lines (climb step 7; UX section 12a). */
+const DETAIL_ZOOM = 1.2;
+/** A detail line is cut to this many characters; the edge's title holds the whole text. */
+const DETAIL_CHARS = 48;
+/** Estimated advance of one 10 px detail character, for the backing plate. */
+const DETAIL_CHAR = 5.6;
 /** How long after the last wheel or drag a viewport change counts as settled. */
 const SETTLE_MS = 150;
 /** Layer mark shapes, by style index, so marks do not depend on colour alone. */
@@ -130,6 +136,8 @@ export class ElkRenderer implements GraphRenderer {
   private drag: { pointer: number; x: number; y: number; moved: boolean } | null = null;
   private readonly cleanup: (() => void)[] = [];
   private readonly flow = new Flow();
+  /** Wants with OP or EF to show when zoomed close, collected while edges are drawn. */
+  private details: { edge: RenderEdge; at: Point }[] = [];
 
   constructor(private readonly elk: () => Elk) {}
 
@@ -273,6 +281,7 @@ export class ElkRenderer implements GraphRenderer {
       }
     }
     const ids = new Set(scene.edges.map((e) => e.id));
+    this.details = [];
     for (const edge of scene.edges) {
       const route = next.routes.get(edge.id);
       if (!route) continue;
@@ -280,6 +289,7 @@ export class ElkRenderer implements GraphRenderer {
       const paired = ids.has(`${edge.to}->${edge.from}`);
       this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate, scene);
     }
+    this.placeDetails(scene, next, el("g", { class: "mf-details" }, canvas));
     if (focused) {
       const again = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`);
       if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
@@ -377,12 +387,10 @@ export class ElkRenderer implements GraphRenderer {
     if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
       const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
       el("title", {}, g).textContent = intake.ifdLine(direction, label(edge.from), label(edge.to));
-      // UX section 12a: the flow runs where it helps. The scene marks those wants with `flowing`
-      // once renderer.ts carries it; until then, the selected element's wants flow.
-      const marked = (edge as { flowing?: boolean }).flowing;
-      const selected = scene.nodes.some((n) => n.selected && (n.address === edge.from || n.address === edge.to));
-      if (!edge.dimmed && (marked ?? selected)) this.flow.add(edge.id, path, direction);
+      // UX section 12a: the flow runs where it helps; the scene marks those wants `flowing`.
+      if (!edge.dimmed && edge.flowing) this.flow.add(edge.id, path, direction);
     }
+    if (edge.why || edge.how) this.details.push({ edge, at: midpoint(route) });
     if (edge.count > 1) {
       const mid = midpoint(route);
       const label = el("text", { class: "mf-edge-count", x: mid.x + 6, y: mid.y - 4 }, g);
@@ -397,6 +405,40 @@ export class ElkRenderer implements GraphRenderer {
     }
   }
 
+  /**
+   * Places the OP and EF plates, hidden below DETAIL_ZOOM by CSS. Positions never depend on zoom,
+   * so placing once per draw is enough. The selected element's wants go first; a plate that would
+   * cover an element or another plate is left out, and its want's title still carries the text.
+   */
+  private placeDetails(scene: RenderScene, layout: Layout, parent: SVGGElement): void {
+    const selected = new Set(scene.nodes.filter((n) => n.selected).map((n) => n.address));
+    const order = [...this.details].sort(
+      (a, b) => Number(selected.has(b.edge.from) || selected.has(b.edge.to)) - Number(selected.has(a.edge.from) || selected.has(a.edge.to)),
+    );
+    const taken: Box[] = [...layout.boxes.values()];
+    const clear = (r: Box) => taken.every((t) => r.x >= t.x + t.width || t.x >= r.x + r.width || r.y >= t.y + t.height || t.y >= r.y + r.height);
+    for (const { edge, at } of order) {
+      const plate = this.drawDetail(parent, at, edge.why, edge.how, (box) => clear(box));
+      if (plate) taken.push(plate);
+    }
+  }
+
+  /** OP and EF of one want, on a plate at the line's middle, if `fits` accepts its box. */
+  private drawDetail(parent: SVGGElement, at: Point, why: string | null, how: string | null, fits: (box: Box) => boolean): Box | null {
+    const cut = (t: string) => (t.length > DETAIL_CHARS ? `${t.slice(0, DETAIL_CHARS - 1).trimEnd()}…` : t);
+    const lines = [why ? intake.opLine(cut(why)) : null, how ? intake.efLine(cut(how)) : null].filter((l): l is string => l !== null);
+    const width = Math.max(...lines.map((l) => l.length)) * DETAIL_CHAR + 12;
+    const height = lines.length * 13 + 6;
+    const box = { x: at.x - width / 2, y: at.y + 6, width, height };
+    if (!fits(box)) return null;
+    const g = el("g", { class: "mf-want-detail", transform: `translate(${box.x},${box.y})` }, parent);
+    el("rect", { class: "mf-want-plate", width, height, rx: 4 }, g);
+    lines.forEach((line, i) => {
+      el("text", { class: "mf-want-line", x: 6, y: 14 + i * 13 }, g).textContent = line;
+    });
+    return box;
+  }
+
   // Viewport and input ------------------------------------------------------------------------
 
   /** Paints one camera frame. No CSS transition: the camera does the easing (camera.ts). */
@@ -404,6 +446,8 @@ export class ElkRenderer implements GraphRenderer {
     if (!this.canvas) return;
     this.canvas.style.transition = "";
     this.canvas.style.transform = `translate(${shown.x}px, ${shown.y}px) scale(${shown.zoom})`;
+    // Want detail shows only when zoomed close; positions never change with zoom.
+    this.svg?.classList.toggle("mf-close", shown.zoom >= DETAIL_ZOOM);
   }
 
   private settled(): void {

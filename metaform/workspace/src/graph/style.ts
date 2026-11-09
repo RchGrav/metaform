@@ -67,6 +67,10 @@ export const GRAPH_CSS = `
 .mf-agent text { fill: var(--mf-ink); font-size: 9px; font-weight: 700; }
 .mf-agent.mf-agent-active text { fill: var(--mf-canvas); }
 .mf-unseen { fill: var(--mf-focus); }
+.mf-want-detail { display: none; pointer-events: none; }
+.mf-graph.mf-close .mf-want-detail { display: inline; }
+.mf-want-plate { fill: var(--mf-canvas); fill-opacity: 0.88; stroke: var(--mf-node-line); }
+.mf-want-line { fill: var(--mf-muted); font-size: 10px; }
 .mf-flow-dot { fill: var(--mf-accent); stroke: var(--mf-canvas); stroke-width: 1.5; }
 .mf-flow-chevron { fill: none; stroke: var(--mf-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mf-project-link path { fill: none; stroke: var(--mf-accent); stroke-width: 1.6; }
