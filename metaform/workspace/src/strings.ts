@@ -154,10 +154,11 @@ export const onboarding = {
   },
   reopen: {
     title: "Open this view again",
-    // The owner named the command (2026-11-09). It is not in the CLI yet, so it shows with
-    // onboarding.register.plannedLabel until the host provides it.
+    body: "Run this command from any folder:",
+    // The owner's reopen command (2026-11-09); it works since Jorge's 1a03bf2.
     command: "metaform gui",
-    // Also shown: the command the host reports it was started with.
+    // Show only when the host was started another way, such as `npm run dev`, so the panel
+    // never shows the same command twice.
     prototypeCommand: (command: string) => `This prototype was started with: ${command}`,
   },
 } as const;
