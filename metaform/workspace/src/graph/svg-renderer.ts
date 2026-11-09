@@ -7,6 +7,7 @@ import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, 
 import {
   type GraphRenderer,
   MAX_ANIMATION_MS,
+  MAX_FIT_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
   type RenderEdge,
@@ -187,9 +188,10 @@ export class ElkRenderer implements GraphRenderer {
     const bounds = this.current?.bounds;
     const size = this.host?.getBoundingClientRect();
     if (!bounds || !size || bounds.width === 0 || bounds.height === 0) return { ...this.viewport };
-    // Fit frames the graph but never magnifies past 100%: a small graph stays at reading size.
+    // Fit frames the graph and may magnify a small one up to MAX_FIT_ZOOM (UX section 12a), so
+    // the start-up view uses the screen without blowing a tiny graph up.
     const zoom = clampZoom(Math.min(
-      1,
+      MAX_FIT_ZOOM,
       (size.width - 2 * FIT_MARGIN) / bounds.width,
       (size.height - 2 * FIT_MARGIN) / bounds.height,
     ));
