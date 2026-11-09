@@ -107,8 +107,8 @@ impl Definition {
     }
 }
 
-/// Every layer defined in the map, by field name. If two definitions share a last segment, the
-/// definition whose address sorts first defines the layer.
+/// Every layer defined in the map, by field name. A write cannot create two definitions with the
+/// same last segment; if stored data has them, the definition whose address sorts first wins.
 pub fn definitions(map: &Map) -> Vec<Definition> {
     let mut out: Vec<Definition> = Vec::new();
     for (address, element) in map.elements() {

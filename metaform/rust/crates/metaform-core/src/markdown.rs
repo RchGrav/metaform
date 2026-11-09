@@ -216,14 +216,6 @@ fn block_paragraphs(address: &str, element: &Element) -> Vec<String> {
     }
 }
 
-/// The root scope that lists the map's layers, such as `layer.document.specification`. It
-/// describes the map itself, not the project, so the document leaves it out.
-const LAYER_SCOPE: &str = "layer";
-
-fn in_layer_scope(address: &str) -> bool {
-    address.split('.').next() == Some(LAYER_SCOPE)
-}
-
 /// The addresses the document holds, in document order: the root first if it holds blocks.
 pub(crate) fn document_addresses(map: &Map) -> Vec<&str> {
     let mut addresses: Vec<&str> = map
@@ -232,7 +224,7 @@ pub(crate) fn document_addresses(map: &Map) -> Vec<&str> {
             if *address == ROOT {
                 has_blocks(element)
             } else {
-                !in_layer_scope(address) && in_document(element)
+                !specification::in_layer_scope(address) && in_document(element)
             }
         })
         .map(|(address, _)| address)
@@ -248,7 +240,7 @@ pub fn left_out(map: &Map) -> Vec<&str> {
     map.elements()
         .filter(|(address, element)| {
             *address != ROOT
-                && !in_layer_scope(address)
+                && !specification::in_layer_scope(address)
                 && !in_document(element)
                 && ["technical_name", "name", "role"].iter().any(|key| element.fields.contains_key(*key))
         })
@@ -328,7 +320,7 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         } else if atx_level(line) == Some(ELEMENT_HASHES)
             && let Some(address) = heading_address(&atx_text(line))
         {
-            if in_layer_scope(address) {
+            if specification::in_layer_scope(address) {
                 return Err(parse_error(line_at, format!("'{address}' lists a layer of the map; the specification document does not hold it")));
             }
             if map.element(address).is_none() {
@@ -350,6 +342,18 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         return Err(parse_error(fence_line, "a code fence opens here and is not closed"));
     }
 
+    // A section the document should hold but does not: refuse rather than guess whether its
+    // text was meant to go. Emptying the section removes the text.
+    if let Some(missing) = document_addresses(map)
+        .into_iter()
+        .find(|address| *address != ROOT && !sections.iter().any(|section| section.address == *address))
+        .filter(|address| map.element(address).is_some_and(has_blocks))
+    {
+        return Err(parse_error(lines.len(), format!(
+            "'{missing}' holds specification text, and its section is missing; to remove the text, keep the heading '{}' and delete the text under it",
+            element_heading(map, missing)
+        )));
+    }
     let mut out = BTreeMap::new();
     let mut codes: BTreeMap<String, (String, usize)> = BTreeMap::new();
     for section in sections {
@@ -566,6 +570,11 @@ mod tests {
             (document.replace("# packet-lab", "# other"), "project heading"),
             (format!("{document}\n## Loose heading\n"), "element heading ends with its address"),
             (document.replace("#### Limits", "#### `pl-1` Limits"), "code 'pl-1' is already used at line"),
+            ({
+                let start = document.find("## Packet Pipeline").unwrap();
+                let end = document.find("## Pipeline Tools").unwrap();
+                format!("{}{}", &document[..start], &document[end..])
+            }, "its section is missing"),
         ];
         for (text, expected) in cases {
             let error = parse(&text, &map, "packet-lab").unwrap_err();

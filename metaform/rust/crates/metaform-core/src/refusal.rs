@@ -29,6 +29,7 @@ pub enum Code {
     HeadingInText,
     LayerDefinitionLocked,
     CodeNotUnique,
+    LayerNameCollision,
     InternalError,
 }
 
@@ -54,6 +55,7 @@ impl Code {
             Code::HeadingInText => "HEADING_IN_TEXT",
             Code::LayerDefinitionLocked => "LAYER_DEFINITION_LOCKED",
             Code::CodeNotUnique => "CODE_NOT_UNIQUE",
+            Code::LayerNameCollision => "LAYER_NAME_COLLISION",
             Code::InternalError => "INTERNAL_ERROR",
         }
     }
@@ -93,6 +95,9 @@ impl Code {
             }
             Code::HeadingLevelInvalid => {
                 "R-6.25: the first titled block is level 1, each level is at most one more than the level before it, and no level is above 4."
+            }
+            Code::LayerNameCollision => {
+                "R-6.24: a layer definition's last segment is the layer's field name, so no two definitions share it."
             }
             Code::CodeNotUnique => {
                 "R-6.25: a block's code is unique within its layer across the map, ignoring case, so other text can cite it."

@@ -326,6 +326,33 @@ impl Work<'_> {
             }
         }
         let after = Map::from_elements(self.elements.clone());
+        // A layer's field name is its key at every receiving element, so two definitions may not
+        // share a last segment (R-6.24).
+        for address in &self.touched {
+            let defines = self
+                .elements
+                .get(address)
+                .is_some_and(|e| e.fields.get("instruction").is_some_and(Value::is_string));
+            if !defines || !specification::in_layer_scope(address) {
+                continue;
+            }
+            let layer = address.rsplit('.').next().unwrap_or_default();
+            let other = after.elements().find(|(at, element)| {
+                *at != address.as_str()
+                    && specification::in_layer_scope(at)
+                    && at.rsplit('.').next() == Some(layer)
+                    && element.fields.get("instruction").is_some_and(Value::is_string)
+            });
+            if let Some((existing, _)) = other {
+                return Err(Refusal::new(
+                    Code::LayerNameCollision,
+                    format!(
+                        "'{address}' would define the layer {layer}, which '{existing}' already defines; a layer's last segment is its field name and must be unique"
+                    ),
+                    Some(json!({"update": {address.as_str(): {"instruction": null}}})),
+                ));
+            }
+        }
         let definitions = specification::definitions(&after);
         let mut blocks = Vec::new();
         for address in &self.touched {

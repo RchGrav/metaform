@@ -20,7 +20,7 @@ Each entry restates the decision and gives its reason. "Relayed" means the decis
 
 ### Layer definitions (every layer)
 
-- A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment. `layer.document.specification` defines `specification`. If two definitions share a last segment, the definition whose address sorts first wins.
+- A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment. `layer.document.specification` defines `specification`. The field name is the layer's key at every receiving element, so a write that would give two definitions the same last segment is refused with `LAYER_NAME_COLLISION`, naming the existing definition.
 - A layer's value at an element is a list of records.
 - Records are accepted only at a skeleton element: one with `technical_name`, `name` and `role`, which are R-3.4's mandatory fields. The root `.` is the exception: it accepts records once the map has a Definitive element. Elements in the `layer` scope never hold records. Refusal: `ELEMENT_NOT_IN_SKELETON`. This is how "after intake" is enforced without a done marker, which R-5.19 rules out.
 - Records the write did not change are not checked again. So a later intake correction, such as removing a role, is never refused because of records already stored.
@@ -91,6 +91,15 @@ Write each block in TASTE: Technically Accurate, Simple, Transparent English. A 
 - The parser regenerates each preamble from the current map and strips it. It refuses a document whose preamble no longer matches (a stale document), an unknown address, a duplicate section or code, a `##` heading that does not end with an element address in backticks, and an unclosed fence. Its result, one block list per element, is written as `update` commands, so import goes through the same checks as an agent's write.
 - `--check` prints the reports to stderr and leaves stdout as clean Markdown. It exits 0 with or without reports; reports are targets, not errors. Its 11 checks (Matthew's rules) are `CAPITAL_MODAL`, `SHALL`, `SENTENCE_LENGTH` (over 25 words), `PARAGRAPH_LENGTH` (over six sentences), `BLACKLIST` (the `TASTE.md` blacklist), `VAGUE_WORD`, `OPENING`, `START_PRONOUN`, `ABBREVIATION`, `REPEATED_SENTENCE` and `EMPTY_SECTION`. They skip code spans, fenced code, URLs, table rows and quoted text. Exact messages are in `metaform-core/src/check.rs`.
 
+### Storage (Jorge, branch `specification-store`)
+
+- Layer records are stored on the receiving element, as the owner requires. The store keeps every field without its own column in the element node's `extra` property, a JSON string. The `specification` array is one entry in that string. There are no layer tables and no per-block nodes.
+- Block order is the order of the JSON array. Ladybug returns rows in no guaranteed order without `ORDER BY`, so separate block nodes would need a position property; the array needs none.
+- Each command is one Ladybug transaction, and the store replaces the element's whole state, so a whole-array `update` is atomic and safe to repeat.
+- Verified on lbug 0.22.3: one STRING property round-trips byte for byte up to 64 Mi characters, including quotes, backticks, backslashes, tabs and non-ASCII. A 200-block, 152 KB layer is unchanged after a restart. A `status` update on an element carrying that layer took about 11 ms in a debug build, against about 3.8 ms without it, because `extra` is rewritten. That is acceptable until a measurement says otherwise (R-5.20).
+- On open, the store compares each table's columns with what the build expects. It renames `WANTS.intent` to `direction` in one transaction, and refuses any other difference with a schema error before it changes anything. A database made before the rename therefore opens with its wants intact.
+- Code uniqueness is checked against the whole map on every write. Each check reads every block in the map. That cost is acceptable for today's maps; a code index on the map waits for a measurement that shows a need (R-5.20).
+
 ## Specification updates
 
 Proposed additions to `metaform/SPEC.md`, made on this branch:
@@ -124,5 +133,5 @@ Proposed additions to `metaform/SPEC.md`, made on this branch:
 - **Stale instruction text in existing maps.** Seeding rewrites the definition whenever it differs from `definition()`, so a text change reaches every main map on the next server start. Verified by Jorge's store test (branch `specification-store`).
 - **An agent writes before `goto`.** It does not see the TASTE guidance, but the structure is still enforced. The `--check` report catches the rest.
 - **`tools/list` size.** The layer read adds about 330 bytes to the tool definition. The size test on branch `tools-list-size-baseline` (`TOOLS_LIST_BYTES`) must be updated in the merge that brings both together.
-- **Tests run on 2026-11-09, each in its worktree's own target folder:** core 4 unit tests, 4 contract tests and 5 specification tests; server 14 tests, including `specification_blocks_survive_a_restart_and_instructions_arrive_once`; store 6 tests. Python contract checks: 30 and 13. `tools/verify_bootstrap.py` passes. These tests do not cover the export round trip, which Ida's tests cover on `specification-layer`.
+- **Tests run on 2026-11-09, each in its worktree's own target folder:** core 4 unit tests, 4 contract tests and 5 specification tests; server 14 tests, including `specification_blocks_survive_a_restart_and_instructions_arrive_once`; store 6 tests (8 on `specification-store`, with the rename migration and seeding). Python contract checks: 30 and 13. `tools/verify_bootstrap.py` passes. These tests do not cover the export round trip, which Ida's tests cover on `specification-layer`.
 - **Not yet verified:** an agent session in Claude Code that uses `goto`, writes blocks and exports them end to end. That is the acceptance check once the branches are merged and the release binary is rebuilt.

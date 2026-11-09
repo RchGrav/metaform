@@ -439,6 +439,15 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
         );
     }
 
+    let shadow = json!({"update": {"layer.code.features": {"instruction": "Another meaning."}}});
+    let collision = run(&contract, &map, shadow).unwrap_err();
+    assert_eq!(collision.code, Code::LayerNameCollision);
+    assert!(
+        collision.reason.contains("'layer.knowledge.features'"),
+        "{}",
+        collision.reason
+    );
+
     let at = specification::DEFINITION_ADDRESS;
     for command in [
         json!({"update": {at: {"instruction": "Write anything."}}}),
