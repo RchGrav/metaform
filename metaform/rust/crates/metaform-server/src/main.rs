@@ -7,6 +7,7 @@
 //! metaform call  [--home DIR] [--project DIR | --map NAME] '<json command>' | -
 //!                                              one tool command; `-` reads it from stdin.
 //!                                              Exit 0 ok, 1 refused, 2 usage or connection error.
+//! metaform projects [--home DIR]                every registered project: id, name, folder
 //! metaform settings [--home DIR] [--project DIR]          every setting, its value and its source
 //! metaform set   [--home DIR] [--project DIR] KEY VALUE   set a setting (VALUE is JSON, or text)
 //! metaform unset [--home DIR] [--project DIR] KEY         remove it, so the next level applies
@@ -68,6 +69,12 @@ async fn main() -> ExitCode {
         };
         return settings(&home, command, folder, &positional).await;
     }
+    if command == Some("projects") {
+        if !positional.is_empty() {
+            return usage("projects takes no arguments");
+        }
+        return projects(&home).await;
+    }
     if command == Some("specification") {
         return specification(&home, &target, &positional, check).await;
     }
@@ -86,7 +93,7 @@ async fn main() -> ExitCode {
             Ok(exe) => metaform_server::forward(&home, &target, &exe).await,
             Err(e) => Err(e.to_string()),
         },
-        _ => return usage("expected serve, mcp, call, settings, set, unset or specification"),
+        _ => return usage("expected serve, mcp, call, projects, settings, set, unset or specification"),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -139,6 +146,24 @@ async fn call(
         Err(reason) => {
             eprintln!("metaform: {reason}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// `metaform projects`: print every project registered in the home, through the admin request.
+async fn projects(home: &std::path::Path) -> ExitCode {
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => return usage(&e.to_string()),
+    };
+    match metaform_server::admin::request(home, &exe, serde_json::json!({"projects": {}})).await {
+        Ok(answer) => {
+            println!("{}", serde_json::to_string_pretty(&answer["projects"]).unwrap_or_default());
+            ExitCode::SUCCESS
+        }
+        Err(reason) => {
+            eprintln!("metaform: {reason}");
+            ExitCode::from(1)
         }
     }
 }

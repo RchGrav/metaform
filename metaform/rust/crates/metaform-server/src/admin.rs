@@ -18,6 +18,10 @@
 //!   to a copy of the current map, so a document that breaks any rule writes nothing. Answers
 //!   `written` (the addresses changed) and `unchanged` (how many sections were already current).
 //!
+//! - `{"admin": {"projects": {}}}` answers every project registered in the home, as
+//!   `projects`: a list of `{"id", "name", "folder"}` ordered by name. It registers nothing, so a
+//!   client such as the web host can open only projects that exist. The id is opaque.
+//!
 //! For settings, a folder names a project and is registered if it is not yet, as an agent's
 //! connection does. An export only reads: a folder that is not registered is refused, so an export
 //! never creates an empty map.
@@ -57,12 +61,23 @@ fn answer_now(store: &Store, request: &Value) -> Value {
             let applies = metaform_store::settings::declared(key).map_or("", |s| if s.at_start { "at the next start" } else { "at once" });
             Ok(json!({"ok": true, "applies": applies}))
         })
+    } else if request.get("projects").is_some() {
+        store
+            .projects()
+            .map(|all| {
+                let list: Vec<Value> = all
+                    .into_iter()
+                    .map(|p| json!({"id": p.id, "name": p.name, "folder": p.folder}))
+                    .collect();
+                json!({"ok": true, "projects": list})
+            })
+            .map_err(|e| e.to_string())
     } else if let Some(body) = request.get("export") {
         export(store, body)
     } else if let Some(body) = request.get("import") {
         import(store, body)
     } else {
-        Err("an admin request must be `settings`, `set`, `export` or `import`".into())
+        Err("an admin request must be `settings`, `set`, `projects`, `export` or `import`".into())
     };
     result.unwrap_or_else(|error| json!({"ok": false, "error": error}))
 }

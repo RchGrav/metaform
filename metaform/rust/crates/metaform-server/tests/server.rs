@@ -487,6 +487,38 @@ fn settings_are_set_and_shown_through_the_cli() {
 }
 
 
+/// `metaform projects` lists every project registered in the home, so one web host can serve
+/// them all. Listing registers nothing: the count is the same before and after.
+#[test]
+fn projects_are_listed_through_the_cli_without_registering() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let run = |args: &[&str]| {
+        let out = Command::new(common::BIN).env("METAFORM_LAUNCHER", "").args(args).arg("--home").arg(&home).output().unwrap();
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).to_string())
+    };
+    let (code, said) = run(&["projects"]);
+    assert_eq!((code, said.trim()), (0, "[]"), "a new home has no projects");
+    for name in ["beta", "alpha"] {
+        let folder = dir.path().join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut agent = Agent::start(&home, &folder);
+        agent.request("server/discover", json!({}));
+        agent.stop();
+    }
+    let (code, said) = run(&["projects"]);
+    assert_eq!(code, 0, "{said}");
+    let listed: Value = serde_json::from_str(&said).unwrap();
+    let names: Vec<&str> = listed.as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["alpha", "beta"], "ordered by name: {listed}");
+    let alpha = std::fs::canonicalize(dir.path().join("alpha")).unwrap();
+    assert_eq!(listed[0]["folder"], json!(alpha.to_string_lossy()), "{listed}");
+    assert!(listed[0]["id"].as_str().is_some_and(|id| !id.is_empty()));
+    let (_, again) = run(&["projects"]);
+    assert_eq!(serde_json::from_str::<Value>(&again).unwrap(), listed, "listing registers nothing");
+    stop_server(&home);
+}
+
 /// The specification export through the CLI (R-1.2): an agent writes the skeleton and a
 /// specification block through the tool, and `metaform specification export` prints the document.
 /// `--check` writes TASTE reports to stderr and still exits 0. A folder with no map is refused
