@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ShallowGraph } from "../source";
 import { buildScene, type SceneInput } from "./scene";
-import { TOP, beneathCounts, layerCounts, layerNames, sceneEdges, visibleIn } from "./structure";
+import { TOP, beneathCounts, layerCounts, layerNames, openTarget, sceneEdges, visibleIn } from "./structure";
 import { currentView, initialState, reduce, type Action, type ViewState } from "./view";
 
 const graph: ShallowGraph = {
@@ -54,6 +54,13 @@ describe("structure", () => {
     const { edges } = sceneEdges(graph, visible);
     expect(edges.find((e) => e.from === "code" && e.to === "code")).toBeUndefined();
     expect(edges).toEqual([{ from: "code", to: "upstream", count: 1 }]);
+  });
+
+  it("opens an element's own map under upstream when the map holds it, else its subgraph", () => {
+    const addresses = new Set([...graph.addresses, "upstream.code.store", "upstream.code.store.engine"]);
+    expect(openTarget("code.store", addresses)).toBe("upstream.code.store");
+    expect(openTarget("code.server", addresses)).toBe("code.server");
+    expect(openTarget("upstream.code.store", addresses)).toBe("upstream.code.store");
   });
 
   it("counts every address beneath an element", () => {

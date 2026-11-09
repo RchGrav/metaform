@@ -206,3 +206,14 @@ export function fieldsFromDump(dump: RawDump): Map<Address, Record<string, unkno
   walk(dumpTree(dump), TOP);
   return out;
 }
+
+/**
+ * What double-clicking an element opens (owner, 2026-11-09; SPEC R-4.15, D-16). An element's own
+ * functional map appears, seen from the parent map, under `upstream` at the element's address:
+ * the map held by code.engine.game is upstream.code.engine.game and beneath. When the map holds
+ * that subtree, the element opens it; otherwise the element opens its own address subgraph.
+ */
+export function openTarget(address: Address, addresses: ReadonlySet<Address>): Address {
+  const chained = `upstream.${address}`;
+  return bandOf(address) === "project" && addresses.has(chained) ? chained : address;
+}

@@ -6,8 +6,8 @@ import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
 import { buildScene, elementScene, type SceneInput } from "./state/scene";
-import { TOP, beneathCounts, graphAddresses, visibleIn } from "./state/structure";
-import { currentView } from "./state/view";
+import { TOP, beneathCounts, graphAddresses, openTarget, visibleIn } from "./state/structure";
+import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { BottomStrip, Details, FocusBanner, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
@@ -46,6 +46,15 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const addresses = useMemo(() => (current ? graphAddresses(current.graph) : []), [current]);
   const counts = useMemo(() => beneathCounts(addresses), [addresses]);
   const beneath = useCallback((address: Address) => counts.get(address) ?? 0, [counts]);
+  const known = useMemo(() => new Set(addresses), [addresses]);
+  // Double-click and Enter: an element's own map when the map holds one, else its address subgraph.
+  const open = useCallback(
+    (address: Address): Action => {
+      const target = openTarget(address, known);
+      return { type: "open", address: target, beneath: beneath(target) };
+    },
+    [known, beneath],
+  );
 
   // The project an element's `uri` names, if any (seam gap 3, proposed form).
   const linkedProject = useCallback(
@@ -151,7 +160,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           break;
         case e.key === "Enter" && selection !== null && !e.shiftKey:
           if (selection && linkedProject(selection)) openLinked(selection);
-          else if (selection) dispatch({ type: "open", address: selection, beneath: beneath(selection) });
+          else if (selection) dispatch(open(selection));
           break;
         case e.key === "Enter" && e.shiftKey:
           dispatch({ type: "up" });
@@ -178,7 +187,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, linkedProject, openLinked, sheet, zoom]);
+  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom]);
 
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
@@ -239,7 +248,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             scene={scene}
             viewport={storedViewport}
             placeKey={`${state.project ?? ""}|${viewportKey}|${visibleCount > 0 ? "ready" : "empty"}`}
-            beneath={beneath}
+            open={open}
             dispatch={dispatch}
           />
         )}

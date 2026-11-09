@@ -12,14 +12,15 @@ export interface CanvasProps {
   viewport: Viewport | null;
   /** Changes whenever the project or container changes, so the canvas restores or fits once. */
   placeKey: string;
-  beneath: (address: string) => number;
+  /** The action a double-click or Enter on an element performs. */
+  open: (address: string) => Action;
   dispatch: (action: Action) => void;
 }
 
-export function Canvas({ renderer, scene, viewport, placeKey, beneath, dispatch }: CanvasProps) {
+export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: CanvasProps) {
   const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ beneath, dispatch, viewport });
-  latest.current = { beneath, dispatch, viewport };
+  const latest = useRef({ open, dispatch, viewport });
+  latest.current = { open, dispatch, viewport };
   const restoredFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -30,8 +31,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, beneath, dispatch 
         if (modifiers.up) latest.current.dispatch({ type: "up" });
         else latest.current.dispatch({ type: "select", address });
       },
-      nodeDoubleClick: (address) =>
-        latest.current.dispatch({ type: "open", address, beneath: latest.current.beneath(address) }),
+      nodeDoubleClick: (address) => latest.current.dispatch(latest.current.open(address)),
       chevronClick: (address) => latest.current.dispatch({ type: "toggle-expanded", address }),
       backgroundClick: () => latest.current.dispatch({ type: "select", address: null }),
       viewportChange: (next) => latest.current.dispatch({ type: "viewport", viewport: next }),

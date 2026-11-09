@@ -69,6 +69,8 @@ Keys `1`, `2` and `3` switch modes (Graph, Element, Present). The switch takes a
 | Ctrl-click (Cmd-click on macOS) | Goes up: `container` becomes the parent of the current container, and the element that was the container is selected. | Same. | Same. |
 | Enter / Shift+Enter | Same as double-click / Ctrl-click, for the keyboard. | | |
 
+**An element's own map (owner, 2026-11-09; SPEC R-4.15, D-16).** An element can hold its own functional map. Seen from the parent map, that map's elements sit under `upstream` at the element's address: the map held by `code.engine.game` is `upstream.code.engine.game` and beneath, linked to `code.engine.game` by a want. Double-click (or Enter) on `code.X` opens `upstream.code.X` when the map has it, so the breadcrumbs read upstream › code › engine › game. Otherwise it opens `code.X`'s own address subgraph. The server cannot read into a chained map yet (seam gap 4); the mock holds one such subtree, labelled Simulated.
+
 **Decision on UI-U2, Ctrl-click.** Ctrl-click goes up the address hierarchy by one level. **Back** (`Alt+Left`, `Backspace`, or the back button) returns to the previous state in `history`, which can be a different project or a pivot. The two differ after a pivot or a project switch, so both are needed. The owner may mean something wider, such as the `upstream` and `downstream` view. Then only the Ctrl-click row changes. This is recorded as open in section 12.
 
 Hint: the first time the user selects an element, a one-line hint appears near it: "Double-click to open. Ctrl-click to go up." It disappears after the user performs either gesture (Matthew's rule 3).
