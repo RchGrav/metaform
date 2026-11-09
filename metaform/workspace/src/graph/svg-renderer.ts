@@ -2,7 +2,8 @@
 // It reads no GraphSource and decides no meaning; it reports raw input to the state layer.
 
 import type { Address } from "../source/types";
-import { graph as text, layers as layerText } from "../strings";
+import { graph as text, intake, layers as layerText } from "../strings";
+import { Flow } from "./flow";
 import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
   type GraphRenderer,
@@ -124,6 +125,7 @@ export class ElkRenderer implements GraphRenderer {
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private drag: { pointer: number; x: number; y: number; moved: boolean } | null = null;
   private readonly cleanup: (() => void)[] = [];
+  private readonly flow = new Flow();
 
   constructor(private readonly elk: () => Elk) {}
 
@@ -150,6 +152,7 @@ export class ElkRenderer implements GraphRenderer {
 
   unmount(): void {
     this.generation++;
+    this.flow.clear();
     for (const off of this.cleanup.splice(0)) off();
     clearTimeout(this.settleTimer);
     this.svg?.remove();
@@ -246,6 +249,8 @@ export class ElkRenderer implements GraphRenderer {
     // Containers first, then edges, then leaf nodes, so arrows run above container fills.
     const containers = el("g", { class: "mf-containers" }, canvas);
     const edges = el("g", { class: "mf-edges" }, canvas);
+    const flowLayer = el("g", { class: "mf-flows", "aria-hidden": "true" }, canvas);
+    this.flow.setLayer(flowLayer);
     const nodes = el("g", { class: "mf-nodes" }, canvas);
     const parents = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
     const animate = previous !== null && !reducedMotion();
@@ -268,7 +273,7 @@ export class ElkRenderer implements GraphRenderer {
       if (!route) continue;
       // Two wants in opposite directions would share one line: move each 4 px to its own side.
       const paired = ids.has(`${edge.to}->${edge.from}`);
-      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate);
+      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate, scene);
     }
     if (focused) {
       const again = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`);
@@ -360,9 +365,19 @@ export class ElkRenderer implements GraphRenderer {
     return g;
   }
 
-  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, animate: boolean): void {
+  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, animate: boolean, scene: RenderScene): void {
     const g = el("g", { class: `mf-edge${edge.dimmed ? " mf-dimmed" : ""}`, "data-edge": edge.id }, parent);
-    el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
+    const path = el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
+    const direction = edge.direction;
+    if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
+      const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
+      el("title", {}, g).textContent = intake.ifdLine(direction, label(edge.from), label(edge.to));
+      // UX section 12a: the flow runs where it helps. The scene marks those wants with `flowing`
+      // once renderer.ts carries it; until then, the selected element's wants flow.
+      const marked = (edge as { flowing?: boolean }).flowing;
+      const selected = scene.nodes.some((n) => n.selected && (n.address === edge.from || n.address === edge.to));
+      if (!edge.dimmed && (marked ?? selected)) this.flow.add(edge.id, path, direction);
+    }
     if (edge.count > 1) {
       const mid = midpoint(route);
       const label = el("text", { class: "mf-edge-count", x: mid.x + 6, y: mid.y - 4 }, g);
