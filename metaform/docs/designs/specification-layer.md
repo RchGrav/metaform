@@ -12,7 +12,7 @@ Each entry restates the decision and gives its reason. "Relayed" means the decis
 
 1. **A specification layer starts after intake** (owner, 2026-11-09, the goal the owner gave for this work). The layer stores data in the map. It encodes Markdown heading levels for its text, and the tool enforces them. Its text is not normative and follows TASTE. Agents use the MCP server to keep specifications up to date, and a CLI export produces a well-organized specification document. Reason: the skeleton holds functionality only, so a specification needs its prose kept elsewhere in the map, in a form agents can maintain and export.
 2. **All layers work the same way** (owner, 2026-11-09, relayed by Jorge). The specification layer gets no mechanism of its own. Reason: not stated to Marcus. See Open decisions, item 3.
-3. **The layer is defined by the element `layer.document.specification` in the main map** (owner, 2026-11-09, relayed by Jorge). So `layer` becomes a root scope. Reason: not stated to Marcus. The inferred reason is that a layer then lives in the map like everything else, and agents find it with `goto` (R-1.2: users never need to know the layers' names).
+3. **The layer is defined by the element `layer.document.specification` in the main map** (owner, 2026-11-09, relayed by Jorge). So `layer` becomes a root scope, and a root prefix like `upstream` and `downstream`. Reason (owner, recorded in R-3.3): a layer definition is not located in the project, and under a project root such as `data` it would mix with the project's functionality and read as part of it.
 4. **The data sits on the receiving elements as a JSON field named `specification`** (owner, 2026-11-09, relayed by Jorge). The owner left the choice between a dictionary and an array to the team. Jorge chose an array, for the reasons under Decision rationale.
 5. **A block can carry a code that works as a key, unique across the specification, so text can cite it** (owner, 2026-11-09, relayed by Jorge).
 
@@ -135,7 +135,7 @@ Proposed additions to `metaform/SPEC.md`, made on this branch:
 
 1. **Closed 2026-11-09: the layer read changes the protected tool contract.** The owner approved the change in the form `{"<address>": {"<layer>": {}}}`, with the layer named where it is written, because it is consistent with every other command.
 2. **The `goto` `instructions` part** adds a part to the R-5.30 summary sheet. Recommendation: keep it. The alternative is the tool description, which costs every agent tokens on every session.
-3. **The reasons for owner decisions 2 and 3** have not reached Marcus. Please state them, so the spec can record them (the owner asks that every recorded decision carry its reason).
+3. **The reason for owner decision 2** (all layers work the same way) is not recorded. Please state it, so the spec can record it (the owner asks that every recorded decision carry its reason). The reason for decision 3 is now in R-3.3.
 4. **R-6.15 lists `system` layers** (skills, memory, sources) as layers created only in code. Owner decision 2 suggests every layer, including those, should become a definition in the map. This design does not move them. Recommendation: decide this when memory and skills are built, not now.
 
 ## Risks and verification

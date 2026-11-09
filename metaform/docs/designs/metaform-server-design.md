@@ -97,9 +97,11 @@ the right shape.
         names of the attached layers, the frontmatter of its skills, and its
         memory count. Memories at that address are then reached through the
         memory tool.
-    *   The root read returns a connected index: addresses and the relations
-        between them as edges, with only the one Definitive functionality
-        marked, and no other detail (position 13).
+    *   The `map` command, `{"map": {}}`, returns a connected index:
+        addresses and the relations between them as edges, with only the one
+        Definitive functionality marked, and no other detail (position 13).
+        This was the read of `.`; a key that starts with a period is now a raw
+        dump (R-5.11, R-5.34).
     *   A read that names a layer returns that layer's content at the address
         (R-5.21).
     *   Search reads all content, layers included, and answers where a match
@@ -662,21 +664,22 @@ Reads do not wait for the queue. They read the last committed in-memory state
 and convert it to snake_case on the way out.
 
 *   **Address read** `{"code.engine.game": {}}` returns the element's own
-    fields, without its wants. `{"code.engine.game": {"layers": ["wants"]}}`
-    returns its wants, as any named layer comes back (R-5.21). The read never
+    fields, without its wants. `{"code.engine.game": {"wants": {}}}`
+    returns its wants, as any named layer comes back (R-5.21, R-6.27). The read never
     returns what relies on the address, attached layers, skills or memories;
     that takes `goto` (the founder: "you can view the wants and specify to view
     the wants like address wants, what you wont do is get the full breakdown of
     who or what relies on the address, or the wants and the attached layers
-    that requires using goto"). **(agent's choice)** for naming wants through
-    `layers`. The result keys the element by its address:
+    that requires using goto"). A layer is named in the slot where it is
+    written, so `wants` is named the same way as any other layer (owner,
+    2026-11-09; R-6.27). The result keys the element by its address:
     `{"code.engine.game": {"name": "game loop", "name_length": 1, "role": "DE"}}`,
     with `"wants": {...}` added when it is named. Field names stay as the store
     has them until the R-3.4 renames.
 *   **Goto** `{"goto": "code.engine.game"}` places the agent at the address and
     returns what CUJ 1 lists: the element and its wants; the full breakdown of
     who or what relies on the address, which is each element whose wants name
-    it, with that want's `why`, `how` and `intent`; the names of the attached
+    it, with that want's `why`, `how` and `direction`; the names of the attached
     layers, meaning the layers with a file at that address (the R-6.6 walk
     waits for D-7 and D-13), not their content; the frontmatter of its skills; and its memory count (the founder:
     "when you use goto, thats what triggers showing the frontmatter for the
@@ -695,8 +698,8 @@ and convert it to snake_case on the way out.
     ```json
     {"at": "code.engine.game",
      "element": {"name": "game loop", "name_length": 1, "role": "DE"},
-     "wants": {"code.render.frame": {"goal": "...", "function": "...", "intent": "outbound"}},
-     "relied_on_by": {"code.input.poll": {"goal": "...", "function": "...", "intent": "inbound"}},
+     "wants": {"code.render.frame": {"goal": "...", "function": "...", "direction": "outbound"}},
+     "wanted_by": {"code.input.poll": {"goal": "...", "function": "...", "direction": "inbound"}},
      "layers": {"features": {"records": 2}, "porting": {"records": 1}},
      "skills": {"rust_build": {"name": "rust_build", "description": "..."}},
      "memory": {"records": 3}}
@@ -762,20 +765,28 @@ and convert it to snake_case on the way out.
     inbox (R-6.23; the founder: "that is also how you get to read the inbox is by
     arriving at the address"). The inbox comes later, so this design builds
     only the delivery rule it will use.
-*   **Layer read** `{"code.engine.game": {"layers": ["skills"]}}` returns the
-    named layers' content at that address (R-5.21), as
-    `{"code.engine.game": {"skills": {...}}}`. This is also how an agent
-    gets a skill's body. The contract's read value changes from an empty object
-    to an object that may hold `layers`.
-*   **Root read** `{".": {}}` returns
-    `{"addresses": [...], "edges": [["holder", "other"], ...], "definitive": "<address>"}`.
+*   **Layer read** `{"code.engine.game": {"skills": {}}}` returns the
+    named layer's content at that address (R-5.21, R-6.27), as
+    `{"code.engine.game": {"skills": {...}}}`. A read can name several layers
+    this way. This is also how an agent gets a skill's body. The contract's
+    read value is `{}` or an object whose keys name layers, each with `{}` as
+    its value (`LayerRead`; owner, 2026-11-09). It replaces the first build's
+    list form, `{"layers": [...]}`, which the contract now refuses.
+*   **Map** `{"map": {}}` returns
+    `{"addresses": [...], "edges": [["holder", "other"], ...], "definitive": "<address>"}`
+    (R-5.11). A key without a period is a command; this was the read of `.`.
     An edge runs from the element that holds the want to the element it names.
-    It carries no `why`, `how` or `intent` (position 13). `addresses` lists
+    It carries no `why`, `how` or `direction` (position 13). `addresses` lists
     every stored element, including the trunk elements a write created.
     The Definitive element is the one whose `role` is `DE`, the value the
     intake writes today (`metaform/Intake.md`); `definitive` is `null` when there is
     none. A write that would make a second `DE` is refused with
     `ROLE_TAXONOMY_FAILURE` (R-5.24). **(agent's choice)**
+*   **Raw dump** `{".": {}}` returns the stored nested JSON of the whole
+    project, and `{".code.server": {}}` returns that element and everything
+    beneath it (R-5.34). A key that starts with a period is a raw dump. Every
+    layer is included, `wants`, `skills` and `memory` too, with names in the
+    agent's form (R-4.11).
 *   **Listing layers** uses the `layer` command, as given under "Adding a
     layer". It replaces the root read `{".": {"layers": []}}` of R-5.22.
 *   **Search** `{"search": "pktring"}` matches the text against every value and
@@ -915,8 +926,8 @@ This is R-5.10 and R-5.11 as written.
 *   **Cons**: Detail about addresses the agent does not work on fills its
     context. That breaks the aim of exactly what is needed (position 8).
 *   **Reason for Rejection**: Rejected by author. "You can ONLY get detail by
-    reading an actual address." The root read is a connected index with only the
-    Definitive functionality marked (position 13).
+    reading an actual address." The `map` command returns a connected index with
+    only the Definitive functionality marked (position 13).
 
 ### Alternative F: Other names for the tool
 
@@ -1374,7 +1385,7 @@ everything beneath it") is rewritten for the new address read.
 
 **Feature "reads", tests (4)**: an address read returns the element's own
 fields only, and naming `wants` adds them. A layer read returns that layer's
-content. The root read returns addresses, edges and the Definitive address,
+content. `{"map": {}}` returns addresses, edges and the Definitive address,
 with no other fields. `{"layer": {}}` returns only the names, and
 `{"layer": "<name>"}` only that layer's entry.
 
