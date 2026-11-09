@@ -273,3 +273,65 @@ fn a_setting_survives_a_reopen_and_bounds_open_databases() {
     }
     assert!(store.open_databases() <= 2, "the setting bounds open databases: {}", store.open_databases());
 }
+
+/// R-009: a database made before a property rename (R-3.6, `intent` to `direction`) opens with its
+/// wants intact. A database whose tables differ in any other way is refused before anything in it
+/// is changed, and the refusal says so.
+#[test]
+fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let map = MapKey::standalone("old");
+    let file = home.join("maps").join("maps.lbug");
+    let raw = |statement: &str| {
+        let db = lbug::Database::new(&file, lbug::SystemConfig::default()).unwrap();
+        let conn = lbug::Connection::new(&db).unwrap();
+        conn.query(statement).unwrap();
+    };
+    let before = {
+        let store = Store::open(&home).unwrap();
+        seed(&store, &map);
+        reads(&store, &map)
+    };
+    raw("ALTER TABLE WANTS RENAME direction TO intent");
+    {
+        let store = Store::open(&home).unwrap();
+        assert_eq!(reads(&store, &map), before, "the wants survive the rename");
+        let want = store
+            .execute(
+                B,
+                &map,
+                &json!({"goto": "code.protocol.network.tracker.cs"}),
+            )
+            .unwrap();
+        assert!(
+            want.to_string().contains("\"direction\":\"inbound\""),
+            "{want}"
+        );
+    }
+    raw("ALTER TABLE Element ADD later STRING");
+    let store = Store::open(&home).unwrap();
+    let command = json!({"code.masher.widget": {}});
+    let Err(Failure::Store(error @ StoreError::Schema(_))) = store.execute(B, &map, &command)
+    else {
+        panic!("a table this build does not know is refused");
+    };
+    let message = error.to_string();
+    assert!(
+        message.contains("table Element has (") && message.contains("later STRING"),
+        "{message}"
+    );
+    let answer = store_failure_json(&command, &error);
+    assert!(
+        !answer.to_string().contains("may or may not be stored"),
+        "{answer}"
+    );
+    drop(store);
+    raw("ALTER TABLE Element DROP later");
+    let store = Store::open(&home).unwrap();
+    assert_eq!(
+        reads(&store, &map),
+        before,
+        "the refused open changed nothing"
+    );
+}
