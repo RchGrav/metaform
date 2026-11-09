@@ -116,7 +116,7 @@ Nothing is exposed until all three are done.
 
 **R-3.3** The valid root scopes are `code`, `document`, `media`, `data`, `collection`, `upstream`, `downstream` and `layer`. `layer` holds layer definitions, not project functionality (R-6.24).
 
-**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24).
+**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24). `layer` is a root of its own, not a branch of a project root such as `data`, because definitions under a project root would mix with the project's functionality and read as part of the project (owner, 2026-11-09). Intake places nothing in `layer`: intake infers no layers, so the intake procedure does not list `layer` (owner, 2026-11-09).
 
 **R-3.4** An element's fields are `technical_name`, `name`, `role`, `uri`, `status` and `wants`. `technical_name`, `name` and `role` are mandatory. `uri` and `status` are optional. A want record holds `why`, `how` and `direction` (formerly `intent`, R-3.6).
 
@@ -331,7 +331,7 @@ A project has exactly one Definitive element.
 
 **R-5.21** A read returns only the fields named in `intake` (R-6.15). Other layers come back only when the read names them.
 
-**R-5.22** A read with no command names what it wants. `{".": {"layers": {}}}` returns the registered layer definitions, without the element map.
+**R-5.22** A read with no command names what it wants. *(Changed 2026-11-09: the root dictionary `layers` and its read `{".": {"layers": {}}}` are superseded. Layers are defined as elements beneath the `layer` root scope (R-6.24). The owner: "we changes it it was never updated".)*
 
 **Status of R-5.21 and R-5.22:** Decided. Not built. **Source:** the founder's documentation set, module 5.2; "There should be a way to ask. You just leave the command off". The example `{".": {"layers": []}}` is replaced: the `layer` command lists layers (R-5.28).
 
@@ -348,6 +348,8 @@ A project has exactly one Definitive element.
 **R-5.25** An element is deleted in four steps: the direct delete is refused, the remediation removes the want, an orphan scan confirms nothing wants the element, and the delete succeeds.
 
 **Status:** Decided. **Source:** the founder's documentation set, module 5.3.
+
+*(Superseded in part 2026-11-09: there is no `layers` dictionary. A layer is defined by an element beneath the `layer` root scope (R-6.24). How a layer is added and listed under R-6.24 is decision D-18.)*
 
 **R-5.28** `layer` adds a layer by registering it in the `layers` dictionary (R-6.15). Its definition must have a schema, a `description`, a sentence (`template`) and an `instruction`. The schema is `fields`, in the form the wants definition uses (R-6.17): each field gives its `part_of_speech`, `rule` and `example`. Every other command works the same way, and a layer's data is written with them, like any other field. `layer` with nothing lists the layers: the names in the `layers` dictionary only, not their contents, as a dictionary. `layer` with a layer name returns that layer's contents. `layer` cannot add, list or return a layer in `intake` or `system` (R-6.15). A layer's definition says whether its records are named: a named layer's data at an element is a dictionary keyed by record name, and other layers' data is a list.
 
@@ -413,7 +415,7 @@ A project has exactly one Definitive element.
 
 **Proposed for the founder (2026-11-07):** keep each layer and each piece as a separately indexed record, but group the pieces physically in the map's database instead of loose files. An inbox file for every address would put tens of thousands of files on disk. Options and the recommendation are in `docs/designs/storage.md`, section 4. Until the founder answers, the build uses grouped records.
 
-**R-6.22** Wants is a layer, and it is included in intake. `goto`, or an address read that names wants, returns them (R-5.10, R-5.30). The root read shows wants only as edges. `intake` is a reserved group: a layer in it does not appear under `layers`, and the layer itself cannot be deleted. Agents still write and remove its data at an address.
+**R-6.22** Wants is a layer, and it is included in intake. `goto`, or an address read that names wants, returns them (R-5.10, R-5.30). The root read shows wants only as edges. `intake` is a reserved group: a layer in it is not listed with the project's layers, and the layer itself cannot be deleted. Agents still write and remove its data at an address.
 
 **Status:** Decided. **Source:** "wants is a layer that is included in intake!"; "wants is a layer but its in a reserved group called intake which keeps it from appearing under layers or being accessible to delete"; "agents can assign data to these layers at the address they just have no control over the existence of these layers".
 
@@ -425,7 +427,7 @@ A project has exactly one Definitive element.
 
 **R-6.24** Every layer works the same way. A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment, and its value there is a list of records. No two definitions share a last segment. The specification layer is defined by `layer.document.specification`, so its field is `specification`. The server writes that definition into each main map and refuses any other write to it.
 
-**Status:** Decided, owner, 2026-11-09, relayed by Jorge, the store agent: layers have no mechanism of their own, the specification layer is listed as `layer.document.specification` in the main map, and its data is a JSON field named `specification` on the receiving elements. The owner's reason for these decisions has not been recorded yet. Built on branch `specification-layer-core`, not merged. A definition element with an `instruction` field, the last segment as the field name, and locking the code-defined definition are Proposed, in `metaform/docs/designs/specification-layer.md`. Moving the `system` layers of R-6.15 into the map is not decided.
+**Status:** Decided, owner, 2026-11-09, relayed by Jorge, the store agent: layers have no mechanism of their own, the specification layer is listed as `layer.document.specification` in the main map, and its data is a JSON field named `specification` on the receiving elements. The reason for the `layer` root is in R-3.3: definitions under a project root would read as part of the project. It replaces the `layers` dictionary of R-6.15 and R-5.22 (owner, 2026-11-09). Built on branch `specification-layer-core`, not merged. A definition element with an `instruction` field, the last segment as the field name, and locking the code-defined definition are Proposed, in `metaform/docs/designs/specification-layer.md`. Moving the `system` layers of R-6.15 into the map is not decided.
 
 **R-6.25** A definition may declare the format `markdown_blocks`. Its records are blocks of prose: `{"level": 1-4, "title": "...", "text": "..."}` with an optional `code`, and the first block may be `{"text": "..."}` alone, as an intro. The tool enforces the heading structure, so the prose can be exported as Markdown and imported again without loss: the first titled block is level 1, each level is at most one more than the level before it, no level is above 4, and text holds no Markdown heading line outside fenced code. A code is a key that other text can cite. It is unique in its layer across the map, ignoring case. The tool refuses nothing else about the text. The TASTE targets are reported by the export's check.
 
@@ -509,7 +511,7 @@ Negations apply first. Additions apply second. If one element adds and negates t
 
 - `intake`: the fields of the base map, keyed by field name. A key's presence puts the field in the base view. Its value holds the field's definition, which may be empty.
 - `system`: capabilities shared across projects: `skills`, `memory` and `sources`. They are system layers. `skills` are skill entries as SEP-2640 defines them. `memory` is a graph of durable, atomic facts about the project, adapted from the MCP sample memory server, which agents keep relevant through create, read, update and delete. Memory is a unique layer: its shape is a graph, and a new memory extends it by naming existing memories. It works like the modelcontextprotocol.io memory server. Each address has its own memory graph, read and written only by an agent present at that address. A memory can link to any address or any memory. Memory is read and written through its own module's tool (R-5.29).
-- `layers`: the project's own layers. A layer must be registered here, with the `layer` command (R-5.28), before data is written to it.
+- `layers`: the project's own layers. A layer must be registered here, with the `layer` command (R-5.28), before data is written to it. *(Superseded 2026-11-09 by R-6.24: there is no `layers` dictionary. A project's layers are defined as elements beneath the `layer` root scope.)*
 
 ```json
 {".": {
@@ -534,7 +536,7 @@ Negations apply first. Additions apply second. If one element adds and negates t
 }
 ```
 
-**R-6.18** A prompted layer is created in this order: infer the layer from its prompt, register it in `layers`, then run the prompt against the addressed elements. A plugin layer links a plugin's artifacts to the functionality they refer to. Its `instruction` is delivered once when the plugin is triggered through ACP while the layer is active.
+**R-6.18** A prompted layer is created in this order: infer the layer from its prompt, define it beneath the `layer` root scope (R-6.24; changed 2026-11-09 from "register it in `layers`"), then run the prompt against the addressed elements. A plugin layer links a plugin's artifacts to the functionality they refer to. Its `instruction` is delivered once when the plugin is triggered through ACP while the layer is active.
 
 **R-6.20** When a definition has a `template`, a dump renders the data as the readable report, one sentence for each record.
 
@@ -601,7 +603,8 @@ A step is accepted when:
 | D-9 | Closed for the language: the chassis is event driven, written in Rust, and uses Bevy (founder, 2026-11-03: "I would like to see the chassis be event driven, be in rust and use bevy"). Still open: how modules connect to the chassis. | The chassis and its hook into the functional map server (R-2.9, R-2.11). |
 | D-11 | Whether `collection` stays a root scope. The procedure lists seven root scopes, and the documentation set lists six. | R-3.3. |
 | D-12 | How a project with more than one metaform is stored. The earlier specification kept one store per metaform. | R-4.1. |
-| D-13 | How a layer change at an element (R-6.9) relates to the `layers` dictionary at the root (R-6.15). | Step 4. |
+| D-13 | How a layer change at an element (R-6.9) relates to the layer definitions beneath the `layer` root scope (R-6.24). The `layers` dictionary it first named is superseded. | Step 4. |
+| D-18 | How a layer is added and listed now that definitions are elements beneath `layer` (R-6.24): the `layer` command of R-5.28, or `add` at a `layer` address. | R-5.28. |
 | D-14 | How the grammar check tells a verb ending in `-ing` from a noun such as `ring` or `string`. The documentation set forbids words ending in `-ing` in `why` and `how`. | R-5.24. |
 | D-16 | How chaining (R-4.15) relates to links between projects (section 7). Storage of a chained map is a default: a `Map` node in its parent's database, reached by `CHAINS`, promotable to its own database (`docs/designs/storage.md` 2.2). The earlier recommendation of a folder with its own `map.json` is withdrawn. | Section 7 read path. |
 | D-17 | Defaults taken 2026-11-07 (`docs/designs/storage.md` 2.3, 2.4): the layout under the home, maps grouped into project databases, no separate effect log, at most 16 open databases (lowered from 64 after measuring memory, storage note risk 5) with a 64 MB pool, a 16 GB limit and 4 worker threads each. Open only for the founder's confirmation of the grouping (R-4.1). | Nothing; the build proceeds on the defaults. |
