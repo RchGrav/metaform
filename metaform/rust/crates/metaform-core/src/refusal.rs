@@ -1,5 +1,7 @@
-//! Refusals (R-5.24): a fixed error code, the rule it broke, the reason in plain words, the tested
-//! sentence where one applies, and the remediation command that fixes it.
+//! Refusals (R-5.24): a fixed error code, a message in plain words, the tested sentence where one
+//! applies, and the remediation command that fixes it. The response follows the founder's
+//! examples (documentation set, module 6): the rule a code stands for is documentation, kept here
+//! in `Code::rule`, and is not a field of the response.
 
 use std::fmt;
 
@@ -64,7 +66,7 @@ impl Code {
             }
             Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and intent.",
             Code::InternalError => {
-                "The server could not complete the command. A write may or may not be stored; read the element before you retry it."
+                "Server design, Isolation: an unexpected error fails only the request that caused it."
             }
         }
     }
@@ -103,17 +105,18 @@ impl Refusal {
         self.code.rule()
     }
 
-    /// The refusal as an agent receives it.
+    /// The refusal's own fields, in the founder's order (module 6): `code`, `message`, the
+    /// `tested_sentence` where one applies, and `remediation`. The store puts the echoed command
+    /// and `"status": "error"` in front (`metaform_store::refusal_json`).
     pub fn to_json(&self) -> Value {
         let mut out = json!({
             "code": self.code.as_str(),
-            "rule": self.rule(),
-            "reason": self.reason,
-            "remediation": self.remediation.as_deref().cloned().unwrap_or(Value::Null),
+            "message": self.reason,
         });
         if let Some(sentence) = &self.sentence {
-            out["sentence"] = Value::String(sentence.clone());
+            out["tested_sentence"] = Value::String(sentence.clone());
         }
+        out["remediation"] = self.remediation.as_deref().cloned().unwrap_or(Value::Null);
         out
     }
 }

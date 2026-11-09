@@ -266,17 +266,19 @@ impl ServerHandler for MapTool {
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        let command = Value::Object(request.arguments.unwrap_or_default());
+        // MCP lists an unknown tool as a protocol error (JSON-RPC -32602), not a tool result.
         if request.name != self.tool.name {
-            let reason = format!(
+            let message = format!(
                 "unknown tool {}; the only tool is {}",
                 request.name, self.tool.name
             );
-            return Ok(CallToolResult::error(vec![ContentBlock::text(reason)]).into());
+            return Err(ErrorData::invalid_params(message, None));
         }
-        let command = Value::Object(request.arguments.unwrap_or_default());
         let is_goto = command.get("goto").is_some();
         let (store, map, client) = (Arc::clone(&self.store), self.map.clone(), self.client);
-        let outcome = tokio::task::spawn_blocking(move || store.execute(client, &map, &command))
+        let sent = command.clone();
+        let outcome = tokio::task::spawn_blocking(move || store.execute(client, &map, &sent))
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(match outcome {
@@ -289,10 +291,10 @@ impl ServerHandler for MapTool {
                 CallToolResult::success(vec![ContentBlock::text(result.to_string())])
             }
             Err(Failure::Refused(refusal)) => {
-                CallToolResult::error(vec![ContentBlock::text(refusal_json(&refusal).to_string())])
+                CallToolResult::error(vec![ContentBlock::text(refusal_json(&command, &refusal).to_string())])
             }
             Err(Failure::Store(e)) => {
-                CallToolResult::error(vec![ContentBlock::text(store_failure_json(&e).to_string())])
+                CallToolResult::error(vec![ContentBlock::text(store_failure_json(&command, &e).to_string())])
             }
         }
         .into())

@@ -118,7 +118,11 @@ fn tool_examples_give_the_documented_results() {
                 );
                 let shown = refusal.to_json();
                 assert_eq!(shown["code"], "DEPENDENCY_LOCK");
-                assert!(shown["rule"].as_str().unwrap().starts_with("R-5.7"));
+                assert!(refusal.rule().starts_with("R-5.7"));
+                assert!(
+                    shown.get("rule").is_none(),
+                    "the response has no rule field"
+                );
             }
             (Ok(Outcome::Write(write)), Expect::Ok) => {
                 assert_eq!(map.apply(&write.effect), write.map, "request {index}");

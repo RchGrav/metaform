@@ -98,11 +98,15 @@ fn second_server_on_a_home_is_refused() {
     };
     assert!(matches!(error, StoreError::Owned(_)));
     // A store failure reaches an agent in the refusal structure, not as bare text.
-    let answer = store_failure_json(&error);
+    let command = json!({"delete": {"code.masher.widget": {}}});
+    let answer = store_failure_json(&command, &error);
+    assert_eq!(answer["delete"], command["delete"], "the command is echoed");
     assert_eq!(answer["code"], json!("INTERNAL_ERROR"));
     assert_eq!(answer["status"], json!("error"));
-    assert!(answer["rule"].as_str().unwrap().contains("read the element before you retry"));
-    assert!(answer["reason"].as_str().unwrap().contains("owned by another"));
+    let message = answer["message"].as_str().unwrap();
+    assert!(message.contains("owned by another"), "{message}");
+    assert!(message.contains("read the element before you retry"), "{message}");
+    assert!(answer.get("rule").is_none(), "the response has no rule field");
 }
 
 /// A refused write changes nothing, in memory or on disk, and its refusal names a remedy.
@@ -115,12 +119,20 @@ fn refused_write_changes_nothing() {
         let map = project(&store, dir.path());
         seed(&store, &map);
         let before = reads(&store, &map);
-        match store.execute(A, &map, &json!({"delete": {"code.masher.widget": {}}})) {
+        let command = json!({"delete": {"code.masher.widget": {}}});
+        match store.execute(A, &map, &command) {
             Err(Failure::Refused(r)) => {
-                assert!(
-                    metaform_store::refusal_json(&r)["remediation"].is_object(),
-                    "{r:?}"
-                );
+                // The founder's error structure (`~/brain/mcp_query.md`, `intake_roles.md`):
+                // the echoed command, status, code, message and remediation, in that order.
+                let answer = metaform_store::refusal_json(&command, &r);
+                let expected = json!({
+                    "delete": {"code.masher.widget": {}},
+                    "status": "error",
+                    "code": "DEPENDENCY_LOCK",
+                    "message": "cannot delete, 'code.masher.widget', must be orphaned first",
+                    "remediation": {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}}
+                });
+                assert_eq!(answer.to_string(), expected.to_string(), "fields and their order");
             }
             other => panic!("deleting a wanted element must be refused, got {other:?}"),
         }

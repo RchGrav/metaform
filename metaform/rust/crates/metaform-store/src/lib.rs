@@ -24,7 +24,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 
-use metaform_core::{Code, Contract, Map, Outcome, Refusal};
+pub use metaform_core::{Code, Refusal};
+use metaform_core::{Contract, Map, Outcome};
 use serde_json::{Value, json};
 
 use writer::{Job, Writer};
@@ -459,16 +460,21 @@ fn write(
 }
 
 /// The JSON an agent receives for a refusal.
-pub fn refusal_json(refusal: &Refusal) -> Value {
-    let mut out = refusal.to_json();
-    if let Value::Object(o) = &mut out {
-        o.entry("status").or_insert(json!("error"));
+pub fn refusal_json(command: &Value, refusal: &Refusal) -> Value {
+    let mut out = command.as_object().cloned().unwrap_or_default();
+    out.insert("status".into(), json!("error"));
+    if let Value::Object(fields) = refusal.to_json() {
+        out.extend(fields);
     }
-    out
+    Value::Object(out)
 }
 
 /// A store failure as an agent receives it: the same structure as a refusal, with the code
-/// `INTERNAL_ERROR` (server design, Isolation). The reason is the store's own message.
-pub fn store_failure_json(error: &StoreError) -> Value {
-    refusal_json(&Refusal::new(Code::InternalError, error.to_string(), None))
+/// `INTERNAL_ERROR` (server design, Isolation). The message is the store's own, followed by what
+/// to do before a retry: a write may have been stored before the failure, and a repeated `add`
+/// can duplicate entries.
+pub fn store_failure_json(command: &Value, error: &StoreError) -> Value {
+    let message =
+        format!("{error}. A write may or may not be stored; read the element before you retry it.");
+    refusal_json(command, &Refusal::new(Code::InternalError, message, None))
 }
