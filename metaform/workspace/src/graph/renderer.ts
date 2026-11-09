@@ -152,7 +152,7 @@ export interface GraphRenderer {
    * The given addresses whose box lies wholly outside the viewport shown now, mid-move included
    * (UX section 12a: the indicator of new elements outside the view). Added for climb step 6b.
    */
-  outsideView?(addresses: readonly Address[]): Address[];
+  outsideView(addresses: readonly Address[]): Address[];
   /** Moves keyboard focus to a node, without changing the viewport unless the node is off screen. */
   focusNode(address: Address): void;
   unmount(): void;
