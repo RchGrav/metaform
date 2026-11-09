@@ -15,11 +15,11 @@ One state object drives every view. Every mode, gesture and project switch reads
 | `selection` | The selected element, or none. | Mode switches, layer changes, incoming activity. |
 | `focus` | The element a pivot centred on, or none (item 9). | Mode switches. |
 | `viewport` | Zoom and pan for each `project` + `container` pair. | Returning to a container restores its viewport. |
-| `collapsed` | The addresses whose elements beneath are hidden. Kept for each project. | Mode switches, refetches. |
+| `expanded` | The addresses whose elements beneath are shown. Every other element with elements beneath starts collapsed, so a first view is not crowded. Kept for each project. | Mode switches, refetches. |
 | `layers` | For each layer: visible, hidden or isolated. | Mode switches and project switches, by layer name. |
 | `history` | A stack of earlier states (`project`, `container`, `focus`, `selection`). | Back pops one state. |
 
-**Decision: the view derives structure and refetches on change.** A `map-changed` event refetches `map` and keeps every field above (seam rule 1). A `selection`, `focus` or `container` whose address no longer exists falls back to its nearest existing parent address, and a one-line notice says so: "code.store.cache no longer exists; showing code.store."
+**Decision: the view derives structure and refetches on change.** A `map-changed` event refetches `map` and the raw dump, because the layer marks come from the dump's record counts, and keeps every field above (seam rule 1). The view's top level is its own marker, `.`; it is never sent in an addressed read, because `{".": {}}` is the raw dump (R-5.34). A `selection`, `focus` or `container` whose address no longer exists falls back to its nearest existing parent address, and a notice says so: "code.store.cache no longer exists. Showing code.store."
 
 ## 2. Screen layout (item 1)
 
@@ -47,10 +47,10 @@ One state object drives every view. Every mode, gesture and project switch reads
 | Mode | Shows | Kept from the state |
 |---|---|---|
 | **Graph** | The elements in `container` and the wants between them. | All fields. |
-| **Focus** | The selected element (or `focus`) in the centre, the elements it wants on one side, the elements that want it on the other, and its details at full height. With no selection, Focus uses the Definitive element. | All fields. Returning to Graph restores the Graph viewport. |
+| **Element** | The selected element (or `focus`) in the centre, the elements it wants on one side, the elements that want it on the other, and its details at full height. With no selection, Focus uses the Definitive element. | All fields. Returning to Graph restores the Graph viewport. Matthew named it Element so that "focus" means only the pivot. |
 | **Present** | The current Graph or Focus view with the chrome hidden: no rail, no panel, larger labels. Arrow keys move the selection along wants, and Esc leaves. | All fields. Present changes nothing in the state. |
 
-Keys `1`, `2` and `3` switch modes. The switch takes at most 200 ms and never changes `project`, `container`, `selection` or `focus`.
+Keys `1`, `2` and `3` switch modes (Graph, Element, Present). The switch takes at most 200 ms and never changes `project`, `container`, `selection` or `focus`.
 
 ## 4. Pan, zoom and fit (item 3)
 
@@ -65,7 +65,7 @@ Keys `1`, `2` and `3` switch modes. The switch takes at most 200 ms and never ch
 | Input | On an element with elements beneath | On a leaf element | On `upstream.*` / `downstream.*` |
 |---|---|---|---|
 | Click | Selects it and opens Details. | Same. | Same; Details offers "Open project" when the link names one (seam gap 3). |
-| Double-click | Opens it: `container` becomes its address, and the breadcrumbs grow by one segment. | Opens Focus mode on it. | Opens the linked project (item 6). |
+| Double-click | Opens it: `container` becomes its address, and the breadcrumbs grow by one segment. | Opens Element mode on it. | Opens the linked project (item 6). |
 | Ctrl-click (Cmd-click on macOS) | Goes up: `container` becomes the parent of the current container, and the element that was the container is selected. | Same. | Same. |
 | Enter / Shift+Enter | Same as double-click / Ctrl-click, for the keyboard. | | |
 
@@ -75,7 +75,7 @@ Hint: the first time the user selects an element, a one-line hint appears near i
 
 ## 6. Collapse and expand (item 5)
 
-- An element with elements beneath has a chevron and a count: "4 beneath". A leaf element has neither, so the two never look alike.
+- An element with elements beneath has a chevron and a count: "4 beneath", with the accessible name "4 elements beneath code.store". A leaf element has neither, so the two never look alike.
 - Click the chevron, or press `Space` with the element selected, to collapse or expand it. A collapsed element is drawn as a stack of two offset outlines, with the chevron pointing right. An expanded element has the chevron pointing down.
 - A want to or from a hidden element is drawn to its collapsed ancestor, as one arrow with a count: "3 wants". This keeps the layout honest about connections it is not showing.
 - "Collapse all" and "Expand all" are in the rail's secondary menu.
@@ -115,7 +115,7 @@ Hint: the first time the user selects an element, a one-line hint appears near i
 
 - "Set as focus" sets `focus`. It is in the element's context menu, in Details, and on the key `F`.
 - The layout puts the focus element at the top. Below it come the elements it wants, then the elements they want, up to two wants away. Elements further away are dimmed but stay reachable.
-- A banner under the top bar explains the change: "Focus: code.store · showing elements within 2 wants. Clear focus". "Clear focus" and Back both restore the layout from before the pivot.
+- A banner under the top bar explains the change: "Focus: code.store · elements up to 2 wants away", with a separate "Clear focus" button. "Clear focus" and Back both restore the layout from before the pivot.
 - The focus element has a thick outline. Matthew's term map says the focus must never look like the Definitive element, which has its own role mark.
 
 ## 11. Compact menu (item 10)
@@ -131,8 +131,8 @@ Hint: the first time the user selects an element, a one-line hint appears near i
 First run, when `projects()` is empty, shows one panel in the canvas:
 
 1. "Register a project". The step that works today: connect an agent from the project's folder with `metaform mcp --project <folder>`; the first connection registers the folder. The prompt's `metaform register <project_name>` is shown beside it, labelled "Planned command" (Matthew's rule 6).
-2. "Run a first intake". A button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`.
-3. "Open this view again". No command is shown, because none is named yet (UI-U1).
+2. "Run a simulated intake". The button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`.
+3. "Open this view again". The prototype shows the command that starts its own host, labelled "Starts this prototype". The product's own reopen command is not named yet (UI-U1).
 
 ## 13. Decisions and open questions
 
