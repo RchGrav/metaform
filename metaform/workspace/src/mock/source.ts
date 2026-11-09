@@ -19,7 +19,9 @@ import { RefusalError } from "../source/errors";
 import type { MockEvent, MockWorkspace, Tree } from "./workspace";
 
 const LAYER_SCOPE = "layer";
-/** Array fields that are not counted as layers in the summary sheet (reads.rs OWN_PARTS). */
+/** Array fields that are not counted as layers in the summary sheet (reads.rs OWN_PARTS). Skills
+ *  are not part of the sheet at all: a functionality's skill reaches an agent with its ticket
+ *  (owner, 73fcbf4; R-5.30, R-5.31). */
 const OWN_PARTS = new Set(["memory", "skills"]);
 const DEFINITIVE = new Set(["de", "defining", "definitive"]);
 
@@ -279,23 +281,6 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     const defined = map.recordsAllowed(at) ? map.definitions() : [];
     for (const definition of defined) layers[definition.layer] ??= { records: 0 };
 
-    const skills: SummarySheet["skills"] = {};
-    const root = map.elements.get("");
-    for (const holder of [root, element]) {
-      const list = holder?.fields["skills"];
-      if (!Array.isArray(list)) continue;
-      for (const skill of list) {
-        if (!isObject(skill)) continue;
-        const front = isObject(skill["frontmatter"]) ? skill["frontmatter"] : skill;
-        const name = front["name"];
-        if (typeof name !== "string") continue;
-        const entry: SummarySheet["skills"][string] = { name };
-        if (typeof front["description"] === "string") entry.description = front["description"];
-        if (typeof skill["uri"] === "string") entry.uri = skill["uri"];
-        skills[name] = entry;
-      }
-    }
-
     const memory = element.fields["memory"];
     const sheet: SummarySheet = {
       at,
@@ -303,7 +288,6 @@ export class MockSource implements GraphSource, WorkspaceEvents {
       wants: structuredClone(element.wants),
       wanted_by: wantedBy,
       layers,
-      skills,
       memory: { records: Array.isArray(memory) ? memory.length : 0 },
     };
 

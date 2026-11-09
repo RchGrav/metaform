@@ -34,7 +34,7 @@ describe("MockSource reads", () => {
   it("builds the summary sheet with counts, not records", async () => {
     const sheet = await fixed().goto("metaform", "code.server.tool");
     expect(Object.keys(sheet)).toEqual([
-      "at", "element", "wants", "wanted_by", "layers", "skills", "memory", "instructions",
+      "at", "element", "wants", "wanted_by", "layers", "memory", "instructions",
     ]);
     expect(sheet.layers).toEqual({ specification: { records: 1 } });
     expect(sheet.memory).toEqual({ records: 1 });
