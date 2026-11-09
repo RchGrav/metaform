@@ -79,7 +79,7 @@ impl Code {
                 "A word on an element is either a field or the name of an element beneath it, not both."
             }
             Code::LayerNotRegistered => {
-                "R-6.10: a layer must be registered before data is written to it."
+                "R-6.24, R-6.15: a list is written only to a layer defined beneath layer, or to a system layer (skills, memory, sources)."
             }
             Code::DependencyLock => "R-5.7: delete refuses an element that something still wants.",
             Code::NameRoundTripFailure => {

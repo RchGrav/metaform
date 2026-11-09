@@ -290,10 +290,15 @@ impl Work<'_> {
                 element.put_in_order();
             }
         }
+        let defined: Vec<String> = specification::definitions(&Map::from_elements(self.elements.clone()))
+            .into_iter()
+            .map(|d| d.layer)
+            .collect();
         for address in &self.touched {
             let Some(element) = self.elements.get(address) else {
                 continue;
             };
+            self.check_layers_defined(address, element, &defined)?;
             self.check_name_length(address, element)?;
             self.check_collisions(address, element)?;
             self.contract.check_element(address, &element.view())?;
@@ -400,6 +405,30 @@ impl Work<'_> {
         Ok(())
     }
 
+    /// A list at an element is a layer's records, so its name must be a layer: one defined beneath
+    /// `layer` (R-6.24) or a system layer (R-6.15). Only lists this write changed are checked, so
+    /// older data never blocks an unrelated write.
+    fn check_layers_defined(&self, address: &str, element: &Element, defined: &[String]) -> Result<(), Refusal> {
+        let before = self.before.element(address);
+        for (name, value) in &element.fields {
+            if !value.is_array()
+                || specification::SYSTEM_LAYERS.contains(&name.as_str())
+                || defined.iter().any(|layer| layer == name)
+                || before.and_then(|e| e.fields.get(name)) == Some(value)
+            {
+                continue;
+            }
+            return Err(Refusal::new(
+                Code::LayerNotRegistered,
+                format!(
+                    "'{address}': {name} is not a layer; a list is written only to a layer defined beneath layer, or to skills, memory or sources"
+                ),
+                Some(json!({"map": {}})),
+            ));
+        }
+        Ok(())
+    }
+
     /// `technical_name` is the same number of leading words of the reversed, space-separated
     /// address (documentation set 3.1, 6.1).
     fn check_name_length(&self, address: &str, element: &Element) -> Result<(), Refusal> {
@@ -420,14 +449,26 @@ impl Work<'_> {
             || words.len() > reversed.len()
             || words.iter().zip(&reversed).any(|(w, r)| *w != r)
         {
-            let leaf = reversed.first().cloned().unwrap_or_default();
+            // The suggestion is the reversed address without its root scope words: `code.cache.response`
+            // gives "response cache". An element this write created is added again with the name
+            // corrected, because the refused write stored nothing; an existing one is updated.
+            let root_words = address.split('.').next().map_or(0, |root| root.split('_').count());
+            let keep = reversed.len().saturating_sub(root_words).max(1);
+            let suggested = reversed[..keep.min(reversed.len())].join(" ");
+            let remediation = if self.before.element(address).is_some() {
+                json!({"update": {address: {"technical_name": suggested}}})
+            } else {
+                let mut view = element.view();
+                view["technical_name"] = Value::String(suggested);
+                json!({"add": {address: view}})
+            };
             return Err(Refusal::new(
                 Code::TechnicalNameAlignmentFailure,
                 format!(
                     "'{address}': technical_name \"{technical}\" is not the leading words of \"{}\"",
                     reversed.join(" ")
                 ),
-                Some(json!({"update": {address: {"technical_name": leaf}}})),
+                Some(remediation),
             ));
         }
         Ok(())
