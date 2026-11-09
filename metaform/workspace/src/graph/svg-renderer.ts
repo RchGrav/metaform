@@ -2,7 +2,7 @@
 // It reads no GraphSource and decides no meaning; it reports raw input to the state layer.
 
 import type { Address } from "../source/types";
-import { graph as text, intake, layers as layerText } from "../strings";
+import { graph as text, intake, layers as layerText, legend } from "../strings";
 import { Camera } from "./camera";
 import { Flow } from "./flow";
 import { Glide, type GlideItem } from "./glide";
@@ -32,6 +32,14 @@ const DETAIL_CHAR = 5.6;
 const SETTLE_MS = 150;
 /** Layer mark shapes, by style index, so marks do not depend on colour alone. */
 const SHAPES = ["square", "circle", "diamond", "triangle"] as const;
+
+/** Gives an SVG element its hover meaning (climb step 1: every mark explained). */
+function tip<T extends Element>(element: T, ...lines: string[]): T {
+  const title = document.createElementNS(SVG, "title");
+  title.textContent = lines.join("\n");
+  element.insertBefore(title, element.firstChild);
+  return element;
+}
 
 function el<K extends keyof SVGElementTagNameMap>(
   name: K,
@@ -263,10 +271,11 @@ export class ElkRenderer implements GraphRenderer {
     canvas.replaceChildren();
     const bands = el("g", { class: "mf-bands" }, canvas);
     for (const separator of next.separators) {
-      el("line", {
+      const line = el("line", {
         class: "mf-separator", x1: separator.x, x2: separator.x,
         y1: -24, y2: next.bounds.height + 24,
       }, bands);
+      tip(line, legend.band);
       const label = el("text", { class: "mf-band-label", x: separator.x + (separator.band === "upstream" ? -8 : 8), y: -32 }, bands);
       label.setAttribute("text-anchor", separator.band === "upstream" ? "end" : "start");
       label.textContent = separator.band === "upstream" ? text.upstreamBand : text.downstreamBand;
@@ -318,11 +327,11 @@ export class ElkRenderer implements GraphRenderer {
     }, parent);
     if (node.selected) g.setAttribute("aria-pressed", "true");
     if (node.beneath > 0 && node.collapsed && !container) {
-      el("rect", { class: "mf-stack", x: 5, y: 5, width: box.width, height: box.height, rx: 6 }, g);
+      tip(el("rect", { class: "mf-stack", x: 5, y: 5, width: box.width, height: box.height, rx: 6 }, g), legend.stack);
     }
     el("rect", { class: "mf-box", width: box.width, height: box.height, rx: 6 }, g);
-    if (node.definitive) el("rect", { class: "mf-definitive-ring", x: 3, y: 3, width: box.width - 6, height: box.height - 6, rx: 4 }, g);
-    el("rect", { class: "mf-role-bar", width: 4, height: container ? HEADER : box.height, rx: 2 }, g);
+    if (node.definitive) tip(el("rect", { class: "mf-definitive-ring", x: 3, y: 3, width: box.width - 6, height: box.height - 6, rx: 4 }, g), legend.definitive);
+    tip(el("rect", { class: "mf-role-bar", width: 4, height: container ? HEADER : box.height, rx: 2 }, g), legend.roleBar);
     // Row 1: the label, and the chevron at the right. Row 2: layer marks at the left; the wants
     // that leave the container and the count beneath at the right (nodeWidth sizes both rows).
     const row1 = container ? HEADER / 2 + 5 : 23;
@@ -337,6 +346,7 @@ export class ElkRenderer implements GraphRenderer {
         "aria-expanded": String(!node.collapsed),
         transform: `translate(${right - 12},${row1 - 11})`,
       }, g);
+      tip(chevron, legend.chevron);
       el("rect", { width: 16, height: 16, rx: 3, class: "mf-chevron-hit" }, chevron);
       el("path", { d: node.collapsed ? "M6,4 L11,8 L6,12" : "M4,6 L8,11 L12,6", class: "mf-chevron-mark" }, chevron);
       chevron.addEventListener("click", (event) => {
@@ -349,6 +359,7 @@ export class ElkRenderer implements GraphRenderer {
     if (node.beneath > 0) {
       const badge = el("text", { class: "mf-beneath", x: badgeRight, y: row2, "text-anchor": "end", "aria-hidden": "true" }, g);
       badge.textContent = text.beneathBadge(node.beneath);
+      tip(badge, legend.beneath);
     }
     if (node.outside > 0) {
       const shift = node.beneath > 0 ? (text.beneathBadge(node.beneath).length * 6.4 + 12) : 0;
@@ -357,12 +368,13 @@ export class ElkRenderer implements GraphRenderer {
         "aria-label": text.wantsOutsideLabel(node.outside, containerOf(node.address)),
       }, g);
       out.textContent = text.wantsOutside(node.outside);
+      tip(out, legend.outside);
     }
     let x = container ? 16 + node.label.length * 7.8 + 12 : 16;
     for (const mark of node.layers) {
       const shape = SHAPES[mark.style % SHAPES.length] ?? "square";
       const m = el("g", { class: `mf-layer mf-layer-${mark.style % 8}`, transform: `translate(${x},${row2 - 4})` }, g);
-      el("title", {}, m).textContent = layerText.mark(mark.layer, mark.records);
+      tip(m, layerText.mark(mark.layer, mark.records), legend.layerMark);
       if (shape === "circle") el("circle", { cx: 3.5, cy: 0, r: 4 }, m);
       else if (shape === "diamond") el("path", { d: "M3.5,-4.5 L8,0 L3.5,4.5 L-1,0 z" }, m);
       else if (shape === "triangle") el("path", { d: "M3.5,-4.5 L8,4 L-1,4 z" }, m);
@@ -375,14 +387,15 @@ export class ElkRenderer implements GraphRenderer {
     // sides, and wants within a band attach spread along the middle of the top and bottom.
     node.agents.forEach((agent, i) => {
       const a = el("g", { class: `mf-agent${agent.active ? " mf-agent-active" : ""}`, transform: `translate(${22 + i * 20},0)` }, g);
+      tip(a, legend.agent, agent.active ? legend.agentActive : legend.agentIdle);
       el("circle", { r: 9 }, a);
       const initials = el("text", { "text-anchor": "middle", y: 3.5 }, a);
       initials.textContent = agent.initials;
     });
-    if (node.unseen) el("circle", { class: "mf-unseen", cx: 0, cy: 0, r: 4.5 }, g);
+    if (node.unseen) tip(el("circle", { class: "mf-unseen", cx: 0, cy: 0, r: 4.5 }, g), legend.unseen);
     if (node.opensProject) {
       const link = el("g", { class: "mf-project-link", transform: `translate(${16 + node.label.length * 7.8 + 6},${row1 - 10})` }, g);
-      el("title", {}, link).textContent = text.opensAnotherProject;
+      tip(link, legend.projectLink);
       el("path", { d: "M2,10 L10,2 M5,2 L10,2 L10,7" }, link);
     }
     return g;
@@ -394,15 +407,18 @@ export class ElkRenderer implements GraphRenderer {
     const direction = edge.direction;
     if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
       const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
-      el("title", {}, g).textContent = intake.ifdLine(direction, label(edge.from), label(edge.to));
+      tip(g, intake.ifdLine(direction, label(edge.from), label(edge.to)));
       // UX section 12a: the flow runs where it helps; the scene marks those wants `flowing`.
       if (!edge.dimmed && edge.flowing) this.flow.add(edge.id, path, direction);
+    } else {
+      tip(g, legend.arrow);
     }
     if (edge.why || edge.how) this.details.push({ edge, at: midpoint(route) });
     if (edge.count > 1) {
       const mid = midpoint(route);
       const label = el("text", { class: "mf-edge-count", x: mid.x + 6, y: mid.y - 4 }, g);
       label.textContent = text.wantsOnArrow(edge.count);
+      tip(label, legend.arrowCount);
     }
   }
 
