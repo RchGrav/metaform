@@ -18,14 +18,14 @@ mod registry;
 pub mod settings;
 mod writer;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 
 pub use metaform_core::{Code, Refusal};
-use metaform_core::{Contract, Map, Outcome};
+use metaform_core::{Contract, Map, Outcome, specification};
 use serde_json::{Value, json};
 
 use writer::{Job, Writer};
@@ -43,6 +43,9 @@ pub enum DbKey {
     Standalone,
 }
 
+/// The id of a project's main map within the project's database.
+const MAIN_MAP: &str = "main";
+
 /// A map: its database and its id within that database.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MapKey {
@@ -55,8 +58,13 @@ impl MapKey {
     pub fn main(project: &str) -> MapKey {
         MapKey {
             db: DbKey::Project(project.to_string()),
-            map: "main".to_string(),
+            map: MAIN_MAP.to_string(),
         }
+    }
+
+    /// Whether this is a project's main map.
+    pub fn is_main(&self) -> bool {
+        matches!(self.db, DbKey::Project(_)) && self.map == MAIN_MAP
     }
 
     /// A map that belongs to no project.
@@ -87,6 +95,8 @@ pub enum StoreError {
     Ladybug(String),
     #[error("stored data is not in the expected form: {0}")]
     Corrupt(String),
+    #[error("the server could not write its layer definition: {0}")]
+    Definition(String),
     #[error(
         "the database was made by a different build and cannot be brought up to date: {0}. \
          Nothing was changed. Use the build that made it, or another home"
@@ -223,6 +233,8 @@ pub struct Store {
     subscribers: Subscribers,
     contract: Arc<Contract>,
     settings: settings::Settings,
+    /// Main maps whose server-defined layers are current in this run (`ensure_defined`).
+    defined: Mutex<HashSet<MapKey>>,
     home: PathBuf,
     _owner: File,
 }
@@ -289,6 +301,7 @@ impl Store {
             subscribers: Arc::default(),
             contract: Arc::new(contract),
             settings,
+            defined: Mutex::default(),
             home: home.to_path_buf(),
             _owner: owner,
         })
@@ -328,6 +341,7 @@ impl Store {
         map: &MapKey,
         command: &Value,
     ) -> Result<Value, Failure> {
+        self.ensure_defined(map)?;
         let db = self.db(&map.db)?;
         let verb = command
             .as_object()
@@ -362,7 +376,61 @@ impl Store {
     /// The current map, for reads outside the tool such as the CLI's specification export. The
     /// server stays the only reader and writer of the store (R-4.4).
     pub fn snapshot(&self, map: &MapKey) -> Result<Arc<Map>, StoreError> {
+        self.ensure_defined(map)?;
         self.db(&map.db)?.snapshot(&map.map)
+    }
+
+    /// Make a project's main map hold the server-defined layer definitions exactly as the code
+    /// defines them (R-6.24): today the specification layer at
+    /// `specification::DEFINITION_ADDRESS`. Runs once per main map per server run, before its
+    /// first command or snapshot, so `goto` and the export always find the layer and the stored
+    /// definition follows the code. Standalone maps are left alone: nothing exports them, and
+    /// in-world private maps (R-4.15) get no project definitions.
+    ///
+    /// The write goes through the writer and core like any command, so it is checked, committed
+    /// in one transaction and announced. When the definition is already current it writes
+    /// nothing. Two first touches at once each send a job; the second finds it current.
+    pub fn ensure_defined(&self, map: &MapKey) -> Result<(), StoreError> {
+        if !map.is_main() {
+            return Ok(());
+        }
+        if self.defined.lock().expect("defined lock").contains(map) {
+            return Ok(());
+        }
+        let db = self.db(&map.db)?;
+        let (reply, answer) = mpsc::sync_channel(1);
+        let (snapshots, contract, subscribers) = (
+            Arc::clone(&db.snapshots),
+            Arc::clone(&self.contract),
+            Arc::clone(&self.subscribers),
+        );
+        let key = map.clone();
+        db.writer.submit(Job {
+            client: ClientId(0),
+            task: Box::new(move |conn| {
+                let result = load_into(&snapshots, conn, &key.map).and_then(|current| {
+                    let Some(command) = definition_command(&current) else {
+                        return Ok(());
+                    };
+                    match write(conn, &snapshots, &contract, &subscribers, &key, &command) {
+                        Ok(_) => Ok(()),
+                        Err(Failure::Store(e)) => Err(e),
+                        Err(Failure::Refused(refusal)) => Err(StoreError::Definition(format!(
+                            "{}: {:?}",
+                            specification::DEFINITION_ADDRESS,
+                            refusal
+                        ))),
+                    }
+                });
+                let _ = reply.send(result);
+            }),
+        })?;
+        answer.recv().map_err(|_| StoreError::WriterGone)??;
+        self.defined
+            .lock()
+            .expect("defined lock")
+            .insert(map.clone());
+        Ok(())
     }
 
     /// Diagnostic: the problems in a map's stored graph shape (R-4.16), or none. For the
@@ -468,6 +536,24 @@ fn write(
         .entries
         .retain(|(_, map, sink)| map != key || sink(&announcement));
     Ok(write.result)
+}
+
+/// The `update` that makes the map's specification layer definition equal to
+/// `specification::definition()`, or `None` when it already is. `update` merges fields, so a
+/// stored field the definition no longer has is removed with `null` (R-5.5).
+fn definition_command(map: &Map) -> Option<Value> {
+    let wanted = specification::definition();
+    let current = map.element(specification::DEFINITION_ADDRESS);
+    if current.is_some_and(|e| e.fields == wanted) {
+        return None;
+    }
+    let mut fields = wanted.clone();
+    for key in current.into_iter().flat_map(|e| e.fields.keys()) {
+        if !wanted.contains_key(key) {
+            fields.insert(key.clone(), Value::Null);
+        }
+    }
+    Some(json!({"update": {specification::DEFINITION_ADDRESS: fields}}))
 }
 
 /// The JSON an agent receives for a refusal.

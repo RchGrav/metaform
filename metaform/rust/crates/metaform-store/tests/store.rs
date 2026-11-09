@@ -335,3 +335,75 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
         "the refused open changed nothing"
     );
 }
+
+/// R-6.24: a project's main map holds the specification layer's definition exactly as the code
+/// defines it, from its first command, and a stored definition that has drifted from the code is
+/// brought back on the next server run. A standalone map gets no definition.
+#[test]
+fn a_main_map_holds_the_specification_layer_definition() {
+    use metaform_core::specification::{DEFINITION_ADDRESS, definition};
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let defined = |store: &Store, map: &MapKey| {
+        store
+            .execute(B, map, &json!({ DEFINITION_ADDRESS: {} }))
+            .map(|read| read[DEFINITION_ADDRESS].clone())
+    };
+    let wanted = Value::Object(definition());
+    let (map, file) = {
+        let store = Store::open(&home).unwrap();
+        let map = project(&store, dir.path());
+        assert_eq!(
+            defined(&store, &map).unwrap()["instruction"],
+            wanted["instruction"]
+        );
+        let standalone = MapKey::standalone("private");
+        assert!(
+            defined(&store, &standalone).is_err(),
+            "a standalone map is not seeded"
+        );
+        let DbKey::Project(id) = &map.db else {
+            unreachable!()
+        };
+        let file = home.join("projects").join(id).join("project.lbug");
+        (map, file)
+    };
+    {
+        // Drift the stored definition as an older build would leave it: other instruction
+        // text and a field the code no longer defines.
+        let db = lbug::Database::new(&file, lbug::SystemConfig::default()).unwrap();
+        let conn = lbug::Connection::new(&db).unwrap();
+        conn.query(&format!(
+            "MATCH (e:Element) WHERE e.address = '{DEFINITION_ADDRESS}' \
+             SET e.extra = '{{\"instruction\": \"old\", \"retired\": \"x\"}}'"
+        ))
+        .unwrap();
+    }
+    {
+        let store = Store::open(&home).unwrap();
+        let read = defined(&store, &map).unwrap();
+        assert_eq!(
+            read["instruction"], wanted["instruction"],
+            "the code's text is restored"
+        );
+        assert!(
+            store.check_graph(&map).unwrap().is_empty(),
+            "R-4.16 nesting is complete"
+        );
+    }
+    let db = lbug::Database::new(&file, lbug::SystemConfig::default()).unwrap();
+    let conn = lbug::Connection::new(&db).unwrap();
+    let rows: Vec<Vec<lbug::Value>> = conn
+        .query(&format!(
+            "MATCH (e:Element) WHERE e.address = '{DEFINITION_ADDRESS}' RETURN e.extra"
+        ))
+        .unwrap()
+        .collect();
+    let [lbug::Value::String(extra)] = rows[0].as_slice() else {
+        panic!("{rows:?}");
+    };
+    assert!(
+        !extra.contains("retired"),
+        "a field the code no longer defines is removed: {extra}"
+    );
+}

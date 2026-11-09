@@ -141,6 +141,12 @@ pub fn definition_of(map: &Map, layer: &str) -> Option<Definition> {
     definitions(map).into_iter().find(|d| d.layer == layer)
 }
 
+/// Whether an address is the `layer` root scope or beneath it, where layer definitions live,
+/// outside the functional skeleton (R-3.20).
+pub fn in_layer_scope(address: &str) -> bool {
+    address == LAYER_SCOPE || is_beneath_layer_scope(address)
+}
+
 fn is_beneath_layer_scope(address: &str) -> bool {
     address
         .strip_prefix(LAYER_SCOPE)
@@ -643,7 +649,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
         };
         let reason = if address == ROOT {
             format!("'.': {layer} records at the root need a Definitive element in the map first")
-        } else if address == LAYER_SCOPE || is_beneath_layer_scope(address) {
+        } else if in_layer_scope(address) {
             format!("'{address}': {layer} records do not go on layer definitions")
         } else {
             format!(

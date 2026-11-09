@@ -84,12 +84,17 @@ fn index(map: &Map) -> Value {
 
 /// `{"orphaned": {}}` returns a bare dictionary keyed by address: each named element that nothing
 /// wants maps to its own fields (R-5.23). Being orphaned does not mean an element should go.
+/// Layer definitions are left out: they sit outside the functional skeleton, nothing wants them,
+/// and the server keeps them (R-6.24), so listing them would invite a delete that is refused.
 pub(crate) fn orphaned(map: &Map) -> Value {
     let wanted = map.wanted();
     Value::Object(
         map.elements()
             .filter(|(address, element)| {
-                *address != ROOT && !element.fields.is_empty() && !wanted.contains(address)
+                *address != ROOT
+                    && !specification::in_layer_scope(address)
+                    && !element.fields.is_empty()
+                    && !wanted.contains(address)
             })
             .map(|(address, element)| (address.to_string(), Value::Object(element.base_fields())))
             .collect(),
