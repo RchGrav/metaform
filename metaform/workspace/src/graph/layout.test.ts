@@ -1,14 +1,18 @@
-import ELK from "elkjs/lib/elk.bundled.js";
 import { describe, expect, it } from "vitest";
 import { createMockSource } from "../mock";
 import type { Address, ElementFields } from "../source/types";
 import { buildScene } from "../state/scene";
 import { layerCounts, layerNames } from "../state/structure";
 import { initialState, reduce, type Action } from "../state/view";
-import { type Box, type Elk, HEADER, layout, layoutKey } from "./layout";
+import { graph as text } from "../strings";
+import ELK from "elkjs/lib/elk.bundled.js";
+import { type Box, type Elk, HEADER, layout as run, layoutKey, nodeWidth } from "./layout";
 import type { RenderScene } from "./renderer";
 
+const widthsOf = (scene: RenderScene) =>
+  new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOnArrow)]));
 const elk = new ELK() as unknown as Elk;
+const layout = (engine: Elk, scene: RenderScene) => run(engine, scene, widthsOf(scene));
 
 async function sceneFor(project: string, actions: Action[] = []): Promise<RenderScene> {
   const source = createMockSource({ playEvents: false });
@@ -67,11 +71,12 @@ describe("ELK layout of a scene", () => {
     const scene = await sceneFor("metaform");
     const flagged: RenderScene = {
       ...scene,
-      nodes: scene.nodes.map((n) => ({ ...n, selected: true, dimmed: true, unseen: true, layers: [], agents: [] })),
+      nodes: scene.nodes.map((n) => ({ ...n, selected: true, dimmed: true, unseen: true, agents: [] })),
       edges: scene.edges.map((e) => ({ ...e, dimmed: true })),
     };
-    expect(layoutKey(flagged)).toBe(layoutKey(scene));
-    expect(layoutKey({ ...scene, nodes: scene.nodes.slice(1) })).not.toBe(layoutKey(scene));
+    expect(layoutKey(flagged, widthsOf(scene))).toBe(layoutKey(scene, widthsOf(scene)));
+    const fewer = { ...scene, nodes: scene.nodes.slice(1) };
+    expect(layoutKey(fewer, widthsOf(fewer))).not.toBe(layoutKey(scene, widthsOf(scene)));
   });
 
   it("draws the children of an expanded element inside it", async () => {
@@ -93,6 +98,29 @@ describe("ELK layout of a scene", () => {
     const project = base.nodes.filter((n) => n.band === "project" && n.parent === null);
     const top = result.boxes.get("code.store")!.y;
     expect(Math.min(...project.map((n) => result.boxes.get(n.address)!.y))).toBe(top);
+  });
+
+  it("places every node and routes every edge in every container, all expanded, of every project", async () => {
+    for (const project of ["metaform", "roundtable", "mashtrac"]) {
+      const graph = await createMockSource({ playEvents: false }).map(project);
+      const parents = new Set(graph.addresses.map((a) => a.split(".").slice(0, -1).join(".")).filter(Boolean));
+      const containers = [".", ...graph.addresses.filter((a) => parents.has(a))];
+      for (const container of containers) {
+        const actions: Action[] = container === "." ? [] : [{ type: "open", address: container, beneath: 1 }];
+        actions.push({ type: "expand-all", addresses: graph.addresses });
+        const scene = await sceneFor(project, actions);
+        const result = await layout(elk, scene);
+        for (const node of scene.nodes) expect(result.boxes.has(node.address), `${project} ${container} ${node.address}`).toBe(true);
+        for (const edge of scene.edges) expect(result.routes.has(edge.id), `${project} ${container} ${edge.id}`).toBe(true);
+        const siblings = new Map<string | null, Box[]>();
+        for (const node of scene.nodes) siblings.set(node.parent, [...(siblings.get(node.parent) ?? []), result.boxes.get(node.address)!]);
+        for (const [parent, boxes] of siblings) {
+          for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+            expect(overlaps(boxes[i]!, boxes[j]!), `${project} ${container} under ${parent}`).toBe(false);
+          }
+        }
+      }
+    }
   });
 
   it("lays out the largest one-level scene quickly enough for an interaction", async () => {

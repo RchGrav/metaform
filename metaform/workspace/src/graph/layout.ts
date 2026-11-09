@@ -59,13 +59,13 @@ export interface Layout {
   bounds: Box;
 }
 
-export const NODE_HEIGHT = 48;
-const MIN_WIDTH = 120;
-const MAX_WIDTH = 260;
-/** Estimated width of one label character at the node's font size. */
-const CHAR_WIDTH = 7.5;
-/** Room for the role mark, chevron and badges around the label. */
-const NODE_CHROME = 64;
+export const NODE_HEIGHT = 56;
+const PAD = 16;
+const MIN_WIDTH = 132;
+const MAX_WIDTH = 300;
+/** Estimated advance of one character: bold 13 px labels, regular 11 px badges. */
+const LABEL_CHAR = 7.8;
+const SMALL_CHAR = 6.4;
 /** Room above an expanded element's children for its own label. */
 export const HEADER = 36;
 const BAND_GAP = 96;
@@ -87,17 +87,23 @@ const COMPOUND_OPTIONS: Record<string, string> = {
   "elk.padding": `[top=${HEADER},left=16,bottom=16,right=16]`,
 };
 
-export function nodeWidth(label: string): number {
-  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(label.length * CHAR_WIDTH) + NODE_CHROME));
+/** Width that fits the node's two rows: label and chevron; layer marks, wants and beneath count. */
+export function nodeWidth(node: Pick<RenderNode, "label" | "beneath" | "layers" | "outside">, beneathText: (n: number) => string, outsideText: (n: number) => string): number {
+  const top = node.label.length * LABEL_CHAR + (node.beneath > 0 ? 28 : 0);
+  const marks = node.layers.reduce((sum, mark) => sum + 18 + String(mark.records).length * SMALL_CHAR, 0);
+  const right = (node.beneath > 0 ? beneathText(node.beneath).length * SMALL_CHAR : 0) +
+    (node.outside > 0 ? outsideText(node.outside).length * SMALL_CHAR + 12 : 0);
+  const bottom = marks + (marks > 0 && right > 0 ? 16 : 0) + right;
+  return Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.max(top, bottom) + 2 * PAD + 4)));
 }
 
 /**
- * What a layout depends on: node addresses, parents, labels (they set widths), edge ids and the
- * top element. Marks, dimming, selection, focus and unseen flags are left out, so a scene that
- * changes only those keeps its layout (renderer rule 1).
+ * What a layout depends on: node addresses, parents, widths, bands, edge ids and the top element.
+ * Selection, focus, dimming and unseen flags are left out, so a scene that changes only those
+ * keeps its layout (renderer rule 1). Widths are in the key because marks change them.
  */
-export function layoutKey(scene: RenderScene): string {
-  const nodes = scene.nodes.map((n) => `${n.address}|${n.parent ?? ""}|${n.label}|${n.band}`);
+export function layoutKey(scene: RenderScene, widths: ReadonlyMap<Address, number>): string {
+  const nodes = scene.nodes.map((n) => `${n.address}|${n.parent ?? ""}|${n.band}|${widths.get(n.address) ?? 0}`);
   const edges = scene.edges.map((e) => e.id).sort();
   return JSON.stringify([nodes, edges, scene.top]);
 }
@@ -114,7 +120,7 @@ function bandOf(node: RenderNode, byAddress: Map<Address, RenderNode>): Band {
 }
 
 /** Builds one ELK graph per band. Nodes keep the scene's order (sorted by address). */
-export function toElk(scene: RenderScene): Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }> {
+export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>): Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }> {
   const byAddress = new Map(scene.nodes.map((n) => [n.address, n]));
   const hasChildren = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
   const elkNodes = new Map<Address, ElkGraph>();
@@ -125,7 +131,7 @@ export function toElk(scene: RenderScene): Map<Band, { graph: ElkGraph; crossing
   for (const node of scene.nodes) {
     const elkNode: ElkGraph = hasChildren.has(node.address)
       ? { id: node.address, layoutOptions: { ...COMPOUND_OPTIONS }, children: [] }
-      : { id: node.address, width: nodeWidth(node.label), height: NODE_HEIGHT };
+      : { id: node.address, width: widths.get(node.address) ?? MIN_WIDTH, height: NODE_HEIGHT };
     if (node.address === scene.top) {
       elkNode.layoutOptions = { ...elkNode.layoutOptions, "elk.layered.layering.layerConstraint": "FIRST" };
     }
@@ -163,8 +169,8 @@ function collectBoxes(node: ElkGraph, dx: number, out: Map<Address, Box>): void 
 }
 
 /** Runs ELK for each non-empty band and places the bands side by side. */
-export async function layout(elk: Elk, scene: RenderScene): Promise<Layout> {
-  const key = layoutKey(scene);
+export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<Address, number>): Promise<Layout> {
+  const key = layoutKey(scene, widths);
   const boxes = new Map<Address, Box>();
   const routes = new Map<string, Point[]>();
   const separators: Layout["separators"] = [];
@@ -172,7 +178,7 @@ export async function layout(elk: Elk, scene: RenderScene): Promise<Layout> {
   let x = 0;
   let height = 0;
   let previous: Band | null = null;
-  for (const [band, { graph, crossing: across }] of toElk(scene)) {
+  for (const [band, { graph, crossing: across }] of toElk(scene, widths)) {
     crossing.push(...across);
     if ((graph.children ?? []).length === 0) continue;
     const result = await elk.layout(graph);

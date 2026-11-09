@@ -3,7 +3,7 @@
 
 import type { Address } from "../source/types";
 import { graph as text } from "../strings";
-import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, type Point } from "./layout";
+import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
   type GraphRenderer,
   MAX_ANIMATION_MS,
@@ -55,16 +55,50 @@ function accessibleName(node: RenderNode): string {
   return parts.join(", ");
 }
 
+/** Corner radius of a routed edge's bends. */
+const CORNER = 8;
+
+/**
+ * The SVG path for a route. ELK routes edges orthogonally, so a route with bend points is drawn
+ * as straight segments with rounded corners. A two-point route between bands is an S-curve.
+ */
 function pathFor(points: Point[]): string {
-  const [first, ...rest] = points;
-  if (!first) return "";
-  if (points.length === 2 && rest[0]) {
-    // A want between bands: a horizontal S-curve.
-    const end = rest[0];
-    const mid = (first.x + end.x) / 2;
-    return `M${first.x},${first.y} C${mid},${first.y} ${mid},${end.y} ${end.x},${end.y}`;
+  const [first, second] = points;
+  if (!first || !second) return "";
+  if (points.length === 2) {
+    if (first.x === second.x || first.y === second.y) return `M${first.x},${first.y} L${second.x},${second.y}`;
+    if (Math.abs(second.x - first.x) > Math.abs(second.y - first.y)) {
+      const mid = (first.x + second.x) / 2;
+      return `M${first.x},${first.y} C${mid},${first.y} ${mid},${second.y} ${second.x},${second.y}`;
+    }
+    const mid = (first.y + second.y) / 2;
+    return `M${first.x},${first.y} C${first.x},${mid} ${second.x},${mid} ${second.x},${second.y}`;
   }
-  return `M${first.x},${first.y} ${rest.map((p) => `L${p.x},${p.y}`).join(" ")}`;
+  let d = `M${first.x},${first.y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]!;
+    const at = points[i]!;
+    const next = points[i + 1]!;
+    const into = Math.hypot(at.x - prev.x, at.y - prev.y);
+    const out = Math.hypot(next.x - at.x, next.y - at.y);
+    const r = Math.min(CORNER, into / 2, out / 2);
+    const a = { x: at.x - ((at.x - prev.x) / (into || 1)) * r, y: at.y - ((at.y - prev.y) / (into || 1)) * r };
+    const b = { x: at.x + ((next.x - at.x) / (out || 1)) * r, y: at.y + ((next.y - at.y) / (out || 1)) * r };
+    d += ` L${a.x},${a.y} Q${at.x},${at.y} ${b.x},${b.y}`;
+  }
+  const last = points[points.length - 1]!;
+  return `${d} L${last.x},${last.y}`;
+}
+
+/** The route moved sideways by `d`, to the right of its direction of travel. */
+function offset(points: Point[], d: number): Point[] {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return points;
+  const length = Math.hypot(last.x - first.x, last.y - first.y) || 1;
+  const nx = (-(last.y - first.y) / length) * d;
+  const ny = ((last.x - first.x) / length) * d;
+  return points.map((p) => ({ x: p.x + nx, y: p.y + ny }));
 }
 
 function midpoint(points: Point[]): Point {
@@ -88,6 +122,7 @@ export class ElkRenderer implements GraphRenderer {
   private readonly cleanup: (() => void)[] = [];
 
   constructor(private readonly elk: () => Elk) {}
+
 
   mount(host: HTMLElement, events: RendererEvents): void {
     this.host = host;
@@ -121,16 +156,16 @@ export class ElkRenderer implements GraphRenderer {
 
   render(scene: RenderScene): Promise<void> {
     const generation = ++this.generation;
-    const key = layoutKey(scene);
-    if (this.current?.key === key) {
-      // Only marks or flags changed: redraw in place, never lay out again (rule 1).
+    const widths = new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOnArrow)]));
+    if (this.current?.key === layoutKey(scene, widths)) {
+      // Only flags changed: redraw in place, never lay out again (rule 1).
       const known = this.current;
       this.scene = scene;
       this.draw(scene, known, null);
       return this.pending;
     }
     const previous = this.current;
-    this.pending = layout(this.elk(), scene).then((next) => {
+    this.pending = layout(this.elk(), scene, widths).then((next) => {
       if (generation !== this.generation || !this.canvas) return; // superseded
       this.current = next;
       this.scene = scene;
@@ -149,7 +184,9 @@ export class ElkRenderer implements GraphRenderer {
     const bounds = this.current?.bounds;
     const size = this.host?.getBoundingClientRect();
     if (!bounds || !size || bounds.width === 0 || bounds.height === 0) return { ...this.viewport };
+    // Fit frames the graph but never magnifies past 100%: a small graph stays at reading size.
     const zoom = clampZoom(Math.min(
+      1,
       (size.width - 2 * FIT_MARGIN) / bounds.width,
       (size.height - 2 * FIT_MARGIN) / bounds.height,
     ));
@@ -180,7 +217,8 @@ export class ElkRenderer implements GraphRenderer {
         this.events?.viewportChange({ ...this.viewport });
       }
     }
-    node.focus({ preventScroll: true });
+    // Every current browser has SVGElement.focus; an engine without it must not crash the app.
+    if (typeof node.focus === "function") node.focus({ preventScroll: true });
   }
 
   // Drawing ------------------------------------------------------------------------------------
@@ -219,12 +257,17 @@ export class ElkRenderer implements GraphRenderer {
         });
       }
     }
+    const ids = new Set(scene.edges.map((e) => e.id));
     for (const edge of scene.edges) {
       const route = next.routes.get(edge.id);
-      if (route) this.drawEdge(edge, route, edges, animate);
+      if (!route) continue;
+      // Two wants in opposite directions would share one line: move each 4 px to its own side.
+      const paired = ids.has(`${edge.to}->${edge.from}`);
+      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate);
     }
     if (focused) {
-      this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+      const again = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`);
+      if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
     }
   }
 
@@ -247,55 +290,59 @@ export class ElkRenderer implements GraphRenderer {
     el("rect", { class: "mf-box", width: box.width, height: box.height, rx: 6 }, g);
     if (node.definitive) el("rect", { class: "mf-definitive-ring", x: 3, y: 3, width: box.width - 6, height: box.height - 6, rx: 4 }, g);
     el("rect", { class: "mf-role-bar", width: 4, height: container ? HEADER : box.height, rx: 2 }, g);
-    const labelY = container ? HEADER / 2 + 5 : box.height / 2 + 5;
-    const label = el("text", { class: "mf-label", x: 14, y: labelY }, g);
+    // Row 1: the label, and the chevron at the right. Row 2: layer marks at the left; the wants
+    // that leave the container and the count beneath at the right (nodeWidth sizes both rows).
+    const row1 = container ? HEADER / 2 + 5 : 23;
+    const row2 = container ? HEADER / 2 + 5 : 43;
+    const label = el("text", { class: "mf-label", x: 16, y: row1 }, g);
     label.textContent = node.label;
-    let right = box.width - 10;
+    let right = box.width - 16;
     if (node.beneath > 0) {
       const chevron = el("g", {
         class: "mf-chevron", role: "button", tabindex: -1,
         "aria-label": text.beneathLabel(node.beneath, node.address),
         "aria-expanded": String(!node.collapsed),
-        transform: `translate(${right - 12},${labelY - 10})`,
+        transform: `translate(${right - 12},${row1 - 11})`,
       }, g);
-      el("rect", { width: 14, height: 14, rx: 3, class: "mf-chevron-hit" }, chevron);
-      el("path", { d: node.collapsed ? "M5,3 L10,7 L5,11" : "M3,5 L7,10 L11,5", class: "mf-chevron-mark" }, chevron);
+      el("rect", { width: 16, height: 16, rx: 3, class: "mf-chevron-hit" }, chevron);
+      el("path", { d: node.collapsed ? "M6,4 L11,8 L6,12" : "M4,6 L8,11 L12,6", class: "mf-chevron-mark" }, chevron);
       chevron.addEventListener("click", (event) => {
         event.stopPropagation();
         this.events?.chevronClick(node.address);
       });
-      right -= 20;
-      const badge = el("text", { class: "mf-beneath", x: right, y: labelY, "text-anchor": "end", "aria-hidden": "true" }, g);
-      badge.textContent = text.beneathBadge(node.beneath);
+      if (container) right -= 24;
     }
-    // Layer marks, agents, outside count and project link along the bottom edge.
-    let x = 14;
-    const markY = container ? HEADER - 6 : box.height - 9;
+    const counts: string[] = [];
+    if (node.beneath > 0) counts.push(text.beneathBadge(node.beneath));
+    if (node.outside > 0) counts.unshift(text.wantsOnArrow(node.outside));
+    if (counts.length > 0) {
+      const badge = el("text", { class: "mf-beneath", x: right + (container || node.beneath === 0 ? 0 : 4), y: row2, "text-anchor": "end", "aria-hidden": "true" }, g);
+      badge.textContent = counts.join(" · ");
+    }
+    let x = container ? 16 + node.label.length * 7.8 + 12 : 16;
     for (const mark of node.layers) {
       const shape = SHAPES[mark.style % SHAPES.length] ?? "square";
-      const m = el("g", { class: `mf-layer mf-layer-${mark.style % 8}`, transform: `translate(${x},${markY})` }, g);
+      const m = el("g", { class: `mf-layer mf-layer-${mark.style % 8}`, transform: `translate(${x},${row2 - 4})` }, g);
       el("title", {}, m).textContent = `${mark.layer}: ${mark.records}`;
-      if (shape === "circle") el("circle", { cx: 3, cy: 0, r: 3.5 }, m);
-      else if (shape === "diamond") el("path", { d: "M3,-4 L7,0 L3,4 L-1,0 z" }, m);
-      else if (shape === "triangle") el("path", { d: "M3,-4 L7,3 L-1,3 z" }, m);
+      if (shape === "circle") el("circle", { cx: 3.5, cy: 0, r: 4 }, m);
+      else if (shape === "diamond") el("path", { d: "M3.5,-4.5 L8,0 L3.5,4.5 L-1,0 z" }, m);
+      else if (shape === "triangle") el("path", { d: "M3.5,-4.5 L8,4 L-1,4 z" }, m);
       else el("rect", { x: 0, y: -3.5, width: 7, height: 7 }, m);
-      const count = el("text", { class: "mf-layer-count", x: 10, y: 3.5 }, m);
+      const count = el("text", { class: "mf-layer-count", x: 11, y: 4 }, m);
       count.textContent = String(mark.records);
-      x += 18 + String(mark.records).length * 6;
+      x += 18 + String(mark.records).length * 6.4;
     }
-    if (node.outside > 0) {
-      const out = el("text", { class: "mf-outside", x: box.width - 10, y: markY + 3.5, "text-anchor": "end" }, g);
-      out.textContent = text.wantsOnArrow(node.outside);
-    }
+    // Agents sit on the top border near the left corner: wants between bands attach at the
+    // sides, and wants within a band attach spread along the middle of the top and bottom.
     node.agents.forEach((agent, i) => {
-      const a = el("g", { class: `mf-agent${agent.active ? " mf-agent-active" : ""}`, transform: `translate(${box.width - 8 - i * 20},-6)` }, g);
+      const a = el("g", { class: `mf-agent${agent.active ? " mf-agent-active" : ""}`, transform: `translate(${22 + i * 20},0)` }, g);
       el("circle", { r: 9 }, a);
       const initials = el("text", { "text-anchor": "middle", y: 3.5 }, a);
       initials.textContent = agent.initials;
     });
-    if (node.unseen) el("circle", { class: "mf-unseen", cx: -3, cy: -3, r: 4 }, g);
+    if (node.unseen) el("circle", { class: "mf-unseen", cx: 0, cy: 0, r: 4.5 }, g);
     if (node.opensProject) {
-      const link = el("g", { class: "mf-project-link", transform: `translate(${box.width - 24},${box.height - 16})` }, g);
+      const link = el("g", { class: "mf-project-link", transform: `translate(${16 + node.label.length * 7.8 + 6},${row1 - 10})` }, g);
       el("title", {}, link).textContent = text.opensAnotherProject;
       el("path", { d: "M2,10 L10,2 M5,2 L10,2 L10,7" }, link);
     }
@@ -381,15 +428,15 @@ export class ElkRenderer implements GraphRenderer {
     };
     on("pointerup", endDrag);
     on("pointercancel", endDrag);
+    // A double-click is read from the click count, not from the dblclick event: the first click
+    // selects, the redraw replaces the node's elements, and the browser then sends no dblclick
+    // because the two clicks no longer share a target. The count survives the redraw.
     on("click", (e) => {
       const node = this.nodeAt(e.target);
       const address = node?.getAttribute("data-address");
       if (!address) return;
-      this.events?.nodeClick(address, { up: isMac() ? e.metaKey : e.ctrlKey, shift: e.shiftKey });
-    });
-    on("dblclick", (e) => {
-      const address = this.nodeAt(e.target)?.getAttribute("data-address");
-      if (address) this.events?.nodeDoubleClick(address);
+      if (e.detail === 2) this.events?.nodeDoubleClick(address);
+      else if (e.detail <= 1) this.events?.nodeClick(address, { up: isMac() ? e.metaKey : e.ctrlKey, shift: e.shiftKey });
     });
     on("keydown", (e) => {
       const address = this.nodeAt(e.target)?.getAttribute("data-address");
