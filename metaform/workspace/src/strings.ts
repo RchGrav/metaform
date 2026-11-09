@@ -201,13 +201,16 @@ export const intake = {
   opLine: (why: string) => `OP: ${why}`,
   efLine: (how: string) => `EF: ${how}`,
   // IFD is relative to the element that holds the want, never to the project, and the request
-  // is never the direction (R-3.6).
-  ifdLine: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
+  // is never the direction (R-3.6). `ifdValue` is the value alone, for a place that already
+  // shows the IFD label (the Details panel); `ifdLine` carries the label (an arrow's tooltip).
+  ifdValue: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
     direction === "outbound"
-      ? `IFD: outbound, from ${re} to ${pe}`
+      ? `outbound, from ${re} to ${pe}`
       : direction === "inbound"
-        ? `IFD: inbound, from ${pe} to ${re}`
-        : `IFD: two-way, between ${re} and ${pe}`,
+        ? `inbound, from ${pe} to ${re}`
+        : `two-way, between ${re} and ${pe}`,
+  ifdLine: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
+    `IFD: ${intake.ifdValue(direction, re, pe)}`,
 } as const;
 
 /**

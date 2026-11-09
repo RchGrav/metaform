@@ -6,7 +6,7 @@ import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
 import { buildScene, elementScene, type SceneInput } from "./state/scene";
-import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, visibleIn } from "./state/structure";
+import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
@@ -58,6 +58,10 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   }, []);
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
+  const onCanvasSize = useCallback((width: number, height: number) => {
+    setCanvasSize((size) => (size && size.width === width && size.height === height ? size : { width, height }));
+  }, []);
   /** The selected outside element's own map, when the source can read it (seam gap 4). */
   const [outsideMap, setOutsideMap] = useState<ProjectRef | null>(null);
 
@@ -135,6 +139,14 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       live = false;
     };
   }, [source, state.project, view.selection]);
+
+  // A first view of a container expands level by level to fill the canvas, before it is fitted.
+  const firstView = current !== null && !view.visited.includes(view.container);
+  useEffect(() => {
+    if (!firstView || !canvasSize || state.mode === "element") return;
+    const budget = startBudget(canvasSize.width, canvasSize.height);
+    dispatch({ type: "first-view", container: view.container, expand: startExpansion(addresses, view.container, budget) });
+  }, [firstView, canvasSize, state.mode, view.container, addresses, dispatch]);
 
   const scene = useMemo(() => {
     if (!sceneInput) return { nodes: [], edges: [], top: null };
@@ -339,6 +351,8 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             placeKey={`${state.project ?? ""}|${viewportKey}|${visibleCount > 0 ? "ready" : "empty"}`}
             open={open}
             onViewport={onViewport}
+            ready={!firstView || state.mode === "element"}
+            onSize={onCanvasSize}
             dispatch={dispatch}
           />
         )}
