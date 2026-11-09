@@ -162,6 +162,36 @@ def main():
         "technical_name": "functional map server", "name": "Metaform", "role": "Supportive",
         "uri": link("metaform", "code.server.tool")})
 
+    # A chained map (R-4.15, D-16): an element can hold its own functional map for reference.
+    # Seen from the parent map, the held map sits under `upstream` at the holder's address: the
+    # upstream project's Definitive element is upstream.code.engine.workflow, placed inside our
+    # code.engine.workflow, with the rest of its map beneath. No want links the two. The
+    # Definitive element's `uri` names the upstream repository. SIMULATED: a small reference map;
+    # the uri uses the reserved .invalid domain (RFC 2606), so it can never name a real one.
+    chained = "upstream.code.engine.workflow"
+    reference = {
+        "": ("workflow engine reference map", "workflow (mock)", "Definitive"),
+        "code.interpreter.flow": ("control flow interpreter", "Interpreter", "Supportive"),
+        "code.transport.call": ("procedure call transport", "Call transport", "Supportive"),
+        "code.store.frame": ("call frame store", "Frames", "Supportive"),
+        "code.verifier.step": ("step result verifier", "Verifier", "Notable"),
+        "code.policy.retry": ("retry policy", "Retry", "Notable"),
+        "document.procedure": ("authored procedure", "Procedures", "Supportive"),
+    }
+    for suffix, (technical, label, role) in reference.items():
+        at(metaform, f"{chained}.{suffix}" if suffix else chained).update(
+            {"technical_name": technical, "name": label, "role": role})
+    for holder, wanted, why, how, direction in [
+        ("code.interpreter.flow", "document.procedure", "(mock) Interpret the authored control flow.", "(mock) Reads each procedure's steps in order.", "inbound"),
+        ("code.interpreter.flow", "code.transport.call", "(mock) Run each step as a call.", "(mock) Sends one call per step and waits for its result.", "outbound"),
+        ("code.transport.call", "code.store.frame", "(mock) Resume interrupted calls.", "(mock) Saves and restores call frames.", "two-way"),
+        ("code.interpreter.flow", "code.verifier.step", "(mock) Accept only checked results.", "(mock) Passes each result through the verifier.", "outbound"),
+        ("code.verifier.step", "code.policy.retry", "(mock) Recover from a failed check.", "(mock) Asks the retry policy whether to run the step again.", "outbound"),
+    ]:
+        at(metaform, f"{chained}.{holder}").setdefault("wants", {})[f"{chained}.{wanted}"] = {
+            "why": why, "how": how, "direction": direction}
+    at(metaform, chained)["uri"] = "https://example.invalid/mock/workflow-engine"
+
     projects = {
         "metaform": project("metaform", metaform, [
             ("code.server.tool", "specification", spec("Project map tool", "One MCP tool, project-map, carries every map command.")),
