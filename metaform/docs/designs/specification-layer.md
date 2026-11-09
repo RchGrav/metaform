@@ -25,7 +25,7 @@ Each entry restates the decision and gives its reason. "Relayed" means the decis
 - Records are accepted only at a skeleton element: one with `technical_name`, `name` and `role`, which are R-3.4's mandatory fields. The root `.` is the exception: it accepts records once the map has a Definitive element. Elements in the `layer` scope never hold records. Refusal: `ELEMENT_NOT_IN_SKELETON`. This is how "after intake" is enforced without a done marker, which R-5.19 rules out.
 - Records the write did not change are not checked again. So a later intake correction, such as removing a role, is never refused because of records already stored.
 - `goto` lists every defined layer whose records are allowed at the address, with its record count, even when the count is 0. The sheet's `instructions` part carries each listed layer's guidance. The server delivers each entry once per connection, not once per address.
-- A read names each layer in the slot where it is written, with `{}` as its value: `{"<address>": {"specification": {}, "wants": {}}}`. A defined layer with no records reads as `[]` where records are allowed. At `.`, a read that names layers returns the root's own fields and those layers, not the index.
+- A read names each layer in the slot where it is written, with `{}` as its value: `{"<address>": {"specification": {}, "wants": {}}}`. A defined layer with no records reads as `[]` where records are allowed. The root's own blocks appear in the raw dump, `{".": {}}` (R-5.34).
 
 ### The `markdown_blocks` format
 

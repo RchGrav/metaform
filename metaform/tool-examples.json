@@ -98,7 +98,7 @@
         "uri": "./src/widgets/mashbox.c"
       },
       "wants": {},
-      "relied_on_by": {
+      "wanted_by": {
         "code.protocol.network.tracker.cs": {
           "why": "Receive the mash data to relay it.",
           "how": "Prepared mash data packets.",

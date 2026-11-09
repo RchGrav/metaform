@@ -230,7 +230,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"code.nowhere": {}}),
             Code::NotFound,
-            Some(json!({".": {}})),
+            Some(json!({"map": {}})),
         ),
     ];
     for (command, code, remediation) in table {
@@ -249,7 +249,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         );
     }
     assert_eq!(map, seeded(), "the input map is never changed");
-    let index = read(&contract, &map, json!({".": {}}));
+    let index = read(&contract, &map, json!({"map": {}}));
     assert!(
         !index["addresses"]
             .as_array()
@@ -260,9 +260,10 @@ fn refusals_name_the_rule_and_change_nothing() {
 }
 
 /// The form does the work: one write creates every path it needs, add grows, a read returns only
-/// the element's own fields, and the root read is the connected index.
+/// the element's own fields in the entry form, `map` is the shallow graph, and a key that starts
+/// with a period dumps the stored nested form.
 #[test]
-fn writes_create_paths_and_the_root_read_is_the_index() {
+fn writes_create_paths_and_reads_return_each_form() {
     let contract = Contract::bundled().unwrap();
     let want =
         json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
@@ -292,7 +293,7 @@ fn writes_create_paths_and_the_root_read_is_the_index() {
         json!({"code.new.part": {"name": "renamed"}})
     );
 
-    let index = read(&contract, &map, json!({".": {}}));
+    let index = read(&contract, &map, json!({"map": {}}));
     assert_eq!(
         index["addresses"],
         json!([
@@ -313,13 +314,34 @@ fn writes_create_paths_and_the_root_read_is_the_index() {
         ])
     );
     assert_eq!(index["definitive"], Value::Null);
+    assert!(
+        index.get("code.new.part").is_none() && !index.to_string().contains("renamed"),
+        "map is the shallow graph: no fields"
+    );
+
+    // A key that starts with a period dumps the stored nested form at that path (R-5.31); the
+    // same address without the period answers in the entry form (R-5.10).
+    let whole = read(&contract, &map, json!({".": {}}));
+    assert_eq!(whole["."]["code"]["new"]["part"]["name"], "renamed");
+    assert_eq!(
+        whole["."]["code"]["new"]["part"]["wants"]["code.other.part"],
+        want
+    );
+    let part = read(&contract, &map, json!({".code.new": {}}));
+    assert_eq!(part[".code.new"]["part"], whole["."]["code"]["new"]["part"]);
+    let entry = read(&contract, &map, json!({"code.new.part": {}}));
+    assert_eq!(entry["code.new.part"]["name"], "renamed");
+    assert!(entry["code.new.part"].get("wants").is_none());
+    let missing = refused(&contract, &map, &json!({".code.nowhere": {}}));
+    assert_eq!(missing.code, Code::NotFound);
+    assert_eq!(missing.remediation.as_deref(), Some(&json!({"map": {}})));
     map = write(
         &contract,
         &map,
         json!({"update": {"code.new.part": {"role": "DE"}}}),
     );
     assert_eq!(
-        read(&contract, &map, json!({".": {}}))["definitive"],
+        read(&contract, &map, json!({"map": {}}))["definitive"],
         "code.new.part"
     );
 

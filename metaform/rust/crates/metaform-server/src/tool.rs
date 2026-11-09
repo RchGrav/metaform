@@ -145,7 +145,7 @@ impl ServerHandler for MapTool {
         Ok(ListToolsResult::with_all_items(vec![self.tool.clone()]))
     }
 
-    /// One resource: this connection's map. Reading it gives the root read, `{".": {}}`.
+    /// One resource: this connection's map. Reading it gives the shallow graph, `{"map": {}}`.
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
@@ -174,7 +174,7 @@ impl ServerHandler for MapTool {
         }
         let (store, map, client) = (Arc::clone(&self.store), self.map.clone(), self.client);
         let root = tokio::task::spawn_blocking(move || {
-            store.execute(client, &map, &serde_json::json!({".": {}}))
+            store.execute(client, &map, &serde_json::json!({"map": {}}))
         })
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?

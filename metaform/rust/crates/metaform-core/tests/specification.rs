@@ -296,12 +296,12 @@ fn the_layer_is_readable_and_listed_by_goto() {
     )
     .unwrap();
     assert_eq!(read[MASHER]["specification"], sent);
-    let (_, root) = run(&contract, &map, json!({".": {"specification": {}}})).unwrap();
+    let (_, dump) = run(&contract, &map, json!({".": {}})).unwrap();
     assert_eq!(
-        root["."]["specification"],
-        json!([]),
-        "the root reads its own blocks, not the index"
+        dump["."]["code"]["masher"]["widget"]["specification"], sent,
+        "the raw dump holds each element's blocks in the nested form"
     );
+    assert!(dump["."]["layer"]["document"]["specification"]["instruction"].is_string());
 
     let (_, sheet) = run(&contract, &map, json!({"goto": MASHER})).unwrap();
     assert_eq!(sheet["layers"]["specification"], json!({"records": 1}));

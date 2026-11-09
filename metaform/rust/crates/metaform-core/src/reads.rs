@@ -19,26 +19,18 @@ pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
     })
 }
 
-/// `{"<address>": {}}` returns that element's own fields, keyed by its address.
-/// `{"<address>": {"<layer>": {}, ...}}` adds each named layer held there (R-5.21). A layer is
-/// named in the slot where it is written: `{"wants": {}}`, `{"specification": {}}`. A named layer
-/// the element does not hold comes back empty when it is a layer that applies there, and is left
-/// out otherwise. At the root, a read that names layers returns the root's own fields and those
-/// layers instead of the index.
+/// `{"<address>": {}}` returns that element's own fields, keyed by its address: the form in which
+/// data is entered (R-5.10). `{"<address>": {"<layer>": {}, ...}}` adds each named layer held
+/// there (R-5.21). A layer is named in the slot where it is written: `{"wants": {}}`,
+/// `{"specification": {}}`. A named layer the element does not hold comes back empty when it is a
+/// layer that applies there, and is left out otherwise.
 pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refusal> {
     let named: Vec<&str> = body
         .as_object()
         .map(|names| names.keys().map(String::as_str).collect())
         .unwrap_or_default();
-    if address == ROOT && named.is_empty() {
-        return Ok(index(map));
-    }
     let Some(element) = map.element(address) else {
-        return Err(Refusal::new(
-            Code::NotFound,
-            format!("'{address}' does not exist"),
-            Some(json!({".": {}})),
-        ));
+        return Err(not_found(address));
     };
     let mut fields = element.base_fields();
     for name in named {
@@ -58,9 +50,38 @@ pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refu
     )])))
 }
 
-/// `{".": {}}` returns the connected index: every address beneath the root, each want as an edge
-/// from the element that holds it to the element it names, and the one Definitive element.
-fn index(map: &Map) -> Value {
+/// A refusal for an address that holds no element. `map` lists the addresses that exist.
+fn not_found(address: &str) -> Refusal {
+    Refusal::new(
+        Code::NotFound,
+        format!("'{address}' does not exist"),
+        Some(json!({"map": {}})),
+    )
+}
+
+/// `{".<path>": {}}` is a raw dump (R-5.34): the stored nested JSON at that path, which is the
+/// JSON path `$.<project><path>` with `$.<project>` left off. `{".": {}}` dumps the whole project;
+/// `{".code.server": {}}` dumps that element and everything beneath it. Names are in the agent's
+/// form (R-4.11). The result is keyed by the path that was asked for. Every layer is included,
+/// memory too.
+pub(crate) fn raw(map: &Map, path: &str) -> Result<Value, Refusal> {
+    let mut value = map.to_tree();
+    if path != ROOT {
+        for segment in path[1..].split('.') {
+            value = match value {
+                Value::Object(mut object) => object.remove(segment),
+                _ => None,
+            }
+            .ok_or_else(|| not_found(&path[1..]))?;
+        }
+    }
+    Ok(Value::Object(JsonMap::from_iter([(path.to_string(), value)])))
+}
+
+/// `{"map": {}}` returns the shallow graph (R-5.11): every address beneath the root, each want as
+/// an edge from the element that holds it to the element it names, and the one Definitive
+/// element. No fields and no layers.
+pub(crate) fn shallow(map: &Map) -> Value {
     let addresses: Vec<&str> = map
         .elements()
         .map(|(address, _)| address)
@@ -106,20 +127,16 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 const OWN_PARTS: [&str; 2] = ["memory", "skills"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
-/// own fields and wants, every element that relies on it with that element's want, each layer
+/// own fields and wants, every element that wants it (`wanted_by`) with that element's want, each layer
 /// held there with its record count, the frontmatter of the skills that apply there (its own
 /// and the root's, which apply to the whole project), and its memory count. Counts, not records.
 /// Anything keyed by a unique name is a dictionary. Delivering it once per context is the
 /// server's job, because it knows the connection.
 pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let Some(element) = map.element(address) else {
-        return Err(Refusal::new(
-            Code::NotFound,
-            format!("'{address}' does not exist"),
-            Some(json!({".": {}})),
-        ));
+        return Err(not_found(address));
     };
-    let relied_on_by: JsonMap<String, Value> = map
+    let wanted_by: JsonMap<String, Value> = map
         .elements()
         .filter_map(|(holder, other)| {
             (holder != address)
@@ -185,7 +202,7 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         "at": address,
         "element": element.base_fields(),
         "wants": element.wants_json(),
-        "relied_on_by": relied_on_by,
+        "wanted_by": wanted_by,
         "layers": layers,
         "skills": skills,
         "memory": {"records": memory},

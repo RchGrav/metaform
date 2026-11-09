@@ -2,11 +2,11 @@
   "tools": [
     {
       "name": "project-map",
-      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations. Tool name is provisional.",
+      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations. Tool name is provisional.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "description": "One operation on one receiving address, an orphan query, a goto, or an addressed read. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace. Validate this input before any mutation.",
+        "description": "One operation on one receiving address, an orphan query, a goto, the map, a raw dump, or an addressed read. A key without a period is a command; a key with a period reads. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace. Validate this input before any mutation.",
         "oneOf": [
           {
             "type": "object",
@@ -103,14 +103,40 @@
           },
           {
             "type": "object",
+            "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and the one Definitive element. No fields and no layers (metaform/SPEC.md R-5.11).",
+            "properties": {
+              "map": {
+                "$ref": "#/$defs/Empty"
+              }
+            },
+            "required": [
+              "map"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "A key that starts with a period is a raw dump: the stored nested JSON at that path, which is the JSON path $.<project> with $.<project> left off. \".\" dumps the whole project; \".code.server\" dumps that element and everything beneath it. Every layer is included (metaform/SPEC.md R-5.34).",
             "minProperties": 1,
             "maxProperties": 1,
             "propertyNames": {
-              "pattern": "^(?:\\.|(?!(?:add|update|delete|orphaned|goto)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)$"
+              "pattern": "^\\.(?:[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)?$"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/Empty"
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 1,
+            "propertyNames": {
+              "pattern": "^(?!(?:add|update|delete|orphaned|goto|map)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$"
             },
             "additionalProperties": {
               "$ref": "#/$defs/LayerRead"
-            }
+            },
+            "description": "An addressed read: the element's own fields, plus each layer named with {} as its value (metaform/SPEC.md R-5.10, R-6.27)."
           }
         ],
         "$defs": {

@@ -50,6 +50,7 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
     let (verb, body) = only(command);
     match verb {
         "orphaned" => Ok(Outcome::Read(reads::orphaned(map))),
+        "map" => Ok(Outcome::Read(reads::shallow(map))),
         "goto" => {
             let address = body.as_str().expect("the input schema allows a string");
             reads::goto(map, address).map(Outcome::Read)
@@ -76,6 +77,7 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
                 result: Value::Object(result),
             }))
         }
+        path if path.starts_with('.') => reads::raw(map, path).map(Outcome::Read),
         address => reads::read(map, address, body).map(Outcome::Read),
     }
 }
