@@ -3,6 +3,7 @@
 
 import type { Address } from "../source/types";
 import { graph as text, intake, layers as layerText } from "../strings";
+import { Camera } from "./camera";
 import { Flow } from "./flow";
 import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
@@ -117,7 +118,10 @@ export class ElkRenderer implements GraphRenderer {
   private events: RendererEvents | null = null;
   private svg: SVGSVGElement | null = null;
   private canvas: SVGGElement | null = null;
+  /** The viewport last asked for: the target of a running camera move, or where it rests. */
   private viewport: Viewport = { x: 0, y: 0, zoom: 1 };
+  /** What is on screen now; moves ease from here (camera.ts). */
+  private readonly camera = new Camera((shown) => this.paintViewport(shown));
   private current: Layout | null = null;
   private scene: RenderScene | null = null;
   private pending: Promise<void> = Promise.resolve();
@@ -146,7 +150,7 @@ export class ElkRenderer implements GraphRenderer {
     this.canvas = el("g", { class: "mf-canvas" }, svg);
     host.appendChild(svg);
     this.svg = svg;
-    this.applyViewport(false);
+    this.camera.moveTo(this.viewport, false);
     this.listen();
   }
 
@@ -155,6 +159,7 @@ export class ElkRenderer implements GraphRenderer {
     this.flow.clear();
     for (const off of this.cleanup.splice(0)) off();
     clearTimeout(this.settleTimer);
+    this.camera.stop();
     this.svg?.remove();
     this.svg = this.canvas = this.host = null;
     this.events = null;
@@ -183,7 +188,7 @@ export class ElkRenderer implements GraphRenderer {
 
   setViewport(viewport: Viewport, animate: boolean): void {
     this.viewport = { ...viewport, zoom: clampZoom(viewport.zoom) };
-    this.applyViewport(animate);
+    this.camera.moveTo(this.viewport, animate);
   }
 
   async fit(animate: boolean): Promise<Viewport> {
@@ -394,11 +399,11 @@ export class ElkRenderer implements GraphRenderer {
 
   // Viewport and input ------------------------------------------------------------------------
 
-  private applyViewport(animate: boolean): void {
+  /** Paints one camera frame. No CSS transition: the camera does the easing (camera.ts). */
+  private paintViewport(shown: Viewport): void {
     if (!this.canvas) return;
-    const { x, y, zoom } = this.viewport;
-    this.canvas.style.transition = animate && !reducedMotion() ? `transform ${MAX_ANIMATION_MS}ms ease-out` : "";
-    this.canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    this.canvas.style.transition = "";
+    this.canvas.style.transform = `translate(${shown.x}px, ${shown.y}px) scale(${shown.zoom})`;
   }
 
   private settled(): void {
@@ -422,7 +427,8 @@ export class ElkRenderer implements GraphRenderer {
       const rect = svg.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
-      const { x, y, zoom } = this.viewport;
+      // From what is on screen now, so a turn during a camera move continues it, not its target.
+      const { x, y, zoom } = this.camera.current;
       const next = clampZoom(zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
       this.setViewport({ x: px - ((px - x) * next) / zoom, y: py - ((py - y) * next) / zoom, zoom: next }, false);
       this.settled();
@@ -441,7 +447,8 @@ export class ElkRenderer implements GraphRenderer {
       drag.moved = true;
       drag.x = e.clientX;
       drag.y = e.clientY;
-      this.setViewport({ ...this.viewport, x: this.viewport.x + dx, y: this.viewport.y + dy }, false);
+      const shown = this.camera.current;
+      this.setViewport({ ...shown, x: shown.x + dx, y: shown.y + dy }, false);
       svg.classList.add("mf-panning");
     });
     const endDrag = (e: PointerEvent) => {
