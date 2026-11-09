@@ -130,13 +130,14 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 }
 
 /// Fields that are not layers in the summary sheet: `memory` has its own count, and `skills`
-/// reach an agent with its ticket, not through `goto` (R-5.30, R-5.31).
+/// deliver their frontmatter.
 const OWN_PARTS: [&str; 2] = ["memory", "skills"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
 /// own fields and wants, every element that wants it (`wanted_by`) with that element's want, each layer
-/// held there with its record count, and its memory count. Counts, not records. Skills are not
-/// part of the sheet: a functionality's skill reaches an agent with its ticket (R-5.31).
+/// held there with its record count, the frontmatter of the skills at the address (only when it
+/// has some), and its memory count. Counts, not records. The root's skills are the base skills an
+/// agent learns when it joins the server, so `goto` does not repeat them (R-5.30).
 /// Anything keyed by a unique name is a dictionary. Delivering it once per context is the
 /// server's job, because it knows the connection.
 pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
@@ -175,6 +176,28 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
             .entry(definition.layer.clone())
             .or_insert_with(|| json!({"records": 0}));
     }
+    let mut skills = JsonMap::new();
+    for skill in element
+        .fields
+        .get("skills")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let front = skill.get("frontmatter").unwrap_or(skill);
+        if let Some(name) = front.get("name").and_then(Value::as_str) {
+            let mut entry = JsonMap::new();
+            for key in ["name", "description"] {
+                if let Some(value) = front.get(key) {
+                    entry.insert(key.to_string(), value.clone());
+                }
+            }
+            if let Some(uri) = skill.get("uri") {
+                entry.insert("uri".to_string(), uri.clone());
+            }
+            skills.insert(name.to_string(), Value::Object(entry));
+        }
+    }
     let memory = element
         .fields
         .get("memory")
@@ -188,6 +211,9 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         "layers": layers,
         "memory": {"records": memory},
     });
+    if !skills.is_empty() {
+        sheet["skills"] = Value::Object(skills);
+    }
     // How to write the layers listed here. The server delivers this part once per context, not
     // once per address (R-6.27), so each entry says where to read it again (R-5.30).
     if !defined.is_empty() {
