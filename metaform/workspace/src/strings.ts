@@ -59,7 +59,6 @@ export const graph = {
   wantsOnArrow: (n: number) => count(n, "want"),
   upstreamBand: "upstream",
   downstreamBand: "downstream",
-  opensAnotherProject: "Opens another project",
   containerGone: (gone: string, shown: string) => `${gone} no longer exists. Showing ${shown}.`,
   // A node's accessible name: label, role, and the elements beneath it. Empty parts are left out.
   nodeName: (label: string, role: string | null, beneath: number) =>
@@ -116,7 +115,8 @@ export const activity = {
 export const offView = {
   // Climb step 6b (UX section 12a): elements with new activity that lie outside the view.
   chip: (n: number, arrow: string) => `${n} new ${arrow}`,
-  label: (n: number) => `${n === 1 ? "1 element" : `${n} elements`} with new activity outside the view. Show them.`,
+  label: (n: number) =>
+    `${count(n, "element")} with new activity outside the view. Show ${n === 1 ? "it" : "them"}.`,
 } as const;
 
 export const presence = {
