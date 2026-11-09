@@ -279,23 +279,6 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     const defined = map.recordsAllowed(at) ? map.definitions() : [];
     for (const definition of defined) layers[definition.layer] ??= { records: 0 };
 
-    const skills: SummarySheet["skills"] = {};
-    const root = map.elements.get("");
-    for (const holder of [root, element]) {
-      const list = holder?.fields["skills"];
-      if (!Array.isArray(list)) continue;
-      for (const skill of list) {
-        if (!isObject(skill)) continue;
-        const front = isObject(skill["frontmatter"]) ? skill["frontmatter"] : skill;
-        const name = front["name"];
-        if (typeof name !== "string") continue;
-        const entry: SummarySheet["skills"][string] = { name };
-        if (typeof front["description"] === "string") entry.description = front["description"];
-        if (typeof skill["uri"] === "string") entry.uri = skill["uri"];
-        skills[name] = entry;
-      }
-    }
-
     const memory = element.fields["memory"];
     const sheet: SummarySheet = {
       at,
@@ -303,7 +286,6 @@ export class MockSource implements GraphSource, WorkspaceEvents {
       wants: structuredClone(element.wants),
       wanted_by: wantedBy,
       layers,
-      skills,
       memory: { records: Array.isArray(memory) ? memory.length : 0 },
     };
 
