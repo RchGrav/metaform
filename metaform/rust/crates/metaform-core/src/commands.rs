@@ -12,7 +12,7 @@ use serde_json::{Map as JsonMap, Value, json};
 use crate::contract::Contract;
 use crate::model::{Effect, Element, Map, flatten, is_want_updates};
 use crate::names::{self, ROOT};
-use crate::reads::{self, is_definitive};
+use crate::reads::{self, is_project_definitive};
 use crate::refusal::{Code, Refusal};
 use crate::specification;
 
@@ -466,12 +466,14 @@ impl Work<'_> {
         }
     }
 
-    /// A map has one Definitive element (R-3.13). A write that would make a second is refused.
+    /// A project has one Definitive element (R-3.13). A write that would make a second is refused.
+    /// Elements under a root prefix do not count, because those prefixes are outside the project
+    /// (R-3.3, R-3.7).
     fn check_definitive(&self) -> Result<(), Refusal> {
         let definitive: Vec<&String> = self
             .elements
             .iter()
-            .filter(|(_, element)| is_definitive(element.fields.get("role")))
+            .filter(|(address, element)| is_project_definitive(address, element.fields.get("role")))
             .map(|(address, _)| address)
             .collect();
         if definitive.len() < 2 {
