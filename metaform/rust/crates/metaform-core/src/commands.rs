@@ -421,7 +421,7 @@ impl Work<'_> {
             return Err(Refusal::new(
                 Code::LayerNotRegistered,
                 format!(
-                    "'{address}': {name} is not a layer; a list is written only to a layer defined beneath layer, or to skills, memory or sources"
+                    "'{name}' at '{address}' is not a layer. A list can be written only to a layer defined beneath the layer root, such as layer.document.specification, or to skills, memory or sources."
                 ),
                 Some(json!({"map": {}})),
             ));
