@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/metaform-core", "crates/metaform-store", "crates/metaform-server"]
+members = ["crates/metaform-core", "crates/metaform-store", "crates/metaform-server", "crates/metaform-web"]
 
 [workspace.package]
 edition = "2024"
