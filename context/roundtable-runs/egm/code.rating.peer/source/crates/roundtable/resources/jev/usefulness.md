@@ -1,0 +1,1 @@
+Does the new message move the discussion forward and help answer the question?

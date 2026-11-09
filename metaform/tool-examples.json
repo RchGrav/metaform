@@ -1,0 +1,118 @@
+{
+  "description": "Contract examples from the owner discussion and docs/mcp-query-source.md. These are not engine test results. Apply reads at the stated stage; the add is a separate example, not a replay against the already populated initial state.",
+  "requests": [
+    {
+      "add": {
+        "code.protocol.network.tracker.cs": {
+          "wants": {
+            "code.masher.widget": {
+              "why": "Receive the mash data to relay it.",
+              "how": "Prepared mash data packets.",
+              "intent": "receive"
+            }
+          }
+        }
+      }
+    },
+    {
+      "delete": {
+        "code.masher.widget": {}
+      }
+    },
+    {
+      "delete": {
+        "code.protocol.network.tracker.cs": {
+          "wants": [
+            "code.masher.widget"
+          ]
+        }
+      }
+    },
+    {
+      "orphaned": {}
+    },
+    {
+      "update": {
+        "code.masher.widget": {
+          "role": null
+        }
+      }
+    },
+    {
+      "code.masher.widget": {}
+    },
+    {
+      "delete": {
+        "code.masher.widget": {}
+      }
+    }
+  ],
+  "referenced_delete_error": {
+    "delete": {
+      "code.masher.widget": {}
+    },
+    "status": "error",
+    "message": "cannot delete, 'code.masher.widget', must be orphaned first",
+    "remediation": {
+      "delete": {
+        "code.protocol.network.tracker.cs": {
+          "wants": [
+            "code.masher.widget"
+          ]
+        }
+      }
+    }
+  },
+  "orphan_result_example": {
+    "code.masher.widget": {
+      "technical_name": "widget masher code",
+      "name": "mashbox",
+      "role": "Supportive",
+      "uri": "./src/widgets/mashbox.c"
+    },
+    "code.protocol.network.tracker.cs": {
+      "technical_name": "cs tracker network protocol",
+      "name": "mashtrac",
+      "role": "Definitive",
+      "uri": "./src/network/mashtrac.c"
+    }
+  },
+  "read_after_role_removal": {
+    "code.masher.widget": {
+      "technical_name": "widget masher code",
+      "name": "mashbox",
+      "uri": "./src/widgets/mashbox.c"
+    }
+  },
+  "goto_example": {
+    "description": "goto against the populated initial state (R-5.30). The first arrival in a context returns the whole summary sheet; a later goto to the same address in the same context, with nothing changed, returns only the address. Layers, skills and memory are empty until those parts exist.",
+    "request": {
+      "goto": "code.masher.widget"
+    },
+    "first_result": {
+      "at": "code.masher.widget",
+      "element": {
+        "technical_name": "widget masher code",
+        "name": "mashbox",
+        "role": "Supportive",
+        "uri": "./src/widgets/mashbox.c"
+      },
+      "wants": {},
+      "relied_on_by": {
+        "code.protocol.network.tracker.cs": {
+          "why": "Receive the mash data to relay it.",
+          "how": "Prepared mash data packets.",
+          "intent": "receive"
+        }
+      },
+      "layers": {},
+      "skills": {},
+      "memory": {
+        "records": 0
+      }
+    },
+    "repeat_result": {
+      "at": "code.masher.widget"
+    }
+  }
+}

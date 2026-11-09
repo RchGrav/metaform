@@ -1,0 +1,1 @@
+Your message was not shared: it is {{length}} characters, over the limit of {{limit}} characters.

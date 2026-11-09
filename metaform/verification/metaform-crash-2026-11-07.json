@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-07",
+  "environment": "Founder's WSL2 machine, Linux 6.18, ext4 scratch folder",
+  "engine": "lbug 0.22.3 through metaform-store, metaform release binary at e0dbda3",
+  "program": "experiments/metaform-crash/crash.py, 20 rounds, 6 writers",
+  "results": {
+    "sigkills": 25,
+    "attempted_writes": 1087,
+    "acknowledged_writes": 972,
+    "acknowledged_lost": 0,
+    "half_visible_writes": 0,
+    "note": "Some writes that were not acknowledged are present: the server committed and was killed before replying. That is allowed; a write is promised only once it is acknowledged."
+  },
+  "not_proven": ["power loss (fsync honesty of the disk)", "non-Linux platforms", "the 9p file system under /mnt on WSL"]
+}

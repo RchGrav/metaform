@@ -1,0 +1,15 @@
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+artifacts/
+verification/latest-schema-check-results.json
+experiments/map-viewer/snap/
+metaform/verification/latest-schema-check-results.json

@@ -1,0 +1,1 @@
+Your private scorecard was received.

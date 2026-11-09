@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- intake's prompts, MCP-031. What is between an element's tags is what is served. An empty element inside a prompt
+     marks where the code fills in what it names. -->
+<prompts>
+<!-- intake's line in the compact instructions every agent reads at connect, MCP-029 as amended 2026-10-10: when the
+     agent needs intake, and where to go then; the instructions themselves are read there, on demand. -->
+<connect>When you are assigned an intake: intake.</connect>
+<!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
+     unfinished after it, MCP-009. -->
+<instructions>intake is active.
+When assigned an intake, follow the procedure at resource metaform://intake/procedure, or the intake tool's
+prompt command; the forms it records are at resource metaform://intake/schema.</instructions>
+<!-- The onboarding, MCP-009: added to the instructions while the folder has no intake, registered or not, since the
+     instructions are sent once at connect and are the only place a first run learns what to do. Approved text, used as
+     written. <register/> is filled with register_step while the folder is not registered yet, and is empty once it
+     is. -->
+<no_intake>FIRST RUN. Metaform has not analysed this project yet. Handle this first,
+even if the person asked for something else; tell them you'll get to their
+request right after.
+
+1. Ask the person once, in your own words:
+   "This is the first time Metaform is running in this project. I'd like to
+   do a quick analysis so I understand how it fits together. You can watch
+   it build live in a browser view on this machine. Want me to start?"
+2. If they say no, drop it and help with what they asked.
+3. If they say yes, do all of this in order without asking again:
+<register/>   b. Start the browser view: web tool, command start. Give them the
+      address. If it fails, tell them what it said and stop.
+   c. Read the procedure (intake tool, command prompt) and the schema
+      (intake tool, command schema). Start ONE fresh subagent and give it
+      both texts, exactly as written, as its task. Do not summarize or
+      reword them, do not split the work, and do not do the analysis
+      yourself unless you cannot start a subagent.
+   d. When it finishes, tell them it's done and invite their questions.</no_intake>
+<!-- Fills no_intake's <register/> while the folder is not registered, MCP-009; the code indents it as a step. -->
+<register_step>a. Register this folder: metaform tool, command register.</register_step>
+<!-- Follows the served procedure, so an agent handed only the procedure finds the schema it binds, MCP-009. -->
+<schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake tool's schema command.</schema_pointer>
+<!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
+<unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
+<!-- intake's slash command, /metaform:intake, which serves what metaform intake prompt prints, MCP-032 and MCP-033.
+     -->
+<commands><intake verb="prompt"/></commands>
+<!-- Read by intake's code when it loads, never served whole: each child's text is the description every intake
+     recording tool shows for that field, <element> for an element and <join> for a join, MAP-040. Each says what the
+     field takes and its allowed values; what a term means is defined once, in the intake procedure. A test checks the
+     allowed values listed here against what the tools accept. -->
+<fields>
+  <element>
+    <namespace_address>The element's dotted address, formed as the intake procedure says, such as code.timer.kitchen.</namespace_address>
+    <role>CQU, DE, SE or NE, as defined in the intake procedure.</role>
+    <name_length>How many of the address's last segments form the element's name, a whole number from 1, as defined in the intake procedure.</name_length>
+    <name>The element's name as the project calls it.</name>
+    <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
+    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
+    <note>Free text kept with the element; an exclusion is a note that starts with "exclude:".</note>
+  </element>
+  <join>
+    <receiver>The address of the receiving element, the RE, whose purpose the join records.</receiver>
+    <elements>The addresses of the providing elements, the PEs, that serve the receiver's purpose.</elements>
+    <provider>The address of one providing element, a PE, held by the join.</provider>
+    <purpose>The receiver's operative purpose, the OP, as defined in the intake procedure.</purpose>
+    <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
+    <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
+    <refs>Where the join is found: a list of references, each a key and a value.</refs>
+    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
+    <note>Free text kept with the join; an exclusion is a note that starts with "exclude:".</note>
+  </join>
+</fields>
+</prompts>

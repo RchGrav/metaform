@@ -1,0 +1,1 @@
+<seat/>: <points/> points from <cards/> scorecards; rating <rating/>

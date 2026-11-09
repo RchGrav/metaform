@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-30",
+  "environment": "Boat sandbox, Linux x86_64, small, Python 3.12.3, Node 24.22.1",
+  "engine": "ladybug 0.22.1 (Python), @ladybugdb/core 0.22.0 (Node)",
+  "scope": "Single runs of experiments/ladybug-concurrency. Engine behavior only; not a runtime selection or a performance benchmark.",
+  "python": {
+    "rollback": "uncommitted create discarded",
+    "reader_during_open_write": "isolated; saw prior committed state",
+    "second_write_transaction": "refused immediately, not queued",
+    "second_read_write_process": "refused by file lock",
+    "read_only_process_with_writer_open": "opens; did not see a commit made after it opened",
+    "sigkill_during_transaction": "committed row kept, uncommitted row gone, database reopened",
+    "autocommit_creates_per_second": 1861
+  },
+  "node": {
+    "core_0_22_1": "install failed; requires @ladybugdb/core-linux-x64@0.22.1, not published",
+    "core_0_22_0": "installed; query and rollback passed",
+    "not_tested": "concurrency and crash behavior"
+  },
+  "not_proven": ["target schema", "load behavior", "ACP", "WebTransport", "non-Linux platforms"]
+}

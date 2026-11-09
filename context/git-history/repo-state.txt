@@ -1,0 +1,22 @@
+Repository: https://github.com/RchGrav/topogee.git
+HEAD: b65dba259787da82ab199555b7bac8a8a1c09d63 (main)
+Captured: 2026-11-08T19:45:09-05:00
+
+Branches not merged into main:
+  dropped-items
+  entity-id-floor
+  inventories
+  ready-persist
+
+Worktrees:
+/home/rich/topogee          b65dba2 [main]
+/home/rich/topogee-storage  604880e [retire-summoned]
+
+Uncommitted/untracked at capture:
+?? .claude/skills/data-expert/
+?? AGENTS.md~
+?? CLAUDE.md~
+?? EXPECTATIONS.md~
+?? Intake.md
+?? TASTE.md~
+?? ~/

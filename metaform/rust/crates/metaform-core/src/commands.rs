@@ -1,0 +1,398 @@
+//! The commands of the `project-map` tool: `add`, `update`, `delete`, `orphaned` and addressed
+//! reads (R-5.1 to R-5.12, R-5.21 to R-5.25).
+//!
+//! A command takes a map and returns either a new map with the effect, or a refusal. The input map
+//! is never changed, so a failed command changes nothing (R-5.8), and a write manager can put a
+//! queue in front of `execute` without changing it.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde_json::{Map as JsonMap, Value, json};
+
+use crate::contract::Contract;
+use crate::model::{Effect, Element, Map, flatten, is_want_updates};
+use crate::names::{self, ROOT};
+use crate::reads::{self, is_definitive};
+use crate::refusal::{Code, Refusal};
+
+/// What an accepted command produced.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outcome {
+    /// A read: the result, and the map is unchanged.
+    Read(Value),
+    /// A write: the new map, the effect that turns the old map into it, and the result.
+    Write(Write),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Write {
+    pub map: Map,
+    pub effect: Effect,
+    pub result: Value,
+}
+
+impl Outcome {
+    /// The result an agent receives.
+    pub fn result(&self) -> &Value {
+        match self {
+            Outcome::Read(result) => result,
+            Outcome::Write(write) => &write.result,
+        }
+    }
+}
+
+/// Run one command against a map. The command is checked against the contract, then its names
+/// (R-4.11), then applied to a copy of the map.
+pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcome, Refusal> {
+    contract.check_input(command)?;
+    names::check_command(command)?;
+    let (verb, body) = only(command);
+    match verb {
+        "orphaned" => Ok(Outcome::Read(reads::orphaned(map))),
+        "goto" => {
+            let address = body.as_str().expect("the input schema allows a string");
+            reads::goto(map, address).map(Outcome::Read)
+        }
+        "add" | "update" | "delete" => {
+            let (selector, supplied) = only(body);
+            let mut work = Work {
+                contract,
+                before: map,
+                elements: map.raw().clone(),
+                touched: BTreeSet::new(),
+            };
+            match verb {
+                "add" => work.add(selector, supplied)?,
+                "update" => work.update(selector, supplied)?,
+                _ => work.delete(selector, supplied)?,
+            }
+            let (map, effect) = work.finish()?;
+            let mut result = command.as_object().cloned().unwrap_or_default();
+            result.insert("status".into(), json!("ok"));
+            Ok(Outcome::Write(Write {
+                map,
+                effect,
+                result: Value::Object(result),
+            }))
+        }
+        address => reads::read(map, address).map(Outcome::Read),
+    }
+}
+
+/// The single entry of an object that the input schema has already checked.
+fn only(value: &Value) -> (&str, &Value) {
+    let (key, value) = value
+        .as_object()
+        .and_then(|object| object.iter().next())
+        .expect("the input schema allows one entry");
+    (key.as_str(), value)
+}
+
+/// A copy of the map being changed, and the addresses the change touched.
+struct Work<'a> {
+    contract: &'a Contract,
+    before: &'a Map,
+    elements: BTreeMap<String, Element>,
+    touched: BTreeSet<String>,
+}
+
+impl Work<'_> {
+    /// Create the address and every missing branch above it (R-5.4).
+    fn ensure(&mut self, address: &str) -> Result<(), Refusal> {
+        for prefix in names::prefixes(address) {
+            if !self.elements.contains_key(&prefix) {
+                names::check_scope(&prefix)?;
+                self.elements.insert(prefix.clone(), Element::default());
+                self.touched.insert(prefix);
+            }
+        }
+        Ok(())
+    }
+
+    fn element_mut(&mut self, address: &str) -> &mut Element {
+        self.touched.insert(address.to_string());
+        self.elements.get_mut(address).expect("ensured before use")
+    }
+
+    /// Write a want. Supplied fields change the current record; the result needs every field
+    /// (R-5.6). The element the want names is created if it is not there (R-5.4).
+    fn write_want(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
+        let mut record = self.elements[holder]
+            .wants
+            .get(other)
+            .cloned()
+            .unwrap_or_default();
+        if let Value::Object(change) = change {
+            record.extend(change.clone());
+        }
+        let filled = |key: &str| {
+            record
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty())
+        };
+        let missing: Vec<&str> = ["why", "how", "intent"]
+            .into_iter()
+            .filter(|key| !filled(key))
+            .collect();
+        if !missing.is_empty() {
+            let mut complete = record.clone();
+            for key in &missing {
+                complete.insert((*key).into(), json!(format!("<{key}>")));
+            }
+            return Err(Refusal::new(
+                Code::WantIncomplete,
+                format!(
+                    "'{holder}' wants '{other}': the want has no {}",
+                    missing.join(", ")
+                ),
+                Some(json!({"update": {holder: {"wants": {other: complete}}}})),
+            ));
+        }
+        self.ensure(other)?;
+        self.element_mut(holder)
+            .wants
+            .insert(other.to_string(), record);
+        Ok(())
+    }
+
+    fn write_wants(&mut self, holder: &str, wants: &JsonMap<String, Value>) -> Result<(), Refusal> {
+        for (other, change) in wants {
+            self.write_want(holder, other, change)?;
+        }
+        Ok(())
+    }
+
+    /// `add` keeps what is there: arrays grow, and other values are written (R-5.5).
+    fn add(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
+        let mut supplied_elements = BTreeMap::new();
+        flatten(
+            supplied.as_object().expect("checked by the input schema"),
+            address,
+            &mut supplied_elements,
+        );
+        for (at, supplied) in &supplied_elements {
+            self.ensure(at)?;
+            let element = self.element_mut(at);
+            for (key, value) in &supplied.fields {
+                match (element.fields.get_mut(key), value) {
+                    (_, Value::Null) => {
+                        element.fields.remove(key);
+                    }
+                    (Some(Value::Array(current)), Value::Array(more)) => {
+                        current.extend(more.iter().cloned())
+                    }
+                    _ => {
+                        element.fields.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        for (at, supplied) in &supplied_elements {
+            for (other, record) in &supplied.wants {
+                self.write_want(at, other, &Value::Object(record.clone()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `update` writes to a path; `null` removes a field (R-5.5).
+    fn update(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
+        self.ensure(address)?;
+        for (key, value) in supplied.as_object().expect("checked by the input schema") {
+            match value {
+                Value::Object(wants) if key == "wants" && is_want_updates(wants) => {
+                    self.write_wants(address, wants)?
+                }
+                Value::Null => {
+                    self.element_mut(address).fields.remove(key);
+                }
+                Value::Object(_) => self.update(&names::join(address, key), value)?,
+                _ => {
+                    self.element_mut(address)
+                        .fields
+                        .insert(key.clone(), value.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `delete` removes the named wants, or the element. An element that something still wants is
+    /// refused, with the command that removes the want (R-5.7, R-5.25).
+    fn delete(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
+        if !self.elements.contains_key(address) {
+            return Ok(());
+        }
+        if let Some(Value::Array(wants)) = supplied.get("wants") {
+            for other in wants.iter().filter_map(Value::as_str) {
+                if self.elements[address].wants.contains_key(other) {
+                    self.element_mut(address).wants.remove(other);
+                }
+            }
+            return Ok(());
+        }
+        let receivers = Map::receivers(&self.elements, address);
+        if let Some(first) = receivers.first() {
+            let others = if receivers.len() > 1 {
+                format!("; wanted by: {}", receivers.join(", "))
+            } else {
+                String::new()
+            };
+            return Err(Refusal::new(
+                Code::DependencyLock,
+                format!("cannot delete, '{address}', must be orphaned first{others}"),
+                Some(json!({"delete": {first: {"wants": [address]}}})),
+            ));
+        }
+        let beneath = self
+            .elements
+            .keys()
+            .filter(|child| names::is_beneath(child, address));
+        if let Some(deepest) = beneath.max_by_key(|child| child.matches('.').count()) {
+            return Err(Refusal::new(
+                Code::ElementsBeneath,
+                format!("cannot delete, '{address}', has elements beneath it"),
+                Some(json!({"delete": {deepest.as_str(): {}}})),
+            ));
+        }
+        self.remove(address);
+        // Remove the branches the deletion left with nothing in them.
+        let mut branch = names::parent(address).map(str::to_string);
+        while let Some(at) = branch.filter(|at| at != ROOT) {
+            let empty = self.elements.get(&at).is_some_and(Element::is_empty);
+            let has_children = self
+                .elements
+                .keys()
+                .any(|child| names::is_beneath(child, &at));
+            if !empty || has_children || !Map::receivers(&self.elements, &at).is_empty() {
+                break;
+            }
+            self.remove(&at);
+            branch = names::parent(&at).map(str::to_string);
+        }
+        Ok(())
+    }
+
+    fn remove(&mut self, address: &str) {
+        self.elements.remove(address);
+        self.touched.insert(address.to_string());
+    }
+
+    /// Check every touched element against the rules that read the map, then build the effect.
+    fn finish(self) -> Result<(Map, Effect), Refusal> {
+        for address in &self.touched {
+            let Some(element) = self.elements.get(address) else {
+                continue;
+            };
+            self.check_name_length(address, element)?;
+            self.check_collisions(address, element)?;
+            self.contract.check_element(address, &element.view())?;
+        }
+        self.check_definitive()?;
+        let mut effect = Effect::default();
+        for address in &self.touched {
+            let after = self.elements.get(address);
+            if after != self.before.element(address) {
+                effect.elements.insert(address.clone(), after.cloned());
+            }
+        }
+        Ok((Map::from_elements(self.elements), effect))
+    }
+
+    /// `technical_name` is the same number of leading words of the reversed, space-separated
+    /// address (documentation set 3.1, 6.1).
+    fn check_name_length(&self, address: &str, element: &Element) -> Result<(), Refusal> {
+        let Some(technical) = element.fields.get("technical_name").and_then(Value::as_str) else {
+            return Ok(());
+        };
+        let reversed: Vec<String> = if address == ROOT {
+            Vec::new()
+        } else {
+            address
+                .split('.')
+                .rev()
+                .flat_map(|segment| segment.split('_').map(str::to_string).collect::<Vec<_>>())
+                .collect()
+        };
+        let words: Vec<&str> = technical.split_whitespace().collect();
+        if words.is_empty()
+            || words.len() > reversed.len()
+            || words.iter().zip(&reversed).any(|(w, r)| *w != r)
+        {
+            let leaf = reversed.first().cloned().unwrap_or_default();
+            return Err(Refusal::new(
+                Code::TechnicalNameAlignmentFailure,
+                format!(
+                    "'{address}': technical_name \"{technical}\" is not the leading words of \"{}\"",
+                    reversed.join(" ")
+                ),
+                Some(json!({"update": {address: {"technical_name": leaf}}})),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The stored map nests fields and child elements in one object, so a field cannot share a
+    /// name with a child element.
+    fn check_collisions(&self, address: &str, element: &Element) -> Result<(), Refusal> {
+        let field_over_child = element
+            .fields
+            .keys()
+            .find(|key| self.elements.contains_key(&names::join(address, key)));
+        let child_over_field = names::parent(address).and_then(|parent| {
+            let segment = address.rsplit('.').next()?;
+            self.elements
+                .get(parent)?
+                .fields
+                .contains_key(segment)
+                .then_some(parent)
+        });
+        let clash = match (field_over_child, child_over_field) {
+            (Some(key), _) => Some((address.to_string(), key.clone())),
+            (None, Some(parent)) => Some((
+                parent.to_string(),
+                address.rsplit('.').next().unwrap_or_default().to_string(),
+            )),
+            _ => None,
+        };
+        match clash {
+            None => Ok(()),
+            Some((holder, key)) => Err(Refusal::new(
+                Code::GrammarConstraintViolation,
+                format!("'{holder}': '{key}' cannot be both a field and an element beneath it"),
+                Some(json!({"update": {holder: {key: null}}})),
+            )),
+        }
+    }
+
+    /// A map has one Definitive element (R-3.13). A write that would make a second is refused.
+    fn check_definitive(&self) -> Result<(), Refusal> {
+        let definitive: Vec<&String> = self
+            .elements
+            .iter()
+            .filter(|(_, element)| is_definitive(element.fields.get("role")))
+            .map(|(address, _)| address)
+            .collect();
+        if definitive.len() < 2 {
+            return Ok(());
+        }
+        let existing = definitive
+            .iter()
+            .find(|address| !self.touched.contains(**address))
+            .unwrap_or(&definitive[0]);
+        let added = definitive
+            .iter()
+            .find(|address| *address != existing)
+            .unwrap_or(&definitive[1]);
+        let mut fix = JsonMap::new();
+        fix.insert((*existing).clone(), json!({"role": null}));
+        Err(Refusal::new(
+            Code::RoleTaxonomyFailure,
+            format!(
+                "'{added}' cannot be Definitive: '{existing}' already is, and a map has one Definitive element"
+            ),
+            Some(json!({"update": Value::Object(fix)})),
+        ))
+    }
+}

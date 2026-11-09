@@ -1,0 +1,263 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Metaform map</title><style>
+:root{--ground:#000;--panel:#0b0b0b;--panel-2:#161616;--line:#262626;--text:#e8eaed;--muted:#7b8088;--node:#161616;--node-sel:#1c5450;--node-line:#6f747c;--edge:#8a8f98;--intake:#4a9eff;--spark:#fff;--record:#ffbe55;--de:#f2b84b;--se:#5aa9e6;--ne:#7bc950;--cqu:#e07bb5}
+*{box-sizing:border-box}html,body{margin:0;height:100%}body{display:flex;background:var(--ground);color:var(--text);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+#stage{flex:1;position:relative;overflow:hidden;cursor:grab;min-width:0}#stage.grab{cursor:grabbing}#draw{position:absolute;left:0;top:0;transform-origin:0 0}
+#top{position:absolute;left:16px;top:10px;z-index:3;pointer-events:none}#top b{font-size:22px;font-weight:600;display:block}#top span{color:var(--muted);margin-right:10px}
+#side{width:340px;flex:none;background:var(--panel);border-left:1px solid var(--line);padding:16px;overflow:auto}#side h2{font-size:15px;margin:0 0 4px;word-break:break-all}#side h3{font-size:13px;margin:16px 0 4px;color:var(--muted);font-weight:600}.dim{color:var(--muted)}.want{border-top:1px solid var(--line);padding:9px 0}.want b{word-break:break-all;font-weight:600}.tag{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px}
+.map2d .cluster rect{fill:#ffffff07!important;stroke:#3a3f47!important;stroke-width:1px!important;rx:6}.map2d .cluster text,.map2d .cluster span,.map2d .cluster-label *{fill:var(--muted)!important;color:var(--muted)!important;font-size:11px}.map2d .node{cursor:pointer}.map2d .node :is(rect,path,polygon,ellipse){stroke:var(--c,var(--node-line))!important;fill:var(--node)!important;stroke-width:1.4px!important}
+.map2d .node.unbuilt :is(rect,path,polygon,ellipse){stroke-dasharray:5 3}
+.map2d .node text,.map2d .node .nodeLabel,.map2d .node tspan{fill:var(--text)!important;font-size:13px}
+.map2d .node.sel :is(rect,path,polygon,ellipse){fill:var(--node-sel)!important;stroke:#e0655c!important;stroke-width:2px!important}.map2d .node.near :is(rect,path,polygon,ellipse){stroke:var(--intake)!important;stroke-width:2px!important}
+.map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) tspan,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
+.map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:1.2px!important;transition:stroke .3s}.map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:2.2px!important}.map2d .edgePaths path.ice{stroke:#e0655c!important}
+.map2d marker path{fill:var(--edge)!important;stroke:none!important}
+.map2d .flows2d *{pointer-events:none}.map2d .flows2d .line{fill:none;stroke-width:4.2px;stroke-linecap:round;stroke-linejoin:round}.map2d .flows2d .ask{fill:none;stroke:var(--spark);stroke-width:3.8px;stroke-linecap:round}
+.map2d .flows2d .trains{filter:drop-shadow(0 0 1.5px currentColor)}.map2d .flows2d .asks{filter:drop-shadow(0 0 1.5px var(--spark))}.map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}.map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
+.lines-selected .edgePaths path:not(.on){opacity:0}.lines-ice .edgePaths path:not(.ice):not(.on){opacity:0}.lines-off .edgePaths{opacity:0!important}
+#help{position:absolute;inset:0;z-index:6;display:none;align-items:center;justify-content:center;background:#000a}#help.on{display:flex}#help>div{width:min(520px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 20px}#help h2{font-size:16px;margin:0 0 10px}#help table{width:100%;border-collapse:collapse}#help td{padding:5px 0;border-top:1px solid var(--line);vertical-align:top}#help td:first-child{width:56px}#help td:last-child{text-align:right;color:var(--intake);white-space:nowrap}kbd{font:12px ui-monospace,monospace;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+#toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:5;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}#toast.on{opacity:1}
+#find{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:5;display:none;width:min(360px,calc(100% - 32px));background:var(--panel-2);color:var(--text);border:1px solid var(--line-2,#3f3f3f);border-radius:6px;padding:7px 10px;font:14px inherit;outline:none}#find.on{display:block}.map2d .node.hit :is(rect,path,polygon,ellipse){stroke:#fff!important;stroke-width:2.4px!important}.map2d.finding .node:not(.hit){opacity:.25}
+#hint{position:absolute;right:14px;bottom:10px;z-index:3;color:var(--muted);font-size:12px;pointer-events:none}
+.map2d .node{transition:opacity .4s}.map2d .edgeLabel text,.map2d .edgeLabel tspan{fill:var(--text)!important;font-size:12px}.map2d .edgeLabel rect,.map2d .labelBkg{fill:#000!important;background:#000!important}
+.touring #side,.touring #hint{display:none}
+#banner{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:4;width:min(640px,calc(100% - 300px));background:#0b0b0bee;border:1px solid var(--line);border-left:3px solid var(--intake);border-radius:6px;padding:8px 14px;display:none}#banner.on{display:block}#banner b{font-size:16px;font-weight:600}#banner p{margin:2px 0 0;color:var(--muted);font-size:13px}#banner small{float:right;color:var(--muted)}
+#note{position:absolute;z-index:4;width:340px;max-height:calc(100% - 96px);overflow:auto;background:#0b0b0bf2;border:1px solid var(--line);border-left:3px solid var(--node-sel);border-radius:6px;padding:10px 14px;display:none;font-size:14px}#note.on{display:block}#note h3{margin:0;font-size:16px;font-weight:600}#note .addr{color:var(--muted);font:12px ui-monospace,monospace;word-break:break-all}#note h4{margin:9px 0 2px;font-size:12px;color:var(--muted);font-weight:600}#note p{margin:2px 0 5px}
+#bar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:5;display:none;gap:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:12px;color:var(--muted);white-space:nowrap}#bar.on{display:flex}#bar b{color:var(--text);font-weight:600}
+#err{position:absolute;left:16px;bottom:12px;color:#e0655c;font-size:12px;z-index:3}
+@media(max-width:700px){body{flex-direction:column}#side{width:100%;height:38vh;border-left:0;border-top:1px solid var(--line)}}
+</style></head><body><div id="stage"><div id="top"><b>Metaform map</b><span id="stat">waiting for elements</span> <span id="live" class="dim"></span></div><div id="draw" class="map2d"></div><div id="offstage" style="position:absolute;left:-200000px;top:0;visibility:hidden"></div><div id="err"></div><div id="hint">press <kbd>?</kbd> for keys</div><div id="toast"></div><div id="banner"></div><div id="note"></div><div id="bar"></div><input id="find" placeholder="Find an element" spellcheck="false"><div id="help"><div><h2>Keys</h2><table id="keys"></table></div></div></div>
+<div id="side"><h2>Pick an element</h2><p class="dim">Click a box to light its wants and read them. Drag to pan, scroll to zoom. The map updates as it is written.</p></div>
+<script src="/mermaid.js"></script><script>
+const SVG='http://www.w3.org/2000/svg',$=id=>document.getElementById(id),draw=$('draw'),stage=$('stage'),side=$('side');
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FIELD=new Set(['id','name','name_length','role','project','uri','status','wants','layers']);
+const roleColor={DE:'--de',SE:'--se',NE:'--ne',CQU:'--cqu'};
+const SHAPES2D={code:'rect',document:'doc',media:'curv-trap',data:'cyl',collection:'st-rect',upstream:'lean-r',downstream:'lean-l'};
+const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+const wantsOf=v=>{if(!v)return[];const g=Array.isArray(v)?v:[v];return g.flatMap(o=>Object.entries(o).map(([to,r])=>({to,...r})))};
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function plain2d(text,most=30){const plain=String(text||'').replace(/["[\]{}()<>|#;`]/g,'').trim();if(plain.length<=most)return plain;const cut=plain.slice(0,most-1),space=cut.lastIndexOf(' ');return(space>=most*.6?cut.slice(0,space):cut).replace(/[\s,.;:–—-]+$/,'')+'…'}
+/* ELK in a worker, as the 2D map runs it */
+const ELK={worker:null,next:1,waiting:new Map()};
+function elkSend(port,message){if(!ELK.worker){ELK.worker=new Worker('/elk-worker.js');ELK.worker.onmessage=({data})=>{const asked=ELK.waiting.get(data.id);if(!asked)return;ELK.waiting.delete(data.id);asked.port.onmessage?.({data:{...data,id:asked.id}})}}
+ const id=ELK.next++;ELK.waiting.set(id,{port,id:message.id});ELK.worker.postMessage(JSON.parse(JSON.stringify({...message,id})))}
+globalThis.mermaidElk=()=>({workerFactory:()=>({onmessage:null,terminate(){},postMessage(m){elkSend(this,m)}})});
+mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'base',htmlLabels:false,layout:'elk',elk:{nodePlacementStrategy:'NETWORK_SIMPLEX',rootLayoutOptions:{'elk.hierarchyHandling':'INCLUDE_CHILDREN','elk.aspectRatio':'1.8','elk.separateConnectedComponents':'true','elk.layered.compaction.connectedComponents':'true','elk.layered.considerModelOrder.strategy':'NODES_AND_EDGES'}},maxEdges:50000,maxTextSize:1000000,
+ flowchart:{htmlLabels:false,useMaxWidth:false,curve:'basis',nodeSpacing:28,rankSpacing:45},themeVariables:{background:css('--ground'),primaryColor:css('--node'),primaryBorderColor:css('--node-line'),primaryTextColor:css('--text'),lineColor:css('--edge'),fontFamily:'IBM Plex Sans, sans-serif',fontSize:'13px',tertiaryColor:'#0e0e0e'}});
+let FEATURES=[],FEAT=-1,ZL=0,FOCUS=null;const TOUR={on:false,steps:[],at:0,paused:false,timer:0,dwell:6000};const MODE={boxes:true,across:true,lines:0,flow:0};try{Object.assign(MODE,JSON.parse(localStorage.getItem('mapview.mode')||'{}'))}catch{}
+/* the flow: a request is a white dot, the answer a streak in the colour of what it comes from, a record a card that lands with a ring */
+const FLOW={clock:0,last:0,ask:.45,reply:.9,data:5,send:.8,burst:.55,mean:3,ring:18};
+const cycles=new Map(),AT={asks:false,since:0,size:0,reply:0},POINT={x:0,y:0},ASK=3.8;
+const asksOf=j=>j.ifd==='receives'||j.ifd==='both',replySize=()=>(Math.random()+Math.random())*FLOW.data;
+const replyData=()=>({reply:Math.max(.3,(Math.random()+Math.random())*FLOW.reply),size:replySize()});
+const freshCycle=driven=>driven?{at:-Infinity,wait:Infinity,driven,answered:true}:{at:FLOW.clock-Math.random()*2*FLOW.mean,wait:0,driven,answered:false,...replyData()};
+function cycleOf(id,active,driven=false){let c=cycles.get(id);if(!c||c.driven!==driven)cycles.set(id,c=freshCycle(driven));while(FLOW.clock-c.at>active+(c.reply||0)+c.wait){c.at+=active+(c.reply||0)+c.wait;c.wait=(Math.random()+Math.random())*FLOW.mean;c.answered=false;Object.assign(c,replyData())}return c}
+function recorded(id){const c=cycleOf(id,FLOW.send+FLOW.burst,true);if(FLOW.clock-c.at>=FLOW.send)c.at=FLOW.clock}
+function flowAt(j){if(asksOf(j)){const c=cycleOf(j.id,FLOW.ask),since=FLOW.clock-c.at;if(since>=FLOW.ask&&!c.answered){c.answered=true;if(since<FLOW.ask+c.reply)for(const s of NET.sends.get(j.provider)||[])recorded(s)}AT.asks=true;AT.since=since;AT.size=c.size;AT.reply=c.reply;return AT}
+ const c=cycleOf(j.id,FLOW.send+FLOW.burst,NET.answering.has(j.receiver));AT.asks=false;AT.since=FLOW.clock-c.at;AT.size=0;AT.reply=0;return AT}
+let NET={answering:new Set(),sends:new Map()};
+class Samples2d{constructor(length,xs,ys){this.length=length;this.xs=xs;this.ys=ys}}
+const FLAT = {xs: new Float64Array(1024), ys: new Float64Array(1024), at: new Float64Array(1024), size: 0};
+const COMMAND2D = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+function flatSampled(d) {
+  if (!d || (d.match(/[Mm]/g) || []).length !== 1) return null;
+  FLAT.size = 0;
+  let x = 0, y = 0, startX = 0, startY = 0, lastX = 0, lastY = 0, last = '';  // lastX, lastY: the control point
+  for (const [, command, rest] of d.matchAll(COMMAND2D)) {
+    const n = rest.match(/-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)?.map(Number) || [];
+    const relative = command === command.toLowerCase(), kind = command.toUpperCase();
+    const ox = () => (relative ? x : 0), oy = () => (relative ? y : 0);
+    if (kind === 'Z') { flatPoint(startX, startY); x = startX; y = startY; last = kind; continue; }
+    const size = {M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7}[kind];
+    if (n.length % size) return null;  // a path written in a way not read here, as arc flags run together
+    for (let i = 0; i + size <= n.length; i += size) {
+      if (kind === 'M' && i === 0) {
+        x = n[0] + ox(); y = n[1] + oy(); startX = x; startY = y;
+        flatPoint(x, y);
+      } else if (kind === 'M' || kind === 'L') { x = n[i] + ox(); y = n[i + 1] + oy(); flatPoint(x, y); }
+      else if (kind === 'H') { x = n[i] + (relative ? x : 0); flatPoint(x, y); }
+      else if (kind === 'V') { y = n[i] + (relative ? y : 0); flatPoint(x, y); }
+      else if (kind === 'A') {
+        const ex = n[i + 5] + ox(), ey = n[i + 6] + oy();
+        flatArc(x, y, n[i], n[i + 1], n[i + 2], n[i + 3], n[i + 4], ex, ey);
+        x = ex; y = ey;
+      }
+      else {
+        const quad = kind === 'Q' || kind === 'T', smooth = kind === 'S' || kind === 'T';
+        const mirrored = smooth && last !== '' && (quad ? 'QT' : 'CS').includes(last);
+        const c1x = smooth ? (mirrored ? 2 * x - lastX : x) : n[i] + ox();
+        const c1y = smooth ? (mirrored ? 2 * y - lastY : y) : n[i + 1] + oy();
+        const at = smooth ? i : i + 2;
+        const c2x = quad ? c1x : n[at] + ox(), c2y = quad ? c1y : n[at + 1] + oy();
+        const endAt = quad ? (smooth ? i : i + 2) : at + 2, ex = n[endAt] + ox(), ey = n[endAt + 1] + oy();
+        if (quad) flatCurve(x, y, x + 2 / 3 * (c1x - x), y + 2 / 3 * (c1y - y), ex + 2 / 3 * (c1x - ex),
+          ey + 2 / 3 * (c1y - ey), ex, ey);
+        else flatCurve(x, y, c1x, c1y, c2x, c2y, ex, ey);
+        lastX = quad ? c1x : c2x; lastY = quad ? c1y : c2y;
+        x = ex; y = ey;
+      }
+      last = kind;
+    }
+  }
+  if (FLAT.size < 2) return null;
+  const length = FLAT.at[FLAT.size - 1], count = Math.max(16, Math.ceil(length / 3));
+  const xs = new Float32Array(count + 1), ys = new Float32Array(count + 1);
+  for (let i = 0, piece = 1; i <= count; i++) {
+    const want = length * i / count;
+    while (piece < FLAT.size - 1 && FLAT.at[piece] < want) piece++;
+    const from = FLAT.at[piece - 1], span = FLAT.at[piece] - from, u = span > 0 ? (want - from) / span : 0;
+    xs[i] = FLAT.xs[piece - 1] + (FLAT.xs[piece] - FLAT.xs[piece - 1]) * u;
+    ys[i] = FLAT.ys[piece - 1] + (FLAT.ys[piece] - FLAT.ys[piece - 1]) * u;
+  }
+  return new Samples2d(length, xs, ys);
+}
+function flatPoint(x, y) {
+  if (FLAT.size === FLAT.xs.length) {  // grown once to a longer path, and kept that size
+    const grow = array => { const more = new Float64Array(array.length * 2); more.set(array); return more; };
+    FLAT.xs = grow(FLAT.xs); FLAT.ys = grow(FLAT.ys); FLAT.at = grow(FLAT.at);
+  }
+  const at = FLAT.size;
+  FLAT.xs[at] = x; FLAT.ys[at] = y;
+  FLAT.at[at] = at ? FLAT.at[at - 1] + Math.hypot(x - FLAT.xs[at - 1], y - FLAT.ys[at - 1]) : 0;
+  FLAT.size++;
+}
+/* An elliptical arc as SVG draws it, from its end points to its centre, SVG 1.1 F.6.5, in straight pieces of about
+ * half a unit; a line where a radius is nought. */
+function flatArc(x0, y0, rx, ry, degrees, large, sweep, x, y) {
+  rx = Math.abs(rx); ry = Math.abs(ry);
+  if (!rx || !ry || (x0 === x && y0 === y)) { flatPoint(x, y); return; }
+  const phi = degrees * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
+  const hx = (x0 - x) / 2, hy = (y0 - y) / 2, px = cos * hx + sin * hy, py = -sin * hx + cos * hy;
+  const grow = px * px / (rx * rx) + py * py / (ry * ry);
+  if (grow > 1) { rx *= Math.sqrt(grow); ry *= Math.sqrt(grow); }
+  const top = rx * rx * ry * ry - rx * rx * py * py - ry * ry * px * px;
+  const root = Math.sqrt(Math.max(0, top / (rx * rx * py * py + ry * ry * px * px))) * (large === sweep ? -1 : 1);
+  const cx1 = root * rx * py / ry, cy1 = -root * ry * px / rx;
+  const cx = cos * cx1 - sin * cy1 + (x0 + x) / 2, cy = sin * cx1 + cos * cy1 + (y0 + y) / 2;
+  const angle = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  const start = angle(1, 0, (px - cx1) / rx, (py - cy1) / ry);
+  let turn = angle((px - cx1) / rx, (py - cy1) / ry, (-px - cx1) / rx, (-py - cy1) / ry);
+  if (!sweep && turn > 0) turn -= 2 * Math.PI; else if (sweep && turn < 0) turn += 2 * Math.PI;
+  const pieces = Math.min(512, Math.max(4, Math.ceil(Math.abs(turn) * Math.max(rx, ry) * 2)));
+  for (let k = 1; k <= pieces; k++) {
+    const a = start + turn * k / pieces, ax = rx * Math.cos(a), ay = ry * Math.sin(a);
+    if (k === pieces) flatPoint(x, y); else flatPoint(cos * ax - sin * ay + cx, sin * ax + cos * ay + cy);
+  }
+}
+/* A cubic Bézier curve in straight pieces of about half a unit along its control polygon, at most 512. */
+function flatCurve(x0, y0, x1, y1, x2, y2, x3, y3) {
+  const hull = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2);
+  const pieces = Math.min(512, Math.max(4, Math.ceil(hull * 2)));
+  for (let k = 1; k <= pieces; k++) {
+    const t = k / pieces, s = 1 - t, a = s * s * s, b = 3 * s * s * t, c = 3 * s * t * t, e = t * t * t;
+    flatPoint(a * x0 + b * x1 + c * x2 + e * x3, a * y0 + b * y1 + c * y2 + e * y3);
+  }
+}
+
+function sampled(path){let s=flatSampled(path.getAttribute('d')||'');if(!s){const length=path.getTotalLength(),count=Math.max(16,Math.ceil(length/3)),xs=new Float32Array(count+1),ys=new Float32Array(count+1);for(let i=0;i<=count;i++){const p=path.getPointAtLength(length*i/count);xs[i]=p.x;ys[i]=p.y}s=new Samples2d(length,xs,ys)}return s}
+function place(one,distance){const xs=one.xs,ys=one.ys,last=xs.length-1,f=Math.min(last,Math.max(0,distance/Math.max(1e-6,one.length)*last)),i=Math.min(last-1,Math.floor(f)),u=f-i;POINT.x=xs[i]+(xs[i+1]-xs[i])*u;POINT.y=ys[i]+(ys[i+1]-ys[i])*u}
+const at=(one,share,receives)=>{const c=Math.min(1,Math.max(0,share));place(one,(receives?1-c:c)*one.length)};
+const show=(s,on)=>{if(s.on!==on){s.on=on;s.el.style.display=on?'':'none'}},drawn=(s,d)=>{if(s.d!==d){s.d=d;s.el.setAttribute('d',d)}};
+function reply2d(train,t,back,size,one,receives){const length=one.length,long=Math.min(1,size*ASK/Math.max(1,length)),head=t*(1+long),from=Math.max(0,head-long),to=Math.min(1,head);if(from>to){drawn(train.line,'');return}
+ const forward=receives===back,start=(forward?from:1-to)*length,end=(forward?to:1-from)*length;place(one,start);let d=`M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}`;if(end-start<.01)d+='h0';else{const xs=one.xs,ys=one.ys,last=xs.length-1,per=length/last;for(let i=Math.floor(start/per)+1;i<last&&i*per<end;i++)d+=`L${xs[i].toFixed(2)},${ys[i].toFixed(2)}`;place(one,end);d+=`L${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}`}drawn(train.line,d)}
+function flowEdge2d(one){const j=one.join,receives=j.ifd==='receives',now=flowAt(j),asks=now.asks,since=now.since;let size=0,reply=FLOW.reply;if(asks){size=now.size;reply=now.reply}
+ const sends=!asks,recording=sends&&since<FLOW.send,ringing=sends&&!recording&&since<FLOW.send+FLOW.burst,asking=asks&&since<FLOW.ask,replying=asks&&!asking&&since<FLOW.ask+reply;
+ if(recording){const t=since/FLOW.send;at(one,t*t*(3-2*t),receives);one.record.el.setAttribute('transform',`translate(${POINT.x} ${POINT.y})`)}show(one.record,recording);
+ if(ringing){const u=(since-FLOW.send)/FLOW.burst;if(!one.ring.on){at(one,1,receives);one.ring.el.setAttribute('transform',`translate(${POINT.x} ${POINT.y})`)}one.ring.el.setAttribute('r',String(4+14*u));one.ring.el.style.opacity=String(Math.pow(1-u,1.5))}show(one.ring,ringing);
+ if(asking){at(one,since/FLOW.ask,receives);drawn(one.ask,`M${POINT.x.toFixed(2)},${POINT.y.toFixed(2)}h0`)}show(one.ask,asking);
+ const ways=replying?(j.ifd==='both'?2:1):0;for(let i=0;i<2;i++){const tr=one.trains[i];if(i<ways)reply2d(tr,(since-FLOW.ask)/reply,i===0,size,one,receives);show(tr.g,i<ways)}}
+let flows=[];const moving=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+function rest(one){show(one.record,false);show(one.ring,false);show(one.ask,false);for(const t of one.trains)show(t.g,false)}
+function frame(now){if(now>FLOW.last){FLOW.clock+=Math.min(.1,(now-(FLOW.last||now))/1000);FLOW.last=now}for(const one of flows)if(one.path.isConnected){if(MODE.flow===0||(MODE.flow===1&&one.path.classList.contains('on')))flowEdge2d(one);else rest(one)}if(moving)requestAnimationFrame(frame)}if(moving)requestAnimationFrame(frame);
+function buildFlows(svg){flows=[];if(!moving||!M.edges.length)return;const first=M.edges.find(e=>e.path);if(!first)return;const group=document.createElementNS(SVG,'g');group.setAttribute('class','flows2d');(first.path.closest('.edgePaths')||first.path.parentNode).after(group);const layers={};for(const n of['trains','asks','marks']){layers[n]=document.createElementNS(SVG,'g');layers[n].setAttribute('class',n);group.append(layers[n])}
+ const made=(tag,name,attrs={},parent=layers.marks)=>{const el=document.createElementNS(SVG,tag);el.setAttribute('class',name);for(const[k,v]of Object.entries(attrs))el.setAttribute(k,v);el.style.display='none';parent.append(el);return{el,on:false,d:''}};
+ for(const e of M.edges){if(!e.path)continue;const tint=id=>{const c=roleColor[els[id]?.role];return c?css(c):css('--spark')};const train=way=>{const g=made('g','train',{},layers.trains),line=made('path','line',{},g.el);const c=tint(way===0?e.join.provider:e.join.receiver);g.el.style.stroke=c;g.el.style.color=c;line.el.style.display='';line.on=true;return{g,line}};
+  const s=sampled(e.path);flows.push({join:e.join,path:e.path,length:s.length,xs:s.xs,ys:s.ys,trains:[train(0),train(1)],ask:made('path','ask',{},layers.asks),record:made('rect','record',{x:-4.5,y:-3.2,width:9,height:6.4,rx:1.4}),ring:made('circle','ring',{r:4})})}}
+/* the map */
+let els={},M={nodes:new Map(),edges:[]},selected=null,lastText='',gen=0,busy=false,pending=null;
+function walk(node,addr){if(addr)els[addr]=node;for(const[k,v]of Object.entries(node))if(k!=='wants'&&isObj(v))walk(v,addr?addr+'.'+k:k)}
+function model(text){const root=Object.values(JSON.parse(text))[0];if(!root)return null;els={};walk(root,'');FEATURES=Array.isArray(root.features)?root.features:[];const owns=a=>Object.entries(els[a]).some(([k,v])=>!isObj(v));const targets=new Set(Object.keys(els).flatMap(a=>wantsOf(els[a].wants).map(w=>w.to)));
+ const shown=Object.keys(els).filter(a=>(owns(a)||targets.has(a))&&(!FOCUS||FOCUS.set.has(a))).sort(),keys=new Map(shown.map((a,i)=>[a,'n'+i])),lines=[],joins=[];
+ const nodeLine=a=>{const shape=SHAPES2D[a.split('.')[0]],label=plain2d(els[a].name||a.split('.').slice(-(els[a].name_length||1)).reverse().join(' ')).replace(/"/g,'');return `${keys.get(a)}@{ shape: ${shape||'rect'}, label: "${label}" }`};
+ /* each address prefix is a box; an element with parts beneath it sits inside its own box */
+ const parents=new Set(shown.flatMap(a=>a.split('.').slice(0,-1).map((_,i,s)=>s.slice(0,i+1).join('.'))));
+ const home=a=>parents.has(a)?a:a.split('.').slice(0,-1).join('.'),inGroup=new Map(),kids=new Map();for(const a of shown){const g=home(a);(inGroup.get(g)||inGroup.set(g,[]).get(g)).push(a)}
+ for(const p of parents){const up=p.split('.').slice(0,-1).join('.');(kids.get(up)||kids.set(up,[]).get(up)).push(p)}
+ const groupIds=new Map();const emit=p=>{const id='g'+groupIds.size;groupIds.set(id,p);lines.push(`subgraph ${id}["${plain2d(p.split('.').pop())}"]`);for(const a of inGroup.get(p)||[])lines.push(nodeLine(a));for(const c of(kids.get(p)||[]).sort())emit(c);lines.push('end')};
+ if(MODE.boxes&&!FOCUS?.center){for(const a of inGroup.get('')||[])lines.push(nodeLine(a));for(const c of(kids.get('')||[]).sort())emit(c)}else for(const a of shown)lines.push(nodeLine(a));
+ for(const a of shown)for(const w of wantsOf(els[a].wants))if(keys.has(w.to)){const ifd=w.intent==='receive'?'receives':w.intent==='send_receive'?'both':'sends',join={id:a+'>'+w.to,receiver:a,provider:w.to,ifd,ice:w.ice,want:w},[f,t]=ifd==='receives'?[w.to,a]:[a,w.to];const words=FOCUS?.center&&(a===FOCUS.center||w.to===FOCUS.center)?plain2d(a===FOCUS.center?w.goal:w.function,46).replace(/"/g,''):'';lines.push(`${keys.get(f)} e${joins.length}@-->${words?`|"${words}"|`:''} ${keys.get(t)}`);joins.push(join)}
+ const answering=new Set(),sends=new Map();for(const j of joins)if(asksOf(j))answering.add(j.provider);else sends.set(j.receiver,[...(sends.get(j.receiver)||[]),j.id]);NET={answering,sends};
+ return{text:`flowchart ${MODE.across?'LR':'TB'}\n${lines.join('\n')}`,shown,keys,joins}}
+let lastRaw='';
+async function render(raw){lastRaw=raw;if(busy){pending=raw;return}busy=true;try{const m=model(raw);if(m&&m.shown.length){$('stat').textContent=`${m.shown.length} elements, ${m.joins.length} wants`;if(m.text!==lastText){lastText=m.text;const id='map'+(++gen),{svg}=await mermaid.render(id,m.text,$('offstage'));const was=M.at||new Map(),wasBox=M.box;draw.innerHTML=svg;document.getElementById('d'+id)?.remove();const el=draw.querySelector('svg');el.style.maxWidth='none';el.style.background='transparent';
+  const box=el.viewBox.baseVal;el.setAttribute('width',box.width);el.setAttribute('height',box.height);const nodes=new Map(),byKey=new Map();for(const g of el.querySelectorAll('.node')){const k=(g.id.match(/flowchart-(n\d+)-/)||[])[1];if(k)byKey.set(k,g)}
+  for(const[a,k]of m.keys){const g=byKey.get(k);if(!g)continue;nodes.set(a,g);const c=roleColor[els[a].role];if(c)g.style.setProperty('--c',`var(${c})`);if(/un_?built|not_built/.test(els[a].status||''))g.classList.add('unbuilt');g.onclick=ev=>{ev.stopPropagation();if(!TOUR.on)focusBox(a)}}
+  const byData=new Map();for(const p of el.querySelectorAll('.edgePaths path'))if(p.dataset.id&&!byData.has(p.dataset.id))byData.set(p.dataset.id,p);const edges=m.joins.map((join,i)=>{const path=byData.get('e'+i);if(path){if(join.ice)path.classList.add('ice');const end=path.getAttribute('marker-end');if(end&&join.ifd==='both')path.setAttribute('marker-start',end.replace('pointEnd','pointStart'))}return{join,path}});
+  const at=new Map();for(const[a,g]of nodes){const p=(g.getAttribute('transform')||'').match(/translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/);if(p)at.set(a,[+p[1],+p[2]])}
+  M={nodes,edges,svg:el,w:box.width,h:box.height,at,box:{x:box.x,y:box.y}};glide(was,wasBox);buildFlows(el);if(!view.moved)fit();if(selected&&M.nodes.has(selected))pick(selected);window.__ok=edges.filter(e=>e.path).length}}$('err').textContent=''}catch(e){$('err').textContent=String(e.message||e).slice(0,160);lastText=''}busy=false;if(pending){const p=pending;pending=null;render(p)}}
+/* Every box starts where it stood and moves to where the new layout puts it; a new box fades in. Nothing is redrawn in view. */
+function glide(was,box){if(!box||!moving)return;const moved=[];for(const[a,g]of M.nodes){const to=M.at.get(a);if(!to)continue;const from=was.get(a);if(!from){g.style.opacity='0';moved.push(()=>{g.style.transition='opacity .7s ease';g.style.opacity='1'});continue}
+  const x=from[0]-box.x+M.box.x,y=from[1]-box.y+M.box.y;if(Math.abs(x-to[0])<.5&&Math.abs(y-to[1])<.5)continue;g.style.transition='none';g.style.transform=`translate(${x}px,${y}px)`;moved.push(()=>{g.style.transition='transform .7s cubic-bezier(.25,.8,.3,1)';g.style.transform=`translate(${to[0]}px,${to[1]}px)`})}
+ for(const part of M.svg.querySelectorAll('.clusters')){part.style.transition='none';part.style.opacity='.2';moved.push(()=>{part.style.transition='opacity .7s ease';part.style.opacity='1'})}
+ const lines=M.svg.querySelector('.edgePaths');if(lines){lines.style.transition='none';lines.style.opacity='.2';moved.push(()=>{lines.style.transition='opacity .7s ease';lines.style.opacity='1'})}
+ M.svg.getBoundingClientRect();requestAnimationFrame(()=>moved.forEach(go=>go()))}
+const view={x:0,y:0,k:1,moved:false};const apply=()=>draw.style.transform=`translate(${view.x}px,${view.y}px) scale(${view.k})`;
+function fit(){const s=stage.getBoundingClientRect(),left=TOUR.on&&$('note').classList.contains('on')?372:16,top=$('banner').classList.contains('on')?104:64,bottom=TOUR.on?56:20,w=s.width-left-16,h=s.height-top-bottom;view.k=Math.min(1.6,w/M.w,h/M.h);view.x=left+(w-M.w*view.k)/2;view.y=top+(h-M.h*view.k)/2;draw.style.transition=moving?'transform .7s cubic-bezier(.25,.8,.3,1)':'';apply()}
+function clear(){selected=null;draw.classList.remove('focused');for(const e of M.edges)e.path?.classList.remove('on');for(const g of M.nodes.values())g.classList.remove('sel','near')}
+function pick(a){selected=a;draw.classList.add('focused');const near=new Set();for(const e of M.edges){const on=e.join.receiver===a||e.join.provider===a;e.path?.classList.toggle('on',on);if(on){near.add(e.join.receiver);near.add(e.join.provider)}}for(const[k,g]of M.nodes){g.classList.toggle('sel',k===a);g.classList.toggle('near',near.has(k)&&k!==a)}
+ const n=els[a],out=wantsOf(n.wants),inc=Object.keys(els).flatMap(k=>wantsOf(els[k].wants).filter(x=>x.to===a).map(x=>({...x,by:k})));
+ side.innerHTML=`<h2>${esc(a)}</h2><div class="dim">${esc(n.name)}${n.role?`<span class="tag">${esc(n.role)}</span>`:''}${n.status?`<span class="tag">${esc(n.status)}</span>`:''}</div>${n.uri?`<p class="dim">${esc(n.uri)}</p>`:''}<h3>Wants (${out.length})</h3>`+out.map(x=>`<div class="want"><b>${esc(x.to)}</b><span class="tag">${esc(x.intent)}</span>${x.ice?'<span class="tag">ICE</span>':''}<div>${esc(x.goal)}</div><div class="dim">${esc(x.function)}</div></div>`).join('')+`<h3>Wanted by (${inc.length})</h3>`+inc.map(x=>`<div class="want"><b>${esc(x.by)}</b><div>${esc(x.goal)}</div></div>`).join('')}
+let dragFrom=null,moved=false;stage.onmousedown=e=>{draw.style.transition='';dragFrom=[e.clientX-view.x,e.clientY-view.y];moved=false};addEventListener('mouseup',()=>{dragFrom=null;stage.classList.remove('grab')});addEventListener('mousemove',e=>{if(dragFrom){if(!moved){moved=true;view.moved=true;stage.classList.add('grab')}view.x=e.clientX-dragFrom[0];view.y=e.clientY-dragFrom[1];apply()}});
+stage.onclick=()=>{if(moved||TOUR.on)return;if(FOCUS?.center)leaveBox();else clear()};stage.addEventListener('wheel',e=>{e.preventDefault();draw.style.transition='';view.moved=true;const k=Math.exp(-e.deltaY/600),r=stage.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;view.x=x-(x-view.x)*k;view.y=y-(y-view.y)*k;view.k*=k;apply()},{passive:false});
+function empty(){if(TOUR.on)endTour();FEATURES=[];FEAT=-1;FOCUS=null;flows=[];M={nodes:new Map(),edges:[]};els={};lastText='';selected=null;draw.innerHTML='';draw.classList.remove('focused');$('stat').textContent='empty map';view.moved=false;side.innerHTML='<h2>Pick an element</h2><p class="dim">Click a box to light its wants and read them. Drag to pan, scroll to zoom. The map updates as it is written.</p>'}
+const LINES=['all','selected only','ICE only','off'],FLOWS=['all','selected only','off'];
+const saveMode=()=>{try{localStorage.setItem('mapview.mode',JSON.stringify(MODE))}catch{}};
+function applyMode(){draw.classList.toggle('lines-selected',MODE.lines===1);draw.classList.toggle('lines-ice',MODE.lines===2);draw.classList.toggle('lines-off',MODE.lines===3);drawKeys()}
+let toastTimer=0;function say(text){const t=$('toast');t.textContent=text;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('on'),1400)}
+const redraw=()=>{lastText='';if(lastRaw)render(lastRaw)};
+const KEYS=[['?','Show or hide this help',null,()=>$('help').classList.toggle('on')],
+ ['b','Address boxes',()=>MODE.boxes?'on':'off',()=>{MODE.boxes=!MODE.boxes;redraw();return`Boxes ${MODE.boxes?'on':'off'}`}],
+ ['l','Lines',()=>LINES[MODE.lines],()=>{MODE.lines=(MODE.lines+1)%LINES.length;return`Lines: ${LINES[MODE.lines]}`}],
+ ['m','Motion on the lines',()=>FLOWS[MODE.flow],()=>{MODE.flow=(MODE.flow+1)%FLOWS.length;return`Motion: ${FLOWS[MODE.flow]}`}],
+ ['d','Direction',()=>MODE.across?'across':'down',()=>{MODE.across=!MODE.across;view.moved=false;redraw();return`Direction: ${MODE.across?'across':'down'}`}],
+ ['f','Next feature, one at a time',()=>FEAT<0?'all':FEATURES[FEAT]?.name||'all',()=>stepFeature(1)],
+ ['F','Previous feature',null,()=>stepFeature(-1)],
+ ['z','Zoom: whole map, the feature, the box and what connects to it, the box alone',()=>ZOOMS[ZL],()=>cycleZoom()],
+ ['t','Tour: walk each feature one functionality at a time',null,()=>{startTour();return''}],
+ ['/','Find an element',null,()=>{const f=$('find');f.classList.add('on');f.value='';f.focus()}],
+ ['Esc','Clear the selection and the feature, close this panel',null,()=>{$('help').classList.remove('on');closeFind();clear();ZL=0;showFeature(-1)}]];
+function drawKeys(){$('keys').innerHTML=KEYS.map(([k,t,now])=>`<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(t)}</td><td>${now?esc(now()):''}</td></tr>`).join('')}
+function closeFind(){const f=$('find');f.classList.remove('on');f.blur();draw.classList.remove('finding');for(const g of M.nodes.values())g.classList.remove('hit')}
+const hits=q=>[...M.nodes.keys()].filter(a=>(a+' '+(els[a].name||'')).toLowerCase().includes(q));
+$('find').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase(),found=new Set(q?hits(q):[]);draw.classList.toggle('finding',!!q);for(const[a,g]of M.nodes)g.classList.toggle('hit',found.has(a))});
+$('find').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape')closeFind();if(e.key==='Enter'){const q=e.target.value.trim().toLowerCase(),first=q&&hits(q)[0];closeFind();if(first)focusBox(first)}});
+addEventListener('keydown',e=>{if(e.ctrlKey||e.metaKey||e.altKey)return;if(TOUR.on&&tourKey(e))return;const k=e.key==='Escape'?'Esc':e.key,hit=KEYS.find(x=>x[0]===k);if(!hit)return;e.preventDefault();const said=hit[3]();saveMode();applyMode();if(said)say(said)});
+$('help').addEventListener('click',e=>{if(e.target.id==='help')$('help').classList.remove('on')});
+const ZOOMS=['whole map','feature','box and connections','box alone'];
+/* A focus lays out only its boxes, so they are large and the words fit on the lines. */
+function refocus(set,center=null){FOCUS=set?{set:new Set(set),center}:null;view.moved=false;redraw()}
+function linked(a){const near=new Set([a]);for(const w of wantsOf(els[a]?.wants))near.add(w.to);for(const k of Object.keys(els))if(wantsOf(els[k].wants).some(w=>w.to===a))near.add(k);return[...near]}
+const members=i=>{const f=FEATURES[i];if(!f)return[];const tagged=Object.keys(els).filter(a=>(els[a].features||[]).includes(f.name));return[...new Set([...(f.walk||[]),...tagged])].filter(a=>els[a])};
+function banner(i){const b=$('banner'),f=FEATURES[i];if(!f){b.classList.remove('on');return}b.innerHTML=`<small>feature ${i+1} of ${FEATURES.length}</small><b>${esc(f.name)}</b><p>${esc(f.description)}</p>`;b.classList.add('on')}
+function showFeature(i){FEAT=i;banner(i);if(!TOUR.on)refocus(i<0?null:members(i))}
+function stepFeature(by){if(!FEATURES.length)return'No features on this map yet';let i=FEAT+by;if(i>=FEATURES.length||i<-1)i=-1;else if(by<0&&FEAT<0)i=FEATURES.length-1;clear();ZL=i<0?0:1;showFeature(i);return i<0?'Whole map':FEATURES[i].name}
+function focusBox(a){selected=a;ZL=2;refocus(linked(a),a)}
+function leaveBox(){clear();ZL=FEAT<0?0:1;refocus(FEAT<0?null:members(FEAT))}
+function cycleZoom(){const levels=[0];if(FEAT>=0)levels.push(1);if(selected)levels.push(2,3);ZL=levels[(levels.indexOf(ZL)+1)%levels.length];if(ZL===0)refocus(null);else if(ZL===1)refocus(members(FEAT));else if(ZL===2)refocus(linked(selected),selected);else refocus([selected],selected);return ZOOMS[ZL]}
+/* the tour: feature by feature, one functionality at a time, written on the view itself */
+function tourSteps(){const steps=[];FEATURES.forEach((f,i)=>{steps.push({f:i,a:null});for(const a of(f.walk&&f.walk.length?f.walk:members(i)))if(els[a])steps.push({f:i,a})});return steps}
+function startTour(){if(TOUR.on)return endTour();const steps=tourSteps();if(!steps.length)return say('No features on this map yet');Object.assign(TOUR,{on:true,steps,at:Math.max(0,steps.findIndex(s=>s.f===Math.max(FEAT,0))),paused:false});document.body.classList.add('touring');$('help').classList.remove('on');tourShow()}
+function endTour(){clearTimeout(TOUR.timer);TOUR.on=false;document.body.classList.remove('touring');$('note').classList.remove('on');$('bar').classList.remove('on');clear();ZL=0;showFeature(-1)}
+function tourKey(e){const k=e.key;if(k===' '){e.preventDefault();TOUR.paused=!TOUR.paused;tourBar();if(TOUR.paused)clearTimeout(TOUR.timer);else tourNext();return true}if(k==='ArrowRight'){e.preventDefault();TOUR.at=Math.min(TOUR.steps.length-1,TOUR.at+1);tourShow();return true}if(k==='ArrowLeft'){e.preventDefault();TOUR.at=Math.max(0,TOUR.at-1);tourShow();return true}if(k==='Escape'||k==='t'){e.preventDefault();endTour();return true}return false}
+function tourNext(){clearTimeout(TOUR.timer);TOUR.timer=setTimeout(()=>{if(TOUR.at>=TOUR.steps.length-1)return endTour();TOUR.at++;tourShow()},TOUR.dwell)}
+function tourBar(){const st=TOUR.steps[TOUR.at],inF=TOUR.steps.filter(s=>s.f===st.f&&s.a),n=inF.indexOf(st)+1,b=$('bar');b.innerHTML=`<b>${esc(FEATURES[st.f].name)}</b><span>${st.a?`step ${n} of ${inF.length}`:'overview'}</span><span>feature ${st.f+1} of ${FEATURES.length}</span><span>${TOUR.paused?'paused':'space to pause'}</span><span>arrows to step, Esc to leave</span>`;b.classList.add('on')}
+function tourShow(){clearTimeout(TOUR.timer);const st=TOUR.steps[TOUR.at];clear();FEAT=st.f;banner(st.f);tourBar();const note=$('note');
+ if(!st.a){note.classList.remove('on');refocus(members(st.f));TOUR.dwell=4500+40*String(FEATURES[st.f].description||'').length;if(!TOUR.paused)tourNext();return}
+ const inside=new Set(members(st.f)),label=a=>esc(els[a]?.name||a.split('.').pop()),gives=[...new Set(Object.keys(els).flatMap(k=>wantsOf(els[k].wants).filter(w=>w.to===st.a).map(w=>w.function)).filter(Boolean))].slice(0,3),needs=wantsOf(els[st.a].wants).filter(w=>inside.has(w.to));
+ selected=st.a;refocus(linked(st.a).filter(a=>inside.has(a)),st.a);
+ note.innerHTML=`<h3>${label(st.a)}</h3><div class="addr">${esc(st.a)}</div>${gives.length?`<h4>What it gives</h4>${gives.map(t=>`<p>${esc(t)}</p>`).join('')}`:''}${needs.length?`<h4>What it needs</h4>${needs.map(w=>`<p><b>${label(w.to)}:</b> ${esc(w.goal)}</p>`).join('')}`:''}`;note.style.left='16px';note.style.top='104px';note.classList.add('on');
+ TOUR.dwell=4500+Math.min(9000,note.textContent.length*38);if(!TOUR.paused)tourNext()}
+let changed=0,seen='';const ago=()=>{const s=Math.round((Date.now()-changed)/1000);return s<60?s+'s':Math.floor(s/60)+'m '+(s%60)+'s'};setInterval(()=>{if(changed)$('live').textContent=`last change ${ago()} ago`},1000);
+applyMode();
+const es=new EventSource('/events');es.onmessage=m=>{const raw=JSON.parse(m.data);if(raw!==seen){seen=raw;changed=Date.now()}if(raw==='{}')empty();else render(raw)};
+</script></body></html>

@@ -1,0 +1,61 @@
+# Map element `code.catalog.model`: OpenRouter model selection — proposed corrected description
+
+This draft applies the resolutions (GF1–GF9) to the element description. Changes are noted
+inline. It is a proposal for discussion; the decisions themselves live in `resolution.md`.
+
+## Properties
+```json
+{
+  "package": "agent host library (reusable; basis for the chassis)",
+  "name": "OpenRouter model selection",
+  "name_length": 2,
+  "role": "SE",
+  "uri": "crates/acp-host/src/models.rs; crates/roundtable-web/src/app.rs (/api/models route); crates/roundtable-web/assets/index.html (selection UI)"
+}
+```
+_GF5: uri broadened to cover the route and the page, not just models.rs._
+
+## What other parts rely on it for (their wants)
+- `code.roster.participant` (beneficiary) ← the chair (who picks participants by OpenRouter
+  model id), served by the web page: goal: Offer the OpenRouter models a participant can use.
+  Function: Lists current OpenRouter model ids. Intent: receive.
+_GF9: explicitly chains the web page → chair → participant, and defines chair (the user
+operating the page) and seat (a participant slot whose harness runs the chosen model)._
+
+## What it relies on (its wants)
+- `upstream.gateway.llm`: goal: Obtain the current list of selectable models instead of a
+  fixed list. Function: Publishes model identifiers and metadata through
+  GET https://openrouter.ai/api/v1/models. Auth: Bearer key optional; taken from
+  OPENROUTER_API_KEY or set via POST /api/settings. **The same key is also forwarded to every
+  running table as the `SetJevKey` evaluator credential (app.rs:239) — catalog auth and the
+  judge share one value.** Refresh: per page-load fetch; no server-side caching. Intent: receive.
+_GF8 + peer-verified dual-role key: host, auth (incl. shared JEV role), and refresh/caching
+cadence now stated._
+
+## Layer `references`
+```json
+[
+  {
+    "path": "README.md",
+    "sections": [ "9.4 OpenRouter Support" ]
+  }
+]
+```
+
+## Layer `elephant` (the project author's account of this element)
+```json
+{
+  "date": "2026-11-07",
+  "design": "Let the chair pick participants by OpenRouter model id from OpenRouter's live catalog, not a fixed list.",
+  "sources": [ "README.md §9.4" ],
+  "built": "acp-host/src/models.rs reads the catalog (endpoint, optional bearer key shared with the SetJevKey evaluator credential, keeps id/name/context_length); the web page offers a free-text model input with datalist hints drawn from the live catalog per page load; the typed id is not validated against the catalog. The chosen id becomes the session's generic 'model' option; if the harness does not advertise it, only a warning is recorded and the seat still joins.",
+  "gaps": [
+    "No filtering by ACP tool-use capability: all catalog models are offered (GF6).",
+    "No failure behavior documented: on catalog/auth failure /api/models returns 502 and the page silently degrades to an empty input (GF2, GF7).",
+    "No fixed fallback list by design (GF7)."
+  ]
+}
+```
+_GF1: built now states the free-text+datalist mechanism instead of "the web page lists the
+models". GF3: how the selection is used is now stated. GF6/GF2/GF7: gaps are now explicit
+rather than absent._

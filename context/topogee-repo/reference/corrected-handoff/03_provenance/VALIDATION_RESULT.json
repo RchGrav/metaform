@@ -1,0 +1,11 @@
+{
+  "original_json_sha256": "bc2ed2a0b6c2c8ad0d5ce1a13178c4340deff8283cc42fb77a6bc994568e0a59",
+  "preserved_json_sha256": "bc2ed2a0b6c2c8ad0d5ce1a13178c4340deff8283cc42fb77a6bc994568e0a59",
+  "original_xml_sha256": "8b6eceec0ae44aa73bdf3d9e2a983cf572212eb90f94575f3c7af21a1cb3d0f1",
+  "preserved_xml_sha256": "8b6eceec0ae44aa73bdf3d9e2a983cf572212eb90f94575f3c7af21a1cb3d0f1",
+  "derived_schema_validation": "PASS: Draft 2020-12 schema validated; correct example accepted; incorrect purpose alias and IFD value rejected",
+  "source_rewrite": "none",
+  "physical_database_schema": "not approved/not included",
+  "legacy_code_copied": "none",
+  "canonical_original_mutated": false
+}

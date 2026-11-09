@@ -1,0 +1,28 @@
+{
+  "$comment": "DESIGN EXAMPLE: agent-facing semantic batch is NOT a storage schema. Exact field/operation names still subject to approval.",
+  "base_revision": "rev-demo",
+  "block_ref": "example-block-01",
+  "elements": [
+    {
+      "namespace_address": "code.client",
+      "name": "Client",
+      "role": "DE",
+      "name_length": 1
+    },
+    {
+      "namespace_address": "code.server",
+      "name": "Server",
+      "role": "SE",
+      "name_length": 1
+    }
+  ],
+  "provider_joins": [
+    {
+      "receiver": "code.client",
+      "provider": "code.server",
+      "op": "Receive requested data.",
+      "ef": "Return the requested data.",
+      "ifd": "receive"
+    }
+  ]
+}

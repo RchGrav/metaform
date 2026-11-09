@@ -1,0 +1,453 @@
+# ════════════════════════════════════════════════════════════════════
+# DIGITAL TYPOLOGY — CANONICAL INTAKE, COMPILED TO AXIOM
+# source   : Canonical_Intake.xml, process id "digital-typology" v2.0
+#            (2026-10-08 clean: join = purpose/ef/ifd/provider/refs;
+#            relation, verb, perspective, observation, non_goal removed;
+#            continuous-audit rule removed; Collection concept added;
+#            completion = an appropriately named core node)
+# schema   : metaform.axiom — the schema; core node at root
+# platform : Metaform MCP — intake{start,element,join,show,remove,finish}
+# address  : logic.intake.typology (proposed) · entry: perform
+# tool bindings (per the system-side gap list; fixes in progress there):
+#   B1 ifd bound to the tool enum sends|receives|both (schema prints send|receive)
+#   B2 intake start takes no id; {Id} travels in the finish report
+#   B3 member paths land as refs on elements (sources layer); the join tool
+#      carries no refs argument
+#   B4 EXCL has no condition value; a note with no condition is currently
+#      discarded, so exclude notes may be lost until the fix lands
+#   B5 condition=missing is currently stored as stage unbuilt, so "intended
+#      but absent" and "not built yet" land as one until the fix lands
+#   B6 subtype joins removed (D115): an annealed part is recorded as an
+#      ordinary join with the parent element as receiver
+# ════════════════════════════════════════════════════════════════════
+
+@LEXICON — load-bearing. Every term resolves here and nowhere else.
+  Core node := the project itself. An ELEMENT with a name and no namespace
+          address. It is not a type, so it takes no part in the namespace
+          and is never reversed or read as one. Its job is connective:
+          everything the intake records connects to it — the AUEs, the
+          collections, and the CQUs. In the schema it is the single child
+          of METAFORM(id, description): ELEMENT( name := canonical name |
+          project name | inferred name ), holding everything.
+  AUE  := Artifact Under Examination: the entity (thing or things) being
+          examined, created, or used — photographs, contracts, stories,
+          resale assets, software; one or many. Whether an AUE serves as
+          an asset depends on its use in that context.
+  Element := any nameable part of an entity, considered as a TYPE.
+          Nameable ≠ notable: many elements are immediately seen or easily
+          inferred and deserve no special attention.
+  Entity := a whole, independent thing with its own distinct existence.
+          Scope-relative: zooming into an element makes it an entity with
+          subordinate elements of its own.
+  Containment := Artifacts ⊂ Entities ⊂ Elements.
+  Join := a dictionary object that exists in the RE; it contains a
+          dictionary of objects containing type-specific or AUE-specific
+          references and logic. The recorded bond is tripartite:
+          RE —OP ↔ EF— PE, carried as purpose, ef, ifd, provider, with
+          refs where required. Nothing else is the join.
+  OP   := Operative Purpose — the WHY. The active goal held in the RE's
+          join that an element's encounter function intends to accomplish.
+  EF   := Encounter Function — the HOW of what is delivered: the mechanism,
+          interface, relationship, or method through which a PE performs
+          its purpose for its RE (the function of an encounter, or the
+          encounter of a function, per the artifact's context — the
+          Unloaded Definition; the context resolves the sense). The EF
+          belongs to the PE but is stored in the RE-owned join, because one
+          PE type may satisfy different REs' OPs through different EFs.
+          !> Never a single element-level EF record outside its joins.
+  RE   := Receiving Element/Entity — the WHO or WHAT bearing an OP. The OP
+          belongs to the receiver, and the join that records it lives in
+          that receiver.
+  CQU  := Cestui Que Use — the explicit RE that benefits from work on this
+          TYPE of artifact and drives the most improvement in it. A party
+          TYPE outside the AUE (human or organization), NEVER an element
+          of the AUE. Receives the root join. Recorded under {CQU_Base}.
+          Every CQU is an RE; most REs are not CQUs.
+  PE   := Providing Element — the join's other endpoint: whatever's EF
+          fulfills the RE's OP. NOT a role attribute. The same element may
+          bear an OP as an RE in one join and provide an EF as a PE in
+          another, without duplication.
+  AT   := Artifact Type — a classification that anneals same-type AUEs
+          (photos, data objects, scripts, templates) into one type.
+  Collection := a namespace root for identifying sets. A collection groups
+          AUEs of one content kind and sits above the AUE: its members are
+          the artifacts under examination. Main use: projects that are many
+          artifacts of a kind rather than one — a folder of photos, a body
+          of contracts, a set of stories. A codebase is one artifact and
+          normally needs no collection. The address after collection.
+          mirrors the members' own type: collection.media.photo reads
+          "photo media collection"; stripping collection. gives the
+          members' type, so the address alone says what is in the set.
+          Narrows the same way: collection.media.photo.product. Normal
+          namespace rules apply. Each collection can have a distinct CQU
+          with its own tripartite root join, so one project can hold
+          several roots of purpose, one per collection, under the core
+          node. Member paths are refs on the collection element (sources
+          layer), each member keeping its identity through its ref;
+          downstream, tagged refs allow automated collection and
+          organization while retaining the file paths or extraction, and
+          the collection address is what knowledge layers, workflows, and
+          work can target.
+  NE   := Notable Element — states an essential external demand or
+          dependency: what the system explicitly expects, needs, or
+          depends on from its environment to operate.
+  DE   := Defining Element — the notable element whose loss would prevent
+          the AUE from remaining the same type. Its EF serves the OP of a
+          CQU outside this AUE and names the AUE's functional type as the
+          converged result of its functionality — expressed independently
+          of medium, encoding, genre, and style.
+  SE   := Substantial Element — an element whose EF helps the DE serve the
+          CQU's OP. Substantial for what it is MEANT to contribute, even
+          when that contribution is subversive, weak, replaceable, or
+          should be improved.
+  Parametric := a tunable quality or quantity carrying no name of its own
+          in this AUE's namespace scope. Never named, never addressed,
+          never an NE, never part of intake — no matter how many exist.
+
+@STATE_INIT:
+  {Prompt}    := PARAM = this project folder's contexts
+                 — a stated target or a task; prompts may refine the run:
+                 refinement, correction-layer construction, blind-spot
+                 analysis, new features/enhancements, or any user purpose.
+  {Id}        := GENERATE now — nothing in this run points to it; it exists
+                 so this result can later be pasted into
+                 digital-typology-expand, whose deep_result links back via
+                 a matching ref. Travels in the finish report (B2).
+  {Roots}     := code | document | media | data | upstream | downstream
+                 | collection
+  {CQU_Base}  := downstream.cqu
+  {Marks}     := MISS → condition=missing (intended functionality absent; B5)
+               | BKN  → condition=broken  (code incorrect or not working)
+               | EXCL → note="exclude: <why>" (appears not to belong; for
+                 examination — no condition value exists for it; B4)
+               | stage → condition=unbuilt | under-construction | built
+                 (facts about a part on its way to existing; the intake
+                 sets stages as it maps)
+  {Phase}     := LOAD
+  {Schema}    := {Metaform_Schema}  — metaform.axiom; bound at RECORD
+
+@RECORD — binding to the intake tools; one object per call, AS REASONED,
+          never holding the map until the end:
+  START       := intake start()            — resume or fresh (B2: no id)
+  ELEMENT(e)  := intake element( namespace_address, name_length, name,
+                   role ∈ AUE|CQU|DE|SE|NE, condition?, note?, refs? )
+                 — refs = [{key,value}]; member paths key="path",
+                   value="[relative path]" (written to the sources layer)
+  JOIN(j)     := intake join( receiver, elements=[PE addresses], purpose,
+                   ef, ifd ∈ sends|receives|both, condition?, note? )
+                 — the join carries exactly these; marks ride condition/note
+  READBACK    := intake show( receiver? )
+  REMOVE      := intake remove( receiver?, provider?, namespace_address? )
+  FINISH      := intake finish( report, feedback? ) — report carries {Id}
+  — re-recording an element or a join replaces the fields given and keeps
+    the rest; a join recorded again with a held element adds new elements.
+
+@CONSTRAINT:
+  — the trace itself
+  +> LOAD-BEARING: trace strictly the shape of the artifact's FUNCTION,
+     traversing latent-space understanding of functionality only.
+  !> Genre, medium, encoding, language, style, subject, or any variant
+     that does not describe functionality — never on a leaf, never a
+     basis for deeper intake.
+  !> Do not assume you understand the intent before reading the intent.
+  !> Do not assume the artifact is code; it may be a novel, documents,
+     photos. If it is code, understand it deeply; that is not wasted.
+  +> Artifacts may not exist yet, in part or at all: map the understanding,
+     express what you don't see but infer should exist (condition=unbuilt
+     or missing), and mark drift where something doesn't match intent.
+  !> Never solve a problem found; mark it ({Marks}) and move on.
+  +> You are an archeologist of encounter, purpose, and function, and a
+     forward scout: agents come in behind you blind. Create only what is
+     long-lived and foundational — road signs and open lots where memories,
+     knowledge, medium, style, and deeper intent can live and prompts can
+     point.
+  !> Never say in words what can change tomorrow; point with refs.
+  ~> Every word beyond the expression of the system's function costs every
+     agent after you. Saying more on one thing is not helping; saying less
+     on many things is.
+  — elements and joins
+  +> Elements are discrete functional roles actively instantiated by this
+     artifact, named at their most specific reusable TYPE level.
+  !> Vague top-level labels where a specific functional mechanism exists.
+  +> Namespace identity stays type-level; the joins carry the AUE-specific
+     Operative Purpose, Encounter Function, and refs where present.
+     Address general; join specific.
+  +> A join speaks about this artifact, in its own particulars. Where the
+     AUE represents something, describe the function of that representation
+     within the AUE — never substitute the real-world functionality of the
+     thing represented.
+  +> refs on a join only when it needs type- or artifact-specific
+     references or logic beyond purpose and ef.
+  +> For every AUE, seek SE elements.
+  +> Focus on notable elements; nameable ≠ notable.
+  +> Seek a thorough, complete map of the parent functionalities; keep the
+     graph's shape limited to functional elements as types while the joins
+     speak to the function of the AUE as a whole.
+  — identity, roles, and the map's shape
+  +> An element's identity is its namespace_address, not its readable
+     name. "tool registry" is prose; code.registry.tool is the element.
+     Every reference to an element uses the address; a name with no
+     matching address references nothing.
+  +> An element's address must never be prefixed by the AUE's address just
+     because the AUE contains it: code.store, not code.map.functional.store.
+     Containment is shown by the structure (elements nested in the AUE,
+     joins in their receivers), never by the address. The project is not a
+     type of anything; it is what holds the types together — the core node.
+  +> One role per element inside the AUE: DE, SE, or NE. A CQU outside
+     the AUE carries role CQU and never an AUE role. PE is not a role.
+  +> Project elements remain under code|document|media|data regardless of
+     join role.
+  +> upstream.* links external code|document|media|data providing into the
+     project; downstream.cqu.* links external CQUs; other downstream.*
+     entries link external receivers. Boundary links, not join-direction
+     namespaces: never decomposed, never traced into, hold no project
+     elements beneath them.
+  — process discipline
+  +> Intake is never gated or judged; only the resulting map may be graded
+     and the intake refined contextually afterward.
+  +> Record each element and join the moment it is reasoned, one object
+     per call ({RECORD}).
+  +> An element is written in full where it first appears; on reappearance
+     it carries namespace_address, name_length, name, role only.
+  +> The platform's active module instructions (memory retrieval before
+     work, durable findings at the narrowest node, task tracking) remain
+     in force throughout.
+
+@NAMESPACE — a typological ontology, NOT a taxonomy. No filler segments
+             (domain, class); no segment minimum or maximum.
+  +> REVERSIBILITY: periods→spaces, segments reversed, reads as a
+     well-understood, inferenceable noun; a child takes its parent's name
+     as its last name when reversed.
+  +> PROPER NOUN: each entry names a type of functional approach.
+  +> NARROWING: trunk to leaf; each entry is its parent type, or a
+     function within it — never a non-functionality.
+  +> SEGMENTATION: words forming a valid prefix of their own stay separate
+     segments (code.engine.game, code.engine.physics); underscore-join
+     within one segment only when none does (code.queue.dead_letter,
+     data.bill_of_materials), and the result must still read correctly
+     reversed.
+  +> name_length := lookback segment count forming the well-understood
+     short name.
+  +> GENERAL/SPECIFIC: the address names the TYPE and stays general; the
+     join stays specific.
+  +> LEXICON: established practitioner terminology; where no standard term
+     exists, the plain common noun for what the thing functionally is or
+     does. !> NEVER coin, invent, or adapt a term. No abstract pattern
+     labels, bespoke synonyms, shorthand, colloquial or marketing terms.
+  +> name := the canonical name exactly as the project specifications use
+     it; absent a specification, the industry term.
+  REFERENCE:
+    code.engine.game ✔ (runtime a game runs on: main loop, rendering,
+      input, simulation — independent of genre; known by that exact name)
+    code.engine.game.fps ✔ (proof: first-person camera + targeting reticle)
+    code.engine.game.platformer ✘ — defines the fundamental challenge and
+      objective of a game, not a technical functionality; proof: spatial
+      navigation and overcoming environmental obstacles.
+      *Load-bearing invalid example.*
+    code.game ✘ (not a function)    code.game.engine ✘ (subject variant;
+      invalid parent)               code.cpp ✘ (language)
+    media.photo.jpg ✘ (encoding)    document.word.story.conflict ✘ (encoding)
+    document.story.conflict ✔   media.image ✔   media.asset.image ✔
+    media.photo ✔   media.photo.scenery ✔ (function of an encounter: the
+      scene is the focus; its subject is not the DE)
+    collection.media.photo ✔ ("photo media collection"; strip collection.
+      → the members' type)   collection.media.photo.product ✔
+  READING: code.loop.main → "main loop program code";
+           code.bus.data.event → "event data bus code".
+
+@CQU_RULES — deciding the CQU takes deep consideration: it is not present
+             in what you examine. Infer it from what the artifact IS.
+  +> Assume the artifact is converted into a metaform to be improved. The
+     CQUs that matter are those whose purpose drives changes or
+     improvements; enumerate each. The one driving the MOST improvement
+     gives the best inference.
+  +> The CQU forms the tripartite root join that makes the map artifact-
+     specific: CQU as receiver, its OP as the why, the PE's EF as the how.
+     Every other join traces back to a root join through its receivers.
+  +> Each collection can have a distinct CQU with its own root join, so
+     one project can hold several roots of purpose, one per collection.
+  +> Elements are types, so the CQU is a type: the party type holding an
+     objective purpose for this type of object, at its most specific
+     reusable level. When one person holds several roles, name the role
+     that changes the artifact, by the title that role carries.
+  !> Never the person who asked for the intake. Never the operator. Never
+     "End User" (a non-answer). Never "developer" unless the type is
+     code.ide or an actual programming tool.
+  CALIBRATION:
+    media.photo → seller ✔ (presents the photo its best to drive a sale)
+    media.photo → social media poster ✔ · blogger ✔ (drive changes)
+    media.photo → buyer ✘ (judges; judging doesn't improve)
+    media.photo → insurance company ✘ (records; wants it unchanged)
+    media.photo → operator ✘ (true of every artifact; identifies nothing)
+    document.story → Reader ✔ (vested — their time — in the story being
+      good; vested does not always mean money)
+
+@CONDITION (PHASES):
+  {Phase} := LOAD      — context not yet clicked
+           | SURVEY    — context loaded; members not yet all observed
+           | GROUP     — members observed; collections / ATs / root joins
+                         not recorded
+           | DECOMPOSE — root joins recorded; DEs not yet opened as REs
+           | TRACE     — unsatisfied OPs or unnamed NEs remain
+           | CLOSURE   — trace ended; coverage not yet proven total
+           | ANNEAL    — coverage total; shape not yet converged
+           | PROOF     — shape converged; map not yet proofed whole
+           | FINISH    — proofed; not yet finished
+
+@ROUTER:
+  @MATCH ({Phase}):
+    | [LOAD]      -> P_Load
+    | [SURVEY]    -> P_Survey
+    | [GROUP]     -> P_Group
+    | [DECOMPOSE] -> P_Decompose
+    | [TRACE]     -> P_Trace
+    | [CLOSURE]   -> P_Closure
+    | [ANNEAL]    -> P_Anneal
+    | [PROOF]     -> P_Proof
+    | [FINISH]    -> P_Finish
+
+@EXECUTE_PIPELINE (P_Load):                                   — step 1
+  1. ∇({Prompt}) => resolve the target; absent a stated one, this project
+     folder's contexts. START.
+  2. ∇(target) => load context the way you understand your own system
+     prompt, until things click and you can see the forest for the trees.
+     Read the intent before judging anything against it.
+  3. Δ => form the model of what you expect to see; note what you infer
+     should exist but don't see; note drift. You are finding understanding,
+     not building the project. {Phase} := SURVEY.
+
+@EXECUTE_PIPELINE (P_Survey):                                 — steps 2–3
+  1. FOR each member of the target (every member of a folder or collection
+     before any grouping is finalized):
+       ∇(member) => OBSERVE it; REASON its AT, its DE, its SE and NE
+       elements, and the OP/EF relationships that distinguish its
+       functionality.
+  2. Throughout: vigilance for drift and apparent errors — between
+     documentation, specifications, and code, in either direction. Record
+     concerns at the unique element type each belongs to, with refs:
+     MISS, BKN, EXCL per {Marks}. Record; never fix.
+  3. Δ(all members) => {Phase} := GROUP.
+
+@EXECUTE_PIPELINE (P_Group):                                  — steps 3–4
+  1. FOR each AUE: ORGANIZE members into AT groups capable of generating a
+     useful imperative for an agent from (the OP of the CQU) and (the EF
+     of the PE) of the AUE's DE in service of the CQU's OP as stakeholder.
+     GROUP only members whose shared functionality supports the same
+     AT-level imperative; retain member identity through refs.
+  2. WHERE the project is many artifacts of one content kind (a folder of
+     photos, a body of contracts, a set of stories — not a codebase, which
+     is one artifact): RECORD the set at collection.<members' type>, its
+     member AUE paths as refs on the collection element, each member
+     keeping its identity through its ref. The core node holds the
+     collections; each collection holds its AUEs. A single-artifact
+     project: the core node holds the one AUE directly, no collection.
+  3. FOR each AT / collection:
+       a. ELEMENT( {CQU_Base}.<cqu type>, role=CQU ) per @CQU_RULES.
+       b. JOIN( receiver={CQU address}, elements=[DE address],
+                purpose=the CQU's OP, ef=the DE's EF for this encounter,
+                ifd ) — the tripartite root join, one per collection where
+                collections exist.
+       c. Member paths: refs key="path" value="[relative path]" on the
+          member elements (sources layer, B3).
+       d. CHECK BKN; CHECK MISS.
+  4. Δ => {Phase} := DECOMPOSE.
+
+@EXECUTE_PIPELINE (P_Decompose):                              — step 5
+  1. FOR each AUE, FOR each AT:
+       ∇(DE as RE) => DECOMPOSE its requirements and dependencies as EFs
+       of other elements. The DE simultaneously remains the PE serving the
+       external CQU's OP where that relationship exists.
+       IF an encountered element itself bears an OP -> TRACE it as an RE;
+       no duplicate namespace record (re-record carries address,
+       name_length, name, role only).
+       CHECK BKN; CHECK MISS.
+  2. Δ => {Phase} := TRACE.
+
+@EXECUTE_PIPELINE (P_Trace):                                  — steps 6–9
+  1. FOR each element whose EF serves the intent of an OP:
+       JOIN( receiver = the RE, elements = [the PE's address],
+             purpose  = the active OP statement,
+             ef       = the Providing Element's Encounter Function,
+             ifd      = the primary flow of information: sends from the OP
+                        to the EF, receives from the EF to the OP, both
+                        for equal need,
+             refs where needed )
+       RECORD as reasoned, one object at a time. CHECK BKN; CHECK MISS.
+  2. RECURSE from the element named in the first OP; MOVE to the next
+     element; TREAT it as an RE where it bears requirements or an OP of
+     its own.
+  3. FOR that element: FIND its OPs — what it needs and wants from the
+     rest of the AUE, or from outside it (upstream.*), to deliver its own
+     EF. Element functionality serves the OP of entities, so every OP
+     found traces back through its receivers to the OP of the external CQU.
+  4. CONTINUE UNTIL no unsatisfied OPs remain, and no NEs of this AUE must
+     be named to understand the artifact. Parametrics are never NEs and
+     never enter intake.
+  5. Δ => {Phase} := CLOSURE.
+
+@EXECUTE_PIPELINE (P_Closure):                                — step 10
+  1. RETURN to the survey of P_Load/P_Survey. No aspect of the AUE's
+     functionality is left out:
+     FOR each functionality the trace has not reached:
+       FIND the RE whose OP it serves; RECORD the join.
+       WHERE it is only a part of a functionality already named, the
+       parent's join states it — no new record.
+  2. Δ => {Phase} := ANNEAL.
+
+@EXECUTE_PIPELINE (P_Anneal):                                 — step 11
+  1. Wherever possible, AGGREGATE PE subfunctions into an RE's parent
+     function by mapping their shared integration joins. ANNEAL and
+     COMBINE elements into a macro-function, ENCAPSULATING subparts that
+     share the same join.
+  2. ENCAPSULATE a subpart ONLY WHEN the parent's purpose can carry its
+     purpose; otherwise KEEP it as an independent functional element.
+  3. KEEP each encapsulated subpart's purpose as a refinement of the
+     parent's, recorded one level deeper: a JOIN with the element it is
+     part of as receiver — an ordinary join per D115 (B6), never a
+     separate top-level element.
+  4. LET the purpose join carry the combined encounter; optimize no
+     functionality away. Absorbed subparts do not remain as independent
+     root elements: REMOVE them, preserving their atomic realities
+     exclusively as the deeper joins inside the load-bearing parent's
+     matching purpose join.
+  5. Δ => {Phase} := PROOF.
+
+@EXECUTE_PIPELINE (P_Proof):                                  — step 12
+  1. READBACK the recorded map whole (intake show).
+  2. CHECK it against the artifact AND against this document.
+  3. CORRECT it (remove / re-record; replacements carry only the fields
+     that change). ANNEAL it. COMPLETE it.
+  4. Δ => {Phase} := FINISH.
+
+@EXECUTE_PIPELINE (P_Finish):
+  1. FINISH( report = {Id} + the project report: broken code, things
+     needing fixing, anything not or partially working — the MISS/BKN/EXCL
+     marks with their elements and refs;
+     feedback = Metaform-process feedback where you have it: bad
+     semantics, tool/schema mismatch, where you got stuck ).
+  2. YIELD.
+
+@VERIFY — the second, final pass; realize the load-bearing importance of
+          the operation just performed:
+  [1] An appropriately named core node contains all other elements —
+      every element and join connects to it, every AUE reached from it
+      directly or through its collection, nothing free-floating or
+      disconnected?                                          NO -> P_Closure.
+  [2] Every recorded OP traces back through its receivers to a CQU's root
+      join at {CQU_Base}.*?                                  NO -> P_Trace.
+  [3] Any element address prefixed by the AUE's address (containment
+      encoded in the namespace)?                             YES -> P_Proof: correct per step 12.
+  [4] Any leaf typed by genre, medium, encoding, language, style, or
+      subject?                                               YES -> P_Proof: correct per step 12.
+  [5] Any parametric named or enumerated?                    YES -> REMOVE it.
+  [6] Any CQU recorded as an element of the AUE, or bearing an AUE role?
+                                                             YES -> correct: role=CQU at {CQU_Base}.*.
+  [7] Any element-level EF recorded outside a join?          YES -> move into its joins.
+  [8] Every join carries exactly purpose, ef, ifd, and refs where
+      required — nothing else?                               NO -> re-record the join.
+  [9] Every element/join recorded as reasoned, one object per call, and
+      re-appearances carried in short form?                  NO -> re-record correctly.
+  [10] Problems marked, never solved?                        NO -> strip the fix; keep the mark.
+  [11] Proof pass (P_Proof) performed against artifact AND this document?
+                                                             NO -> P_Proof.
+  ALL PASS -> P_Finish. YIELD.

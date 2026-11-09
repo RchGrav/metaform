@@ -1,0 +1,332 @@
+//! Conformance tests of the public interface against the shared fixtures in `metaform/`.
+//! Budget (CLAUDE.md): at most five tests for this feature. This file holds four.
+
+use std::fs;
+use std::path::PathBuf;
+
+use metaform_core::{Code, Contract, Effect, Map, MapRef, Outcome, Refusal, execute};
+use serde_json::{Value, json};
+
+fn fixture(name: &str) -> Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(name);
+    serde_json::from_slice(&fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
+        .unwrap()
+}
+
+fn seeded() -> Map {
+    Map::from_document(&fixture("intake-example.json"))
+        .unwrap()
+        .1
+}
+
+/// Run a write, check that its effect turns the old map into the new one, and return the new map.
+fn write(contract: &Contract, map: &Map, command: Value) -> Map {
+    match execute(contract, map, &command) {
+        Ok(Outcome::Write(write)) => {
+            assert_eq!(
+                map.apply(&write.effect),
+                write.map,
+                "the effect of {command}"
+            );
+            write.map
+        }
+        other => panic!("{command} should write, got {other:?}"),
+    }
+}
+
+fn read(contract: &Contract, map: &Map, command: Value) -> Value {
+    match execute(contract, map, &command) {
+        Ok(Outcome::Read(result)) => result,
+        other => panic!("{command} should read, got {other:?}"),
+    }
+}
+
+fn refused(contract: &Contract, map: &Map, command: &Value) -> Refusal {
+    match execute(contract, map, command) {
+        Err(refusal) => refusal,
+        Ok(outcome) => panic!("{command} should be refused, got {outcome:?}"),
+    }
+}
+
+/// Every request and expected refusal in `metaform/tool-examples.json`.
+#[test]
+fn tool_examples_give_the_documented_results() {
+    let contract = Contract::bundled().unwrap();
+    let examples = fixture("tool-examples.json");
+    let requests = examples["requests"].as_array().unwrap();
+    let error = &examples["referenced_delete_error"];
+    // R-5.23: orphaned returns a bare dictionary keyed by address, as the fixture shows.
+    let orphans = examples["orphan_result_example"].clone();
+
+    // The add is a separate example, not a replay against the populated map.
+    let added = write(&contract, &Map::new(), requests[0].clone());
+    let holder = added.element("code.protocol.network.tracker.cs").unwrap();
+    assert_eq!(
+        holder.wants_json(),
+        requests[0]["add"]["code.protocol.network.tracker.cs"]["wants"]
+    );
+    assert!(
+        added.element("code.masher.widget").is_some(),
+        "the want creates the element it names"
+    );
+
+    enum Expect {
+        Refused(Code, Value, Value),
+        Ok,
+        Result(Value),
+    }
+    let table = [
+        (
+            1,
+            Expect::Refused(
+                Code::DependencyLock,
+                error["message"].clone(),
+                error["remediation"].clone(),
+            ),
+        ),
+        (2, Expect::Ok),
+        (3, Expect::Result(orphans)),
+        (4, Expect::Ok),
+        (
+            5,
+            Expect::Result(examples["read_after_role_removal"].clone()),
+        ),
+        (6, Expect::Ok),
+    ];
+    assert_eq!(
+        table.len() + 1,
+        requests.len(),
+        "every request is in the table"
+    );
+    let mut map = seeded();
+    for (index, expect) in table {
+        let request = &requests[index];
+        match (execute(&contract, &map, request), expect) {
+            (Err(refusal), Expect::Refused(code, message, remediation)) => {
+                assert_eq!(refusal.code, code, "request {index}");
+                assert_eq!(
+                    Value::String(refusal.reason.clone()),
+                    message,
+                    "request {index}"
+                );
+                assert_eq!(
+                    refusal.remediation.as_deref(),
+                    Some(&remediation),
+                    "request {index}"
+                );
+                let shown = refusal.to_json();
+                assert_eq!(shown["code"], "DEPENDENCY_LOCK");
+                assert!(shown["rule"].as_str().unwrap().starts_with("R-5.7"));
+            }
+            (Ok(Outcome::Write(write)), Expect::Ok) => {
+                assert_eq!(map.apply(&write.effect), write.map, "request {index}");
+                map = write.map;
+            }
+            (Ok(Outcome::Read(result)), Expect::Result(expected)) => {
+                assert_eq!(result, expected, "request {index}")
+            }
+            (got, _) => panic!("request {index} gave {got:?}"),
+        }
+    }
+    // R-5.30: goto's summary sheet, against the populated initial state.
+    let goto = &examples["goto_example"];
+    assert_eq!(
+        read(&contract, &seeded(), goto["request"].clone()),
+        goto["first_result"]
+    );
+
+    // After the four-step delete (R-5.25), the element is gone and its empty branch with it.
+    assert_eq!(refused(&contract, &map, &requests[5]).code, Code::NotFound);
+    assert!(map.element("code.masher").is_none());
+}
+
+/// Documents round trip through the in-memory map (R-4.2). Storage is `metaform-store`'s job:
+/// the JSON file store that stood here was never decided and is removed (R-4.1).
+#[test]
+fn documents_round_trip_through_the_map() {
+    let document = fixture("intake-example.json");
+    let (name, map) = Map::from_document(&document).unwrap();
+    assert_eq!(map.to_document(&name), document);
+
+    let (_, canonical) = Map::from_document(&fixture("metaform-canonical.json")).unwrap();
+    let mut element = canonical.element("code").unwrap().clone();
+    element.child_map = Some(MapRef("maps/code".into()));
+    let chained = canonical.apply(&Effect {
+        elements: [("code".to_string(), Some(element))].into(),
+    });
+    assert_eq!(
+        chained.element("code").unwrap().child_map,
+        Some(MapRef("maps/code".into()))
+    );
+}
+
+/// Each refusal carries its fixed code and a remediation; a refused command changes nothing.
+#[test]
+fn refusals_name_the_rule_and_change_nothing() {
+    let contract = Contract::bundled().unwrap();
+    let map = seeded();
+    let want =
+        |intent: &str| json!({"why": "Relay it.", "how": "Supplies data.", "intent": intent});
+    let table = [
+        (
+            json!({"add": {"Code.relay": {"role": "SE"}}}),
+            Code::NameRoundTripFailure,
+            Some(json!({"add": {"code.relay": {"role": "SE"}}})),
+        ),
+        (
+            json!({"update": {"code.queue_2": {"name": "q"}}}),
+            Code::NameRoundTripFailure,
+            Some(json!({"update": {"code.queue2": {"name": "q"}}})),
+        ),
+        (
+            json!({"add": {"widgets.relay": {"name": "r"}}}),
+            Code::GrammarConstraintViolation,
+            None,
+        ),
+        (
+            json!({"add": {"code.relay": {"wants": {"code.masher.widget": want("push")}}}}),
+            Code::GrammarConstraintViolation,
+            None,
+        ),
+        (
+            json!({"update": {"code.masher.widget": {"status": "missing"}}}),
+            Code::GrammarConstraintViolation,
+            None,
+        ),
+        (json!({"add": {}}), Code::GrammarConstraintViolation, None),
+        (
+            json!({"update": {"code.relay": {"wants": {"code.other": {"intent": "send"}}}}}),
+            Code::WantIncomplete,
+            Some(
+                json!({"update": {"code.relay": {"wants": {"code.other": {"intent": "send", "why": "<why>", "how": "<how>"}}}}}),
+            ),
+        ),
+        (
+            json!({"add": {"code.relay": {"name": "r", "technical_name": "relay code extra"}}}),
+            Code::TechnicalNameAlignmentFailure,
+            Some(json!({"update": {"code.relay": {"technical_name": "relay"}}})),
+        ),
+        (
+            json!({"add": {"code.relay": {"role": "DE"}}}),
+            Code::RoleTaxonomyFailure,
+            Some(json!({"update": {"code.protocol.network.tracker.cs": {"role": null}}})),
+        ),
+        (
+            json!({"delete": {"code.protocol": {}}}),
+            Code::ElementsBeneath,
+            Some(json!({"delete": {"code.protocol.network.tracker.cs": {}}})),
+        ),
+        (
+            json!({"code.nowhere": {}}),
+            Code::NotFound,
+            Some(json!({".": {}})),
+        ),
+    ];
+    for (command, code, remediation) in table {
+        let refusal = refused(&contract, &map, &command);
+        assert_eq!(refusal.code, code, "{command}: {}", refusal.reason);
+        if remediation.is_some() {
+            assert_eq!(
+                refusal.remediation.as_deref(),
+                remediation.as_ref(),
+                "{command}"
+            );
+        }
+        assert!(
+            !refusal.reason.is_empty() && !refusal.rule().is_empty(),
+            "{command}"
+        );
+    }
+    assert_eq!(map, seeded(), "the input map is never changed");
+    let index = read(&contract, &map, json!({".": {}}));
+    assert!(
+        !index["addresses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a.as_str().unwrap().starts_with("code.relay"))
+    );
+}
+
+/// The form does the work: one write creates every path it needs, add grows, a read returns only
+/// the element's own fields, and the root read is the connected index.
+#[test]
+fn writes_create_paths_and_the_root_read_is_the_index() {
+    let contract = Contract::bundled().unwrap();
+    let want =
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "intent": "receive"});
+    let mut map = Map::new();
+    map = write(
+        &contract,
+        &map,
+        json!({"update": {"code.new.part": {"name": "part", "wants": {"code.other.part": want}}}}),
+    );
+    map = write(
+        &contract,
+        &map,
+        json!({"add": {"code.new.part": {"name": "renamed", "notes": ["a"], "wants": {"code.third.part": want}}}}),
+    );
+    map = write(
+        &contract,
+        &map,
+        json!({"add": {"code.new.part": {"notes": ["b"]}}}),
+    );
+    map = write(&contract, &map, json!({"update": {".": {"name": "demo"}}}));
+    assert_eq!(
+        map.element("code.new.part").unwrap().fields["notes"],
+        json!(["a", "b"])
+    );
+    assert_eq!(
+        read(&contract, &map, json!({"code.new.part": {}})),
+        json!({"code.new.part": {"name": "renamed"}})
+    );
+
+    let index = read(&contract, &map, json!({".": {}}));
+    assert_eq!(
+        index["addresses"],
+        json!([
+            "code",
+            "code.new",
+            "code.new.part",
+            "code.other",
+            "code.other.part",
+            "code.third",
+            "code.third.part"
+        ])
+    );
+    assert_eq!(
+        index["edges"],
+        json!([
+            ["code.new.part", "code.other.part"],
+            ["code.new.part", "code.third.part"]
+        ])
+    );
+    assert_eq!(index["definitive"], Value::Null);
+    map = write(
+        &contract,
+        &map,
+        json!({"update": {"code.new.part": {"role": "DE"}}}),
+    );
+    assert_eq!(
+        read(&contract, &map, json!({".": {}}))["definitive"],
+        "code.new.part"
+    );
+
+    let remediation = refused(&contract, &map, &json!({"delete": {"code.other.part": {}}}))
+        .remediation
+        .map(|fix| *fix)
+        .unwrap();
+    map = write(&contract, &map, remediation);
+    assert_eq!(
+        read(&contract, &map, json!({"orphaned": {}})),
+        json!({"code.new.part": {"name": "renamed", "role": "DE"}})
+    );
+    map = write(&contract, &map, json!({"delete": {"code.other.part": {}}}));
+    assert!(
+        map.element("code.other").is_none(),
+        "the empty branch goes with its last element"
+    );
+    assert_eq!(map.element(".").unwrap().fields["name"], "demo");
+}

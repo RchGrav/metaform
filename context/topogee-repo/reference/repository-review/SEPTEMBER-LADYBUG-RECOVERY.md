@@ -1,0 +1,45 @@
+# September LadybugDB recovery
+
+The owner's recollection is supported by native driver code, callers, manifests and test sources. The strongest recovered cut is `8c2f4a3ae6f8d858a14939f11a85450d9d5f3157`, 2026-09-10. It includes direct Ladybug graph persistence and a distinct SQLite-authoritative shared-service analysis-copy mode. Neither is the new ECS target model.
+
+This is historical source assessment. No recovered script, native database or test was executed. Full source/test/search details are in [reviewer 5](reviewers/05-BACKEND-RECOVERY.md), with ref/archive inventory in [reviewer05-evidence.json](reviewers/reviewer05-evidence.json).
+
+## Recovered artifacts
+
+| Revision/artifact | Observed capability and exact evidence | Target fit | Recovery recommendation |
+| --- | --- | --- | --- |
+| `98926298ae96be0be5f1e7282ff5cfb2492fa506`, 2026-09-06 | `src/metaform/backends.py:176` imports `ladybug`, opens Database/Connection and creates Record/Participant tables. | Real native adapter source, old ontology. | Retain as an earlier provenance point. Prefer the more complete Sept10 cut for mechanics review. |
+| `8c2f4a3ae6f8d858a14939f11a85450d9d5f3157`, 2026-09-10 | `src/metaform/backends.py:213`, `src/metaform/service.py:155`, `src/metaform/modules/graph.py:57` implements native queries/writes and revision-labelled shared analysis copies. | Substantive existing work, not merely a declaration or unused import. Different schema/authority model from target. | Adapt driver, transaction, ownership, publication/provenance and uncertain-result mechanics. Replace target data model and command/persistence integration. |
+| Same commit manifests | `pyproject.toml:11` declares `ladybug>=0.20.2,<0.21`. `uv.lock:393` resolves PyPI ladybug 0.20.2 with wheels and sdist digest `ebf6a2c3469a34cff3b1e3b83e9e782e624a8ae73aad433b9ec2e74a503879de`. | Establishes engine/package identity. Does not prove compatibility with a selected current release. | Revalidate actual API/result/transaction behavior against the selected target version later. No database reselection. |
+| Retained `metaform.zip` | ZIP SHA-256 `7705d9bd2bd634e503be73e13cb34f225cfffe88b5477e99a096b48d527110b6`. Members `src/metaform/backends.py` and `src/metaform/service.py` exactly match Sept10 Git blobs `8aa32da2989df75719a19a7e2eaeb4b0264b5804` and `bf6eec0ffc59d5e826d763ff74a6c95325ebf025`. | Independent byte-correlated recovery source. | Preserve original archive. No extraction over checkout or installer execution. Member SHA-256 values below pin the read source. |
+| `3d3543bc84047d86faac59e3533f3f92fcbd72aa`, 2026-09-11 | `backends.py:211` now permits SQLite/JSON only. `tests/test_knowledge_store.py:260` refuses retired ladybug while preserving files. | Removal evidence, not proof no Ladybug integration existed. | Use history before this cut to recover native mechanics. Do not restore its retirement or authority policy into the rebuild. |
+| Retained `metaform_2.zip` | SHA-256 `7be9449087fac8b681000a461ae02a7a9854d4d127dc772f13f2261f3be5d196`, with post-retirement 220-line backends.py. `docs/reviews/final-distribution/dependencies311.json:28` and dependencies313 mention Ladybug 0.20.4. | Stale dependency reports do not prove active wiring. | Treat dependency hits as discovery hints and correlate code/callers before reuse. |
+| `6d991b7a8bf15bfdb2500adc2aef96eb1109a2e6`, 2026-09-21 | Path history removes the earlier runtime and backends.py. | Explains absence in current main. | Selective extraction only. No reset/revival of the old runtime. |
+
+For `metaform.zip`, member SHA-256 is `4b50d6d57c0cbf451828ea0dd76e5268b9c96cc25eb16313a6d825e6bfd44b67` for backends.py and `fae5cfbba7b6f6c7a7e0ac7d119a389f16935fceac308628f78ea9749adda51e` for service.py. Archive paths refer to retained files at the repository root. All historical code line references below use the Sept10 commit unless stated otherwise.
+
+## What was wired and what it proves
+
+| Boundary/scenario | Observed implementation | Consequence for reuse and smallest change |
+| --- | --- | --- |
+| Native database ownership | `backends.py:220` takes FileLock, opens `ladybug.Database(..., buffer_pool_size=128*1024*1024)`, creates Connection and closes both in finally. | Adapt native ownership/cleanup ideas. Do not adopt per-call open/close/file lock or fixed buffer size as the target long-lived service policy without evidence. |
+| Schema | `backends.py:230` uses generic Record nodes with JSON body/metadata and Participant edges with role/ordinal. `:361` writes those bodies and incidence. | Replace with target snapshot-qualified Namespace/Element/PurposeJoin/ContextItem/RuntimeRecord schema, derived topology and stable semantic references. |
+| Parameterized Cypher and results | `backends.py:241` binds parameters, returns columns/row arrays and coerces unsupported values to strings/ISO text. `:396` exports/queries generic bodies. | Adapt binding/result iteration. Specify actual target types/null/native-byte preservation rather than catch-all coercion. |
+| Transactions | `backends.py:261`, `:301` explicitly BEGIN/COMMIT/ROLLBACK bulk operations. replace_scope rehydrates the whole graph. | Recover rollback mechanics. Replace whole-graph replacement with target source/derived publication and write scheduling. Source existence is not a target performance result. |
+| Direct graph mode | `app.py:171` chooses `open_graph(...,'ladybug')` outside service mode. `modules/graph.py:84` copies a graph to selected backend and updates configuration. `installation.py:34` detects ladybug and invokes selection. | Establishes callers and usable persistence path. Do not revive installer-driven migration or old backend-selection command inventory. |
+| Shared-service authority | `app.py:173`, `:187` uses BoundGraph; `knowledge.py:310` keeps authority in SQLite. `service.py:193` hydrates disposable Ladybug copies from consistent export, records source_revision and atomically publishes completed copy plus metadata. | Preserve source-cut/staging/complete-publication ideas. Reject SQLite authority/analysis-only Ladybug as target design. Graph publication and runtime authority must match amendment B. |
+| Dropped query result | `service.py:155` carries request/project/protocol/instance IDs; `:164` reports ambiguous_result for dropped query response rather than replaying a possibly mutating query. | Adapt uncertainty/correlation to semantic operation and Python–Node recovery contracts. Do not infer safe retry or exactly-once model/command execution. |
+
+## Tests inspected and historical results
+
+Read at Sept10, not rerun: `tests/test_service_analysis.py:18` checks copy refresh/source revision and mutation isolation, `:43` missing/invalid cases, `:56` complete copies under concurrent reads, `:71` command routing, `:97` core operation with native engine unavailable, `:128` dropped mutating response with one observed mutation and ambiguous result, `:165` global source metadata. `tests/test_knowledge_store.py:99` covers source-preserving adoption. `tools/check_distribution.py:227` contains native refresh/query assertions. These are meaningful native-integration test sources with explicit callers.
+
+Historical execution reports at `docs/verification.md:100`, `:121` and `docs/reviews/2026-09-09-system-review-evidence/baseline.json:10` report installed driver/Cypher checks and earlier suite results, with limitations. They are archived claims, not fresh review execution. Sept11 `docs/reviews/2026-09-11-ladybug-retirement-owned-tests.log:1` reports 101 passes for retirement-era behavior. The later ECS verification record explicitly says target DDL/Cypher was not executed. None of these is new target integration proof.
+
+## Search scope and remaining evidence gap
+
+Reviewer 5 searched 1,591 reachable commits in a non-shallow repository, captured 559 branch/tracking/tag ref identities, searched all-ref commit messages/path history and September dates, examined candidate trees/manifests/tests, and listed/scanned nine retained root ZIPs. Text-member scans covered `.py/.toml/.txt/.md/.json/.yml/.yaml/.lock` files smaller than 5 MB. `ladybug`, `lbug`, `kuzu` and `cypher` were hints, followed by actual engine/caller inspection. Current NetworkX GrandCypher was distinguished from historical native Ladybug.
+
+Backups under `rich/backups`, nested archive payloads, unrepresented remote branches and unreachable/pruned Git objects were not exhaustively opened/recovered. No access to those is necessary to substantiate the native integration recovered above. The remaining gap is compatibility/execution against the new target model and selected driver version, not whether native September integration existed.
+
+Preserve the recovered references. Later work should test typed target DDL/queries, results/nulls, read snapshots, rollback, single-writer scheduling, historical views, source/derived publication and runtime/event persistence. This review performs none of that implementation or migration and declares no implementation readiness.

@@ -1,0 +1,19 @@
+{
+  "product": "Topogee Navigator",
+  "status": "development bootstrap; no application runtime",
+  "contract_tests": {
+    "run": 29,
+    "failures": 0,
+    "errors": 0
+  },
+  "preserved_source_hashes": 120,
+  "portable_docs_and_embedded_contracts": "passed",
+  "ci": "configured; the only GitHub run (a203200) failed before starting: GitHub reported a billing or spending-limit problem",
+  "boat_docs": "MCP initialize and tools/list verified 2026-10-30; declared in .codex/config.toml and .mcp.json",
+  "runtime_language": "not selected",
+  "control_transport": "WebTransport; no WebSocket fallback",
+  "commands": [
+    "python tests/check_contract.py",
+    "python tools/verify_bootstrap.py"
+  ]
+}

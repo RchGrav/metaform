@@ -1,0 +1,130 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<process id="digital-typology" version="1.1">
+  <title>Digital Typology</title>
+  <purpose>
+    Define and construct a coarse memory graph shape identifying its categorical notable elements and joining them through type specific Operative Purposes.
+  </purpose>
+  <target type="Contents of archive taken together as specifications" value="specs.zip" note="Location of the artifact to examine. Switch type to inline and put the artifact's content in value instead if there's no location or a latent space construction task." />
+  <core_concepts>
+    <concept term="Artifact" definition="The thing or things being examined, created, or used. Artifacts can include photographs, contracts, stories, resale assets, and software. The work can concern multiple artifacts and projects. Whether an artifact serves as an asset depends on its use in that context." />
+    <concept term="Join" definition="A dictionary object that exists in the RE with a relation in active voice, an observation as an atomic fact that is present in all artifacts of its type; additionally it contains a dictionary of objects containing type specific or artifact specific references and logic." />
+    <concept term="Element" definition="An element is a constituent part of an artifact type; however, just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred." />
+    <concept term="RE" full="Receiving Element/Entity" definition="The &quot;who&quot; or &quot;what&quot; bearing an OP. This is the element, person, group, system, component, or other participant with an Operative Purpose for the Encounter Function of an Element. The OP belongs to that receiver." />
+    <concept term="PE" full="Providing Element" definition="The part satisfying the requirement actively declared by its Receiving Element/Entity through its Operative Purpose. This is the join's other endpoint: whatever's EF fulfills the RE's OP." />
+    <concept term="AT" full="Artifact Type" definition="This is a general category or classification that groups individual artifacts together based on shared characteristics. Artifact Types can be used to anneal or combine many of the same type of artifact into types (for example photos, data objects, scripts, templates, etc)." />
+    <concept term="NE" full="Notable Element" definition="A component, interface, or specification that defines an essential demand or requirement. It is &quot;notable&quot; because it highlights what a system or component explicitly expects, needs, or depends on from its external environment to operate successfully." />
+    <concept term="OP" full="Operative Purpose" definition="The &quot;why.&quot; This is the active goal held in a receiving entity's join dictionary — that an element's encounter function intends to accomplish." />
+    <concept term="EF" full="Encounter Function" definition="The &quot;how&quot; of what is delivered. This is the mechanism, interface, relationship, or method through which an Artifact or Element performs its purpose for its Receiving Entity. It explains how the effect is encountered, used, or experienced." />
+    <concept term="DE" full="Defining Element" definition="The notable element of this artifact whose loss would prevent the artifact from remaining the same type. Its Encounter Function summarizes the combined result of the artifact being examined. Its defining function is expressed independently of medium, encoding, genre, and style." />
+    <concept term="SE" full="Supportive Element" definition="Any notable element of this artifact which is entangled with the encounter of the Defining Element in such a way that if omitted, the artifact would not remain the same type." />
+    <concept term="Parametric Element" definition="A quality or quantity that is present and named for a type of artifact that can be tuned but not mutated, and does not carry a specific name in artifacts of that type. Tuning a parametric element does not satisfy acceptance of a transformation, only as part of one." />
+    <concept term="NS" full="Namespace Scope" definition="The unique scope of all Elements, excluding Elements that answer to who, Parametric Elements, and the actual reified joins. The four base valid types are code, document, media, and data." />
+  </core_concepts>
+  <join_types>
+    <join_type name="TARGET" scope="intake" />
+  </join_types>
+  <namespace_rules>
+    <rules>
+      <rule>For each dotted part, the address in the namespace must be reversible and read as its name.</rule>
+      <rule>Namespace entries must describe the type of functional approach.</rule>
+      <rule>To be placed into the namespace, an entry must be the same thing as its parent type, or a function within its parent type, without being a non-functionality based variant.</rule>
+      <rule>Children must take their parent's name as their last name when reversed and read as a noun.</rule>
+      <rule>Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.</rule>
+      <rule>The segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name.</rule>
+      <rule>It must be a part or type of its parent scope.</rule>
+      <rule>Namespace must narrow from trunk to leaf.</rule>
+    </rules>
+    <root_types>
+      <root_type name="code" />
+      <root_type name="document" />
+      <root_type name="media" />
+      <root_type name="data" />
+    </root_types>
+    <note>This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per entity.</note>
+    <examples type="reading">
+      <example namespace_address="code.loop.main" reading="main loop program code" />
+      <example namespace_address="code.bus.data.event" reading="event data bus code" />
+    </examples>
+    <examples type="namespace_validity">
+      <example namespace_address="code.game" valid="false" reason="game is not a function" />
+      <example namespace_address="code.game.engine" valid="false" reason="reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent." note="an earlier draft of this example called it 'almost valid' for the SDK reading, but that reading is already the valid address code.engine.game, so reusing it here would make the namespace non-deterministic." />
+      <example namespace_address="code.engine.game" valid="true" reason="represents game engine program code; 'game engine' is legal because it is a functionality type enabled by an external SDK identified by that exact name, 'game engine'" />
+      <example namespace_address="code.engine.game.fps" valid="true" reason="valid as a functional subtype — a distinct functionality" note="load-bearing example; initial intake references this via a join as a major core functionality in code.engine.game, with code.engine.game.fps as a supportive element" proof="first-person camera viewpoint with a targeting reticle" />
+      <example namespace_address="code.engine.game.platformer" valid="false" reason="invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
+      <example namespace_address="code.engine.game.doom" valid="false" reason="not a function or type; the name is a specific game and cannot be used as a type or subtype element" />
+      <example namespace_addresses="media.image, media.asset.image" valid="true" reason="images are assets when they are not the actual artifact being examined, e.g. a sprite sheet — the inverse is not true, assets are not all images in this context" />
+      <example namespace_address="media.photo" valid="true" reason="represents photo media" />
+      <example namespace_address="media.photo.jpg" valid="false" reason="this is encoding" />
+      <example namespace_address="code.cpp" valid="false" reason="this is language" />
+      <example namespace_address="document.word.story.conflict" valid="false" reason="'word' is naming an encoding and does not name a functional approach at the proper namespace level" />
+      <example namespace_address="document.story.conflict" valid="true" reason="represents story conflict as a document element" />
+    </examples>
+  </namespace_rules>
+  <method deliverable_format="xml">
+    <steps>
+      <step n="1" text="Identify and examine the DE as the initial RE and decompose its requirements and dependencies as EF of other elements." />
+      <step n="2" text="For each element with EF that serves the intent of the OP, create a join record in the RE of type TARGET; add the active OP statement as intent, and the element's namespace address in the ADDRESS field." />
+      <step n="3" text="Perform this task recursively, starting with the element named in the first OP: move to the next element and treat it as the RE." />
+      <step n="4" text="Find that element's OPs." />
+      <step n="5" text="Continue until there are no more unsatisfied OPs, or NEs of this artifact that must be named to understand the artifact. Parametric Elements are never NEs and are not part of intake — a tunable quality or quantity that doesn't carry its own name in artifacts of this type does not get named or enumerated here, no matter how many of them exist." />
+      <step n="6" text="Anneal and combine elements when the shape can logically be reduced without losing the minimal categorical understanding of the artifact." />
+      <step n="7" text="Only combine elements when they can logically share a common join." />
+      <step n="8" text="When combining elements, seek a common element name that can be placed in the namespace and that adheres to the namespace naming rules while logically containing the combined elements." />
+      <step n="9" text="When elements are combined away into a common element, the join may contain a dictionary of the entities combined away, with each entry expressed as: the combined element, a relation in the active voice, and an observation as an atomic fact." />
+      <step n="10" text="List the subtypes annealed away as `subtypes`, each a full namespace address beneath the element it was combined into. These subtypes are not part of the intake Metaform; they are held for the next steps as detected inactive subtypes, valid for memories to be attached to or to be named as namespace addresses. Their dependencies belong to the main type." />
+    </steps>
+    <persistent_directive applies_from="step_5" text="Keep this document." />
+    <output_instruction applies_from="step_10" text="Return both the final shape and the annealed-away subtypes list together as XML." />
+  </method>
+  <goal>
+    Create a base shape that can be directly resolved to contain project memory graph relations and other knowledge layers that can expand this shape. This is meant to be a shallow operation that forms a shape of notable elements which can later be extended with additional information. It is important to realize that the goal is to establish a set of base elements as reference points that can contain regional knowledge in the project. Seeking to perform a deep intake will only hurt the project and may segment information away from the area an agent addresses as a reference. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+  </goal>
+  <constraints>
+    <constraint>Elements represent discrete functional roles actively instantiated by this artifact, named and described at their most specific reusable type level.</constraint>
+    <constraint>Never use vague top-level labels where a specific functional mechanism exists.</constraint>
+    <constraint>Keep all artifact-specific instance data strictly confined to the Operative Purpose.</constraint>
+    <constraint>After working through the process, attempt to anneal joins and combine elements to a final shape that speaks to the artifact type.</constraint>
+    <constraint>Treat the elements as elements of this artifact, joined by artifact-specific OP.</constraint>
+    <constraint>Keep the graph shape minimal, coarse, shallow, and extensible.</constraint>
+    <constraint>You must combine elements when doing so is logical and supports annealing into general specific shape.</constraint>
+    <constraint>Where elements are combined away, the join must preserve them as a dictionary of entities using active-voice relations and atomic observations.</constraint>
+  </constraints>
+  <completion_condition>
+    The task is complete when the final result is a minimal base shape of notable categorical elements of the artifact, joined by artifact-specific Operative Purposes, suitable for later expansion through project memory graph relations and other knowledge layers.
+  </completion_condition>
+  <response_protocol>
+    <instructions>
+      <instruction>result carries an id. This file never uses it internally — it exists so this result can later be pasted into digital-typology-expand.xml's canonical_input, whose deep_result links back via a matching ref. Generate it even though nothing in this file's own output points to it.</instruction>
+      <instruction>Respond with well-formed XML matching the schema below — no prose, no markdown, no commentary outside the XML. result is the document root — do not wrap it in any outer tag, including the process's own name or title.</instruction>
+      <instruction>elements/joins/subtypes is the final annealed shape (post Method steps 6-10) — keep it minimal, coarse, and shallow per Goal and Constraints. Do not expand it beyond what's needed to name this artifact's notable elements.</instruction>
+      <instruction>An element's identity is its namespace_address attribute, not its readable name. "tool registry" is prose; code.registry.tool is the element. Any reference to an element — in combined, in subtypes, in a join's re/pe — must use that namespace_address value, never the name alone. A name with no matching namespace_address isn't a valid reference to anything.</instruction>
+      <instruction>Every element carries role="DE|SE|NE" (exactly one DE), a namespace_address that satisfies namespace_rules, its name_length, and its own ef (Encounter Function). PE is not a role here — it's a join's other endpoint, not an element type, because a Providing Element is whichever element's EF happens to satisfy a given RE's OP, not a fixed classification.</instruction>
+      <instruction>Every join connects re (the element bearing the OP) to pe (the element providing for it), and carries op, relation (active voice), and observation (an atomic fact true of all artifacts of this type) — per the Join concept's own definition. This applies to every join, not only ones with combined entities.</instruction>
+      <instruction>Include refs on a join only when it needs type-specific or artifact-specific references or logic beyond op/relation/observation.</instruction>
+      <instruction>combined is not a place for related concepts, dependencies, or features you're aware of — it is exclusively for elements that were themselves independently found as their own notable element with their own OP and join during Method steps 1-5, and only afterward annealed away because they shared a common join per steps 6-9. If an entity never existed as its own element with its own join before annealing, it does not belong in combined. Each entity carries a namespace_address and its name_length, not just a name — that's what makes the reference exact and resolvable, the same way an element does.</instruction>
+      <instruction>Include a subtype only for elements annealed away per Method step 10; its namespace_address is the full address the absorbed element used to hold.</instruction>
+    </instructions>
+    <schema>
+      <result id="[generated result id]">
+        <artifact type="code|document|media|data" name="[artifact name]" description="[one-line description of the artifact]" />
+        <elements>
+          <element role="DE|SE|NE" namespace_address="[dotted.namespace.address]" name_length="[integer segment count]" ef="[Encounter Function: the how]">
+            <joins>
+              <join pe="[namespace_address of the element whose EF satisfies this element's OP]" op="[Operative Purpose: the artifact-specific why]" relation="[active-voice relation]" observation="[atomic fact true of all artifacts of this type]">
+                <refs>
+                  <ref key="[type-specific or artifact-specific key]" value="[value]" />
+                </refs>
+                <combined>
+                  <entity namespace_address="[full namespace_address of the combined-away element]" name_length="[integer segment count]" name="[combined-away element name]" relation="[active-voice relation]" observation="[atomic fact]" />
+                </combined>
+              </join>
+            </joins>
+          </element>
+        </elements>
+        <subtypes>
+          <subtype namespace_address="[full dotted address beneath its parent element]" />
+        </subtypes>
+      </result>
+    </schema>
+  </response_protocol>
+</process>

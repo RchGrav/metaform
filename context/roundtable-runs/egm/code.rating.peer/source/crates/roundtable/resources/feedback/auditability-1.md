@@ -1,0 +1,1 @@
+Your general point is recognizable, but its justification depends on unexplained terms or unavailable context. Describe the relevant behavior in plain operational language: what happens, under what conditions, and why that supports your point. Explain the functional meaning of identifiers or metrics you cite.

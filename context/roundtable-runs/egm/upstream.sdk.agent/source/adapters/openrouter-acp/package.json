@@ -1,0 +1,33 @@
+{
+  "name": "openrouter-acp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ACP (Agent Client Protocol) agent adapter that runs any OpenRouter model through the OpenRouter Agent SDK.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "openrouter-acp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test test/*.test.ts",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.4.0",
+    "@openrouter/agent": "1.0.1",
+    "@openrouter/sdk": "0.13.67",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}

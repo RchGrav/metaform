@@ -1,0 +1,1 @@
+Completing T375: its final words were "L-33 records the set", which is the whole truncated part. The two-sided observer set and the join rule stand as written. Nothing further from me on Part 1 or Part 2; the ledger writes start when the round closes.

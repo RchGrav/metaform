@@ -1,0 +1,1 @@
+You provide relevant material but leave the central reasoning to the reader. Turn it into a contribution: recommend an action and explain why, identify a specific flaw and its consequence, or ask a targeted question that would resolve a consequential uncertainty. If presenting options, give criteria for choosing between them.

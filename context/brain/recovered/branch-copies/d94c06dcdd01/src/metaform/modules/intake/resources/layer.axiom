@@ -1,0 +1,69 @@
+{Layer_Schema} :=
+
+LAYER(
+  id          := [generated layer id],
+  name        := [<scope>@<content>: the address the layer is about, @, a short adjective_noun for what it holds; base is the default scope, e.g. base@best_practices, code.cpp@best_practices],
+  base_id     := [base id],
+  variable    := [the one question every item in the layer answers; states what the layer holds and how its values are read],
+  for         := [the property or object this layer was built for, when there is one],
+
+  elements := [
+    ELEMENT(
+      namespace_address := [dotted namespace address],
+      role              := [AUE|CQU|DE|SE|NE],
+
+      elements := [
+        ELEMENT(
+          namespace_address := [dotted namespace address],
+          role              := [DE|SE|NE],
+          elements          := [],
+          joins             := []
+        )
+      ],
+
+      joins := [
+        JOIN(
+          type     := purpose,
+          purpose  := [RE Operative Purpose],
+          ef       := [PE Encounter Function within this RE encounter],
+          ifd      := [send|receive|both],
+          elements := []
+        ),
+
+        JOIN(
+          type    := content,
+          to      := [this element, a join here, or a property; the object the content is about],
+          kind    := [instructions|rules|imperatives|logic|workflow|other kind the request implies],
+          name    := [which one, when several sit on the same object],
+          content := [the thing],
+          refs    := [
+            REF(
+              key   := [key],
+              value := [value]
+            )
+          ]
+        ),
+
+        JOIN(
+          type  := property,
+          to    := [the object the property describes],
+          value := [the property's one value]
+        )
+      ]
+    )
+  ]
+)
+
+# Notes
++> A join is an edge between two objects with a type. It is not a kind of thing. Any object may be joined to any object.
++> purpose: a function encounter, the receiver's purpose served by the elements it holds. Does not travel.
++> content: knowledge joined to the object it is about: an element, a join, a property. content is the thing; kind says how to read it; refs says where it came from. A sources item is all refs and no content. Does not travel.
++> property: an object with one value, joined to what it describes. Travels: applies toward the leaves from its anchor, visible toward the trunk, never a sibling.
++> name is the layer's address. Read in reverse with @ as "for", it speaks: code.cpp@best_practices is "best practices for cpp code".
++> The scope before @ is an address of the base, or base itself. The text after @ is free: a short adjective_noun chosen from what the request creates.
++> A layer is named for what it holds or what it is, never for what produced it.
++> variable is the one question the layer answers, so an agent can use the layer without inferring from the name.
++> Layer names are unique across all layers of the base.
++> A layer overlays the base identified by base_id using the same namespace structure.
++> The layer may contain only the portions of the base for which it contributes knowledge.
++> An element is named by its namespace_address alone; its name and name_length come from the base.

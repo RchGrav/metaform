@@ -1,0 +1,24 @@
+[package]
+name = "agent-monitor"
+description = "Observe an agent harness process and its descendants with AgentSight, independently of ACP, and publish what it does as bus events."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["agentsight"]
+# Real capture through AgentSight's eBPF probes. Without it, `Monitor::attach` reports
+# `MonitorUnavailable` saying so.
+agentsight = ["dep:agentsight-capture", "dep:serde_json", "dep:tokio"]
+
+[dependencies]
+bus = { path = "../bus" }
+futures.workspace = true
+serde.workspace = true
+agentsight-capture = { version = "=1.0.35", optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

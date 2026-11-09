@@ -1,0 +1,402 @@
+b65dba2 2026-11-08 A summoned agent's state shows after its name in the browser; summoned from Chrome
+604880e 2026-11-08 No agent token outlives its summon: retire in one write, mark summoned agents, retire them at start
+f04942e 2026-11-08 Summoned agents hear who arrives near them; the spawn participant greets and follows
+d2c34b0 2026-11-08 look: materials becomes can_place, said to cost nothing
+21bec10 2026-11-08 A real Claude Code agent summoned over ACP greets and builds; probe --send
+9bec64c 2026-11-08 Merge origin/main into agent-host
+5a7515b 2026-11-08 Agents are summoned into the world over ACP: the agent host and /summon
+27dcacb 2026-11-08 goto, follow and stop: reflexes below the model, in the world tool
+7b76546 2026-11-08 Services and agent token rotation in the accounts store (agent host credentials)
+f5ec056 2026-11-08 see names a code block by its name and id, as look does, and an empty zone as nothing
+7c343c3 2026-11-08 Agents proposal: one interface for any body (Microduck), bound by the world or not, and the proof so far
+a43af3f 2026-11-08 An agent's depth camera and facing: see and turn, in the world tool and the server
+e2cc677 2026-11-08 An agent's look shows only what its body could see, in its own frame; move steps up
+9b04356 2026-11-08 Agent host design: service accounts, token rotation, rights from the summoner, no resume after restart
+d3d2d30 2026-11-08 Design: the agent host, summoning agents into the world over ACP
+c371c09 2026-11-08 Agents proposal: sandbox rule, batched prompts, cost limits; wait dropped
+83a8b09 2026-11-08 Agents proposal: a world agent stays off the machine (sandbox rule), events batched over ACP, summoning right, caps and cost
+93b21aa 2026-11-08 Proposal: agents in the world, activated over ACP, with the founder's 8x8 depth camera
+5fcc649 2026-11-08 Record the clean 50-kill crash run (8a7128c): no redstone, stone or durable losses
+d545893 2026-11-08 Proposal: what plain materials yield when broken
+b2795c9 2026-11-08 Using a cell moves to its own file, so programs.rs has room
+8a7128c 2026-11-08 Program cells re-evaluate when their chunk loads: a split flush cannot leave redstone stale
+cb5770b 2026-11-08 Merge program-items
+12bf07a 2026-11-08 Programs reach the items of the player who placed, broke or used their cell
+63c27ff 2026-11-08 Merge remote-tracking branch 'origin/main' into sigterm-flake
+0a0096a 2026-11-08 World crash check covers dropped items: held plus lying stays the stone given
+b24520e 2026-11-08 Merge bodies-storage
+dc25bba 2026-11-08 Bodies proposal: saving as Jorge's storage review proposes
+46ea524 2026-11-08 Merge remote-tracking branch 'origin/main' into sigterm-flake
+7d69425 2026-11-08 SIGTERM acceptance test: wait for the area before placing
+fb53ff3 2026-11-08 Proposal for bodies driven by code (item 6, second part), and the unbury fix recorded
+b34564d 2026-11-08 A block placed where an item lies lifts the item on top of it
+984093d 2026-11-08 Merge origin/main into plugins
+492ba77 2026-11-08 Each server module adds its own systems: create, inventory, panels, programs, cell edits
+1f3431d 2026-11-08 Dropped items in reusable slots, emptied inventories kept: world.lbug stays flat
+e4cf56a 2026-11-08 Merge remote-tracking branch 'origin/main' into schedule-churn
+b15b2ef 2026-11-08 world.lbug no longer grows without end while the schedule is saved
+0e950aa 2026-11-08 Dropped items as physics bodies, picked up by walking to them (item 6, first part)
+81af29d 2026-11-08 Merge branch 'main' of https://github.com/RchGrav/topogee into item-bodies
+77235aa 2026-11-08 Chunk colliders: every loaded chunk gets built, empty ones once, changing ones too
+cfe644e 2026-11-08 WIP item 6: dropped items as Avian bodies (blocked: chunk colliders never build in the running server)
+2a0122e 2026-11-08 SIGTERM stops the world cleanly: the last edits are stored and the stores close
+fa0cdfa 2026-11-08 World crash check covers inventories: 25 kills, never half a craft, nothing durable lost
+51b699c 2026-11-08 The step in named parts (app::Step), and voxels add their own systems (voxels::plugin)
+9514abf 2026-11-08 Rebuild the host bindings when content/wit changes (build.rs in topogee-blocks and world-gen)
+c7d662c 2026-11-08 Merge remote-tracking branch 'origin/main' into world-settings
+acd5cc9 2026-11-08 World settings: declared with defaults, values in <data>/settings.json, set only offline
+e0517e4 2026-11-08 Merge branch 'main' of https://github.com/RchGrav/topogee
+b39ef92 2026-11-08 Merge branch 'main' of https://github.com/RchGrav/topogee
+e7316b7 2026-11-08 Dropped items in world.lbug, saved with inventories in one transaction (item 6 storage)
+fc667db 2026-11-08 Bodies wait for the ground: held while their chunk's collider is not built
+d7e9660 2026-11-08 Items and inventories (item 7): per world, keyed by account, moved by blocks for their user only
+ef42784 2026-11-08 Dropped items in world.lbug, saved with inventories in one transaction (item 6 storage)
+e79e6f7 2026-11-08 WIP items: before merging Jorge's colliders
+1dbab3e 2026-11-08 Terrain for physics: one static voxel collider per loaded chunk (voxels::colliders)
+484531f 2026-11-08 Merge branch 'avian'
+2fceaa0 2026-11-08 Physics: Avian in the world app, headless, on the fixed step (D-W1)
+d84bc75 2026-11-08 Merge remote-tracking branch 'origin/main' into ready-persist-land
+93629f7 2026-11-08 Inventories in world.lbug, saved with block states in one transaction (item 7 storage)
+af88fc5 2026-11-08 Restored re-evaluations wait for their chunk; the crash check follows the light's update
+6c8546a 2026-11-08 Record the founder's decisions: Avian for physics (D-W1); items and inventories per world (item 7)
+5b83705 2026-11-08 Events waiting in the ready queue last across a crash, as re-evaluations
+4bc85b6 2026-11-08 Inventories in world.lbug, saved with block states in one transaction (item 7 storage)
+e40756f 2026-11-08 Metaform settings (R-4.8): declared in code, values in settings.json, set through the server
+2858813 2026-11-08 SPEC.md: build-status facts brought up to date (R-4.14, R-4.8, R-8.1); no decision changed
+8e2dc08 2026-11-08 storage.md risk 2: the per-entry check's cost at region open (15 ms for a full terrain region, 136 ms worst case), measured
+50527d7 2026-11-08 A server restart no longer ends an agent's Metaform session
+f5b663d 2026-11-08 A forwarder retries when a closing server drops its handshake
+d456280 2026-11-08 Events waiting in the ready queue last across a crash, as re-evaluations
+4279a56 2026-11-08 storage.md risk 3: the world crash run (25 kills, nothing durable lost) and the one known gap
+074e6ff 2026-11-08 metaform-rust.md: .mcp.json already points at the Rust server (647ef20); the table said it waited on the founder
+9a3fa18 2026-11-08 Merge remote-tracking branch 'origin/main' into world-crash
+e48f090 2026-11-08 World crash check: 25 SIGKILLs on a populated world, nothing durable lost
+d4170a0 2026-11-08 Proof path: item 7, items and inventories (needed for tools and crafting, W-12.1)
+c9d7409 2026-11-08 Bus security rule 8: the admin or a block's creator switches it off, and it stays off
+fafbbf3 2026-11-08 Merge remote-tracking branch 'origin/main' into block-disabled
+3c78de2 2026-11-08 Blocks can be switched off and stay off: BlockRecord.disabled in world.lbug (rule 8 storage)
+316a227 2026-11-08 Bus security rule 9: one use budget a session, for cells and entities alike
+acc3b67 2026-11-08 Merge remote-tracking branch 'origin/main' into sender-stamps
+fc61cde 2026-11-08 Bus messages say where they came from (bus security rule 4, topogee:host@0.6.0)
+e215b6b 2026-11-08 Client: the wheel and [ ] step through every material and code-block kind; board shows its count
+94f73b1 2026-11-07 Merge remote-tracking branch 'origin/main' into place-race
+3119e0a 2026-11-07 Only the flush writes a loaded chunk: no region-store write races it
+06e54c7 2026-11-07 Board: items 4 and 5 built, empty WASI, Jorge's batching; physics engine is the next founder decision
+e69d5c1 2026-11-07 Merge branch 'panels'
+3c3d259 2026-11-07 Panels: a block shows a player a panel and takes their presses (item 5)
+84e7b45 2026-11-07 storage.md risk 4: one Metaform command's cost by wants (about 1 ms each), so no batching there; world.lbug's batching recorded
+6750f0f 2026-11-07 Merge remote-tracking branch 'origin/main' into state-batch
+2a522a2 2026-11-07 Block states saved once a second in one batch, not one transaction per change
+5f6a7a1 2026-11-07 Merge branch 'main' of https://github.com/RchGrav/topogee
+79053fc 2026-11-07 Save scheduled events in one statement per 10,000: about ten times faster
+ddc73a0 2026-11-07 Merge branch 'permissions'
+12de98b 2026-11-07 People and agents place code blocks and link them, under rights the admin grants (W-9.9)
+9bc7434 2026-11-07 At most 100,000 cell changes a step from blocks and programs, the rest carried over in order
+08c0054 2026-11-07 Merge branch 'main' of https://github.com/RchGrav/topogee into permissions
+e2e0025 2026-11-07 Rights and creators, the storage half of W-9.9
+c73fabf 2026-11-07 WIP permissions: protocol (place_block, link, grant, revoke, answers), rights module, --admin, client and agent sides; server systems wait on Jorge's accounts requests
+f3f0e0b 2026-11-07 Merge remote-tracking branch 'origin/main' into queue-limits
+b1c3cc7 2026-11-07 Fix the build: hold the empty WASI in a Mutex so block and program hosts are Sync
+e59a8af 2026-11-07 Merge remote-tracking branch 'origin/main' into queue-limits
+a148c11 2026-11-07 Bounded cell-event queues: at most 1,000,000 ready, 10,000 waiting per chunk
+e6c424e 2026-11-07 Merge branch 'empty-wasi'
+da58591 2026-11-07 An empty WASI for blocks and programs (W-7.1a); the permission base recorded (W-9.9)
+a46d763 2026-11-07 A write of the value a cell already holds changes nothing
+6d26971 2026-11-07 Merge remote-tracking branch 'origin/main' into gen-order
+03c160a 2026-11-07 Board: redstone in the game, generation, block ids, texture packs, block cell access
+08bc009 2026-11-07 Agent tool: a place or break is answered by block id, not by the exact string
+2b0d644 2026-11-07 Merge remote-tracking branch 'origin/main' into gen-order
+27e7cfd 2026-11-07 Scheduled-event test: look for the stone in the first cells after the restart too
+93be335 2026-11-07 Torch and repeater programs: logic and delay in the game, on a shared power rule
+a147ec9 2026-11-07 Merge remote-tracking branch 'origin/main' into gen-order
+2748dd0 2026-11-07 Open-database memory measured: 4 Ladybug threads per database, at most 16 open
+d5830ad 2026-11-07 storage.md 4.3: the generation defaults are taken and built; only the edited-bit question stays open
+30afb2a 2026-11-07 Merge branch 'use-cells'
+514b781 2026-11-07 Using cells: levers and lights as block-type programs
+a3bbe28 2026-11-07 A place never loses to a chunk arriving: a read result never replaces a loaded chunk
+83d9fbe 2026-11-07 Generate under existing records: a chunk with cells but no generated bit gets terrain
+b5b78fd 2026-11-07 Scheduled cell events last across a restart (redstone hook 3)
+78bb104 2026-11-07 Scheduled cell events last across a restart (redstone hook 3)
+2fa0848 2026-11-07 Client chunk meshing, and --generator and --seed on the server's command line
+cc25480 2026-11-07 Terrain generation in a sandbox: chunks generated once, on first need
+f8704eb 2026-11-07 Block-type programs: the redstone hooks, with a wire that carries power by its own program
+c797a3a 2026-11-07 Merge branch 'main' of https://github.com/RchGrav/topogee into cell-programs
+1d68e5d 2026-11-07 WIP: block-type programs (topogee:host 0.4.0, runtime, wire, engine), before merging Jorge's hooks
+2008f42 2026-11-07 Voxels: a per-step change log with old and new values; block programs in BlockIds
+581610f 2026-11-07 Block ids as content: a lasting registry and 64-bit cell values
+1b2274f 2026-11-07 Block ids as content: a lasting registry and 64-bit cell values
+7e60694 2026-11-07 The client draws cells with an imported pack's textures
+61915a7 2026-11-07 Blocks read and write cells (item 2), merged onto Jorge's shared chunks
+2f5228f 2026-11-07 WIP item 2: blocks read and write cells (topogee:host 0.3.0), before rebasing on voxels-share
+aed7d31 2026-11-07 topogee-pack: import a community resource pack's block textures into an atlas; bus security (W-9.8)
+58393eb 2026-11-07 World voxels: shared chunks for blocks, one edit path, end-of-step announce
+edad2de 2026-11-07 Proof path: block ids as content, texture-pack import, redstone hooks, sandboxed generator; W-1.1a address space
+5fd839d 2026-11-07 world-store: keep at most 64 region files open
+41e37f2 2026-11-07 world-store: keep at most 64 region files open
+ae69610 2026-11-07 The path to the first proof: what the base system lacks for a Minecraft simulacrum
+c9abf15 2026-11-07 Propose how generated terrain is stored (W-10), for the founder
+43591d3 2026-11-07 World spec: the founder's answers on in-game maps, game language, and W-3.9
+3722ad2 2026-11-07 Merge branch 'm1-split'
+acd0336 2026-11-07 Server tests: shared helpers move to tests/common, and waits go to 20 s
+60b5787 2026-11-07 World voxels: unload chunks no session has looked at for 30 seconds
+1713d2f 2026-11-07 World voxels: loaded chunks authoritative in the ECS, flushed every second
+f7c1e4c 2026-11-07 Bodies collide with cells, fall and jump (M4)
+f205130 2026-11-07 Board: world spec in Metaform, M4 building, agents build, Jorge's storage work
+a544663 2026-11-07 Merge branch 'agent-build'
+82205ad 2026-11-07 Agents build: place and break in the one world tool
+402904f 2026-11-07 world-store: save_chunks stores a batch with two syncs per region
+b6b4b32 2026-11-07 world-store: save_chunks stores a batch with two syncs per region
+29141fe 2026-11-07 Merge branch 'world-m4-build'
+badc3c4 2026-11-07 M4 seen in Chrome: placing, stacking and breaking cells
+92181f3 2026-11-07 M4, building: place and break cells, stored in the region store and sent to everyone nearby
+aa3e3f3 2026-11-07 Verify that acknowledged Metaform writes survive SIGKILL under load
+e0dbda3 2026-11-07 world-store: a torn table entry costs one chunk, never wrong data
+7d64fbc 2026-11-07 Add `metaform call`: one tool command from a single command line
+647ef20 2026-11-07 Point the project's Metaform at the Rust server, with its own home
+cc6055b 2026-11-07 Save the founder's block-damage statement exactly, and record it (W-3.18 to W-3.22, D-W18)
+beb61b9 2026-11-07 Board: Metaform starts through the launcher, checked live
+d022225 2026-11-07 Start the Metaform server through the service launcher (launcher step 5)
+dce9d5f 2026-11-07 Start the Metaform server through the service launcher (launcher step 5)
+8b9dcbf 2026-11-07 Launcher: a purged call stays purged (store lock against the exit stamp)
+801e795 2026-11-07 Board: data bus, launcher steps 3 and 4, Metaform announcements and private maps
+cbfc540 2026-11-07 Merge branch 'launcher-permissions'
+6b8921a 2026-11-07 Launcher: root never reruns a call from a user's own store (SL-4.2)
+9e94f19 2026-11-07 Merge branch 'world-data-bus'
+ad0ecf9 2026-11-07 The bus carries data: a message is a kind and its bytes (topogee:host 0.2.0)
+b9598c6 2026-11-07 Launcher step 4: permission steps on launch (service launcher, section 3)
+af78cf5 2026-11-07 Announce each Metaform commit to subscribed agents (R-4.10)
+f88febd 2026-11-07 Announce each Metaform commit to subscribed agents (R-4.10)
+112d452 2026-11-07 World spec: blocks limited only by their rights, AI-built code lives in a block, the admin area (W-6.7, W-6.8, W-9.7)
+8f1a8ca 2026-11-07 World spec: the founder's statements on blocks and the data bus (W-6.5, W-6.6)
+965f24a 2026-11-07 Launcher step 3, part one: store paths under topogee/services
+5769971 2026-11-07 Let an agent open a map that belongs to no project
+31ee3b9 2026-11-07 Let an agent open a map that belongs to no project
+04fadb3 2026-11-07 Metaform in Rust: checked progress table, and a chaining proposal for the founder
+edcfcb3 2026-11-07 Board: the founder's goal is met; entity ids and the browser check recorded
+558753b 2026-11-07 Keep the entity-id counter above every stored block
+85e1c23 2026-11-07 Verify the world in a real browser: Chrome 156, with screenshots
+27a6c0a 2026-11-07 Keep the entity-id counter above every stored block
+1c1801d 2026-11-07 README: issue agent tokens in the world; how to run the acceptance check. Board updated.
+61c0ce0 2026-11-07 Client close, agent refusals and clean exit; range and password minimum in the protocol
+d3d53c7 2026-11-07 Keep the entity-id counter above every stored block
+a56fcd1 2026-11-07 Login backoff fails closed: flooding the name table cannot erase a waiting record
+304dc78 2026-11-07 A block runs Start as it spawns, so it never appears with a blank display
+9b15d15 2026-11-07 Acceptance check: walk within range of the switch before using it
+56cb8eb 2026-11-07 Merge authentication hardening: hashing pool, fair turns, backoff, password minimum, use range, prompt disconnects
+0f8c4bb 2026-11-07 topogee-server: hashing off the accounts owner, fair turns, login backoff, 8-character passwords
+7c3d8f3 2026-11-07 topogee-server: a use is refused unless the user stands within 4 m
+f00a418 2026-11-07 topogee-server: a client that disconnects leaves the world at once
+1189ce5 2026-11-07 Restore Xander's world spec and board edits that ba1c768 reverted
+ba1c768 2026-11-07 Add the acceptance check for the founder's definition of done
+41ecdeb 2026-11-07 World spec and board: what is built, and M3 live
+8c07602 2026-11-07 Blocks keep their state across a restart
+b770798 2026-11-07 Merge branch 'main' of https://github.com/RchGrav/topogee
+8840dde 2026-11-07 Remove the server's zstd linker workaround
+7b3e74b 2026-11-07 world-graph: save block state so a lamp keeps its state across a restart
+9b9ca33 2026-11-07 Merge branch 'agent-use-command'
+4f5efd4 2026-11-07 World tool: the use command, for code blocks (M3, W-7.5)
+34565e6 2026-11-07 world-store: compress chunk records with ruzstd, ending the zstd link clash
+6f4c433 2026-11-07 world-store: compress chunk records with ruzstd, ending the zstd link clash
+f307944 2026-11-07 Split the headless client into topogee-client, so agents stop linking the server
+7849699 2026-11-07 Merge M3: code blocks on the WASM bus in the world server
+3c9d7b2 2026-11-07 World protocol: port 4480 and the M3 messages
+fb202a0 2026-11-07 World server M3: code blocks, the bus and the seeded machines
+311b985 2026-11-07 Store each map's root, so the stored graph has complete nesting
+bd6362c 2026-11-07 Build goto on the one Metaform tool
+9cc3d0c 2026-11-07 Log: goto authorized for build; database limit and SIGKILL test
+3972e56 2026-11-07 Bound the databases a Metaform store keeps open
+a8b16f8 2026-11-07 Bound the databases a Metaform store keeps open
+129e085 2026-11-07 Merge branch 'main' of https://github.com/RchGrav/topogee
+0f86d09 2026-11-07 Board: Metaform in Rust done; the .mcp.json switch is the founder's decision
+899c0ea 2026-11-07 Test that acknowledged Metaform writes survive a SIGKILL of the server
+e019198 2026-11-07 Add the metaform binary: one server per home, stdio forwarders, one tool
+048ae60 2026-11-07 Add the metaform binary: one server per home, stdio forwarders, one tool
+e6a19da 2026-11-07 Register: Topogee authentication review and follow-ups
+46ddb4d 2026-11-07 Client: /agent <name> [model] issues an agent token in the world
+e07bea2 2026-11-07 Board: M1 and M2 live
+e391703 2026-11-07 Merge branch 'world-m2-link'
+18e8079 2026-11-07 M2: agents join the world through topogee-agent's one world tool
+2defd01 2026-11-07 Add metaform-store: maps as a Ladybug graph with a fair write manager
+c70f5f9 2026-11-07 Add metaform-store: maps as a Ladybug graph with a fair write manager
+e07d7e7 2026-11-07 topogee-server: default-run, so cargo run -p topogee-server starts the server
+98c621c 2026-11-07 Merge remote-tracking branch 'origin/main'
+4ad662e 2026-11-07 Add world-graph: the world's Ladybug graph of blocks, ports and links
+beec6bf 2026-11-07 Merge the Topogee M1 world server
+4af2162 2026-11-07 Client: draw code blocks and use them by clicking (M3)
+28a439b 2026-11-07 Test the M1 world server end to end
+7613efc 2026-11-07 Build the Topogee M1 world server and the topogee-probe client
+818c31d 2026-11-07 Protocol note: the M3 additions for code blocks
+1ae5c6a 2026-11-07 Board: Topogee progress and the two storage questions for the founder
+4ca099a 2026-11-07 Merge the Topogee M1 web client
+a0194c0 2026-11-07 Merge branch 'world-m2-tool'
+23214bd 2026-11-07 Add topogee-agent: the one world tool for agents (M2), and settle pos and yaw
+cd007a8 2026-11-07 Set the long-term storage design and the one-owner rule for writers
+ac461ea 2026-11-07 Set the long-term storage design and the one-owner rule for writers
+fecb7e7 2026-11-07 Add the Topogee M1 web client (world spec W-1.3)
+b295f88 2026-11-07 Vendor the founder's agent figures for the Topogee web client
+f76d035 2026-11-07 Track the built block components in topogee/content/dist/
+87bfd0e 2026-11-07 Add topogee-blocks: the code-block runtime, with tests on the real components
+5d0fab3 2026-11-07 Merge branch 'world-m3-content'
+193102b 2026-11-07 Add M3 content: the topogee:host@0.1.0 WIT package and six proof-of-concept blocks
+b8e4db0 2026-11-07 Add world-store: Anvil-style voxel storage for Topogee worlds
+e0efa75 2026-11-07 Design M2 (agents through one world tool) and M3 (WASM bus proof of concept)
+f1c3725 2026-11-07 Track the topogee workspace's Cargo.lock
+d8302e6 2026-11-07 Start Topogee M1: the workspace, the protocol note and the decided world storage
+7b6d6d6 2026-11-07 Update the SPECIFICATION.md appendix copies for technical_name and roles
+05fa9d9 2026-11-07 Align technical_name and the four roles across intake, contract, examples and code
+5c4659f 2026-11-07 Carry the founder's Why and How definitions into metaform/Intake.md
+6e092d6 2026-11-07 Make anything keyed by a unique name a dictionary: wants, orphans, layer listing
+5b0ecf3 2026-11-07 Remove ICE: the Definitive and Supportive relationship is the boundary
+29f2dfe 2026-11-07 Rename want fields goal and function to why and how, on the founder's instruction
+8a253e0 2026-11-07 Record section 5.1 as the database state and its names
+bf959a3 2026-11-07 Record the founder's design: the map is realized as a graph in Ladybug
+80e5da8 2026-11-07 Bring the founder's documentation set into the project
+39fcb61 2026-11-07 State that the Node server is a test harness, never the design
+314dad0 2026-11-07 Mark the JSON-storage drift everywhere it reached, and flag the intent mismatch
+a4f28b8 2026-11-07 Rewrite the stored and agent forms from the founder's documentation set
+2fadb5e 2026-11-07 Require founder confirmation of core designs before building; mark step 1 unconfirmed
+21579d8 2026-11-07 Draft the stored form and the agent form side by side, for the founder
+ee41126 2026-11-07 Correct storage to LadybugDB, one database per map; JSON was never decided for maps
+5362cb7 2026-11-07 Correct the step-1 gap notes, flag the storage departures, record the stop
+82681c3 2026-11-07 Add the founder's Topogee layer model to the world spec
+93fec5a 2026-11-07 Record Rust step 1 results and the gaps it found
+ac588a7 2026-11-07 Merge Metaform in Rust, step 1: metaform-core
+2d69b1e 2026-11-07 Test metaform-core against the shared contract fixtures
+f1541b2 2026-11-07 Add metaform-core, step 1 of the Rust Metaform server
+5ffcfc7 2026-11-07 Describe Topogee as a shared world, not a game; maps can stand alone
+c9e709d 2026-11-07 Define Metaform as a functional topology, and add map chaining
+27b630c 2026-11-07 Add the Rust Metaform server design; correct R-4.6
+4b6ad88 2026-11-07 Decide D-15: Rust for this project's Metaform server
+3c768eb 2026-11-07 Log the withdrawal of the release-first reordering
+68f6823 2026-11-07 Revert "Put a working, measured Metaform release first; recommend Node for it"
+fe36010 2026-11-07 Put a working, measured Metaform release first; recommend Node for it
+af5947d 2026-11-07 Move Metaform into its own project folder, metaform/
+90d0319 2026-11-07 Package the Metaform skill and agents, and specify how focused context is delivered
+c4fb62f 2026-11-07 Name the write manager, open Node or Rust, and narrow W-1.1 for Metaform in game
+1b8b10f 2026-11-07 Record the launcher's first build results and the carried-test notes
+d2f9dec 2026-11-07 Merge the service launcher's first slice: HoldOn's core in launcher/
+05e6cc5 2026-11-07 Add R-4.10: many Metaform instances, each owned by an agent, none blocking
+0951e53 2026-11-07 Register the Metaform MCP server for this repo, and record its blocking flaw
+74e09e9 2026-11-07 Service launcher: split the files over 500 lines
+87e15f6 2026-11-07 Complete the preprint folder from RchGrav/metaform
+a87e328 2026-11-07 Add R-1.3, comparable token counting, and set Metaform's income role to open source
+f6f35f3 2026-11-07 Add income as a design lens and reopening to the skill; record the hosting minimum
+debdba7 2026-11-07 Service launcher: carry HoldOn's core and drop its interactive parts
+7bc402c 2026-11-07 Record D-SL1, take D-SL2 as a default, and note the founder's hosting idea
+6a4bd4f 2026-11-07 Draft the world's shapes, breakage and fluids; make the reviewer lead with next steps
+94414ef 2026-11-07 Skill: build and test as a developer; launcher design: carry HoldOn's tests as a budget exception
+9122366 2026-11-07 Add the service launcher design, and the proactive rule to the skill
+bca7fe4 2026-11-07 Let the design reviewer merge finished work without asking
+0cfbf6a 2026-11-07 Fix TASTE's opening sentence and carry the founder's rule 4 edit
+725ee00 2026-11-07 Say TASTE is adapted from ASD-STE100, not a subset of it
+f80a665 2026-11-07 Rename TASTE's long form to Technically Accurate, Simple, Transparent English
+0071c0a 2026-11-07 Use "founder" for the founder across the project's current documents
+14c5b82 2026-11-07 Use "founder" in the design review skill, the founder's preferred term
+fab3400 2026-11-07 Refine the design review skill, now the reviewer's to maintain
+3dbbfd3 2026-11-07 Rename the context engine to Metaform in agent-written documents, and record the launcher choices
+d5c6748 2026-11-07 Merge branch 'world-minecraft-benchmark'
+85d6e5b 2026-11-07 Record C as the service launcher's language
+caf1448 2026-11-07 Record why the launcher starts from HoldOn, and revise the language advice
+9d22abf 2026-11-07 Record that the owner accepted the launcher approach
+55e6bb4 2026-11-07 Record the owner's service launcher decision
+1e1d47a 2026-11-07 Record the naming of Topogee and Metaform, and start review notes
+5856d95 2026-11-07 Record the owner's Minecraft benchmark milestone in the world spec
+930f8e7 2026-11-07 Merge branch 'roundtable-settings'
+9b9ba33 2026-11-07 Merge branch 'rename-metaform-server'
+425f9e6 2026-11-07 Full commit of the working state: owner's guidance files, the topogee-dev skill, BMAD skills removed from the project
+520ce76 2026-11-07 Name the Metaform server's commands after the Metaform in the CLI design
+18ae86d 2026-11-07 Rename the Metaform server away from "Topogee map"
+4736b8f 2026-11-07 Make JEV required: no judging switch, no table without its key, nothing shared unevaluated
+fd57dda 2026-11-07 Review every open question against EXPECTATIONS.md; decide the 145 open map proposals
+c30bcd8 2026-11-07 Settings and permissions: switch the gates by setting, per-kind permission rules
+4f82985 2026-11-07 Split engine.rs, turn.rs and app.rs under the 500-line limit
+cde45e8 2026-11-07 Show JEV's result in each rejection label, as the owner's evaluation spec says
+2b1e1d0 2026-11-07 Drop the JEV route question: OpenRouter is settled
+d21eeee 2026-11-07 Check the 26 Roundtable resolutions against the owner's sources
+bb18308 2026-11-07 Roundtable: work through every goldfish layer with a 3-round Roundtable
+480efe0 2026-11-07 Roundtable: EGM elephant and goldfish layers on every map element
+64099ba 2026-11-07 Roundtable: update its metaform to the code of 2026-11-07
+d466b3f 2026-11-07 Roundtable: apply the owner's Gate Burden standard to inference gates
+1ae1b3b 2026-11-07 Bring Roundtable into topogee
+edcfc8c 2026-11-06 Label which CLI rule reasons are Claude's, not the owner's
+6c001fc 2026-11-06 Rebuild the CLI design on the owner's design guidance, and add the settings TUI
+97e0514 2026-11-06 Add glue to the CLI design
+c0e235d 2026-11-06 Add the CLI design: rules from c3lab's mvm and the topogee command
+89a1d19 2026-11-06 Keep a project's specification layers in the main database
+de44f22 2026-11-06 Export a project's map as a readable specification
+ffb9118 2026-11-06 Record that MCP is for data manipulation and reads, and export is CLI
+9740ace 2026-11-06 Record the round trip of intent and the role hierarchy
+d1c948e 2026-11-06 Record the owner's proposal: agents own their own metaform maps
+f397432 2026-11-06 Run background services under HoldOn instead of systemd
+260c267 2026-11-06 Drop systemd from the AgentSight service design
+271d406 2026-11-06 Record root for development only, and AgentSight as a service
+2b6632c 2026-11-05 Record that the world needs its own metaform-inspired MCP server
+b65cbeb 2026-11-05 Merge pull request #2 from RchGrav/intake-3.1
+f2fd205 2026-11-05 Add the world system draft, the Minecraft prior-work note and roundtable records
+45c1724 2026-11-05 Merge remote-tracking branch 'origin/roundtables/session-20261105-fd0bc0f3' into intake-3.1
+a0c7834 2026-11-05 Merge remote-tracking branch 'origin/roundtables/session-20261104-24c67015' into intake-3.1
+913b7df 2026-11-05 Call the map server "functional map server" throughout
+36a8fa4 2026-11-05 Planning session session-20261105-fd0bc0f3: every table's summary, notes and record, and the session zipped
+82c44b4 2026-11-04 Planning session session-20261104-24c67015: every table's summary, notes and record, and the session zipped
+24a72b3 2026-11-03 Rename the map tool from metaform_apply to project-map
+2fc4977 2026-11-03 Point README at the current spec and intake, and mark the chassis language superseded
+21bbf87 2026-11-03 Withdraw the relayed roundtable requirement
+c214130 2026-11-03 Record that a roundtable runs without an intake or a map
+fe75b7d 2026-11-03 Record the roundtable stop as evidence on R-5.18
+2a650cb 2026-11-03 Check the world ideas against their transcript and fill the gaps
+0bd6fa5 2026-11-03 Note that people and agents both drive embodiments from outside the loop
+ab414aa 2026-11-03 Separate an agent's embodiment from the agent in the world ideas
+0be9f11 2026-11-03 Record that a ticket selects an agent's context
+45af382 2026-11-03 Record the chassis as event driven, in Rust, with Bevy
+3010848 2026-11-03 Let a module pass control of its integrated data to a present chassis
+fda37d1 2026-11-03 Add metaform's map tool counts to the review file
+ab996c6 2026-11-03 Record that storage is not the tool surface, and fair write queues
+d8814f0 2026-11-03 Use a neutral layer in the goto example
+9080c53 2026-11-03 Make goto's arrival a summary sheet, and skills ungated
+83c9eb1 2026-11-03 Add the version-control question to the review file
+cfb3e71 2026-11-03 Correct the design-to-code size ratio in the review file
+9254480 2026-11-03 Collect the earlier-system review for the owner's decision
+98151b9 2026-11-03 Harden start-up from the earlier system's server experience
+a4b78bc 2026-11-03 Make a wrong goto delivery record cheap to recover from
+2b4374a 2026-11-03 Point the collaboration note at the earlier roundtables module
+dc66555 2026-11-03 Record collaboration and roundtables as future work
+97d32b6 2026-11-03 Revise the map server design for SQLite and the review findings
+68bd38b 2026-11-03 Record the rule to choose the best tool for the job
+920ab42 2026-11-03 Allow SQLite or Ladybug where they fit better than JSON
+f3fdbc2 2026-11-03 Record that the waking method is left to the agent
+c59f783 2026-11-03 Mark the agents module's waking and scoring ideas as illustrations
+4981be5 2026-11-03 Record commit credit and trouble penalties for agent scores
+abedb98 2026-11-03 Record accolades and their chance of waking for the agents module
+6954727 2026-11-03 Record identity, waking and agent profiles for the agents module
+1038d30 2026-11-03 Place session state in the agents module, and let modules unlock commands
+b431595 2026-11-03 Record the owner's intent for the agents module
+d4c2809 2026-11-03 Make goto deliver once per context
+23863ba 2026-11-03 Add goto, narrow the address read, and scope memory by presence
+82e4156 2026-11-03 Make memory a module with its own tool
+c11e236 2026-11-03 Let a memory link to any address or memory
+a3c6fdf 2026-11-03 Model memory on the MCP memory server, with an address per memory
+5816aca 2026-11-03 Record memory as a unique graph layer
+f033a9c 2026-11-03 Let agents write data to intake and system layers
+ee8e396 2026-11-03 Make intake and system global groups, and system layers code-only
+b560e68 2026-11-03 Keep intake layers out of the layer list and safe from delete
+0a0e38f 2026-11-03 Let a layer's definition decide its data shape
+f77e164 2026-11-03 Return the layer list as a dictionary
+54989fc 2026-11-03 List layers with the layer command
+3e3d2be 2026-11-03 Require a schema, description, sentence and instruction for a layer
+e9e40a0 2026-11-03 Add the layer command to the map server design and the spec
+8b0814f 2026-11-03 Name the JSON file layout, not Ladybug, as an open technical choice
+1f9c262 2026-11-03 Bring the spec and owner boundaries in line with the map server decisions
+67f55d2 2026-11-03 Add the map server brief, review findings and design
+4939f61 2026-11-03 Name the ends of a want this element and the other element
+5cf760e 2026-11-03 Use inbound, outbound and two-way as the intent values
+fb752d4 2026-11-03 Use transceive as the third intent value
+399a07a 2026-11-03 Record the owner's documentation set as decided
+7ba5caf 2026-11-03 Bring the specification in line with the owner's decisions
+71c2268 2026-11-02 Add the main database, with a node for each project
+5d99a87 2026-11-02 Capture all project files before feature names exist
+596820c 2026-11-02 Add the intake procedure, version 3.1, as the owner wrote it
+95b77b8 2026-10-30 Merge pull request #1 from RchGrav/boat-integration
+9d36d78 2026-10-30 Point the pip cache at requirements-dev.txt
+d7aec5d 2026-10-30 Run contract checks on Boat and record the LadybugDB concurrency spike
+a203200 2026-10-30 Bootstrap development from the consolidated Topogee specification
+c3ff676 2026-10-30 Initialize Topogee Navigator development bootstrap

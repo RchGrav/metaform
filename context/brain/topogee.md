@@ -1,0 +1,59 @@
+# Topogee Architecture Specification
+
+**Topogee** is a perception-based context management and knowledge engine designed to eliminate the context overhead and inference cost required for AI agents to orient themselves in a codebase. 
+
+The context of any project lives in an abstracted, higher-order functional topology rather than raw source files. Through **inference amortization**, Topogee computes this functional topology in advance and dynamically delivers tasks, skills, and tools to agents only as needed.
+
+## 1. The Base Functional Map (Metaform)
+Topogee’s intake procedure analyzes a project and constructs a **Metaform**: a language-agnostic graph of pure functional relationships. It excludes file names, programming languages, syntax, and non-functional properties. 
+
+Every element is indexed under a hierarchical, dot-separated functional namespace address governed by **TASTE** (Topogee Agentic Simplified Technical English), which enforces consistent, objective industry terminology across all system records and agent communications.
+
+Each node in the Metaform defines its role (`CQU`, `defining` / `DE`, `substantial` / `SE`, or `notable` / `NE`), its project-specific `name`, its `name_length` within the namespace, and its functional dependencies stored as receiver-owned joins under `wants`:
+* **Goal** (Operative Purpose): What the receiving entity requires to fulfill its objective.
+* **Want** (Providing Element): The target functional address of the provider entity.
+* **Function** (Encounter Function): The capability supplied by the provider to satisfy the receiver's goal.
+* **Intent:** The direction of functional substance exchange (`receives`, `sends`, or `send-receive`).
+
+## 2. ECS & R Architecture and Composed Element Layers (CELs)
+Topogee structures and delivers project context using an **ECS & R (Entity, Component, System, and Resources)** data-oriented pattern:
+* **Entities:** The functional namespace addresses in the Metaform graph serve as bare Entity identifiers.
+* **Components (Composed Element Layers / CELs):** Non-functional data is kept strictly separate from the base functional map by attaching independent data layers (CELs) as Components to the exact same functional namespace addresses. Separate CEL Components store:
+  * **Sources:** File URIs and code entrypoints.
+  * **Skills:** Task and domain procedures formatted as MCP skill resources.
+  * **Memory and Provenance:** Historical findings, prompt revisions, and node notes.
+  * **Tickets:** Assigned work items and fault records.
+  * **Address Inbox:** Location-bound message queues and read-message histories attached to the functional address.
+* **Resources:** Project-wide state, global settings, root-level skills, and the global topology graph act as shared singleton Resources accessible across the project.
+* **Systems:** Specialized agent roles and engine processes (such as the Context Resolver, Composer, and Facilitator) operate as Systems that query only for the specific combination of Entities, CEL Components, and Resources required for their operation.
+
+When a System or operation requests context for a specific functional address, the context resolver walks the namespace prefixes from the root down to the target Entity. It composites inherited Resources and parent prefix layers with the target Entity's local CEL Components, while peeling away irrelevant layers, unbuilt layers, and unrelated branches of the graph.
+
+## 3. Scoped Perception and Declarative Graph Queries
+Topogee constrains an agent's context window to a strict functional perception range based on its assigned Entity:
+* **Global Topology View (Resource):** A detail-free graph of the entire project containing only component names and the directional flow of functional substance between them.
+* **Localized Node Context (Entity + Scoped Components):** Detailed specifications restricted to the assigned functional address—its goals, the immediate upstream and downstream functional neighbors connected via `wants`, the local `sources` Component, the active `ticket` Component, and the specific MCP tools and `skills` Component resolved for that address.
+
+All runtime reads and mutations against the map use a single declarative JSON grammar (`update`, `delete`, `orphaned`, and direct path queries) that enforces referential integrity and returns executable remediation payloads when dependencies block an operation.
+
+## 4. Orchestration Pipeline (System Execution)
+Working agents do not traverse or mutate the functional map to orient themselves; orientation and skill selection are pre-computed by specialized Systems before task execution begins:
+1. **Composer:** Queries the base functional map with implementation CEL Components masked out. It binds incoming `ticket` Components directly to the target functional Entity address. If required functionality does not exist in the map, the Composer creates the new functional Entity address and marks it as `not_built`.
+2. **Facilitator:** Queries the target Entity for its `ticket` Component alongside its localized functional relationships (`goal`, `wants`, and upstream `function` joins). From this query, the Facilitator generates a task-specific skill and attaches it to the Entity as a `skills` CEL Component.
+3. **Execution Agent:** Initializes at the target functional address and receives its scoped context, tools, and skills on demand.
+
+## 5. ACP Harness Control, Dual-Inbox Messaging, and Agent Lifecycle
+Topogee operates as an **ACP (Agent Client Protocol)** client and harness controller, spawning and governing installed coding agent harnesses (such as Claude Code, Codex, Antigravity, Pi, and Hermes) over standardized ACP sessions while managing agent identity, communication, context compaction, and post-retirement recall:
+
+* **Deterministic Agent Identity & Audit Logging:** When an agent is initialized into the project topology, it is assigned a deterministic name generated from the cryptographic hash of its initial context. The ACP harness controller logs every commit made by the agent alongside all inbound and outbound messages (from the user, other agents, and the system).
+* **Dual-Inbox Architecture (Agent Inbox & Functional Address Inbox):**
+  * **Agent Inbox:** Every agent maintains a personal inbox that receives messages from the user, other agents, and system notifications alerting the agent to newly available skills, tools, or context. All messages are strictly constrained to brief, lightweight single-sentence payloads (e.g., `New Skills: [skill_name_array]`).
+  * **Functional Address Inbox:** Every namespace address in the functional map maintains its own shared inbox. While an agent is assigned to a functional address, it shares that address's inbox. Any unread messages waiting at that functional address are delivered to the next agent assigned there as if they arrived through the agent's own inbox.
+  * **Read-State Retention:** Read messages are retained in the reading agent's message history. If a message originated from a functional address inbox, it is also retained in the read-messages list at that functional address so historical continuity is preserved at the node.
+* **Single-Delivery Context Tracking:** The system tracks every context block (tasks, skills, tools, and node data) delivered to an agent and guarantees that each block is delivered only once during an active session, eliminating redundant token consumption.
+* **ACP Context Threshold Hooks & Compaction Handoff:**
+  * The ACP harness controller monitors each agent's context window utilization across the ACP session via a runtime hook.
+  * At **50% context capacity**, and at every **5% increment** thereafter (55%, 60%), the system notifies the agent to prepare for handoff.
+  * At **65% context capacity**, the system enforces a hard stop: the agent is instructed to halt execution, write a handoff summary, and execute the handoff tool, forcing context compaction before reasoning degradation occurs.
+  * **Post-Handoff Context Reset:** Immediately following a handoff and compaction, previously delivered context blocks are reset to `unread`, making them eligible for on-demand redelivery to the post-compaction agent strictly as dictated by task necessity.
+* **Post-Retirement Agent Recall:** Because each agent's deterministic identity is permanently bound to its message history and commit records, retired agents remain addressable after their active task concludes. Users or active agents can contact a retired agent to query or discuss the work it performed, re-instantiating the agent session via ACP grounded directly in its original conversations, decisions, and commits.

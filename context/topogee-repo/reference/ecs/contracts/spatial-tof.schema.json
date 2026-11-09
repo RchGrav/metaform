@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:metaform:schema:spatial-tof:1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source",
+    "sequence",
+    "clock",
+    "frame_id",
+    "calibration_uri",
+    "shape",
+    "layout",
+    "distance_semantics",
+    "units",
+    "distances_mm",
+    "zone_status",
+    "native_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "metaform.spatial.tof/1"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "epoch"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "physical",
+            "virtual"
+          ]
+        },
+        "epoch": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "clock": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "capture_ns",
+        "received_ns",
+        "nominal_period_ns"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "monotonic",
+            "simulation"
+          ]
+        },
+        "capture_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "received_ns": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "nominal_period_ns": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "frame_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "calibration_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "shape": {
+      "const": [
+        8,
+        8
+      ]
+    },
+    "layout": {
+      "const": "row-major-top-left"
+    },
+    "distance_semantics": {
+      "const": "axial-z"
+    },
+    "units": {
+      "const": "mm"
+    },
+    "distances_mm": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      }
+    },
+    "zone_status": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "enum": [
+          "valid",
+          "no_return",
+          "invalid",
+          "unavailable"
+        ]
+      }
+    },
+    "native_status": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    }
+  }
+}

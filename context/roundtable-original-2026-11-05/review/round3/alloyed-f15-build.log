@@ -1,0 +1,4 @@
+   Compiling acp-host v0.1.0 (/home/rich/roundtable/crates/acp-host)
+   Compiling roundtable v0.1.0 (/home/rich/roundtable/crates/roundtable)
+   Compiling rt-probe v0.0.0 (/home/rich/roundtable/review/round3/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.27s

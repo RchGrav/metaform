@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- intake's prompts, MCP-031. What is between an element's tags is what is served.
+     <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
+     it, every noun of every recording verb included: <element> for an element and the element a part holds, <join> for
+     a requirement and the requirement a part refines. A field with lines in Intake 2.1's GLOSSARY carries them word for word, in place of 2.0's, each
+     prefixed by its term, one per line; Rich 2026-10-02: "I think the long field descriptions get these". A field
+     with no glossary line keeps its plainest name and allowed values, MAP-040. -->
+<prompts>
+<instructions>intake is active.</instructions>
+<!-- Added to the instructions while the project has no intake and none is being recorded, MCP-009. -->
+<no_intake>This project has no intake yet. Have a subagent perform it. Tell the subagent to read its instructions with `metaform intake prompt`, or the `intake` tool's `prompt` command, and to follow them. When you offer the intake, suggest also creating a blind spot challenge and a knowledge layer that records best practices, and ask the person whether that is all right.</no_intake>
+<!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
+<unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
+<commands><intake verb="prompt"/></commands>
+<fields>
+  <element>
+    <namespace_address>Element: any nameable part, considered as a type. Nameable ≠ notable.
+Entity: a whole made of elements; scope-relative (zooming into an element makes it an entity).
+AT: Artifact Type — anneals same-type AUEs into a type.</namespace_address>
+    <role>AUE: entity being examined, created, or used (any medium; one or many). Asset status depends on use.
+CQU: Cestui Que Use — the explicit RE which benefits from and drives the improvements on the artifact.
+Recorded under {CQU_BASE}.
+DE: Defining Element — loss changes the AUE's type; serves an external CQU's OP;
+names the AUE's functional type independent of medium, encoding, genre, style.
+SE: Substantial Element — EF helps the DE serve the CQU's OP (even if subversive, weak, replaceable).
+NE: Notable Element — states an essential external demand or dependency.</role>
+    <name_length>name length</name_length>
+    <name>name</name>
+    <refs>refs</refs>
+    <condition>condition: missing, broken, exclude</condition>
+    <note>note</note>
+    <extra>extra</extra>
+    <to_address>new namespace address</to_address>
+  </element>
+  <join>
+    <receiver>RE: Receiving Element/Entity — the element bearing an OP; its joins live in it.
+Join: purpose record living in the RE (see SCHEMA_JOIN).</receiver>
+    <provider>PE: Providing Element — join endpoint whose EF fulfills the OP.</provider>
+    <purpose>OP: Operative Purpose — the WHY; the RE's reason for the encounter.</purpose>
+    <ef>EF: see {LB_EF} — the HOW; what the PE does, in active voice; recorded in the RE's join.</ef>
+    <ifd>IFD: Information Flow Direction — the primary flow of information: sends (OP->EF) | receives (EF->OP) | both (equal need).</ifd>
+    <verb>verb</verb>
+    <non_goal>non-goal</non_goal>
+    <refs>refs</refs>
+    <condition>condition: missing, broken, exclude</condition>
+    <note>note</note>
+    <extra>extra</extra>
+    <parent_receiver>parent receiver</parent_receiver>
+    <parent_provider>parent provider</parent_provider>
+    <to_receiver>new receiver</to_receiver>
+    <to_provider>new provider</to_provider>
+  </join>
+</fields>
+</prompts>

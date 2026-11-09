@@ -1,0 +1,140 @@
+5fcc649 2026-11-08 03:08:38 -0500 Richard Graver
+    Record the clean 50-kill crash run (8a7128c): no redstone, stone or durable losses
+1f3431d 2026-11-08 02:13:50 -0500 Richard Graver
+    Dropped items in reusable slots, emptied inventories kept: world.lbug stays flat
+b15b2ef 2026-11-08 02:01:03 -0500 Richard Graver
+    world.lbug no longer grows without end while the schedule is saved
+8e2dc08 2026-11-08 00:32:40 -0500 Richard Graver
+    storage.md risk 2: the per-entry check's cost at region open (15 ms for a full terrain region, 136 ms worst case), measured
+4279a56 2026-11-08 00:23:27 -0500 Richard Graver
+    storage.md risk 3: the world crash run (25 kills, nothing durable lost) and the one known gap
+84e7b45 2026-11-07 23:43:28 -0500 Richard Graver
+    storage.md risk 4: one Metaform command's cost by wants (about 1 ms each), so no batching there; world.lbug's batching recorded
+e2e0025 2026-11-07 23:20:50 -0500 Richard Graver
+    Rights and creators, the storage half of W-9.9
+2748dd0 2026-11-07 22:49:55 -0500 Richard Graver
+    Open-database memory measured: 4 Ladybug threads per database, at most 16 open
+d5830ad 2026-11-07 22:49:55 -0500 Richard Graver
+    storage.md 4.3: the generation defaults are taken and built; only the edited-bit question stays open
+83d9fbe 2026-11-07 22:40:10 -0500 Richard Graver
+    Generate under existing records: a chunk with cells but no generated bit gets terrain
+cc25480 2026-11-07 22:17:09 -0500 Richard Graver
+    Terrain generation in a sandbox: chunks generated once, on first need
+581610f 2026-11-07 21:53:35 -0500 Richard Graver
+    Block ids as content: a lasting registry and 64-bit cell values
+c9abf15 2026-11-07 21:34:40 -0500 Richard Graver
+    Propose how generated terrain is stored (W-10), for the founder
+402904f 2026-11-07 21:05:05 -0500 Richard Graver
+    world-store: save_chunks stores a batch with two syncs per region
+aa3e3f3 2026-11-07 21:01:36 -0500 Richard Graver
+    Verify that acknowledged Metaform writes survive SIGKILL under load
+e0dbda3 2026-11-07 20:57:27 -0500 Richard Graver
+    world-store: a torn table entry costs one chunk, never wrong data
+d022225 2026-11-07 20:37:34 -0500 Richard Graver
+    Start the Metaform server through the service launcher (launcher step 5)
+b9598c6 2026-11-07 20:20:35 -0500 Richard Graver
+    Launcher step 4: permission steps on launch (service launcher, section 3)
+311b985 2026-11-07 17:34:24 -0500 Richard Graver
+    Store each map's root, so the stored graph has complete nesting
+899c0ea 2026-11-07 17:25:42 -0500 Richard Graver
+    Test that acknowledged Metaform writes survive a SIGKILL of the server
+4ad662e 2026-11-07 17:11:53 -0500 Richard Graver
+    Add world-graph: the world's Ladybug graph of blocks, ports and links
+cd007a8 2026-11-07 17:08:02 -0500 Richard Graver
+    Set the long-term storage design and the one-owner rule for writers
+05fa9d9 2026-11-07 16:33:59 -0500 Richard Graver
+    Align technical_name and the four roles across intake, contract, examples and code
+6e092d6 2026-11-07 16:13:46 -0500 Richard Graver
+    Make anything keyed by a unique name a dictionary: wants, orphans, layer listing
+5b0ecf3 2026-11-07 16:02:51 -0500 Richard Graver
+    Remove ICE: the Definitive and Supportive relationship is the boundary
+29f2dfe 2026-11-07 15:59:57 -0500 Richard Graver
+    Rename want fields goal and function to why and how, on the founder's instruction
+80e5da8 2026-11-07 15:44:52 -0500 Richard Graver
+    Bring the founder's documentation set into the project
+39fcb61 2026-11-07 15:43:02 -0500 Richard Graver
+    State that the Node server is a test harness, never the design
+314dad0 2026-11-07 15:42:16 -0500 Richard Graver
+    Mark the JSON-storage drift everywhere it reached, and flag the intent mismatch
+ee41126 2026-11-07 15:38:09 -0500 Richard Graver
+    Correct storage to LadybugDB, one database per map; JSON was never decided for maps
+5ffcfc7 2026-11-07 15:24:35 -0500 Richard Graver
+    Describe Topogee as a shared world, not a game; maps can stand alone
+af5947d 2026-11-07 14:57:29 -0500 Richard Graver
+    Move Metaform into its own project folder, metaform/
+1b8b10f 2026-11-07 13:50:21 -0500 Richard Graver
+    Record the launcher's first build results and the carried-test notes
+7bc402c 2026-11-07 13:34:24 -0500 Richard Graver
+    Record D-SL1, take D-SL2 as a default, and note the founder's hosting idea
+94414ef 2026-11-07 13:21:19 -0500 Richard Graver
+    Skill: build and test as a developer; launcher design: carry HoldOn's tests as a budget exception
+9122366 2026-11-07 13:19:33 -0500 Richard Graver
+    Add the service launcher design, and the proactive rule to the skill
+0cfbf6a 2026-11-07 13:14:50 -0500 Richard Graver
+    Fix TASTE's opening sentence and carry the founder's rule 4 edit
+725ee00 2026-11-07 12:39:22 -0500 Richard Graver
+    Say TASTE is adapted from ASD-STE100, not a subset of it
+f80a665 2026-11-07 12:35:03 -0500 Richard Graver
+    Rename TASTE's long form to Technically Accurate, Simple, Transparent English
+0071c0a 2026-11-07 12:20:33 -0500 Richard Graver
+    Use "founder" for the founder across the project's current documents
+3dbbfd3 2026-11-07 12:10:50 -0500 Richard Graver
+    Rename the context engine to Metaform in agent-written documents, and record the launcher choices
+85d6e5b 2026-11-07 12:03:56 -0500 Richard Graver
+    Record C as the service launcher's language
+caf1448 2026-11-07 12:03:02 -0500 Richard Graver
+    Record why the launcher starts from HoldOn, and revise the language advice
+9d22abf 2026-11-07 12:01:30 -0500 Richard Graver
+    Record that the owner accepted the launcher approach
+55e6bb4 2026-11-07 12:00:39 -0500 Richard Graver
+    Record the owner's service launcher decision
+1e1d47a 2026-11-07 11:54:13 -0500 Richard Graver
+    Record the naming of Topogee and Metaform, and start review notes
+425f9e6 2026-11-07 11:47:15 -0500 Richard Graver
+    Full commit of the working state: owner's guidance files, the topogee-dev skill, BMAD skills removed from the project
+520ce76 2026-11-07 11:45:56 -0500 Richard Graver
+    Name the Metaform server's commands after the Metaform in the CLI design
+18ae86d 2026-11-07 11:20:48 -0500 Richard Graver
+    Rename the Metaform server away from "Topogee map"
+edcfc8c 2026-11-06 16:49:11 -0500 Richard Graver
+    Label which CLI rule reasons are Claude's, not the owner's
+6c001fc 2026-11-06 14:26:17 -0500 Richard Graver
+    Rebuild the CLI design on the owner's design guidance, and add the settings TUI
+97e0514 2026-11-06 14:12:23 -0500 Richard Graver
+    Add glue to the CLI design
+c0e235d 2026-11-06 14:11:55 -0500 Richard Graver
+    Add the CLI design: rules from c3lab's mvm and the topogee command
+f397432 2026-11-06 12:59:23 -0500 Richard Graver
+    Run background services under HoldOn instead of systemd
+260c267 2026-11-06 12:58:13 -0500 Richard Graver
+    Drop systemd from the AgentSight service design
+271d406 2026-11-06 12:57:51 -0500 Richard Graver
+    Record root for development only, and AgentSight as a service
+913b7df 2026-11-05 22:52:14 -0500 Richard Graver
+    Call the map server "functional map server" throughout
+2fc4977 2026-11-03 15:10:38 -0500 Richard Graver
+    Point README at the current spec and intake, and mark the chassis language superseded
+45af382 2026-11-03 14:33:15 -0500 Richard Graver
+    Record the chassis as event driven, in Rust, with Bevy
+ab996c6 2026-11-03 14:20:30 -0500 Richard Graver
+    Record that storage is not the tool surface, and fair write queues
+68bd38b 2026-11-03 13:46:03 -0500 Richard Graver
+    Record the rule to choose the best tool for the job
+920ab42 2026-11-03 13:45:01 -0500 Richard Graver
+    Allow SQLite or Ladybug where they fit better than JSON
+23863ba 2026-11-03 12:19:23 -0500 Richard Graver
+    Add goto, narrow the address read, and scope memory by presence
+82e4156 2026-11-03 12:08:26 -0500 Richard Graver
+    Make memory a module with its own tool
+8b0814f 2026-11-03 06:43:34 -0500 Richard Graver
+    Name the JSON file layout, not Ladybug, as an open technical choice
+1f9c262 2026-11-03 06:43:20 -0500 Richard Graver
+    Bring the spec and owner boundaries in line with the map server decisions
+5d99a87 2026-11-02 16:39:44 -0500 Richard Graver
+    Capture all project files before feature names exist
+d7aec5d 2026-10-30 13:21:50 -0400 Richard Graver
+    Run contract checks on Boat and record the LadybugDB concurrency spike
+a203200 2026-10-30 03:22:42 -0400 Richard Graver
+    Bootstrap development from the consolidated Topogee specification
+c3ff676 2026-10-30 03:14:10 -0400 Richard Graver
+    Initialize Topogee Navigator development bootstrap

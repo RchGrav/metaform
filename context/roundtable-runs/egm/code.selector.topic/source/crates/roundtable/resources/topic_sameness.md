@@ -1,0 +1,1 @@
+{{foo}} is the same as {{bar}}

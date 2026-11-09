@@ -1,0 +1,81 @@
+# TASTE: Technically Accurate, Simple, Transparent English
+
+## The name
+
+- **Technically accurate:** use the accepted technical term or the project term, and match each claim to its evidence. Give a usable answer, and attach doubt to the specific statement it concerns, not to everything.
+- **Simple:** easy to understand, not short. Keep the context and steps the reader needs.
+- **Transparent:** the reader can tell fact from inference from unknown, and needs no context the writer did not give. Show the basis of a claim, not every step of the reasoning.
+
+TASTE is adapted from ASD-STE100. It takes STE's sentence-length limits as targets. It keeps STE's limits on paragraph length and noun clusters, and its rules on active voice and one instruction per sentence. It does not adopt STE's controlled dictionary. It adds rules for evidence, status claims and compression.
+
+## Purpose
+
+Communicate technical information precisely, plainly, and concisely. Write for an intelligent adult reader who may not know the project’s shorthand or unstated assumptions. Do not expect the reader to infer missing steps or meanings.
+
+## Priority
+
+When rules conflict, follow this order:
+
+1. Preserve factual accuracy, technical meaning, conditions, exceptions, and evidence limits.
+2. Make the message understandable on the first read, using complete thoughts and familiar English.
+3. Follow project terminology and exact technical identifiers.
+4. Reduce length and follow the sentence and paragraph limits.
+
+Do not sacrifice clarity or meaning to meet a length limit or use a preferred word.
+
+## Structure
+
+1. Lead with the answer, result, or requested information.
+2. Use one main instruction or claim per sentence. Put a condition before the action when that order makes the instruction easier to follow.
+3. Keep each paragraph focused on one topic and no longer than six sentences.
+4. Aim for no more than 20 words per instruction sentence and 25 words per descriptive sentence. If a sentence exceeds the target, shorten or split it without removing necessary meaning.
+5. Use complete, natural sentences by default. Use fragments only for headings, labels, list items, or clearly identified goals and functions when the fragment remains easy to understand.
+6. Use lists for steps or parallel items and tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+7. State sequence and concurrency explicitly when they affect what the reader should do.
+
+## Language and terminology
+
+8. Use the established project term for each concept. Do not rotate synonyms for variety.
+9. Apply the current project blacklist and its context-specific replacements only when the replacement preserves the intended meaning. If the blacklist is unavailable or a replacement would change meaning, keep the clearest accurate wording and flag the issue when necessary.
+10. Prefer familiar words and direct verbs. Preserve exact identifiers, commands, and technical names.
+11. Keep newly composed noun clusters to three nouns or fewer. Use prepositions to clarify longer relationships.
+12. Name the specific entity instead of using an ambiguous pronoun. Define unfamiliar abbreviations at first use. Explain project-specific shorthand when the reader may not know it; do not invent jargon.
+
+## Grammar and instructions
+
+13. Prefer active voice and name the actor when known. Do not invent an actor to avoid passive voice.
+14. Prefer simple tenses while preserving whether an action is planned, ongoing, completed, or hypothetical.
+15. Use modal verbs consistently: must for requirements, should for recommendations, may for permission, can for capability, and might for uncertainty.
+16. Express actions with verbs, such as decide rather than make a decision. Remove introductory wording that delays the main point.
+
+## Evidence and substance
+
+17. Distinguish observations, inferences, and unknowns when the distinction affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparisons, or available measurements. Preserve units, baselines, and scope; do not invent precision.
+20. Keep each claim within the scope of its evidence. When reporting a check, state what the check establishes and what it does not establish when that distinction matters.
+21. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+
+## Compression
+
+22. State each point once. Remove repeated paraphrases, redundant summaries, ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Shorten wording only when doing so preserves conditions, exceptions, negation, causality, and technical distinctions.
+
+## Project terminology
+
+- The address names the functional type using standard industry terminology.
+- The `name` field holds the project’s own name.
+- Use the same term for things that are the same.
+
+## Project blacklist
+
+Use the listed replacement when it preserves the intended meaning. Preserve exact technical names and context-specific distinctions.
+
+| Avoid when a listed replacement fits | Preferred term |
+| ------------------------------------ | -------------- |
+| kick off, launch, initiate, begin    | start          |
+| utilize, leverage                    | use            |
+| modify, tweak, change, alter         | adjust         |
+| execute, run, fulfill                | perform        |
+| terminate, kill, stop, abort         | end            |

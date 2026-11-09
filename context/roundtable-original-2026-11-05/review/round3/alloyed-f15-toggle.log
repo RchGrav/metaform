@@ -1,0 +1,4 @@
+after-work accepted contribution seen: true
+round topic_may_advance: Some(false) (must be false: acceptance recorded -> productive)
+judging enabled before round closed: true
+F15 after-work acceptance recorded (no stale nonproductive): true

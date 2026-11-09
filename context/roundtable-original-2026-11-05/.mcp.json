@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "topogee": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/home/rich/topogee/mcp-server/src/main.ts", "/home/rich/roundtable"]
+    }
+  }
+}

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- intake's prompts, MCP-031. What is between an element's tags is what is served.
+     <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
+     it, every noun of every recording verb included: <element> for an element, <join> for a join and the elements it
+     holds. A field with lines in Intake 2.1's GLOSSARY carries them word for word, in place of 2.0's, each
+     prefixed by its term, one per line; Rich 2026-10-02: "I think the long field descriptions get these". A field
+     with no glossary line keeps its plainest name and allowed values, MAP-040. -->
+<prompts>
+<!-- intake's line in the instructions agents read while intake is on, MCP-029; its status hook adds no_intake or
+     unfinished after it, MCP-009. -->
+<instructions>intake is active.
+When assigned an intake, read its instructions at resource metaform://intake/procedure,
+with metaform intake prompt, or the intake tool's prompt command, and follow the procedure it serves.
+The forms it records are at resource metaform://intake/schema. The recording commands are
+start, then element and join as reasoned, show to read back, and finish; their arguments are in
+the intake tool's schema, or read metaform help intake.</instructions>
+<!-- Added to the instructions while the project has no intake and none is being recorded, MCP-009. -->
+<no_intake>This project has no intake. Nothing else in Metaform works until it is done. Tell the person, in words like these: "Since this is the first time running the system here, I'm going to do a basic analysis of the project. When it's done we can go through it together with some Q&amp;A. If that's all right, I'll start the web GUI so you can watch the process in real time. It opens on this machine only; that can be changed later, just ask. Ready for me to start?" When they say yes: call web with command start. It returns the address the GUI runs at; give that to the person. If it returns an error, say so and stop. Once it is running, start the intake: read resource metaform://intake/procedure and resource metaform://intake/schema, start a subagent with both, and have it perform the intake with the intake tool: start, then element and join as it reasons, show to check, finish. The person follows it live in the web GUI. When it finishes, say so and invite their questions.</no_intake>
+<!-- Added to the instructions while an intake layer is building and unfinished, MCP-009. -->
+<unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
+<!-- intake's slash command, /metaform:intake, which serves what metaform intake prompt prints, MCP-032 and MCP-033.
+     -->
+<commands><intake verb="prompt"/></commands>
+<!-- Read by intake's code when it loads, never served whole: each child's text is the description every intake
+     recording tool shows for that field, <element> for an element and <join> for a join, MAP-040. -->
+<fields>
+  <element>
+    <namespace_address>Element: any nameable part, considered as a type. Nameable ≠ notable.
+Entity: a whole made of elements; scope-relative (zooming into an element makes it an entity).
+AT: Artifact Type — anneals same-type AUEs into a type.</namespace_address>
+    <role>AUE: entity being examined, created, or used (any medium; one or many). Asset status depends on use.
+CQU: Cestui Que Use — the explicit RE which benefits from and drives the improvements on the artifact.
+Recorded under {CQU_BASE}.
+DE: Defining Element — loss changes the AUE's type; serves an external CQU's OP;
+names the AUE's functional type independent of medium, encoding, genre, style.
+SE: Substantial Element — EF helps the DE serve the CQU's OP (even if subversive, weak, replaceable).
+NE: Notable Element — states an essential external demand or dependency.</role>
+    <name_length>name length</name_length>
+    <name>name</name>
+    <refs>refs</refs>
+    <condition>condition: missing, broken</condition>
+    <note>note</note>
+  </element>
+  <join>
+    <receiver>RE: Receiving Element/Entity — the element bearing an OP; its joins live in it.
+Join: purpose record living in the RE (see SCHEMA_JOIN).</receiver>
+    <elements>PE: Providing Element — join endpoint whose EF fulfills the OP.</elements>
+    <provider>PE: Providing Element — join endpoint whose EF fulfills the OP.</provider>
+    <purpose>OP: Operative Purpose — the WHY; the RE's reason for the encounter.</purpose>
+    <ef>EF: see {LB_EF} — the HOW; what the PE does, in active voice; recorded in the RE's join.</ef>
+    <ifd>IFD: Information Flow Direction — the primary flow of information: sends (OP->EF) | receives (EF->OP) | both (equal need).</ifd>
+    <condition>condition: missing, broken</condition>
+    <note>note</note>
+  </join>
+</fields>
+</prompts>

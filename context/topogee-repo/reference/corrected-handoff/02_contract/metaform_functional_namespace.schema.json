@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Metaform Graph Model",
+  "description": "CANDIDATE CORRECTION OF USER-SUPPLIED LOGICAL SCHEMA, not a database table schema. Hierarchical namespace addresses are nested JSON object keys at the document root. A Receiving Entity (RE) owns its providers dictionary; each key is the full namespace address of a Providing Element (PE). The provider record is a provider join: op is the RE operative purpose, ef is that PE encounter function FOR THIS RE, and ifd is the information flow that satisfies the op. No purpose join, synthetic record IDs, mandatory collection record wrappers or implicit array ordering. Some metadata keys can also name namespace segments depending on their position. This serialization contract is not the agent intake/tool API and does not specify physical DB tables.",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "description": "Alternate name, code name, internal name, canonical name, alias, or identifying label."
+    },
+    "project": {
+      "type": "string",
+      "description": "Project associated with this functional topology."
+    },
+    "role": {
+      "type": "string",
+      "description": "The ontological role of this root element within the macro-system architecture (DE | SE | NE)."
+    },
+    "op": {
+      "type": "string",
+      "description": "The active goal (why) of the Receiving Entity (RE) that the provider's EF must satisfy. Formatted strictly in ASD-STE100 Simplified Technical English."
+    },
+    "ef": {
+      "type": "string",
+      "description": "Legacy-compatible optional element-level ef field retained without changing user data. Encounter-specific EF belongs in receiver-owned providers joins; whether this top-level field remains is not decided."
+    },
+    "status": {
+      "type": "string",
+      "description": "Mutable value indicating the present state of the Receiving Entity (e.g., not_built)."
+    },
+    "name_length": {
+      "type": "integer",
+      "description": "The number of ancestral segments to traverse upward to construct the full technical name."
+    },
+    "providers": {
+      "$ref": "#/$defs/Providers"
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/NamespaceValue"
+  },
+  "$defs": {
+    "NamespaceValue": {
+      "title": "Value at a namespace address",
+      "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      ]
+    },
+    "NamespaceNode": {
+      "title": "Namespace branch or receiving element",
+      "description": "Child keys establish further namespace segments; explicit element metadata attributes are reserved alongside them. The same key can be an element metadata field at one location and a namespace segment at another (for example code.registry.role). When present on a receiving element, providers contains its provider-address-keyed relationships.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Canonical name as used in the project specification, if defined; otherwise the established industry-standard term (per original Canonical Intake namespace rule 11)."
+        },
+        "label": {
+          "type": "string",
+          "description": "The company-specific corporate designation or project official terminology."
+        },
+        "role": {
+          "type": "string",
+          "description": "The ontological role of this element within the digital typonomy (DE | SE | NE)."
+        },
+        "op": {
+          "type": "string",
+          "description": "The active goal (why) of the Receiving Entity (RE) that the EF must satisfy. Written as a ASD-STE100 simplified technical english phrase."
+        },
+        "ef": {
+          "type": "string",
+          "description": "Legacy-compatible optional element-level ef field retained from the user-provided schema. The Canonical Intake locates encounter-specific EF in a receiving element’s provider join. Do not interpret this field as a replacement for any provider join; whether to eliminate or repurpose it requires an owner decision."
+        },
+        "status": {
+          "type": "string",
+          "description": "Mutable value indicating present state of the Receiving Entity (RE), not meant to be a permamant value (e.g., not_built,)."
+        },
+        "name_length": {
+          "type": "integer",
+          "description": "The number of ancestral segments to traverse upward to construct the full technical name."
+        },
+        "providers": {
+          "$ref": "#/$defs/Providers"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+      }
+    },
+    "ComposedElementLayer": {
+      "title": "Array-valued composed element layer",
+      "description": "Any JSON array at any namespace address constitutes a composed element layer. Its members retain their native structure without synthetic integer IDs or semantic ordering.",
+      "type": "array",
+      "items": true
+    },
+    "Providers": {
+      "title": "Receiving element's providers map",
+      "description": "An object whose keys are the namespace addresses of providing elements. Each entry is a localized provider record owned by this receiving element. The providing-element address is the key; it is not repeated inside the value object.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderRecord"
+      }
+    },
+    "ProviderRecord": {
+      "title": "Provider join (receiver-owned)",
+      "description": "A provider join owned by the Receiving Entity (RE), keyed by the full Providing Element (PE) namespace address. It describes this RE-to-PE encounter, not a global property of the PE.",
+      "type": "object",
+      "properties": {
+        "ice": {
+          "type": "boolean",
+          "description": "Indivisibly Coupled Elements (ICE): true asserts that this particular provider relationship is indivisibly coupled. The legacy XML also tracks multi-element block identifiers; group identity is not represented by this boolean and requires a separate approved contract if retained."
+        },
+        "ifd": {
+          "type": "string",
+          "description": "Information Flow Direction of the substance that satisfies the RE operative purpose, excluding the request/parameters alone. Values send, receive, or both are from the RE perspective.",
+          "enum": [
+            "send",
+            "receive",
+            "both"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "description": "Operative Purpose: the active why of the Receiving Entity (RE) served by this provider join. Source schema requires ASD-STE100; JSON Schema cannot verify linguistic compliance."
+        },
+        "ef": {
+          "type": "string",
+          "description": "Encounter Function: how the keyed Providing Element (PE) serves this RE operative purpose in this encounter. Not a universal PE-level function. Source schema requires ASD-STE100; JSON Schema cannot verify linguistic compliance."
+        }
+      },
+      "required": [
+        "ifd",
+        "op",
+        "ef"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "purpose"
+            ]
+          },
+          {
+            "required": [
+              "function"
+            ]
+          },
+          {
+            "required": [
+              "joins"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "$id": "https://metaform.local/schemas/functional-namespace-v0.4-candidate.json"
+}

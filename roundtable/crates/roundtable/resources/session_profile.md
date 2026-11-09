@@ -1,0 +1,1 @@
+Your profile score is <score/>. You have <ratings/> ratings across <sessions/> earlier sessions.

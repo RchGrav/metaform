@@ -1,0 +1,16 @@
+[package]
+name = "metaform-store"
+version = "0.1.0"
+description = "Metaform's store: maps as partitions of grouping Ladybug databases, one owner per home, a fair write manager, and published snapshots for reads."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+lbug = "=0.22.3"
+metaform-core = { path = "../metaform-core" }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3"

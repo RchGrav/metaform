@@ -1,0 +1,737 @@
+{
+  "note": "Byte-preserved source snapshots. Original paths are provenance only, not runtime dependencies. current_path, where present, identifies an editable current contract; its original bytes remain at path.",
+  "sources": [
+    {
+      "path": "reference/contract-baseline-2026-10-30/metaform.schema.json",
+      "original_path": "/workspace/metaform-rebuild/metaform.schema.json",
+      "bytes": 8952,
+      "sha256": "61bcf415ffb5d8370ccaee7385ce1cf881d7bc16a655f0455db4efb6b50606cd",
+      "current_path": "metaform.schema.json"
+    },
+    {
+      "path": "reference/contract-baseline-2026-10-30/validate_metaform.py",
+      "original_path": "/workspace/metaform-rebuild/validate_metaform.py",
+      "bytes": 3438,
+      "sha256": "43f8c585e493ae9cadf99f1802a4727499c859d038f733c5657db20a845fb8fc",
+      "current_path": "validate_metaform.py"
+    },
+    {
+      "path": "reference/contract-baseline-2026-10-30/mcp-tools.proposed.json",
+      "original_path": "/workspace/metaform-rebuild/mcp-tools.proposed.json",
+      "bytes": 27766,
+      "sha256": "aa653fbd06598a7289d130d3daf2f1232bc1422f5f867b58599c180af7254dea",
+      "current_path": "mcp-tools.proposed.json"
+    },
+    {
+      "path": "reference/contract-baseline-2026-10-30/SKILL.proposed.md",
+      "original_path": "/workspace/metaform-rebuild/SKILL.proposed.md",
+      "bytes": 2660,
+      "sha256": "35424efa309f4cdefc6f390aac60557468707794c756e3bbfe36d6060918f632",
+      "current_path": "SKILL.proposed.md"
+    },
+    {
+      "path": "metaform/owner-skills-example.json",
+      "original_path": "/workspace/metaform-rebuild/owner-skills-example.json",
+      "bytes": 633,
+      "sha256": "3da8b1f89791f3e80304bb73d2dc41fe8df031d1a8e3545a597fa28de2ec0b6b"
+    },
+    {
+      "path": "reference/contract-baseline-2026-10-30/provider-reference-example.json",
+      "original_path": "/workspace/metaform-rebuild/provider-reference-example.json",
+      "bytes": 293,
+      "sha256": "c704e038bae0303ee9940045ee53c9a9f247f9ec5707d1f5ccedf4471a04555b",
+      "current_path": "provider-reference-example.json"
+    },
+    {
+      "path": "reference/theory/preprint.md",
+      "original_path": "/workspace/metaform/docs/preprint/inference-metaform.md",
+      "bytes": 55777,
+      "sha256": "2a67b72d204e082be6adaa31901e64c92ca8545b37008d2a812c1bdec39c92e3"
+    },
+    {
+      "path": "reference/theory/technical-reference.md",
+      "original_path": "/workspace/metaform/docs/inference-metaform/REFERENCE.md",
+      "bytes": 94789,
+      "sha256": "59abfbcc2b73c6e3bc54b2a6429681cc071f90d0bbea51b7f667edc451cbcc1b"
+    },
+    {
+      "path": "reference/intake/Canonical_Intake.xml",
+      "original_path": "/workspace/metaform/rich/Canonical_Intake.xml",
+      "bytes": 29099,
+      "sha256": "07284dddfde602f59ac100680d4d50787f7c66cf18a4de9cb4c29870aaf9afab"
+    },
+    {
+      "path": "reference/intake/intake.xml",
+      "original_path": "/workspace/metaform/src/metaform/modules/intake/resources/intake.xml",
+      "bytes": 29129,
+      "sha256": "9fe60cbbe79427dc2282ba5e673b0ec3ec8f9401e9c72edea20634dc0a732807"
+    },
+    {
+      "path": "reference/intake/metaform_core.axiom",
+      "original_path": "/workspace/metaform/rich/metaform_core.axiom",
+      "bytes": 4670,
+      "sha256": "0b489f9bfbfa3ebdc91068e642424f7f34fc44ff26dd5f9dca509b760661a779"
+    },
+    {
+      "path": "reference/architecture/metaform-node.md",
+      "original_path": "/workspace/metaform/docs/guides/metaform-node.md",
+      "bytes": 35924,
+      "sha256": "7832f019ed5f1700d6b83386a145534c086cf27549b5188907110af186357eb9"
+    },
+    {
+      "path": "reference/architecture/chassis-modules.md",
+      "original_path": "/workspace/metaform/specifications/04-chassis-modules.md",
+      "bytes": 344426,
+      "sha256": "04097a945f7c7df6eef71dbdd3460fd0bd2b6185b775df85ecdd47281cd74a0f"
+    },
+    {
+      "path": "reference/architecture/cli-settings.md",
+      "original_path": "/workspace/metaform/specifications/05-cli-settings.md",
+      "bytes": 107340,
+      "sha256": "07cedbd0ade8429e364ed5f704b3bca25dee417858206be52e5abbe38fced3b1"
+    },
+    {
+      "path": "reference/architecture/code-quality-standards.md",
+      "original_path": "/workspace/metaform/specifications/code_quality_standards.md",
+      "bytes": 1579,
+      "sha256": "6dcb91239445eb926462d8a6c06e285b878154710261041f413068e39f7b8fa4"
+    },
+    {
+      "path": "reference/intake/latest-owner-schema.original.json",
+      "original_path": "/workspace/attachments/566f3cdf-8025-4acb-b5d9-c2a40e086db9/Pasted text.txt",
+      "bytes": 5344,
+      "sha256": "ff8f5333243803ee4b0b5bb5ffc965a9a449a4420c92cf693ca6ef88378800ff"
+    },
+    {
+      "path": "reference/history/decision-log.md",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/.memlog.md",
+      "bytes": 69306,
+      "sha256": "917908931a95dfb3caf36cf792e7a3ebe6d2fce9bf524ee9ddcabfc9f2efa4a1"
+    },
+    {
+      "path": "reference/proposals/Interface Schemas, CEL Data Contracts & Backend Specification.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/Interface Schemas, CEL Data Contracts & Backend Specification.md",
+      "bytes": 46076,
+      "sha256": "3b65c85823d5bdbb12b9b5f985ee0b1b212de75fd9c25b3f3bbb255bc23b06a7"
+    },
+    {
+      "path": "reference/proposals/SPEC-METAFORM-MCP-BUILD-3.0.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/SPEC-METAFORM-MCP-BUILD-3.0.md",
+      "bytes": 65243,
+      "sha256": "44876c0c59973be0f366efe55785a1c3494104793c87ba0f776103288c66ddcd"
+    },
+    {
+      "path": "reference/corrected-handoff/00_authority/README_READ_FIRST.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/00_authority/README_READ_FIRST.md",
+      "bytes": 2815,
+      "sha256": "dfc65c336ea91d240cbd5fc48b2bbb9fe5859a6e1c421b04c40bf97211d93409"
+    },
+    {
+      "path": "reference/corrected-handoff/01_specification/METAFORM_FUNCTIONAL_CORE_v0.4_CANDIDATE.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/01_specification/METAFORM_FUNCTIONAL_CORE_v0.4_CANDIDATE.md",
+      "bytes": 22713,
+      "sha256": "448c36a99ffa4e31691c44d8a7ce72847bebf45ce8bdc37bfd65b8dfa9e9a94b"
+    },
+    {
+      "path": "reference/corrected-handoff/02_contract/example_agent_semantic_batch_PROPOSED.json",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/02_contract/example_agent_semantic_batch_PROPOSED.json",
+      "bytes": 683,
+      "sha256": "6d03fd29782d088210d3113e43e5b381bdb1531549ca3b5c1c3e84d682bf7e22"
+    },
+    {
+      "path": "reference/corrected-handoff/02_contract/example_provider_join.json",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/02_contract/example_provider_join.json",
+      "bytes": 410,
+      "sha256": "52acb1e70bd09f554dbf871c3791d4d78d417adee271dd559b13d87ce5ff8222"
+    },
+    {
+      "path": "reference/corrected-handoff/02_contract/metaform_functional_namespace.schema.json",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/02_contract/metaform_functional_namespace.schema.json",
+      "bytes": 7959,
+      "sha256": "6c3831d2bce6ba6b333d8c7b083dfe25b6fc412051735f66733fa75d4c4dadb6"
+    },
+    {
+      "path": "reference/corrected-handoff/03_provenance/CHANGELOG_AND_CONFLICTS.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/03_provenance/CHANGELOG_AND_CONFLICTS.md",
+      "bytes": 5370,
+      "sha256": "90645c6087659969da7ed0bdbcd492080d196230e7f2469a95c56f3ae4ee1753"
+    },
+    {
+      "path": "reference/corrected-handoff/03_provenance/SEMANTIC_TRACEABILITY.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/03_provenance/SEMANTIC_TRACEABILITY.md",
+      "bytes": 2509,
+      "sha256": "6b8dde90c47e3932dfab1cb8e43cba800e9a12e048aedf9a3bdd7f9ac2a86864"
+    },
+    {
+      "path": "reference/corrected-handoff/03_provenance/VALIDATION_RESULT.json",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/03_provenance/VALIDATION_RESULT.json",
+      "bytes": 682,
+      "sha256": "3d1ed3799d249197c29a65d3dfd193f46580c2250ae0f26952b5df32c74dbbd6"
+    },
+    {
+      "path": "reference/corrected-handoff/04_execution/DEPENDENCY_ORDER_AND_REVIEW_GATE.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/04_execution/DEPENDENCY_ORDER_AND_REVIEW_GATE.md",
+      "bytes": 4311,
+      "sha256": "1a97186e97e7193bf09a72e6e5a9df1a6b9d101ba8b6e94c4919ee25867f6b35"
+    },
+    {
+      "path": "reference/corrected-handoff/04_execution/PRO_SPEC_PASS_INSTRUCTIONS.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/04_execution/PRO_SPEC_PASS_INSTRUCTIONS.md",
+      "bytes": 3487,
+      "sha256": "3bf38e6965cc6aa88a174c7d0dd10f12036192e7d4ca3cb7ac1b06e8efb69174"
+    },
+    {
+      "path": "reference/corrected-handoff/05_source_unchanged/Canonical_Intake_old_flattened_original.xml",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/05_source_unchanged/Canonical_Intake_old_flattened_original.xml",
+      "bytes": 33839,
+      "sha256": "8b6eceec0ae44aa73bdf3d9e2a983cf572212eb90f94575f3c7af21a1cb3d0f1"
+    },
+    {
+      "path": "reference/corrected-handoff/05_source_unchanged/earlier_json_contract_historical.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/05_source_unchanged/earlier_json_contract_historical.md",
+      "bytes": 2518,
+      "sha256": "167be2c2fdb5860f0525aea1b11052e09299845074d7257c703fcf3c47c22beb"
+    },
+    {
+      "path": "reference/corrected-handoff/05_source_unchanged/latest_user_schema_original.json",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/05_source_unchanged/latest_user_schema_original.json",
+      "bytes": 6489,
+      "sha256": "bc2ed2a0b6c2c8ad0d5ce1a13178c4340deff8283cc42fb77a6bc994568e0a59"
+    },
+    {
+      "path": "reference/corrected-handoff/05_source_unchanged/older_embodiment_draft_v0.3_NONAUTHORITATIVE.md",
+      "original_path": "/workspace/work/metaform-consolidation-2026-10-29/sources/new/corrected/05_source_unchanged/older_embodiment_draft_v0.3_NONAUTHORITATIVE.md",
+      "bytes": 35621,
+      "sha256": "2129941b8bad26c1a7bbd6f565f63a42baa387626070ef97848535ee0bb700b9"
+    },
+    {
+      "path": "reference/ecs/01-triage-report.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/01-triage-report.md",
+      "bytes": 3883,
+      "sha256": "52d53a6b2013249a7cdc4f624dc3513f9946c73674c8c2e074dcd6580434f599"
+    },
+    {
+      "path": "reference/ecs/02-inference-metaform-revised.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/02-inference-metaform-revised.md",
+      "bytes": 47789,
+      "sha256": "da14760c29d7d719dd869e09bebd7dc914d825fb51f7b35c6ebfb4ed8e24d025"
+    },
+    {
+      "path": "reference/ecs/03-technical-specification.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/03-technical-specification.md",
+      "bytes": 70331,
+      "sha256": "5906bc9dc634ab437ee0ed6dbc25d0837575dc28b5619276dc5d91b78306f242"
+    },
+    {
+      "path": "reference/ecs/Inference-Metaform-Revised-Paper-and-Specification.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/Inference-Metaform-Revised-Paper-and-Specification.md",
+      "bytes": 122015,
+      "sha256": "a63f074598f74959b81b94c69e540681e59e5ce6a6e55e2abe22d4de69fbd42f"
+    },
+    {
+      "path": "reference/ecs/README.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/README.md",
+      "bytes": 1284,
+      "sha256": "d04fdbe148237a6d24d3756c828d8f3a7f267bca303750b6a30de2abd399b00f"
+    },
+    {
+      "path": "reference/ecs/START-HERE.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/START-HERE.md",
+      "bytes": 3274,
+      "sha256": "cee0d2dfe0dbb95b335655c80ffd29fe64b2423056c6eedf3fe17d073a1c2292"
+    },
+    {
+      "path": "reference/ecs/contracts/SKILL.example.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/SKILL.example.md",
+      "bytes": 212,
+      "sha256": "edaaff61359ed4accbc3f0c2ac7f3a58210267f4815bacd319650b88a88799f1"
+    },
+    {
+      "path": "reference/ecs/contracts/composition-manifest.schema.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/composition-manifest.schema.json",
+      "bytes": 2269,
+      "sha256": "13ea7b720c8c0d1376d9ec7f1eb6c17b2cb833bb6c348f2e6f21374a94a369ad"
+    },
+    {
+      "path": "reference/ecs/contracts/document-sweep.cypher",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/document-sweep.cypher",
+      "bytes": 1547,
+      "sha256": "c8f4eeceebe5676ef3cd7f67ca0717e2343d1711d63063d5dda01e3f7df28e89"
+    },
+    {
+      "path": "reference/ecs/contracts/event.schema.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/event.schema.json",
+      "bytes": 2198,
+      "sha256": "c68fb0b3981a185f5bf3f68dec6a68d37cc80bc2c4432cc138f2e4bb0ad991bf"
+    },
+    {
+      "path": "reference/ecs/contracts/functional-binding.cypher",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/functional-binding.cypher",
+      "bytes": 810,
+      "sha256": "f721bb6e88210db70b7ca9e97664b1442a1ec3a277b8c02ebd35d8ad6de65dd8"
+    },
+    {
+      "path": "reference/ecs/contracts/graph.cypher",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/graph.cypher",
+      "bytes": 3368,
+      "sha256": "e29bc8a83a42f2353af6b4f1d51e09e8d907ae9a7cd4d62264d39b0a630a6c3a"
+    },
+    {
+      "path": "reference/ecs/contracts/handoff.schema.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/handoff.schema.json",
+      "bytes": 1903,
+      "sha256": "eb7b68fd6b681a97520dc052424f29b25ff7230d2890bb6040912bf86650c2a5"
+    },
+    {
+      "path": "reference/ecs/contracts/matrix-example.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/matrix-example.json",
+      "bytes": 2850,
+      "sha256": "1190b31188e24ab3ac186d53c0e2a27ae071d86a618980d0de26d17fc19c407b"
+    },
+    {
+      "path": "reference/ecs/contracts/mcp-event-notification.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/mcp-event-notification.json",
+      "bytes": 211,
+      "sha256": "d14705ea612cda5028843c95204d0300206ba8ae5090663c997c78c8290419b9"
+    },
+    {
+      "path": "reference/ecs/contracts/mcp-read-request.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/mcp-read-request.json",
+      "bytes": 486,
+      "sha256": "dccba3285d70b9d2bd5c2af44df533b96c9135c4eef6cb388c419e84a28644ae"
+    },
+    {
+      "path": "reference/ecs/contracts/mcp-read-response.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/mcp-read-response.json",
+      "bytes": 2244,
+      "sha256": "c4b9904220cbffac8c6ebcc7f2bb2482d2ae1530750d386f4ee0c9b2c08f903f"
+    },
+    {
+      "path": "reference/ecs/contracts/mcp-subscription-ack.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/mcp-subscription-ack.json",
+      "bytes": 446,
+      "sha256": "6daf62e8ed122bf1f0c55ee26b3a0b9b6ba4ceeed69ec40d06b143076e4cc40c"
+    },
+    {
+      "path": "reference/ecs/contracts/mcp-subscription-request.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/mcp-subscription-request.json",
+      "bytes": 716,
+      "sha256": "2462298defb3b75eed85a7ae84eb1b627a521b84ad89927bed999bc509780fca"
+    },
+    {
+      "path": "reference/ecs/contracts/place-context.cypher",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/place-context.cypher",
+      "bytes": 2072,
+      "sha256": "87a73f0e9ca78a2fd84241a504098917ef3ca40816b86fabef399ee352af8909"
+    },
+    {
+      "path": "reference/ecs/contracts/read-items.cypher",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/read-items.cypher",
+      "bytes": 429,
+      "sha256": "8cfd9ce9afe82b79b91ccb063a3f70a7522a8bb08a786dce437fe6331424e089"
+    },
+    {
+      "path": "reference/ecs/contracts/skill-entry.example.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/skill-entry.example.json",
+      "bytes": 406,
+      "sha256": "1dabfc42dfc83025935e6a0b7606570c10badcb161b1b185ef25bbe71e2eb921"
+    },
+    {
+      "path": "reference/ecs/contracts/skills-list-response.example.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/skills-list-response.example.json",
+      "bytes": 649,
+      "sha256": "2176f1f817cb67644981ce47b06503184f777b2d3616d8a98e3ad93e8e1dbe11"
+    },
+    {
+      "path": "reference/ecs/contracts/spatial-calibration.schema.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/spatial-calibration.schema.json",
+      "bytes": 2064,
+      "sha256": "16457efc50beb6bd81b2876b990ba3601eec456d7fa463d62727b25c0dca0f10"
+    },
+    {
+      "path": "reference/ecs/contracts/spatial-tof.schema.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/contracts/spatial-tof.schema.json",
+      "bytes": 2960,
+      "sha256": "71f031640695f0c0abfb34336640eba381c13c1f6253f2ed4a3a111ea6f27cbb"
+    },
+    {
+      "path": "reference/ecs/sources.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/sources.md",
+      "bytes": 6043,
+      "sha256": "04efa2f643763adf35b2a8434f64d98db9727d049cfff05628d9ac003feba272"
+    },
+    {
+      "path": "reference/ecs/verification/README.md",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/verification/README.md",
+      "bytes": 812,
+      "sha256": "57094df3527e555a3a042eaa9f67d27dc2ced616028750646b2c646fcf91a16d"
+    },
+    {
+      "path": "reference/ecs/verification/build_contracts.py",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/verification/build_contracts.py",
+      "bytes": 12056,
+      "sha256": "d538fbc08c80907ee566370f4f2a1afc5e0c07c91dd1e05aebe83a23d859ec09"
+    },
+    {
+      "path": "reference/ecs/verification/results.json",
+      "original_path": "/workspace/work/metaform-spec-context/terminology/verification/results.json",
+      "bytes": 2500,
+      "sha256": "fc4f70f3c1d6ca66c606d4447408c5164903ced67371143ecff6f479e517d3a3"
+    },
+    {
+      "path": "reference/repository-review/ARTIFACT-CHECKS.json",
+      "original_path": "/workspace/work/landed-metaform-review/ARTIFACT-CHECKS.json",
+      "bytes": 325,
+      "sha256": "6c3e5d9239d4c5bb9640af0f3a284dffdf15ecc2ad000abe23989d94c40cb514"
+    },
+    {
+      "path": "reference/repository-review/BACKEND-COMPATIBILITY.md",
+      "original_path": "/workspace/work/landed-metaform-review/BACKEND-COMPATIBILITY.md",
+      "bytes": 13050,
+      "sha256": "e83a731f515e2193b0f73cc3a673f907e53e8202e965ff1b50d579c13ea12f5e"
+    },
+    {
+      "path": "reference/repository-review/CHASSIS-CLI-CLEANUP.md",
+      "original_path": "/workspace/work/landed-metaform-review/CHASSIS-CLI-CLEANUP.md",
+      "bytes": 11092,
+      "sha256": "7bf062caac6b2aaf8435a715aa8db9bfa0489b9e24f6f7c901049abd7a4d29d2"
+    },
+    {
+      "path": "reference/repository-review/COMMAND-CONTEXT-INTAKE.md",
+      "original_path": "/workspace/work/landed-metaform-review/COMMAND-CONTEXT-INTAKE.md",
+      "bytes": 17587,
+      "sha256": "886016233df8d0045ea5ec1c134eafb98dd36b4a485e4864665e86be6b274160"
+    },
+    {
+      "path": "reference/repository-review/EVIDENCE.md",
+      "original_path": "/workspace/work/landed-metaform-review/EVIDENCE.md",
+      "bytes": 18921,
+      "sha256": "18641168300b3534fefd9144615f9ea8c4703d3f9c76a081d6bdd3fdec908ac3"
+    },
+    {
+      "path": "reference/repository-review/INDEPENDENT-PASSES.json",
+      "original_path": "/workspace/work/landed-metaform-review/INDEPENDENT-PASSES.json",
+      "bytes": 921,
+      "sha256": "22e3e5e937466892962b932f7fbb23bc8009e9879f10c86db3881b8096054b59"
+    },
+    {
+      "path": "reference/repository-review/OWNER-AMENDMENTS.md",
+      "original_path": "/workspace/work/landed-metaform-review/OWNER-AMENDMENTS.md",
+      "bytes": 5538,
+      "sha256": "cd130f05d3b7ec7b40d921af5aff9ebfc122f04c9aa088d1d2b6dc60beeac56c"
+    },
+    {
+      "path": "reference/repository-review/REUSE-MATRIX.md",
+      "original_path": "/workspace/work/landed-metaform-review/REUSE-MATRIX.md",
+      "bytes": 14540,
+      "sha256": "b074baf6d76d274d40d6579f8c12b675f2f0f430a460f31dcd5cc5a62feb49db"
+    },
+    {
+      "path": "reference/repository-review/REVIEW.md",
+      "original_path": "/workspace/work/landed-metaform-review/REVIEW.md",
+      "bytes": 17545,
+      "sha256": "cd636c9d32de36ba0696b98256e4984357a723d9e46086272afa7a098be43750"
+    },
+    {
+      "path": "reference/repository-review/RUNTIME-AND-EVENTS.md",
+      "original_path": "/workspace/work/landed-metaform-review/RUNTIME-AND-EVENTS.md",
+      "bytes": 19924,
+      "sha256": "31aa89e7e922edace7992cd56b416303fd04d35b1969eaa43604935b5bad3638"
+    },
+    {
+      "path": "reference/repository-review/SEPTEMBER-LADYBUG-RECOVERY.md",
+      "original_path": "/workspace/work/landed-metaform-review/SEPTEMBER-LADYBUG-RECOVERY.md",
+      "bytes": 9034,
+      "sha256": "a88d39cc27f94f8d3b5f8493d27e95585b8b9633da686ac0827216dd093f0383"
+    },
+    {
+      "path": "reference/repository-review/SOURCE-CHECKS.json",
+      "original_path": "/workspace/work/landed-metaform-review/SOURCE-CHECKS.json",
+      "bytes": 128,
+      "sha256": "edbf9d755521615905f831b1a3bdb5967022c697f2745ff4ec908db4c0bb5318"
+    },
+    {
+      "path": "reference/repository-review/SOURCE-MANIFEST.json",
+      "original_path": "/workspace/work/landed-metaform-review/SOURCE-MANIFEST.json",
+      "bytes": 12151,
+      "sha256": "6378c63131bb1501a5c0e40a4aaf70ee0e3419ad5c2e175d406d641b35e502a6"
+    },
+    {
+      "path": "reference/repository-review/SPEC-AMENDMENTS.md",
+      "original_path": "/workspace/work/landed-metaform-review/SPEC-AMENDMENTS.md",
+      "bytes": 15269,
+      "sha256": "e8ad5a8a5076e8fe20235bc30745579a33f5fa69cb6d066b79d2c1efef110888"
+    },
+    {
+      "path": "reference/repository-review/SPEC.md",
+      "original_path": "/workspace/work/landed-metaform-review/SPEC.md",
+      "bytes": 11868,
+      "sha256": "b6fd3169096385063ead6e64deee2aa253ea4472be24add94675657179e617c5"
+    },
+    {
+      "path": "reference/repository-review/reviewers/01-CHASSIS-CLI.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/01-CHASSIS-CLI.md",
+      "bytes": 26582,
+      "sha256": "353e4a53715b34349ac71a3b58ec5ddef9cc2b6c0c665fb78e3179b1afe5e299"
+    },
+    {
+      "path": "reference/repository-review/reviewers/02-MCP-INTAKE.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/02-MCP-INTAKE.md",
+      "bytes": 28570,
+      "sha256": "f1093a1f3797799de71967bfaf44f077ff9055926767906e9dc1638b617c6618"
+    },
+    {
+      "path": "reference/repository-review/reviewers/03-CONTEXT-CONTINUITY.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/03-CONTEXT-CONTINUITY.md",
+      "bytes": 28247,
+      "sha256": "5f77ebc7a2eca020df46ab7ace20d7e3ad41aa1f180b59e414b5e90255e90c3a"
+    },
+    {
+      "path": "reference/repository-review/reviewers/04-RUNTIME-EVENTS.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/04-RUNTIME-EVENTS.md",
+      "bytes": 33326,
+      "sha256": "814da812319a3a21cb4e19dcc5d1abd24ee695c137670a72b946627be8bf8704"
+    },
+    {
+      "path": "reference/repository-review/reviewers/05-BACKEND-RECOVERY.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/05-BACKEND-RECOVERY.md",
+      "bytes": 36104,
+      "sha256": "b4dfa0514d354df2268496928d91dfe11c743ceae52798c854c21d38cb3cfbf4"
+    },
+    {
+      "path": "reference/repository-review/reviewers/06-CHALLENGE.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/06-CHALLENGE.md",
+      "bytes": 15125,
+      "sha256": "2f276e04f310ce8610bda5f4679c3c0bcee1c40241e5bdcc026ab21b3e0b5700"
+    },
+    {
+      "path": "reference/repository-review/reviewers/06-VERIFICATION.md",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/06-VERIFICATION.md",
+      "bytes": 23596,
+      "sha256": "af8c320d84d5041b77ddfd123195a61349d69a09647695588d24f3fe8e608165"
+    },
+    {
+      "path": "reference/repository-review/reviewers/reviewer05-evidence.json",
+      "original_path": "/workspace/work/landed-metaform-review/reviewers/reviewer05-evidence.json",
+      "bytes": 57014,
+      "sha256": "e0c77021c553f4319a79e03e538c1ff9f959dbfef0aa675935d58e23b3bbf79a"
+    },
+    {
+      "path": "reference/recovered-orchestration/docs/README.md",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/docs/README.md",
+      "bytes": 8927,
+      "sha256": "1364c18a60d9cb98c874289b2a0d03065d46762ca4be429654dc69346053362f"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/README.md",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/README.md",
+      "bytes": 12556,
+      "sha256": "3e525d576d9c9d632dfebba2dfd1dbf618055b880e50e2052805760d39a6dcef"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/__init__.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/__init__.py",
+      "bytes": 20090,
+      "sha256": "6d598ada67ab7858a7e37be98e38c876e26db5a2dd11f2f2c83c294f4cd724da"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/board.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/board.py",
+      "bytes": 27823,
+      "sha256": "2bb8c10313bbe104dbffc98100134127bec726a5ed57d84998cd80cfd81df9af"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/protocol.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/protocol.py",
+      "bytes": 24696,
+      "sha256": "6c5a50c6e757be12f1fcb6bba6b8dd2e4dd0f5c325e442f06b28982931d54923"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/architect.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/architect.txt",
+      "bytes": 2783,
+      "sha256": "7ff67eb19829ce5f3bf92ecc9347a4fe6bcca7bc6afbb9098e1836d6973391cc"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/assignment_closed.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/assignment_closed.txt",
+      "bytes": 90,
+      "sha256": "9de8540c5a3b013213bec3b128d538374b481c82737faaa6ec68974f7fa06f22"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/composer.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/composer.txt",
+      "bytes": 1593,
+      "sha256": "5561a3bd890d18580b2bd0b67fdc2102c00f7bf52fb60228b195f166bfcdddd4"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/facilitator.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/facilitator.txt",
+      "bytes": 4188,
+      "sha256": "b17365bfe9693a8bfe0b77296186431afdd4651cbcac5b1abb03722e7df91924"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/message_from.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/message_from.txt",
+      "bytes": 22,
+      "sha256": "a447410b5f6ae0432150c17a2d55dd71ab7f38ab85ba43eb549f7f7106b25910"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/next_message.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/next_message.txt",
+      "bytes": 53,
+      "sha256": "07de6ed9582bf67e0dee8dc722ce9ca29adaae93e6de9541c0f03d03dd6e3a64"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/partner_finished.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/partner_finished.txt",
+      "bytes": 56,
+      "sha256": "5ac2cac9ee02424b97491af943e907750cdb0deff0f71f54ef8a0f5bf9872e2f"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/project_agent.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/project_agent.txt",
+      "bytes": 5488,
+      "sha256": "c5a792eb6045bfbd1ec0e88da53bd36fc78f952108c9533d6808113a5c8d7f66"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/ticket_named.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/ticket_named.txt",
+      "bytes": 125,
+      "sha256": "2b889ade632998c536d855f89611d9193149f3f494b03612cd7f90d3f955d6e6"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/resources/user_agent.txt",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/resources/user_agent.txt",
+      "bytes": 1770,
+      "sha256": "52af5044e666182d2cb3a2f4aea6ee0e202cf851d56e40a5bd662fccf67a927e"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/runtime.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/runtime.py",
+      "bytes": 21573,
+      "sha256": "626142458d41cd27177f65e60fcfe0989312df8cf1275cc0450064a08ba6c472"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/skill_layer.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/skill_layer.py",
+      "bytes": 9702,
+      "sha256": "e17eb6e54dc846aa9c950ce9680673dc6b97747f0e6087b1b6a30c9e03e4c6f6"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/tests/test_assigned_tasks.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/tests/test_assigned_tasks.py",
+      "bytes": 23204,
+      "sha256": "8e8a54c9be70cfe6878b725b940136b8bc3261b6771223af7f213bd897139893"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/tests/test_skill_layer.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/tests/test_skill_layer.py",
+      "bytes": 12843,
+      "sha256": "e99539b298467d2210ad31848bc41449fe859a9a813f440a3d060ba73e1c9c79"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/tests/test_worker_board.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/tests/test_worker_board.py",
+      "bytes": 13003,
+      "sha256": "df865b00ecc4a261bf2f9a6d0889fdfe25a3ce9eeb41f80ab9643829ce27a575"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/tests/test_worker_events.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/tests/test_worker_events.py",
+      "bytes": 4529,
+      "sha256": "284910bc5fe6558434277305b826eeafb6a10ceb7c3a2bf589532bed1b3aadfa"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/tests/test_worker_protocol.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/tests/test_worker_protocol.py",
+      "bytes": 26299,
+      "sha256": "ae846ac2e5d407eb45a09c79d14725b1b00110daa89903ab5c858ebaa6a3f6f5"
+    },
+    {
+      "path": "reference/recovered-orchestration/src/metaform/modules/tasks/worktrees.py",
+      "original_path": "/workspace/work/metaform-recovery-2026-10-29/recovered-tasks/src/metaform/modules/tasks/worktrees.py",
+      "bytes": 8565,
+      "sha256": "9030a486a1c8018869523c9cf76da2611464f2165000f1e5b09d934401120883"
+    },
+    {
+      "path": "reference/original-handoff/01-settled-design.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/01-settled-design.md",
+      "bytes": 5796,
+      "sha256": "0a46f793d1f58234dfb34b8824009d88f7f03eebd591e7a4155adffc09702b1a"
+    },
+    {
+      "path": "reference/original-handoff/02-pro-spec-assignment.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/02-pro-spec-assignment.md",
+      "bytes": 2797,
+      "sha256": "35764853e1632fa61acb0e0032f12631925274e06f6dede2a93073596c02f9c6"
+    },
+    {
+      "path": "reference/original-handoff/03-reconnaissance-and-implementation.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/03-reconnaissance-and-implementation.md",
+      "bytes": 3489,
+      "sha256": "71a52587946234e8dd55da4a85ce0d1b0bce1c2d393c9bec2360002d0f346e7b"
+    },
+    {
+      "path": "reference/original-handoff/04-open-decisions-for-high.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/04-open-decisions-for-high.md",
+      "bytes": 2556,
+      "sha256": "ff209b72284eaa5a3738ff0c6724dac938eb141115f88ce215263ab32aba2204"
+    },
+    {
+      "path": "reference/original-handoff/05-reference-material.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/05-reference-material.md",
+      "bytes": 1501,
+      "sha256": "974619522793ca43186adc2355a890593c7e3517097fac43af1769b6f496f337"
+    },
+    {
+      "path": "reference/original-handoff/README.md",
+      "original_path": "/workspace/work/metaform-spec-context/handoff/metaform_handoff/README.md",
+      "bytes": 1006,
+      "sha256": "cd224d35857e9ba3dc295f7743fe7701d5410cb0ae0d074407727a49252a5653"
+    },
+    {
+      "path": "reference/python-module-template/CHANGELOG.md",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/sources/reuse/python-module-template/CHANGELOG.md",
+      "bytes": 22438,
+      "sha256": "990b3759a93a736c766c4263a78275e6cb8fc022b1e40bc63e889750798365b7"
+    },
+    {
+      "path": "reference/python-module-template/README.md",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/sources/reuse/python-module-template/README.md",
+      "bytes": 18897,
+      "sha256": "5bccd86399ce35e76f77aad1de120bbf5f39eb0a04487c4ac38d92e07991b392"
+    },
+    {
+      "path": "reference/python-module-template/__init__.py",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/sources/reuse/python-module-template/__init__.py",
+      "bytes": 11287,
+      "sha256": "dcf772f4261a079ddfebdf9d7ba53ed37cd21bec6c285c70c6b772c3cd62fbe9"
+    },
+    {
+      "path": "reference/python-module-template/resources/pane.md",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/sources/reuse/python-module-template/resources/pane.md",
+      "bytes": 188,
+      "sha256": "956548d72f6a089804fe13d797f9cd7cb19e893e92160580808cf3f6021e8f82"
+    },
+    {
+      "path": "reference/python-module-template/resources/prompts.xml",
+      "original_path": "/workspace/work/metaform-rebuild/_bmad-output/specs/spec-metaform-rebuild/sources/reuse/python-module-template/resources/prompts.xml",
+      "bytes": 3376,
+      "sha256": "8c2b19faa81bb23ef43f137dcfac2cccd94cbad87f91b1bbd572473c9017522a"
+    },
+    {
+      "path": "metaform/verification/previous-schema-check-results.json",
+      "original_path": "/workspace/metaform-rebuild/schema-check-results.json",
+      "bytes": 352,
+      "sha256": "ca066718c06160a1127512705ca533e518c2e7af65b65af9637889fe2a2ffab2"
+    },
+    {
+      "path": "reference/contract-baseline-2026-10-30/Intake.before-2026-10-31.xml",
+      "original_path": "/home/rich/brain/Intake.xml",
+      "bytes": 33986,
+      "sha256": "fa167557a864f780709ff9472656d462d11507d34267ca3422e3bafd1c07f251",
+      "note": "Authored working prompt before the owner-authorized 31 October terminology and tool update."
+    }
+  ]
+}

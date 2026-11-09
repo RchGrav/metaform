@@ -1,0 +1,16 @@
+{
+  "tests_run": 29,
+  "failures": 0,
+  "errors": 0,
+  "passed": true,
+  "scope": "Local JSON Schema and reference-validator regression checks only.",
+  "not_proven": [
+    "functional naming",
+    "ASD-STE100",
+    "intake fidelity",
+    "database transactions",
+    "multi-user isolation",
+    "MCP interoperability",
+    "running application"
+  ]
+}

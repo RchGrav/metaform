@@ -1,0 +1,192 @@
+[
+  {
+    "lens": "adversarial",
+    "location": "B-2.2a / B-3.1",
+    "trigger_condition": "Every slot needs placement, including existing external roles.",
+    "guard_snippet": "Require placement only for owned spatial slots; prohibit moving external roles through placement.",
+    "potential_consequence": "Valid external bindings are rejected or existing entities are moved."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-2.3 / B-3.1 / example",
+    "trigger_condition": "No fixture or input schedule triggers the lever-use event.",
+    "guard_snippet": "Store starting state, typed stimuli, step origin and assertions.",
+    "potential_consequence": "Tests cannot distinguish an already-open door from one opened by use."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-4.2 / MS-4",
+    "trigger_condition": "Pinning actual source handles conflicts with forbidding authority cloning.",
+    "guard_snippet": "Pin capability roles/scopes; resolve fresh destination grants and record the mapping.",
+    "potential_consequence": "Release copies source authority or rejects valid destination handles."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-3.5 / B-4.1",
+    "trigger_condition": "Source hashes are described as the executable hashes release pins.",
+    "guard_snippet": "Record sourceHash, componentHash and their build association separately.",
+    "potential_consequence": "Hash comparisons fail or inspected source is unrelated to the tested executable."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-3.1 / B-2.2",
+    "trigger_condition": "The verb set requires existing content keys but cannot publish a newly written module.",
+    "guard_snippet": "Define component publication, verified manifest extraction and slot binding to the returned hash.",
+    "potential_consequence": "Agents can assemble existing assets but cannot complete a novel programmed feature."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-2.2 / B-3.1",
+    "trigger_condition": "links[] and independently written link steps can disagree.",
+    "guard_snippet": "Reference declared link ids from steps or derive steps from the canonical links.",
+    "potential_consequence": "The validated machine differs from the instantiated machine."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-3.1 / B-3.4",
+    "trigger_condition": "Link checks name WIT equality but omit explicit direction and cardinality checks.",
+    "guard_snippet": "Enforce outbound-to-inbound fan-out or exactly two two-way endpoints under W-5.4.",
+    "potential_consequence": "Equal-type links can violate W-5.4."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-2.2 / blueprint.step",
+    "trigger_condition": "Voxel-only placement lacks orientation, scale and joint frames for imported objects.",
+    "guard_snippet": "Specify initial transforms and attachment frames through the selected interfaces.",
+    "potential_consequence": "Identical records admit geometrically different machines."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-1.1 / D-B1",
+    "trigger_condition": "The owner's expressly unsettled map reconsideration is described as settled.",
+    "guard_snippet": "Label agent-owned storage a proposal; distinguish ownership from physical storage.",
+    "potential_consequence": "A recommendation is mistaken for an owner decision."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-3.4",
+    "trigger_condition": "Rejection refers to absent B-2.5.",
+    "guard_snippet": "Restore the prohibition or replace the dangling reference.",
+    "potential_consequence": "Implementers cannot determine the rejection condition."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-2.3 / blueprint.assert",
+    "trigger_condition": "Assertions require step, but assert accepts no step and n+2 has no origin.",
+    "guard_snippet": "Accept an observation step and define test-relative step zero.",
+    "potential_consequence": "The writer cannot populate timing; evaluators use different steps."
+  },
+  {
+    "lens": "adversarial",
+    "location": "B-2.3 / B-3.5 / B-4.1",
+    "trigger_condition": "Behavioral tests are repeatedly made the basis of generated-code safety.",
+    "guard_snippet": "Describe tests as functional evidence; cite limits, host imports and capability isolation for confinement.",
+    "potential_consequence": "Passing selected tests is mistaken for execution confinement."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-2.2a / blueprint.submit",
+    "trigger_condition": "An external slot already has a transform.",
+    "guard_snippet": "Place owned spatial slots only; retain external transforms.",
+    "potential_consequence": "Valid external roles are rejected or moved."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-2.2a / B-3.3 / MS-3",
+    "trigger_condition": "An external role names a live-world entity during admin-world testing.",
+    "guard_snippet": "Separate test and destination bindings; supply an admin fixture matching the contract.",
+    "potential_consequence": "Testing uses an undefined cross-world link or acts on the live target early."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-2.3 / blueprint.assert",
+    "trigger_condition": "The agent must author the assertion's required step.",
+    "guard_snippet": "Use assert(selectorRef, expected, step) with a run-relative origin.",
+    "potential_consequence": "The mandatory field cannot be written reproducibly."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-3.1 / B-3.3",
+    "trigger_condition": "A door assertion needs a use event with no stimulus operation.",
+    "guard_snippet": "Record fixture, endpoint, typed payload, relative step and initial state.",
+    "potential_consequence": "Event-driven code stays idle or depends on unrecorded actions."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-2.2 / B-3.1",
+    "trigger_condition": "Link steps and declarations disagree or omit each other.",
+    "guard_snippet": "Reference canonical link ids and materialize each exactly once.",
+    "potential_consequence": "Validation and construction produce different links."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-3.5 / B-4.1",
+    "trigger_condition": "Recorded source is compiled into a distinct executable component.",
+    "guard_snippet": "Record sourceHash and componentHash plus build association.",
+    "potential_consequence": "The hash reconciliation cannot compare like artifacts."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-3.1 / B-2.4",
+    "trigger_condition": "The requested feature needs a newly written module.",
+    "guard_snippet": "Publish compiled bytes and a verified manifest to obtain the content key.",
+    "potential_consequence": "The defined authoring path cannot create new behavior."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-2.2 / MS-5",
+    "trigger_condition": "set_param succeeds before a later build step fails.",
+    "guard_snippet": "Stage parameter effects until commit or restore their prior values.",
+    "potential_consequence": "A failed build changes global simulation settings."
+  },
+  {
+    "lens": "edge-case-hunter",
+    "location": "B-3.4",
+    "trigger_condition": "Prohibited content must be checked against absent B-2.5.",
+    "guard_snippet": "Restore or replace the missing clause.",
+    "potential_consequence": "A stated rejection rule has no definition."
+  },
+  {
+    "lens": "structure",
+    "location": "ModularShift addition after section 6",
+    "trigger_condition": "Requirements for a single operation are scattered after examples and decisions.",
+    "guard_snippet": "MOVE/MERGE MS-1/MS-2 into integrity, MS-3 into slots, MS-4 into permissions, MS-5 into submission and MS-6 into intent.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  },
+  {
+    "lens": "structure",
+    "location": "B-2.2a and B-2.6",
+    "trigger_condition": "Duplicate explanations obscure the slot contract.",
+    "guard_snippet": "MERGE owned/external role rules and allowed operations into one subsection.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  },
+  {
+    "lens": "structure",
+    "location": "Section 6",
+    "trigger_condition": "The heading combines decided recommendations and unresolved choices.",
+    "guard_snippet": "MOVE settled proposals to a decision summary and leave unresolved questions under Open decisions.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  },
+  {
+    "lens": "structure",
+    "location": "B-2.1 and B-2.2",
+    "trigger_condition": "Long field paragraphs hinder implementation lookup.",
+    "guard_snippet": "MOVE field definitions into tables with field, meaning, writer and reference.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  },
+  {
+    "lens": "structure",
+    "location": "B-3.4",
+    "trigger_condition": "The reference has no destination.",
+    "guard_snippet": "QUESTION the absent B-2.5 reference and repair its target.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  },
+  {
+    "lens": "structure",
+    "location": "Section 5",
+    "trigger_condition": "One paragraph mixes distinct structures the agent must write.",
+    "guard_snippet": "MOVE example into slots/manifests, links, assertions and build-step blocks.",
+    "potential_consequence": "Readers must reconstruct the contract across passages."
+  }
+]
+

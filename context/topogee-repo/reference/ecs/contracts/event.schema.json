@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:metaform:schema:event:1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "source_id",
+    "source_epoch",
+    "source_sequence",
+    "kind",
+    "journal_id",
+    "journal_sequence",
+    "project_id",
+    "target_address",
+    "join_id",
+    "clock_id",
+    "observed_ns",
+    "persisted_ns",
+    "persisted_clock_id",
+    "cause_id",
+    "observation_uri",
+    "observation_sequence",
+    "summary",
+    "details"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "metaform.event/1"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_epoch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1
+    },
+    "journal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "journal_sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_address": {
+      "type": "string",
+      "minLength": 1
+    },
+    "join_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "clock_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observed_ns": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "persisted_ns": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "persisted_clock_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cause_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "observation_uri": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observation_sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "details": {
+      "type": "object"
+    }
+  }
+}

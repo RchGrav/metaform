@@ -1,0 +1,186 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<process id="digital-typology" version="2.0">
+    <title>Digital Typology</title>
+    <goal>
+    The goal is to refine a high value metaform to be mapped to capture the shape of the artifacts function by performing a element by element trace operation focused strictly on the functionality.  You must traverse your models latent space understanding of functionality while avoiding genres, medium, encoding, style and other variants of functionality. Assemble the elements types you see as high value then address them by the namespace rules, and record each RE's OP in a join of type "purpose" describing the active why together with the EF of the Providing Element. Do not perform a deeper intake based on variants which do not describe functionality on the leaf, such as any kind of genre, style, or other things which are not distinctly an observed functionality form. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+    </goal>
+    <prompt text="{prompt}" note="The prompt may be a simple stated target or a task.  Assume the target as being this project folders contexts if not stated otherwise. Prompts can refine the process in many ways such as refining, correction layer construction, blind spot analysis, to define new features enhancements, or any other prompt the user might provide." />
+    <core_concepts>
+        <concept term="AUE" full="Artifact Under Examination" definition="The entity (thing or things) being examined, created, or used. Artifacts can include photographs, contracts, stories, resale assets, and software. The work can concern multiple artifacts and projects. Whether an AUE serves as an asset depends on its use in that context." />
+        <concept term="Join" definition="A dictionary object that exists in the Receiving Entity (RE) with a relation in active voice, an observation of the long lasting stable state of what is there; additionally it contains a dictionary of objects containing type specific or AUE specific references and logic." />
+        <concept term="Element" definition="An element is any nameable part of an entity as a type; however, just because an element can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred." />
+        <concept term="Entity" definition='An entity is a whole, independent thing with its own distinct existence, while an element is a smaller part or component that makes up that whole. All entities are elements, but not all elements are entities. Entity or an element depends entirely on your level of abstraction (your scope). The moment you zoom into a component and examine its internal composition, that component transitions conceptually from a passive "element" into an active "entity" with its own subordinate elements.' />
+        <concept term="OP" full="Operative Purpose" definition="The **why**. This is the active goal held in an RE's join dictionary — that an element's encounter function intends to accomplish." />
+        <concept term="EF" full="Encounter Function" definition="The **how** of what is delivered.  This may be understood as the function of an encounter or the encounter of a function depending on the contextual understanding of the Artifact. This is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its RE. It explains how the effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is stored in the RE-owned join because a PE element type's functionality on the whole may satisfy different REs' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins." />
+        <concept term="RE" full="Receiving Element/Entity" definition="The **who** or **what** bearing an OP. This is the element, person, group, system, component, or other participant with an Operative Purpose for the Encounter Function of an Element. The OP belongs to that receiver, and the join that records it lives in that receiver." />
+        <concept term="CQU" full="Cestui Que Use" definition="The explicit RE whom benefit from work which can be performed on the type of thing the artifact is: the party types that hold an objective purpose for this type of object and who drives the most improvement in it. The CQU receives the join, holding the Operative Purpose that a Providing Element's Encounter Function serves." />
+        <concept term="PE" full="Providing Element" definition="The part satisfying the requirement actively declared by its RE through its Operative Purpose. This is the join's other endpoint: whatever's EF fulfills the RE's OP." />
+        <concept term="AT" full="Artifact Type" definition="This is a general category or classification that groups individual artifacts together based on shared characteristics. Artifact Types can be used to anneal or combine many of the same type of AUE into types (for example photos, data objects, scripts, templates, etc)." />
+        <concept term="NE" full="Notable Element" definition="A component, interface, or specification that defines an essential demand or requirement. It is **notable** because it highlights what a system or component explicitly expects, needs, or depends on from its external environment to operate successfully." />
+        <concept term="DE" full="Defining Element" definition="The notable element of this AUE whose loss would prevent the AUE from remaining the same type. Its Encounter Function services the OP of a CQU outside of this AUE, names the functional type of the AUE as a converged result of the functionality of the AUE being examined. Its defining function is expressed independently of medium, encoding, genre, and style." />
+        <concept term="SE" full="Substantial Element" definition="An element whose Encounter Function helps the DE serve the CQU's OP. It counts as substantial because of what it is meant to contribute to this AUE, even when that contribution is subversive, weak, replaceable, or should be improved." />
+        <concept term="Parametric" definition="A quality or quantity that can be tuned but does not carry a specific name in the scope of the namespace of this AUE. We do not name parametrics with a namespace address in this graph or as part of this operation." />
+        <concept term="NS" full="Namespace Scope" definition="The scope of the Artifact Type. The five base valid types are code, document, media, data, collection, upstream and downstream." />
+    </core_concepts>
+
+    <constraints>
+        <constraint>Elements represent discrete functional roles actively instantiated by this artifact, named and described at their most specific reusable type level.</constraint>
+        <constraint>Never use vague top-level labels where a specific functional mechanism exists.</constraint>
+        <constraint>Keep namespace identity type-level; the joins carry the AUE-specific Operative Purpose, Encounter Function, relation, observation, refs, and non_goal where present.</constraint>
+        <constraint>After working through the process and the closure pass, attempt to anneal joins and combine elements to a final shape that speaks to the artifact type.</constraint>
+        <constraint>You must seek to create a thorough and complete map of the parent functionalities.</constraint>
+        <constraint>Keep the graph shape limited to artifact's functional elements as a type, while speaking to the function of the AUE as a whole in its joins.</constraint>
+        <constraint>Focus on the notable elements of interest and observe that just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention.</constraint>
+        <constraint>A join speaks about this artifact. Its purpose and function state what this AUE actually does, in its own particulars.</constraint>
+        <constraint>The join data must speak to the AUE. Where an AUE represents something, describe the function of that representation within the AUE rather than substituting the independent real-world functionality of what is represented.</constraint>
+        <constraint>For every AUE, seek SE elements as defined in core concepts.</constraint>
+        <constraint>Intake is never gated or judged; only the resulting map may be graded and the intake refined contextually afterward.</constraint>
+    </constraints>
+    <cqu_entity_rules>
+        <rules>
+            <rule>We call the explicit party for whose benefit a piece of property or work is held, modified, and managed the CQU (Cestui Que Use) a term that specifically highlights their role as the "receiver of consideration" who drives the value-adding work. </rule>
+            <rule>Assume an artifact is converted into a metaform to improve it. The CQUs that matter are the ones whose purpose drives changes or improvements to the artifact. Enumerate each of them.</rule>
+            <rule>The CQU that drives the most improvement gives the best inference.</rule>
+            <rule>Never the person who asked for the intake, and never the simply the end user, the term is too general.</rule>
+            <rule>The CQU is especially important because it forms the tripartite root join that makes the map artifact specific: the CQU as receiver, its Operative Purpose as the why, and the Providing Element's Encounter Function as the how. Every other join in the map traces back to a root join through its receivers.</rule>
+            <rule>Elements are types, so the CQU is a type: the type of party that holds an objective purpose for this type of object, named at its most specific reusable type level.</rule>
+            <rule>When one person can hold several roles, name the role that changes the artifact, by the title that role carries.</rule>
+            <rule>Identify the CQU by asking who drives the most improvement in an artifact of this type.</rule>
+            <rule>Deciding on the CQU takes deep consideration because it is not a present element in what you are examining. Infer it from what the artifact is; do not look for it in the artifact.</rule>
+            <rule>The CQU is not the developer, the user, or anyone performing the operation. That could be said of every artifact, so it identifies nothing about this one, and it is the wrong way to be reasoning.</rule>
+        </rules>
+        <examples type="cqu_entity">
+            <example artifact_type="media.photo" cqu="seller" valid="true" reason="the seller goes out of its way to present the photo in the best possible way to facilitate a sale." />
+            <example artifact_type="media.photo" cqu="operator" valid="false" reason="the party performing the operation could be named for every artifact, so it identifies nothing about this one." />
+            <example artifact_type="code.[not a programming tool]" cqu="developer" valid="false" reason="Never state the user or the developer sitting on the other side of the screen; it's not the answer we are looking for, because it doesn't present unique reasoning. Pretend you are analyzing the artifact itself. Unless the type is code.ide or an actual programming tool, don't answer developer." />
+            <example artifact_type="*" cqu="End User" valid="false" reason="This is a non answer, it says nothing worthwhile to reason about." />
+            <example artifact_type="document.story" cqu="Reader" valid="true" reason="The reader is true because they are vested in reading a good story; they will be spending their time to read the story, and they want it to be good. Vested does not always mean money." />
+            <example artifact_type="media.photo" cqu="buyer" valid="false" reason="the buyer judges the photo; judging does not change or improve it" />
+            <example artifact_type="media.photo" cqu="insurance company" valid="false" reason="the insurance company records the photo and does not want it changed" />
+            <example artifact_type="media.photo" cqu="social media poster" valid="true" reason="a social media post drives changes or improvements to the photo" />
+            <example artifact_type="media.photo" cqu="blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
+        </examples>
+    </cqu_entity_rules>
+
+    <namespace_rules>
+        <note>This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per entity.</note>
+        <root_types>
+            <root_type name="code" />
+            <root_type name="document" />
+            <root_type name="media" />
+            <root_type name="data" />
+            <root_type name="upstream" />
+            <root_type name="downstream" />
+        </root_types>
+        <rules>
+            <rule>1. For each dotted part, the address in the namespace must be reversible and read as its name: the segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name, and children must take their parent's name as their last name when reversed and read as a noun.</rule>
+            <rule>2. All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities. (Artifacts ⊂ Entities ⊂ Elements)</rule>
+            <rule>3. Namespace entries must describe the type of functional approach as a proper noun.</rule>
+            <rule>4. Namespace must narrow from trunk to leaf; to be placed into the namespace, an entry must be a part or type of its parent scope—it must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.</rule>
+            <rule>5. There must be one or more entities each with a distinct unique objective purpose and encounter function for the defining element.</rule>
+            <rule>6. Multi-word names: when the new leaf is a variant functionality of its parent type, such as physics engine and game engine, express the namespace with periods between the segments: code.engine.game, code.engine.physics. Every prefix is a complete type that yields its own inference and passes its practices to its children, so words that form a valid prefix of their own must remain separate segments. Words may be joined with underscores in one segment only when none of them forms a valid prefix, as in code.queue.dead_letter and data.bill_of_materials, where the name must also read correctly once reversed.</rule>
+            <rule>7. Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.</rule>
+            <rule>8. The namespace address names the type. The join refines that type with what this AUE does, so the address stays general and the join stays specific.</rule>
+            <rule>9. Industry-Standard Lexicon, Grounded Nomenclature, and Non-Coinage: All elements, segment identifiers, compound tokens, and resulting reversed noun phrases must use the established, standard terminology recognized by practitioners who work directly with that class of artifact. Abstract pattern labels, bespoke synonyms, internal shorthand, colloquial phrases, and marketing terms are strictly prohibited. Where an authoritative or formally standardized term does not exist, the segment must use the plain, common noun for what the thing functionally is or does in ordinary practice. Never coin, invent, or adapt a term under any circumstances.</rule>
+            <rule>10. Continuous Auditing and Strict Remediation: During any Refinement or Corrections operation, all existing elements and namespace paths must be actively audited against these rules. No pre-existing entry is exempt. You must proactively file and execute Corrections to repair any identified violations—such as non-standard terminology, coined words, or improper segmentation—bringing the entire namespace path into absolute compliance.</rule>
+            <rule>11. Canonical Name Field Priority: There is a field called `name`. This field must always hold the canonical name exactly as it is used in the project specifications. If there is no project specification for it, then use the industry term.</rule>
+        </rules>
+        <examples type="reading">
+            <example namespace_address="code.loop.main" reading="main loop program code" />
+            <example namespace_address="code.bus.data.event" reading="event data bus code" />
+        </examples>
+        <examples type="namespace_validity">
+            <example namespace_address="code.game" valid="false" reason="game is not a function" />
+            <example namespace_address="code.game.engine" valid="false" reason="reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent." />
+            <example namespace_address="code.engine.game" valid="true" reason="A 'game engine' is a functional type because it provides the runtime a game runs on (the main loop, rendering, input, and simulation) independent of any particular game's genre or content, and it is widely known by that exact name" />
+            <example namespace_address="code.engine.game.fps" valid="true" reason="a distinct functionality" proof="first-person camera viewpoint with a targeting reticle" />
+            <example namespace_address="code.engine.game.platformer" valid="false" reason="invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
+            <example namespace_address="media.image" valid="true" reason="images are a base valid functional type under the media root." />
+            <example namespace_address="media.asset.image" valid="true" reason="Images are assets when they are named as a functional element type in a AUE." />
+            <example namespace_address="media.photo" valid="true" reason="Photos have defining elements, and sometimes supportive elements, a couple (DE) at the eiffel tower (SE), a car (DE) in the street, a car (DE) racing at the racetrack (SE), a photo of the grand canyon (DE) in the distance a man and a mule (SE)" />
+            <example namespace_address="media.photo.scenery" valid="true" reason="This is function of an encounter. A representation of a scene as the DE, a scenery photo has a subject that isnt the DE, all scenes have a subject but the scene is the focus" />
+            <example namespace_address="media.photo.jpg" valid="false" reason="this is encoding" />
+            <example namespace_address="code.cpp" valid="false" reason="this is language" />
+            <example namespace_address="document.word.story.conflict" valid="false" reason="'word' is naming an encoding and does not name a functional approach at the proper namespace level" />
+            <example namespace_address="document.story.conflict" valid="true" reason="represents story conflict as a document element" />
+        </examples>
+    </namespace_rules>
+    <completion_condition>
+    The task is complete when the final result is a singular root with all elements and joins beneath it. You have performed a second final pass to review your graph as being well formed and complete realizing the load bearing as being importance of the process you just performed.  Ensure that the code node contains all other elemeents and there is nothing free floating or disconnected.
+  </completion_condition>
+   <response_protocol>
+       <instructions>
+           <instruction>result carries an id. This file never uses it internally — it exists so this result can later be pasted into digital-typology-expand.xml's canonical_input, whose deep_result links back via a matching ref. Generate it even though nothing in this file's own output points to it, and give it as the id when the intake starts.</instruction>
+           <instruction>Record the result with the intake tools, one object per call, as it is reasoned. The schema below defines the fields of each object; it is not returned as a document.</instruction>
+           <instruction>When the intake is finished, the recorded elements and joins express the final annealed shape after Method step 12. Keep the root element list minimal, coarse, and shallow per Goal and Constraints by absorbing subparts. Do not leave absorbed subparts recorded as independent root elements; instead, remove them and preserve their atomic realities exclusively as subtype joins inside the load-bearing parent's matching purpose join.</instruction>
+           <instruction>An element's identity is its namespace_address attribute, not its readable name. "tool registry" is prose; code.registry.tool is the element. Any reference to an element, in a join or anywhere else, must use that namespace_address value, never the name alone. A name with no matching namespace_address isn't a valid reference to anything.</instruction>
+           <instruction>All namespace records are elements. An element inside the AUE carries exactly one role of DE, SE, or NE. A CQU outside the AUE is represented as an element with role CQU; it does not receive an AUE role of DE, SE, or NE. PE is not a role attribute: it is the join's other endpoint. The same element may bear an OP as an RE in one join and provide an EF as a PE in another without duplication.</instruction>
+           <instruction>Joins connect the RE bearing the OP to the PE providing for it, and carry purpose, function, ef, and refs where required. This applies to every join.</instruction>
+           <instruction>prepend upstream and downstream to the namespace address to indicate upstream requirements and downstream users (cqu) or dependants</instruction>
+           <instruction>Include refs on a join to help future agents locate core resources in the project.</instruction>
+       </instructions>
+       <method deliverable_format="recorded with the intake tools">
+        <steps>
+            <step n="1" text="THIS IS LOAD BEARING. This project must live with your choices; they will shape how every new context stores memory and navigates here. You are an archeologist of encounter, purpose, and function, and a forward scout. You go first so the agents who come in behind you, blind, spend their higher-order reasoning on their work instead of getting ensnared in anything small because they didn't have the big picture coming in. You are not building the project; you are finding understanding. You must not assume you understand the intent before reading the intent. Load your context with this project the way you understand your own system prompt, until things click and you can see the forest for the trees. Don't assume this is code; it might be someone's novel, a folder of documents, or photos. If it is code, understand it deeply; that is not wasted effort. Some artifacts don't exist yet, in full or at all: map the understanding. Form a model of what you expect to see, express what you don't see but infer should exist, and mark drift where something doesn't match intent. If you see a problem, don't solve it; mark it and move on. You are creating the base layer of a long-lived navigation surface: road signs, and open lots where memories, knowledge, medium, style, and the deeper intent beyond functionality can live and prompts can point. Create only what is long lived and foundational. Never say in words what can change tomorrow; point with refs. Every word beyond the expression of this system's function costs every agent that comes after you. Saying more on one thing is not helping; saying less on many things is." />
+            <step n="2" text="While enumerating the OPs, EFs, and their relationships, be vigilant for drift and apparent errors. Drift may occur between documentation, specifications, and code in either direction. This is functionality capture; record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references. Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination. " />
+            <step n="3" text="FOR each AUE; ORGANIZE into AT groups capable of generating a useful imperative for an agent based on the (OP of the CQU) and the (EF of the PE) of the AUE's DE in service of the CQU's OP as the downstream.cqu.*; NEXT AUE. IF the intake receives a folder or collection; SURVEY every member before grouping is finalized: OBSERVE each member; REASON its AT, its DE, its SE and NE elements, and the OP and EF relationships that distinguish its functionality; GROUP only members whose shared functionality supports the same AT-level imperative, while retaining member identity through refs where needed; END IF." />
+            <step n="4" text="FOR each AT; CREATE a namespace entry for the CQU; ADD a join; SET purpose = its OP from step 3; SET ef = its EF from step 3; IDENTIFY the members in that join's refs: SET key = 'path'; SET value = '[relative path]'; CHECK BKN; CHECK MISS; NEXT AT." />
+            <step n="5" text="FOR each AUE; FOR each AT; OBSERVE DE as an RE; DECOMPOSE its requirements and dependencies as EF of other elements. The DE simultaneously remains the PE serving the external CQU's OP where that relationship exists. IF an encountered element itself bears an OP; TRACE it as an RE without creating a duplicate namespace record; END IF; CHECK BKN; CHECK MISS; NEXT AT; NEXT AUE." />
+            <step n="6" text="FOR each element with an EF that serves the intent of an OP; CREATE a join record in the RE of type purpose; SET purpose = the active OP statement; SET ef = the Providing Element's Encounter Function;  SET ifd = the primary flow of information: sends from the OP to the EF, receives from the EF to the OP, both for equal need; SET provider = the Providing Element's namespace address; SET relation = an active-voice descriptive fragment starting directly with a third-person singular present-tense verb ending in -s or -es, whose subject is the Providing Element when perspective is Function and the RE when perspective is Encounter; SET verb = that verb; ADD high-value observations consisting of long-lasting stable state that describes this join, optional non-goals consisting of structural constraints, and refs where needed; RECORD each element and join as soon as it is reasoned, one object at a time, rather than holding the map until the end; CHECK BKN; CHECK MISS; NEXT element." />
+            <step n="7" text="RECURSE through this task, starting with the element named in the first OP; MOVE to the next element; TREAT it as an RE where it bears requirements or an OP of its own." />
+            <step n="8" text="FIND that element's OPs: what it needs and wants from the rest of the AUE, or from outside it, in order to deliver its own EF. Element functionality serves the OP of entities, so every OP found traces back through its receivers to the OP of the external CQU." />
+            <step n="9" text="CONTINUE UNTIL there are no more unsatisfied OPs, or NEs of this AUE that must be named to understand the artifact. Parametric Elements are never NEs and are not part of intake — a tunable quality or quantity that doesn't carry its own name in artifacts of this type is not named or enumerated here, no matter how many of them exist." />
+            <step n="10" text="WHEN the trace ends; RETURN to the survey of step 1. No aspect of the functionality of the AUE is left out: FOR each functionality the trace has not reached; FIND the RE whose OP it serves; RECORD the join. Where it is only a part of a functionality already named, the function of that parent's join states it; NEXT functionality." />
+            <step n="11" text="Whenever possible, AGGREGATE PE subfunctions into a RE's parent function by mapping their shared integration joins. ANNEAL and COMBINE elements into a macro-function that further refines the structure by logically ENCAPSULATING subparts sharing the same join. ENCAPSULATE a subpart ONLY WHEN the parent's purpose can carry its purpose; otherwise, KEEP it as an independent functional element. KEEP each encapsulated subpart's purpose as a refinement of the parent's and RECORD it in its own subtype join. LET the purpose join carry the combined encounter without optimizing any functionality away." />
+            <step n="12" text="PROOF the recorded map; READ it back whole; CHECK it against the artifact and this document; CORRECT it; ANNEAL it; COMPLETE it; THEN FINISH the intake." />
+        </steps>
+       </method>
+       <schema>
+            <metaform id="[metaform_id] name="[project]" description="[a description of the AT and AUE present]">
+                <elements>
+                    <!-- All namespace records remain elements -->
+                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[CQU|DE|SE|NE]">
+                        <elements>
+                            <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
+                                <joins />
+                            </element>
+                        </elements>
+                        <joins>
+                            <join type="purpose" purpose="[State the objective or standard this element or action fulfills.]" ef="[Encounter Function of the PE within the RE context]" ifd="[send|receive|both]">
+                                <elements>
+                                    <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
+                                        <elements />
+                                        <joins />
+                                    </element>
+                                </elements>
+                            </join>
+                        </joins>
+                    </element>
+                </elements>
+            </metaform>
+            <!-- Layer Sample -->
+            <layer id="[generated sources id]" name="sources" metaform_id="[metaform id]" >
+               <elements>
+                   <!-- All namespace records remain elements -->
+                   <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[CQU|DE|SE|NE]">
+                        <refs>
+                            <!-- Uniform dictionary shape for type-specific or artifact-specific keys -->
+                            <ref key="[key]" value="[value]" />
+                        </refs>
+                        <elements>
+                            <element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" name="[Canonical Name (Project official terminology)]" role="[DE|SE|NE]">
+                                <refs />
+                                <joins />
+                            </element>
+                        </elements>
+                        <joins>
+                            <join type="purpose" purpose="[State the objective or standard this element or action fulfills.]" ef="[Encounter Function of the PE within the RE context]" ifd="[send|receive|both]">
+                                <elements />
+                            </join>
+                        </joins>
+                   </element>
+               </elements>
+           </layer>
+       </schema>
+   </response_protocol>
+</process>

@@ -1,0 +1,101 @@
+sequenceDiagram
+    actor Intake
+    participant Agent as Mapping agent
+    participant Artifacts as Code, specs, and documentation
+    participant Map as Working tool
+    participant Investigation as Investigation knowledge layer
+
+    Intake->>Agent: Provide AUE or collection
+
+    Note over Agent,Artifacts: 1–2. Inspect implementation and capture concerns
+    loop Every intake member
+        Agent->>Artifacts: Examine actual code, specifications, and documentation
+        Artifacts-->>Agent: Implementation evidence and references
+        Agent->>Agent: Enumerate OPs, EFs, and relationships<br/>Distinguish built from intended functionality
+        opt Intended functionality is absent
+            Agent->>Map: Mark affected functionality un_built
+        end
+        opt Drift or apparent error encountered
+            Agent->>Investigation: Attach concern to its unique element type<br/>Record reason and references
+        end
+        Agent->>Agent: Reason AT, DE, SE, NE, and distinguishing OP–EF relationships
+    end
+
+    Note over Agent: 3. Finalize grouping only after surveying every member
+    Agent->>Agent: Group members sharing one AT-level imperative<br/>Retain member identity through refs
+    Agent->>Agent: Derive imperative from CQU OP and PE EF<br/>DE serves downstream.cqu.*
+
+    Note over Agent,Map: 4. Initialize each AT
+    loop Each AT
+        Agent->>Map: Create CQU namespace entry
+        Agent->>Map: Record PE in wants; OP as goal; EF as function; IFD as intent<br/>Set one source uri on each actual element; keep member refs in knowledge
+        Agent->>Map: Record established ICE and check un_built
+    end
+
+    Note over Agent,Map: 5–9. Trace requirements and dependencies recursively
+    loop Each AUE and each AT
+        Agent->>Agent: Observe DE as RE<br/>Preserve DE as PE for external CQU where applicable
+        loop Recursive trace while unsatisfied OPs or required NEs remain
+            Agent->>Agent: Start with element named in active OP<br/>Find what it needs to deliver its own EF
+            Agent->>Artifacts: Inspect dependency and connected implementation
+            Artifacts-->>Agent: Shared state, representations, lifecycle, and contracts
+            Agent->>Agent: Decompose requirements into other elements' EFs<br/>Trace receivers back to external CQU OP
+            opt Encountered element bears its own OP
+                Agent->>Agent: Trace as RE without duplicating its namespace
+            end
+            Agent->>Agent: Test ICE immediately for this dependency
+            alt Functionality is indivisibly coupled
+                Agent->>Map: Set ice = true on the connecting want<br/>Keep coupling explanation, group membership, and evidence in knowledge
+            else Dependency alone does not establish ICE
+                Agent->>Agent: Do not infer a block from import, call, or shared file alone
+            end
+            opt Missing functionality or investigation concern
+                Agent->>Map: Mark absent intended functionality un_built
+                Agent->>Investigation: Record typed concern, reason, and references
+            end
+            Agent->>Map: Record each newly reasoned element immediately<br/>One object at a time
+            loop Each EF serving the active OP
+                Agent->>Map: Create purpose record under RE, keyed by PE address in wants<br/>Record OP as goal; encounter-specific EF as function<br/>Record source uri on actual element; retain ICE evidence
+                Agent->>Map: Record IFD as intent: send, receive, or send_receive<br/>Use the substantial flow of information which satisfies the (OP) goal not including the request
+            end
+            Agent->>Agent: Move to next element and recurse into its requirements
+        end
+    end
+    Note over Agent: Parametric Elements are excluded from intake and NE enumeration
+
+    Note over Agent,Artifacts: 10. Return to the original survey for coverage
+    Agent->>Artifacts: Revisit all observed functionality
+    Artifacts-->>Agent: Functionality not reached by the trace
+    loop Each unreached functionality
+        Agent->>Agent: Find the RE whose OP it serves
+        Agent->>Map: Record purpose relationship<br/>Or express partial functionality in parent's purpose
+    end
+
+    Note over Agent,Map: 11. Anneal without losing functionality or boundaries
+    loop Each candidate aggregation
+        Agent->>Agent: Identify shared integration purpose
+        alt Parent purpose can carry the subpart's purpose
+            Agent->>Map: Encapsulate as macro-function<br/>Retain nested purpose refinement and block assignment
+        else Parent purpose cannot carry the subpart's purpose
+            Agent->>Map: Keep independent functional element
+        end
+        Agent->>Agent: Reconcile participating ICE block assignments
+        opt Established ICE connects existing blocks
+            Agent->>Map: Combine blocks under one identifier<br/>Update every affected element and remove old identifiers
+        end
+        Agent->>Map: Preserve coupling explanations, refs, and worktree boundaries
+    end
+
+    Note over Agent,Artifacts: 12. Read back and verify the complete map
+    Map-->>Agent: Entire recorded map
+    Agent->>Artifacts: Check map against implementation and intake instructions
+    Artifacts-->>Agent: Evidence for corrections and completeness
+    loop Each established block and dependency outside blocks
+        Agent->>Agent: Reassess ICE against actual code<br/>Detect missed coupling and incorrect assignments
+        Agent->>Agent: Verify shared identifier on every participating address<br/>Verify explanations and supporting references
+        Agent->>Agent: Verify absorbed subparts retain assignments<br/>Verify merged identifiers leave no stale identifiers
+        Agent->>Map: Correct records and reconcile blocks as needed
+    end
+    Agent->>Map: Correct, anneal, and complete the map
+    Agent-->>Intake: Finish intake
+

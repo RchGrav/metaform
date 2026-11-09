@@ -1,0 +1,141 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<process id="digital-typology-fable" version="1.0" parallel_to="Canonical_Intake.xml" author="Claude Fable 5.1" signed="2026-09-20">
+	<title>Digital Typology</title>
+	<purpose>
+    Define and construct a concise graph of the functionality of an Artifact Under Examination, or a set of such graphs where several artifacts are present. Each graph is anchored outside its artifact, at the one Vested Receiving Entity whose Operative Purpose the artifact's Defining Element serves, and is constructed from individual elements of annealed functionality by recursing each Receiving Element's Operative Purposes for the join-specific Encounter Function received through the functionalities of each of its Providing Elements.
+    </purpose>
+	<core_concepts>
+		<concept term="AUE" full="Artifact Under Examination" definition="The thing being examined, as it stands. AUEs can include photographs, contracts, stories, resale assets, and software. The work can concern multiple AUEs and projects. The AUE is the artifact itself, never what it depicts, describes, or could be turned into. Whether an artifact is an AUE or serves as an asset of another AUE depends on its use in that context." />
+		<concept term="AT" full="Artifact Type" definition='A group of AUEs whose Defining Elements serve the same OP of the same VRE through the same EF. Its members are identified in that join as ref elements using key="path" and value="[relative path]". Artifact Types anneal many AUEs of the same function into one type. They are grouped by that function, never by medium, encoding, subject, or appearance.' />
+		<concept term="Element" definition="A constituent part of an AUE as a type. Just because an element can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred." />
+		<concept term="Functionality" definition="An element here is of type functionality. A functionality is a function system: a concept, not a thing, and one functionality may provide several EFs, each in its own join." />
+		<concept term="Entity" definition="All entities are elements, but not all elements are entities. An entity outside the AUE is not present in it as an object, is possibly passive toward it, and is possibly nowhere named by it." />
+		<concept term="RE" full="Receiving Element/Entity" definition="The **who** or **what** bearing an OP. This is the element, person, group, system, component, or other participant with an Operative Purpose for the Encounter Function of an Element. The OP belongs to that receiver, and the join that records it lives in that receiver." />
+		<concept term="Vested" definition="The rubric of this ontology. An RE is vested in what serves it to the degree that it has a stake in that functionality getting better: every gain in how well it performs advances the needs and wants of the RE, and every loss sets them back. A receiver that only takes what is given, as it is given, is not vested. Being vested is not purely anthropomorphic: it describes the needs and wants of a receiver of any type, whether a person, a group, a system, a component, or an element. Every OP is stated as its vested RE holds it." />
+		<concept term="VRE" full="Vested Receiving Entity" definition="The singular RE outside the AUE on whose behalf the AUE does its work, and whose OP the Defining Element services. The DE always services a VRE that is not part of the AUE, and in all cases that VRE is one the AUE neither presents nor enumerates, so it is reached by reasoning. Of all possible VREs it is the one most vested: the one whose OP effects the most positive action on the AUE and can drive the operations an agent performs on it." />
+		<concept term="PE" full="Providing Element" definition="The part satisfying the requirement actively declared by its RE through its Operative Purpose. This is the join's other endpoint: whichever element's EF fulfills the RE's OP." />
+		<concept term="OP" full="Operative Purpose" definition="The **why**. The active goal an RE holds for an encounter: what it needs and wants from it. It is held in the RE's join, and the PE's Encounter Function intends to accomplish it." />
+		<concept term="NG" full="Non-Goal" definition="The **what not**. What the RE needs the encounter never to do or become, even where that would advance the OP. It is held in the same join as the OP. A stake can show first as a Non-Goal, and an OP can be derived from one." />
+		<concept term="EF" full="Encounter Function" definition="The **how** of what is delivered. Read it as the function of the encounter or as the encounter of a function. Both readings are intended, and the context of the AUE decides which is the truer one. It is the mechanism, interface, relationship, or method through which an AUE or Element performs its purpose for its RE, and how that effect is encountered, used, or experienced. The EF belongs to the Providing Element, but is recorded in the RE-owned join because one functionality may satisfy different REs' Operative Purposes through different Encounter Functions. Record the PE's EF for that specific encounter in the join; do not create a single element-level EF record outside its joins." />
+		<concept term="Join" definition="A dictionary object that lives in the RE. It carries the OP, the NG where the RE holds one, the PE's EF for this encounter, a relation in active voice, an observation as an atomic fact that is present in all artifacts of the type of this AUE, and a dictionary of refs containing type specific or AUE specific references and logic. A join records whose need is met by whose function. It never records containment, sequence, reference, or invocation within the medium." />
+		<concept term="DE" full="Defining Element" definition="The notable element of this AUE whose loss would prevent the AUE from remaining the same type. Its Encounter Function services the OP of the VRE outside of this AUE, and its address names the functional type of the AUE as the converged result of the functionality of the AUE being examined. Its defining function is expressed independently of medium, encoding, genre, and style." />
+		<concept term="SE" full="Supportive Element" definition="Any notable element of this AUE which is entangled with the encounter of the Defining Element in such a way that if omitted, the AUE would not remain the same type." />
+		<concept term="NE" full="Notable Element" definition="A component, interface, or specification that defines an essential demand or requirement. It is **notable** because it highlights what the AUE explicitly expects, needs, or depends on from its external environment to operate successfully. An NE stands outside the AUE and is not traced further." />
+		<concept term="Parametric" definition="A quality or quantity that can be tuned but carries no specific name of its own in artifacts of this type. Parametrics are not named with a namespace address in this graph or as part of this operation, no matter how many of them exist." />
+		<concept term="NS" full="Namespace Scope" definition="The scope in which every Element is addressed. The five base valid types are code, document, media, data, and entity. The entity base addresses REs that are not part of the AUE." />
+	</core_concepts>
+	<join_types>
+		<join_type name="purpose" scope="intake" />
+	</join_types>
+	<namespace_rules>
+		<rules>
+			<rule>For each dotted part, the address in the namespace must be reversible and read as its name.</rule>
+			<rule>All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities.  (Artifacts ⊂ Entities ⊂ Elements)</rule>
+			<rule>Namespace entries must describe the type of functional approach as a proper noun.</rule>
+			<rule>To be placed into the namespace, an entry must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.</rule>
+			<rule>Each Artifact Type has exactly one VRE, addressed under the entity base, with its own distinct Operative Purpose for the Encounter Function of the Defining Element.</rule>
+			<rule>Children must take their parent's name as their last name when reversed and read as a noun.</rule>
+			<rule>Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.</rule>
+			<rule>The segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name.</rule>
+			<rule>It must be a part or type of its parent scope.</rule>
+			<rule>Namespace must narrow from trunk to leaf.</rule>
+			<rule>The namespace address names the type. The join refines that type with what this AUE does, so the address stays general and the join stays specific.</rule>
+		</rules>
+		<root_types>
+			<root_type name="code" />
+			<root_type name="document" />
+			<root_type name="media" />
+			<root_type name="data" />
+			<root_type name="entity" />
+		</root_types>
+		<note>This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per entity.</note>
+		<examples type="reading">
+			<example namespace_address="code.loop.main" reading="main loop program code" />
+			<example namespace_address="code.bus.data.event" reading="event data bus code" />
+		</examples>
+		<examples type="namespace_validity">
+			<example namespace_address="code.game" valid="false" reason="game is not a function" />
+			<example namespace_address="code.game.engine" valid="false" reason="reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent." note="an earlier draft of this example called it 'almost valid' for the SDK reading, but that reading is already the valid address code.engine.game, so reusing it here would make the namespace non-deterministic." />
+			<example namespace_address="code.engine.game" valid="true" reason="represents game engine program code; 'game engine' is legal because it is a functionality type enabled by an external SDK identified by that exact name, 'game engine'" />
+			<example namespace_address="code.engine.game.fps" valid="true" reason="valid as a functional type — a distinct functionality" note="load-bearing example; initial intake references this via a join as a major core functionality in code.engine.game, with code.engine.game.fps as a supportive element" proof="first-person camera viewpoint with a targeting reticle" />
+			<example namespace_address="code.engine.game.platformer" valid="false" reason="invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
+			<example namespace_address="media.image" valid="true" reason="images are a base valid functional type under the media root." />
+			<example namespace_address="media.asset.image" valid="true" reason="images are assets when they are not the actual artifact being examined." />
+			<example namespace_address="media.photo" valid="true" reason="represents a photograph, photos have defining elements, and sometimes supportive elements, a couple (DE) at the eiffel tower (SE), a car (DE) in the street, a car (DE) racing at the racetrack (SE), a photo of the grand canyon (DE) in the distance a man and a mule (SE)" />
+			<example namespace_address="media.photo.scenery" valid="true" reason="this is functional representation of a scene as the DE, a scenery photo has a subject that isnt the DE, all scenes have a subject but the scene is the focus" />
+			<example namespace_address="media.photo.id" valid="true" reason="represents a identification photograph" />
+			<example namespace_address="media.photo.id.passport" valid="false" reason="passport is not a function, this is a purpose" />
+			<example namespace_address="media.photo.jpg" valid="false" reason="this is encoding" />
+			<example namespace_address="code.cpp" valid="false" reason="this is language" />
+			<example namespace_address="document.word.story.conflict" valid="false" reason="'word' is naming an encoding and does not name a functional approach at the proper namespace level" />
+			<example namespace_address="document.story.conflict" valid="true" reason="represents story conflict as a document element" />
+		</examples>
+	</namespace_rules>
+	<method deliverable_format="xml">
+		<steps>
+			<step n="1" text="Settle what is under examination before anything else. Survey the whole location and decide what each AUE is: a location can hold one AUE made of many parts, or many independent AUEs. An artifact that another artifact uses is an asset of that artifact and not an AUE of its own. Each AUE is the artifact itself as it stands, never what it depicts, describes, or could be turned into." />
+			<step n="2" text="FOR AUE; reason out its VRE. List every possible VRE outside the AUE that could hold a purpose for it, including those the AUE nowhere presents or names; what the AUE shows of its own making, condition, and circumstances is evidence of who stands outside it. Eliminate by the rubric vested. Set aside each candidate with no stake in this AUE getting better: one whose purpose would hold for any artifact at all, such as keeping, grouping, or cataloguing it; one that is served by the AUE merely existing; one that only takes what the AUE gives, as it is given, because its interest lies in what the AUE depicts or describes. The VRE is the one on whose behalf the AUE does its work, even where that work is done upon another. A stake can show first as a Non-Goal, and the OP can be derived from it. Choose the singular VRE whose OP effects the most positive action on the AUE when an agent works from it; NEXT AUE" />
+			<step n="3" text="FOR AUE; name its DE: the element whose EF services the OP of the VRE, whose loss ends the type, and whose address names the functional type of the AUE. Where more than one element could be the DE, the DE is the one the VRE's encounter turns on, and another is an SE only if the type ends without it; NEXT AUE" />
+			<step n="4" text='Organize the AUEs into Artifact Types: AUEs whose DE serves the same OP of the same VRE through the same EF are one Artifact Type. FOR Artifact Type; create a namespace entry for the VRE as an RE under the entity base, and in it the join to the DE carrying the OP of the VRE, its NG, and the EF of the DE, with the members identified as ref elements using key="path" and value="[relative path]"; NEXT Artifact Type' />
+			<step n="5" text="FOR Artifact Type; only now treat the DE as an RE. Find its OPs: what it needs and wants from the rest of the AUE, or from outside it, in order to deliver its EF to the VRE. For each OP, find the element whose EF satisfies it and create a join record of type purpose in the RE: the active OP statement, the NG where the RE holds one, the PE's EF for this encounter, and the PE's namespace address in the namespace_address field; NEXT Artifact Type" />
+			<step n="6" text="Perform this task recursively: move to each Providing Element, treat it as the RE, find its OPs, and record its joins. Element functionality serves the OP of entities, so every OP found traces back through its receivers to the OP of the VRE." />
+			<step n="7" text="Continue until there are no more unsatisfied OPs. Parametrics are not part of intake: a tunable quality or quantity that doesn't carry its own name in artifacts of this type does not get named or enumerated here, no matter how many of them exist." />
+			<step n="8" text="When the trace ends, return to the survey of step 1. No aspect of the functionality of the AUE is left out: for each functionality the trace has not reached, find the RE whose OP it serves and record the join." />
+			<step n="9" text="Anneal and combine elements where you can infer a parent functionality that truly describes every functional subpart it absorbs because they logically share the same join. Seek a common element name that can be placed in the namespace and that adheres to the namespace naming rules while logically containing the combined elements. Combining never optimizes a functionality away, and nothing combined away is listed or retained. Keep an easily overlooked functional part as its own element when it serves an important OP for an RE of the AUE." />
+		</steps>
+		<persistent_directive applies_from="step_6" text="Keep this document." />
+		<output_instruction applies_from="step_9" text="Return only the final xml shape." />
+	</method>
+	<goal>
+    The goal is to refine a high value metaform that captures the shape of the AUE's function by performing an element by element trace operation focused strictly on the functionality. You must traverse your model's latent space understanding of functionality while avoiding genres, medium, encoding, style, and other variants which are not functionality. Assemble the element types you see as high value, then address them by the namespace rules, and record the OP of each RE in a join of type "purpose" describing the active why and the EF of another element. Depth is earned only by functionality: a variant which does not describe functionality on the leaf, such as any kind of genre or style, is never a finished leaf, so look through it to the distinctly observed form of functionality. State every OP as the needs and wants of its RE, so that it can generate a useful imperative for an agent who later works on the AUE. It is imperative to recognize the load-bearing nature of this statement and of this operation as a whole.
+    </goal>
+	<constraints>
+		<constraint>Elements represent discrete functional roles actively instantiated by this AUE, named and described at their most specific reusable type level.</constraint>
+		<constraint>Never use a vague top-level label where a specific functionality can be named.</constraint>
+		<constraint>Keep all AUE-specific particulars strictly confined to the purpose, non_goal, and function of a join. The namespace address and the observation stay at the level of the type.</constraint>
+		<constraint>Treat the elements as elements of this AUE, joined by AUE-specific OPs.</constraint>
+		<constraint>A join speaks to this AUE itself. Its purpose and function state what this AUE actually does, in its own particulars. A purpose or function that would read the same for another artifact of the same type has failed and must be rewritten.</constraint>
+		<constraint>Nothing in a join speaks to the type of an element in general. A sentence that explains what such an element is, or what it does wherever it appears, speaks to the element type and not to this AUE, and it has failed.</constraint>
+		<constraint>What the AUE depicts or describes is not outside the AUE. As it is presented within the AUE it is an element of the AUE, never an entity or an NE, and it enters a join only as it functions there.</constraint>
+		<constraint>Keep the graph shape limited to the AUE's functional elements as a type, while speaking to the function of the AUE as a whole in its joins.</constraint>
+		<constraint>You must seek to create a thorough and complete map of the parent functionalities without sprawling out into granularity: every functionality of the AUE is described by a named element, and no named element is only a part of a functionality already named unless it serves an important OP that would otherwise be overlooked.</constraint>
+		<constraint>Focus on the notable elements of interest and observe that just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention.</constraint>
+	</constraints>
+	<completion_condition>
+    The task is complete when, for every Artifact Type found, the final result holds its VRE, its DE, and a complete map of its parent functionalities, joined by AUE-specific Operative Purposes with no OP left unsatisfied. The result is a base shape, suitable for later expansion through project memory graph relations and other knowledge layers.
+  </completion_condition>
+	<response_protocol>
+		<instructions>
+			<instruction>result carries a generated id. Nothing in this output points to it; it exists so a later operation can link back to this result. Generate it.</instruction>
+			<instruction>Respond with well-formed XML matching the schema below, with no prose, no markdown, and no commentary outside the XML. result is the document root; do not wrap it in any outer tag, including the process's own name or title.</instruction>
+			<instruction>result holds one elements block per Artifact Type. A location that holds a single AUE yields a single elements block.</instruction>
+			<instruction>Each elements block is the final annealed shape. Minimal describes the count of elements, never the depth of the trace through them: every element that remains carries the joins for its OPs, except an NE, which carries none.</instruction>
+			<instruction>An element's identity is its namespace_address attribute, not its readable name. "tool registry" is prose; code.registry.tool is the element. Any reference to an element, in a join or anywhere else, must use that namespace_address value, never the name alone. A name with no matching namespace_address isn't a valid reference to anything.</instruction>
+			<instruction>Every element carries exactly one role, and each elements block carries exactly one VRE and exactly one DE. VRE is the singular entity outside the AUE whose OP the DE services. Assign the other roles by removing the element and asking what happens to the AUE. DE is the element whose loss ends the type. SE is entangled with the DE's encounter closely enough that omitting it ends the type. NE is a demand the AUE requires from outside itself. If you cannot say what its loss costs, the element is probably not notable enough to name. PE is not a role here; it is a join's other endpoint, not an element type, because a Providing Element is whichever element provides an EF that satisfies a given RE's OP.</instruction>
+			<instruction>A join connects its RE (the element bearing the OP) to the PE named in its namespace_address (the element providing for it), and carries purpose, non_goal where the RE holds one, function, relation (active voice), and observation (an atomic fact true of all artifacts of the type of this AUE). This applies to every join.</instruction>
+			<instruction>purpose and non_goal speak from the side of the RE: what it needs and wants of this encounter, and what it needs this encounter never to do. function speaks from the side of the PE: how this AUE delivers it as it stands, in the actual mechanism, condition, and named material this AUE uses. observation carries one atomic fact of this encounter that is true in every artifact of the type of this AUE; it is a fact of the Artifact Type, never a general fact about the kind of element the PE is. If a purpose or function could be pasted into another artifact of the same type unchanged, it is type text in the wrong field. If an observation dies to one counterexample, it is artifact text in the wrong field.</instruction>
+			<instruction>Write each field as one sentence and state each fact once. Of two results that are equally complete, the smaller is the better.</instruction>
+			<instruction>The join from the VRE to the DE identifies the members of the Artifact Type as refs with key="path". Include other refs on a join only when it needs type-specific or AUE-specific references or logic beyond its other fields.</instruction>
+		</instructions>
+		<schema>
+			<result id="[generated result id]">
+				<!-- One elements block per Artifact Type -->
+				<elements location="[url|path|unavailable]">
+					<!-- This Element IS the Receiving Element (RE). The VRE comes first, then the DE. -->
+					<!-- name_length dictates the exact lookback segment count to isolate its short form for prompt lexicalization -->
+					<receiving_element namespace_address="[dotted namespace address]" name_length="[proper_noun_lookback_segment_count]" role="[VRE|DE|SE|NE]">
+						<joins>
+							<!-- At intake, all joins are strictly bound to 'purpose' and point directly to the provider's address -->
+							<join type="purpose" namespace_address="[namespace_address of the Providing Element]" purpose="[Operative Purpose: the active goal this RE needs and wants of the encounter]" non_goal="[Non-Goal: what this RE needs the encounter never to do or become]" function="[Encounter Function of the Providing Element which serves this OP, as this AUE delivers it]" relation="[active-voice relation]" observation="[atomic fact of this encounter true of all artifacts of the type of this AUE]">
+								<refs>
+									<!-- Uniform dictionary shape for type-specific or AUE-specific keys; the members of the Artifact Type in the VRE's join -->
+									<ref key="[key]" value="[value]" />
+								</refs>
+							</join>
+						</joins>
+					</receiving_element>
+				</elements>
+			</result>
+		</schema>
+	</response_protocol>
+</process>

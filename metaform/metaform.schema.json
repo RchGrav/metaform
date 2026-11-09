@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Metaform Graph Model",
+  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. wants[] holds receiver-owned relationships keyed by project-relative provider address. Each provider also exists at its own nested path. Tool command addresses do not replace this stored tree.",
+  "type": "object",
+  "$defs": {
+    "NamespaceValue": {
+      "title": "Value at a namespace address",
+      "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      ]
+    },
+    "NamespaceNode": {
+      "title": "Namespace branch or receiving element",
+      "description": "Namespace branch or receiving element. Its properties and layers are directly on the element. The same word can name metadata or a namespace branch according to its value and context.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The name used for this functionality in project documentation or specifications, such as Metaform.",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Systemic role: Definitive (the element whose loss means the artifact can no longer remain what it is), Supportive (an indivisibly coupled element meant to assist the Definitive element), Notable (a discrete, structurally independent feature or specialized exception with unique systemic significance) or Divergent (an unaligned, weak or redundant element to be realigned or ejected)."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema.",
+              "minLength": 1,
+              "pattern": "\\S",
+              "not": {
+                "enum": [
+                  "missing",
+                  "MISSING",
+                  "BKN",
+                  "broken",
+                  "todo",
+                  "TODO"
+                ]
+              }
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "technical_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The well-understood practitioner short name derived from the leaf segments. Must exactly match the same number of leading words of the reversed, space-separated namespace address, and must not match `name`.",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "wants": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Wants"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            }
+          ],
+          "description": "An array is the functional knowledge layer. An object is a namespace branch and follows namespace rules."
+        },
+        "why": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        },
+        "how": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "description": "Optional project metadata; does not introduce a required wrapper."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "description": "One source link to the entry point for this functionality. A relative file path is allowed."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            }
+          ]
+        },
+        "providers": {
+          "$ref": "#/$defs/NamespaceNode",
+          "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
+        },
+        "op": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        },
+        "ef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        },
+        "ifd": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+      },
+      "propertyNames": {
+        "pattern": "^[^.$\\[\\]\\s]+$",
+        "description": "One namespace segment, never a dotted reference or JSONPath expression."
+      }
+    },
+    "ComposedElementLayer": {
+      "title": "Array-valued composed element layer",
+      "description": "An array at a plural-named namespace location is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+      "type": "array",
+      "items": true
+    },
+    "Wants": {
+      "title": "Functional knowledge layer",
+      "type": "object",
+      "description": "Relationships owned by this receiver, keyed by the provider's address: one relationship per provider. Each key refers to the actual provider in the nested tree. The provider keeps its properties and knowledge at its own location.",
+      "propertyNames": {
+        "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
+        "description": "Project-relative reference to an element in the actual nested namespace."
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/WantRecord"
+      }
+    },
+    "WantRecord": {
+      "title": "Want record",
+      "description": "Why this receiver wants this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
+      "type": "object",
+      "properties": {
+        "intent": {
+          "type": "string",
+          "description": "The substantial flow of information which satisfies the (OP) goal not including the request.",
+          "enum": [
+            "send",
+            "receive",
+            "send_receive"
+          ]
+        },
+        "why": {
+          "type": "string",
+          "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English.",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "how": {
+          "type": "string",
+          "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "intent",
+        "why",
+        "how"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",
+  "$ref": "#/$defs/NamespaceNode"
+}

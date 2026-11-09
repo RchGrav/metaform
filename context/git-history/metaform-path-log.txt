@@ -1,0 +1,407 @@
+e40756f 2026-11-08 00:37:13 -0500 Richard Graver
+    Metaform settings (R-4.8): declared in code, values in settings.json, set through the server
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+A	metaform/rust/crates/metaform-server/src/admin.rs
+M	metaform/rust/crates/metaform-server/src/lib.rs
+M	metaform/rust/crates/metaform-server/src/main.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+M	metaform/rust/crates/metaform-store/src/lib.rs
+A	metaform/rust/crates/metaform-store/src/settings.rs
+M	metaform/rust/crates/metaform-store/tests/store.rs
+2858813 2026-11-08 00:33:35 -0500 Richard Graver
+    SPEC.md: build-status facts brought up to date (R-4.14, R-4.8, R-8.1); no decision changed
+
+M	metaform/SPEC.md
+50527d7 2026-11-08 00:31:47 -0500 Richard Graver
+    A server restart no longer ends an agent's Metaform session
+
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/rust/crates/metaform-server/src/lib.rs
+A	metaform/rust/crates/metaform-server/src/relay.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+f5b663d 2026-11-08 00:28:57 -0500 Richard Graver
+    A forwarder retries when a closing server drops its handshake
+
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/rust/crates/metaform-server/src/lib.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+074e6ff 2026-11-08 00:23:14 -0500 Richard Graver
+    metaform-rust.md: .mcp.json already points at the Rust server (647ef20); the table said it waited on the founder
+
+M	metaform/docs/designs/metaform-rust.md
+84e7b45 2026-11-07 23:43:28 -0500 Richard Graver
+    storage.md risk 4: one Metaform command's cost by wants (about 1 ms each), so no batching there; world.lbug's batching recorded
+
+A	metaform/rust/crates/metaform-store/examples/bulk_update.rs
+2748dd0 2026-11-07 22:49:55 -0500 Richard Graver
+    Open-database memory measured: 4 Ladybug threads per database, at most 16 open
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+A	metaform/rust/crates/metaform-store/examples/open_dbs.rs
+M	metaform/rust/crates/metaform-store/src/graph.rs
+M	metaform/rust/crates/metaform-store/src/lib.rs
+aa3e3f3 2026-11-07 21:01:36 -0500 Richard Graver
+    Verify that acknowledged Metaform writes survive SIGKILL under load
+
+A	metaform/verification/metaform-crash-2026-11-07.json
+7d64fbc 2026-11-07 20:54:41 -0500 Richard Graver
+    Add `metaform call`: one tool command from a single command line
+
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/rust/README.md
+A	metaform/rust/crates/metaform-server/src/call.rs
+M	metaform/rust/crates/metaform-server/src/lib.rs
+M	metaform/rust/crates/metaform-server/src/main.rs
+A	metaform/rust/crates/metaform-server/tests/common/mod.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+d022225 2026-11-07 20:37:34 -0500 Richard Graver
+    Start the Metaform server through the service launcher (launcher step 5)
+
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/rust/crates/metaform-server/src/lib.rs
+A	metaform/rust/crates/metaform-server/src/start.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+af78cf5 2026-11-07 20:03:26 -0500 Richard Graver
+    Announce each Metaform commit to subscribed agents (R-4.10)
+
+M	metaform/docs/designs/metaform-rust.md
+A	metaform/rust/crates/metaform-server/src/announce.rs
+M	metaform/rust/crates/metaform-server/src/lib.rs
+M	metaform/rust/crates/metaform-server/src/main.rs
+M	metaform/rust/crates/metaform-server/src/tool.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+M	metaform/rust/crates/metaform-store/src/lib.rs
+5769971 2026-11-07 18:33:53 -0500 Richard Graver
+    Let an agent open a map that belongs to no project
+
+M	metaform/rust/README.md
+M	metaform/rust/crates/metaform-server/src/lib.rs
+M	metaform/rust/crates/metaform-server/src/main.rs
+M	metaform/rust/crates/metaform-server/tests/server.rs
+04fadb3 2026-11-07 18:33:08 -0500 Richard Graver
+    Metaform in Rust: checked progress table, and a chaining proposal for the founder
+
+M	metaform/docs/designs/metaform-rust.md
+311b985 2026-11-07 17:34:24 -0500 Richard Graver
+    Store each map's root, so the stored graph has complete nesting
+
+M	metaform/rust/crates/metaform-store/src/graph.rs
+M	metaform/rust/crates/metaform-store/src/lib.rs
+M	metaform/rust/crates/metaform-store/tests/store.rs
+bd6362c 2026-11-07 17:31:53 -0500 Richard Graver
+    Build goto on the one Metaform tool
+
+M	metaform/SPEC.md
+M	metaform/SPECIFICATION.md
+M	metaform/mcp-tools.proposed.json
+M	metaform/rust/README.md
+M	metaform/rust/crates/metaform-core/src/commands.rs
+M	metaform/rust/crates/metaform-core/src/names.rs
+M	metaform/rust/crates/metaform-core/src/reads.rs
+M	metaform/rust/crates/metaform-core/tests/contract.rs
+M	metaform/rust/crates/metaform-server/src/tool.rs
+A	metaform/rust/crates/metaform-store/examples/many_maps.rs
+M	metaform/tests/check_tool_input.py
+M	metaform/tool-examples.json
+3972e56 2026-11-07 17:27:12 -0500 Richard Graver
+    Bound the databases a Metaform store keeps open
+
+M	metaform/rust/crates/metaform-store/src/lib.rs
+M	metaform/rust/crates/metaform-store/tests/store.rs
+899c0ea 2026-11-07 17:25:42 -0500 Richard Graver
+    Test that acknowledged Metaform writes survive a SIGKILL of the server
+
+M	metaform/rust/crates/metaform-server/tests/server.rs
+e019198 2026-11-07 17:24:20 -0500 Richard Graver
+    Add the metaform binary: one server per home, stdio forwarders, one tool
+
+M	metaform/rust/Cargo.lock
+M	metaform/rust/Cargo.toml
+M	metaform/rust/README.md
+A	metaform/rust/crates/metaform-server/Cargo.toml
+A	metaform/rust/crates/metaform-server/src/lib.rs
+A	metaform/rust/crates/metaform-server/src/main.rs
+A	metaform/rust/crates/metaform-server/src/tool.rs
+A	metaform/rust/crates/metaform-server/tests/server.rs
+M	metaform/rust/crates/metaform-store/src/lib.rs
+2defd01 2026-11-07 17:19:03 -0500 Richard Graver
+    Add metaform-store: maps as a Ladybug graph with a fair write manager
+
+M	metaform/rust/Cargo.lock
+M	metaform/rust/Cargo.toml
+M	metaform/rust/README.md
+M	metaform/rust/crates/metaform-core/src/commands.rs
+D	metaform/rust/crates/metaform-core/src/home.rs
+M	metaform/rust/crates/metaform-core/src/lib.rs
+M	metaform/rust/crates/metaform-core/src/model.rs
+M	metaform/rust/crates/metaform-core/src/names.rs
+M	metaform/rust/crates/metaform-core/src/refusal.rs
+D	metaform/rust/crates/metaform-core/src/stored.rs
+M	metaform/rust/crates/metaform-core/tests/contract.rs
+A	metaform/rust/crates/metaform-store/Cargo.toml
+A	metaform/rust/crates/metaform-store/src/graph.rs
+A	metaform/rust/crates/metaform-store/src/lib.rs
+A	metaform/rust/crates/metaform-store/src/registry.rs
+A	metaform/rust/crates/metaform-store/src/writer.rs
+A	metaform/rust/crates/metaform-store/tests/store.rs
+4ad662e 2026-11-07 17:11:53 -0500 Richard Graver
+    Add world-graph: the world's Ladybug graph of blocks, ports and links
+
+M	metaform/verification/ladybug-probe-2026-11-07.json
+cd007a8 2026-11-07 17:08:02 -0500 Richard Graver
+    Set the long-term storage design and the one-owner rule for writers
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+A	metaform/verification/ladybug-probe-2026-11-07.json
+7b6d6d6 2026-11-07 16:34:24 -0500 Richard Graver
+    Update the SPECIFICATION.md appendix copies for technical_name and roles
+
+M	metaform/SPECIFICATION.md
+05fa9d9 2026-11-07 16:33:59 -0500 Richard Graver
+    Align technical_name and the four roles across intake, contract, examples and code
+
+M	metaform/Intake.md
+M	metaform/SPEC.md
+M	metaform/intake-example.json
+M	metaform/mcp-tools.proposed.json
+M	metaform/metaform-canonical.json
+M	metaform/metaform.schema.json
+M	metaform/rust/README.md
+M	metaform/rust/crates/metaform-core/src/commands.rs
+M	metaform/rust/crates/metaform-core/src/refusal.rs
+M	metaform/rust/crates/metaform-core/tests/contract.rs
+M	metaform/server/src/commands.ts
+M	metaform/tests/check_contract.py
+M	metaform/tests/check_tool_input.py
+M	metaform/tool-examples.json
+M	metaform/validate_metaform.py
+5c4659f 2026-11-07 16:14:21 -0500 Richard Graver
+    Carry the founder's Why and How definitions into metaform/Intake.md
+
+M	metaform/Intake.md
+6e092d6 2026-11-07 16:13:46 -0500 Richard Graver
+    Make anything keyed by a unique name a dictionary: wants, orphans, layer listing
+
+M	metaform/Intake.md
+M	metaform/SPEC.md
+M	metaform/SPECIFICATION.md
+M	metaform/intake-example.json
+M	metaform/mcp-tools.proposed.json
+M	metaform/metaform.schema.json
+M	metaform/provider-reference-example.json
+M	metaform/rust/crates/metaform-core/src/commands.rs
+M	metaform/rust/crates/metaform-core/src/model.rs
+M	metaform/rust/crates/metaform-core/src/reads.rs
+M	metaform/rust/crates/metaform-core/src/stored.rs
+M	metaform/rust/crates/metaform-core/tests/contract.rs
+M	metaform/server/src/commands.ts
+M	metaform/server/src/tree.ts
+M	metaform/server/test/metaform.test.ts
+M	metaform/tests/check_contract.py
+M	metaform/tests/check_tool_input.py
+M	metaform/tool-examples.json
+M	metaform/validate_metaform.py
+5b0ecf3 2026-11-07 16:02:51 -0500 Richard Graver
+    Remove ICE: the Definitive and Supportive relationship is the boundary
+
+M	metaform/Intake.md
+M	metaform/SPEC.md
+M	metaform/SPECIFICATION.md
+M	metaform/mcp-tools.proposed.json
+M	metaform/metaform.schema.json
+M	metaform/server/src/store.ts
+M	metaform/tests/check_contract.py
+29f2dfe 2026-11-07 15:59:57 -0500 Richard Graver
+    Rename want fields goal and function to why and how, on the founder's instruction
+
+M	metaform/Intake.md
+M	metaform/Intake.xml
+M	metaform/SPEC.md
+M	metaform/SPECIFICATION.md
+M	metaform/intake-example.json
+M	metaform/mcp-tools.proposed.json
+M	metaform/metaform-canonical.json
+M	metaform/metaform.schema.json
+M	metaform/provider-reference-example.json
+M	metaform/rust/README.md
+M	metaform/rust/crates/metaform-core/src/commands.rs
+M	metaform/rust/crates/metaform-core/src/model.rs
+M	metaform/rust/crates/metaform-core/src/refusal.rs
+M	metaform/rust/crates/metaform-core/tests/contract.rs
+M	metaform/server/src/commands.ts
+M	metaform/server/src/specify.ts
+M	metaform/server/src/store.ts
+M	metaform/server/src/tree.ts
+M	metaform/server/test/metaform.test.ts
+M	metaform/tests/check_contract.py
+M	metaform/tests/check_tool_input.py
+M	metaform/tool-examples.json
+8a253e0 2026-11-07 15:50:43 -0500 Richard Graver
+    Record section 5.1 as the database state and its names
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+bf959a3 2026-11-07 15:46:46 -0500 Richard Graver
+    Record the founder's design: the map is realized as a graph in Ladybug
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+80e5da8 2026-11-07 15:44:52 -0500 Richard Graver
+    Bring the founder's documentation set into the project
+
+M	metaform/README.md
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+A	metaform/docs/documentation-set.md
+39fcb61 2026-11-07 15:43:02 -0500 Richard Graver
+    State that the Node server is a test harness, never the design
+
+M	metaform/README.md
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+314dad0 2026-11-07 15:42:16 -0500 Richard Graver
+    Mark the JSON-storage drift everywhere it reached, and flag the intent mismatch
+
+M	metaform/docs/designs/metaform-server-design.md
+M	metaform/docs/designs/metaform-server-round2.md
+M	metaform/docs/designs/metaform-server.md
+M	metaform/docs/proposals/intake-gui-slice.md
+a4f28b8 2026-11-07 15:41:23 -0500 Richard Graver
+    Rewrite the stored and agent forms from the founder's documentation set
+
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/rust/README.md
+2fadb5e 2026-11-07 15:39:35 -0500 Richard Graver
+    Require founder confirmation of core designs before building; mark step 1 unconfirmed
+
+A	metaform/rust/README.md
+21579d8 2026-11-07 15:39:04 -0500 Richard Graver
+    Draft the stored form and the agent form side by side, for the founder
+
+M	metaform/docs/designs/metaform-rust.md
+ee41126 2026-11-07 15:38:09 -0500 Richard Graver
+    Correct storage to LadybugDB, one database per map; JSON was never decided for maps
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+5362cb7 2026-11-07 15:36:47 -0500 Richard Graver
+    Correct the step-1 gap notes, flag the storage departures, record the stop
+
+M	metaform/docs/designs/metaform-rust.md
+93fec5a 2026-11-07 15:31:05 -0500 Richard Graver
+    Record Rust step 1 results and the gaps it found
+
+M	metaform/docs/designs/metaform-rust.md
+ac588a7 2026-11-07 15:31:05 -0500 Richard Graver
+    Merge Metaform in Rust, step 1: metaform-core
+2d69b1e 2026-11-07 15:30:19 -0500 Richard Graver
+    Test metaform-core against the shared contract fixtures
+
+A	metaform/rust/crates/metaform-core/tests/contract.rs
+f1541b2 2026-11-07 15:30:19 -0500 Richard Graver
+    Add metaform-core, step 1 of the Rust Metaform server
+
+A	metaform/rust/.gitignore
+A	metaform/rust/Cargo.lock
+A	metaform/rust/Cargo.toml
+A	metaform/rust/crates/metaform-core/Cargo.toml
+A	metaform/rust/crates/metaform-core/src/commands.rs
+A	metaform/rust/crates/metaform-core/src/contract.rs
+A	metaform/rust/crates/metaform-core/src/home.rs
+A	metaform/rust/crates/metaform-core/src/lib.rs
+A	metaform/rust/crates/metaform-core/src/model.rs
+A	metaform/rust/crates/metaform-core/src/names.rs
+A	metaform/rust/crates/metaform-core/src/reads.rs
+A	metaform/rust/crates/metaform-core/src/refusal.rs
+A	metaform/rust/crates/metaform-core/src/stored.rs
+5ffcfc7 2026-11-07 15:24:35 -0500 Richard Graver
+    Describe Topogee as a shared world, not a game; maps can stand alone
+
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+M	metaform/docs/metaform-concepts.md
+c9e709d 2026-11-07 15:20:53 -0500 Richard Graver
+    Define Metaform as a functional topology, and add map chaining
+
+M	metaform/README.md
+M	metaform/SPEC.md
+M	metaform/docs/designs/metaform-rust.md
+27b630c 2026-11-07 15:15:41 -0500 Richard Graver
+    Add the Rust Metaform server design; correct R-4.6
+
+M	metaform/SPEC.md
+A	metaform/docs/designs/metaform-rust.md
+4b6ad88 2026-11-07 15:14:27 -0500 Richard Graver
+    Decide D-15: Rust for this project's Metaform server
+
+M	metaform/SPEC.md
+68f6823 2026-11-07 15:09:28 -0500 Richard Graver
+    Revert "Put a working, measured Metaform release first; recommend Node for it"
+
+M	metaform/SPEC.md
+fe36010 2026-11-07 15:08:22 -0500 Richard Graver
+    Put a working, measured Metaform release first; recommend Node for it
+
+M	metaform/SPEC.md
+af5947d 2026-11-07 14:57:29 -0500 Richard Graver
+    Move Metaform into its own project folder, metaform/
+
+A	metaform/Intake.md
+A	metaform/Intake.xml
+A	metaform/README.md
+A	metaform/SKILL.proposed.md
+A	metaform/SPEC.md
+A	metaform/SPECIFICATION.md
+A	metaform/agents/metaform-layer-agent.md
+A	metaform/agents/metaform-skill.md
+A	metaform/docs/designs/egm-review/comprehension_report.md
+A	metaform/docs/designs/egm-review/consolidated_review_report.md
+A	metaform/docs/designs/egm-review/critic_report.md
+A	metaform/docs/designs/egm-review/implementation_readiness_report.md
+A	metaform/docs/designs/egm-review/intermediate_zoom_out_report.md
+A	metaform/docs/designs/egm-review/peer-review-metaform.md
+A	metaform/docs/designs/egm-review/zoom_out_report.md
+A	metaform/docs/designs/metaform-server-design.md
+A	metaform/docs/designs/metaform-server-round2.md
+A	metaform/docs/designs/metaform-server.md
+A	metaform/docs/designs/specification-round-trip.md
+A	metaform/docs/mcp-query-source.md
+A	metaform/docs/metaform-concepts.md
+A	metaform/docs/preprint/CITATION.md
+A	metaform/docs/preprint/README.md
+A	metaform/docs/preprint/preprint-v1.0.md
+A	metaform/docs/preprint/preprint-v1.0.pdf
+A	metaform/docs/preprint/references.bib
+A	metaform/docs/proposals/intake-gui-slice.md
+A	metaform/intake-example.json
+A	metaform/intake.mmd
+A	metaform/mcp-tools.proposed.json
+A	metaform/metaform-canonical.json
+A	metaform/metaform.schema.json
+A	metaform/owner-skills-example.json
+A	metaform/provider-reference-example.json
+A	metaform/requirements-dev.txt
+A	metaform/server/package-lock.json
+A	metaform/server/package.json
+A	metaform/server/src/commands.ts
+A	metaform/server/src/contract.ts
+A	metaform/server/src/home.ts
+A	metaform/server/src/main.ts
+A	metaform/server/src/server.ts
+A	metaform/server/src/specify.ts
+A	metaform/server/src/store.ts
+A	metaform/server/src/tree.ts
+A	metaform/server/test/metaform.test.ts
+A	metaform/server/tsconfig.json
+A	metaform/tests/check_contract.py
+A	metaform/tests/check_tool_input.py
+A	metaform/tool-examples.json
+A	metaform/tools/boat_contract_check.sh
+A	metaform/validate_metaform.py
+A	metaform/verification/bootstrap-status.json
+A	metaform/verification/ladybug-spike-2026-10-30.json
+A	metaform/verification/previous-schema-check-results.json

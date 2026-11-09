@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result id="intake-metaform-chassis-20260924-s5">
+    <elements>
+        <element namespace_address="stakeholder.orchestrator.agent" name_length="2" role="VE">
+            <name>Agent orchestrator</name>
+            <joins>
+                <join type="purpose" provider="code.chassis.module"
+                      purpose="Receive one place that holds a project's functional understanding and hands each agent exactly its own work, so agents start from recorded understanding and spend inference on their task."
+                      function="Serves module operations, agent commands and stored records through one CLI and one MCP tool set, both reaching the same persistent runtime."
+                      relation="The chassis gives every agent a nonce-keyed assignment and lets modules contribute everything else."
+                      observation="The chassis is a Python package with a fixed core of services. Every feature, including the 25 command groups it once hardcoded, is a module that plugs in.">
+                    <element namespace_address="code.chassis.module" name_length="2" role="DE">
+                        <name>Module chassis</name>
+                        <refs>
+                            <ref key="path" value="src/metaform" />
+                            <ref key="path" value="pyproject.toml" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.service.assignment"
+                      purpose="Give each agent its own prompt, required submission header and work context, without depending on process identity or client metadata."
+                      function="Issues a nonce per activation; every agent command and MCP tool call carries the nonce, which selects the prompt, the visible menu and the submitted answers."
+                      relation="The assignment service keys each agent's whole session to its nonce and keeps issued prompt and answers as retained revisions."
+                      observation="Claude Code shares session ID and PID between subagents, so only the nonce separates agents. The main menu is empty outside the project root."
+                      non_goal="Binding a folder to a module or requiring a begin step.">
+                    <element namespace_address="code.service.assignment" name_length="2" role="NE">
+                        <name>Assignment service</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/assignments.py" />
+                            <ref key="path" value="src/metaform/work.py" />
+                            <ref key="path" value="src/metaform/workfolders.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.server.mcp"
+                      purpose="Reach the chassis from a harness through tools instead of shell commands."
+                      function="Serves assignment, submit, complete, abort, call, status, namespace and resolve tools plus each module's agent commands, all over stdio."
+                      relation="The MCP server turns every agent command into a tool named module_command and checks the nonce on any call that changes the project."
+                      observation="One stdio process can carry interleaved work; each nonce records the PID that served it. Tool results use a result envelope for old and new clients.">
+                    <element namespace_address="code.server.mcp" name_length="2" role="SE">
+                        <name>MCP server</name>
+                        <refs>
+                            <ref key="path" value="modules/mcp" />
+                            <ref key="path" value="src/metaform/agent_commands.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.menu.contextual"
+                      purpose="See only the commands and help that belong to its nonce, and configure the chassis without reading source."
+                      function="Renders a nonce-keyed menu, chassis-wide help, and a settings TUI copied from the mvm pattern; person-read strings are plain."
+                      relation="The contextual menu shows the orchestrator the commands of the module its nonce activated and nothing else."
+                      observation="Menus are built from module contributions, not hardcoded lists. Output is JSON for agents and text for people.">
+                    <element namespace_address="code.menu.contextual" name_length="2" role="SE">
+                        <name>Contextual menu</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/contextual_cli.py" />
+                            <ref key="path" value="src/metaform/cli.py" />
+                            <ref key="path" value="src/metaform/help_pages.py" />
+                            <ref key="path" value="src/metaform/tui.py" />
+                            <ref key="path" value="src/metaform/settings.py" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+
+        <element namespace_address="stakeholder.author.module" name_length="2" role="VE">
+            <name>Module author</name>
+            <joins>
+                <join type="purpose" provider="code.registry.module"
+                      purpose="Add a capability as small as one command, without touching the chassis, and have it load, enable, disable and unload safely."
+                      function="Loads a folder exporting a PLUGIN object, resolves same-named modules by location precedence, isolates each module's imports and settles its work on teardown."
+                      relation="The registry lets a module declare commands, settings, help, operations, events and lifecycle hooks in one object."
+                      observation="Four locations, in order: wheel, global immutable, global mutable, project local. A same-name project-local module cannot enable. Built-in modules install with the wheel and are served from the checkout when installed editable."
+                      non_goal="Giving modules a private copy of chassis storage or a second module system.">
+                    <element namespace_address="code.registry.module" name_length="2" role="NE">
+                        <name>Module registry</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/plugin_runtime.py" />
+                            <ref key="path" value="src/metaform/plugin_contract.py" />
+                            <ref key="path" value="src/metaform/plugin_store.py" />
+                            <ref key="path" value="src/metaform/plugin_policy.py" />
+                            <ref key="path" value="src/metaform/module_catalog.py" />
+                            <ref key="path" value="src/metaform/module_metadata.py" />
+                            <ref key="path" value="modules/README.md" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.command.agent"
+                      purpose="Declare a command once and have it work for both people and agents."
+                      function="One AgentCommand declaration is served as a CLI command and as an MCP tool, with names checked against the tool-name pattern."
+                      relation="The agent command declaration lets an author offer a purpose to the orchestrator without writing two adapters."
+                      observation="Tool names join module and command with an underscore because Claude Code rewrites dots.">
+                    <element namespace_address="code.command.agent" name_length="2" role="SE">
+                        <name>Agent command</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/agent_commands.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.bus.event"
+                      purpose="Let one module request work from another without importing it."
+                      function="Publishes a topic with exact join references to subscribed module handlers, each delivery run as attributed work."
+                      relation="The event bus lets a module hand a request to any subscriber and receive the response when the work finishes."
+                      observation="A slow or failing handler is reported for that handler and never blocks the publisher or another module. The showcase, event_requester and harness_runner modules teach this pair.">
+                    <element namespace_address="code.bus.event" name_length="2" role="SE">
+                        <name>Event bus</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/event.py" />
+                            <ref key="path" value="examples/modules" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+
+        <element namespace_address="code.chassis.module" name_length="2" role="DE">
+            <name>Module chassis</name>
+            <joins>
+                <join type="purpose" provider="code.store.namespace"
+                      purpose="Keep every project fact as an addressed object with receiver-owned joins, so any agent or module reads the same stored purpose and reference."
+                      function="Stores namespace objects and owned joins as retained revisions, addressed by exact JoinRef, with placement per project and per join type."
+                      relation="The chassis writes every module's records into the namespace store and resolves exact revisions from it."
+                      observation="SQLite-backed with file locks. Objects carry a name length. Chassis-managed byte payloads live in immutable content-addressed storage. Universal production joins record what operation produced each result."
+                      non_goal="Rejecting a record for its content; contracts describe and the runtime records mismatches.">
+                    <element namespace_address="code.store.namespace" name_length="2" role="NE">
+                        <name>Namespace store</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/namespace_store.py" />
+                            <ref key="path" value="src/metaform/namespace_objects.py" />
+                            <ref key="path" value="src/metaform/namespace_service.py" />
+                            <ref key="path" value="src/metaform/payload_store.py" />
+                            <ref key="path" value="src/metaform/production_joins.py" />
+                            <ref key="path" value="src/metaform/storage_schema.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.host.runtime"
+                      purpose="Complete accepted work even after the calling client disconnects, and let CLI calls, MCP calls and jobs share one live module state."
+                      function="Runs one persistent local host per data root that executes operations, delivers events, and persists background jobs with their own identities."
+                      relation="The runtime host owns the loaded modules and every running job for the chassis."
+                      observation="Stopping the host cancels and settles owned work. Fixed-port services must be started from the user's own terminal, not the agent shell. A wheel can run as an executable with a fresh data root.">
+                    <element namespace_address="code.host.runtime" name_length="2" role="NE">
+                        <name>Runtime host</name>
+                        <refs>
+                            <ref key="path" value="src/metaform/runtime_server.py" />
+                            <ref key="path" value="src/metaform/runtime_client.py" />
+                            <ref key="path" value="src/metaform/service_context.py" />
+                            <ref key="path" value="src/metaform/portable_runtime.py" />
+                            <ref key="path" value="src/metaform/child_process.py" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.engine.workflow"
+                      purpose="Turn authored and imported prompt text into ordered agent work whose exact issued context and answers are retained, including the intake that builds a project's inference metaform."
+                      function="Composes prompts with inline namespace references, runs prompt, user, tool, branch, loop, parallel and nested steps durably, and interprets imported documents into executable steps through a separate preparation assignment."
+                      relation="The workflow engine issues each step as an assignment and lets a later step insert an earlier answer by its exact contribution reference."
+                      observation="Imported documents keep their wording and aliases. The maintained Canonical Intake definition is a packaged resource; intake is one put per object with no model-authored JSON. Unsupported selectors stay in the authored record and end the run with an explicit error.">
+                    <element namespace_address="code.engine.workflow" name_length="2" role="SE">
+                        <name>Workflow engine</name>
+                        <refs>
+                            <ref key="path" value="modules/workflows" />
+                            <ref key="path" value="modules/workflows/resources/Canonical_Intake.xml" />
+                            <ref key="path" value="specifications/Canonical_Intake.xml" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.engine.knowledge"
+                      purpose="Give each agent the layers of practice that apply to the element it works on, and let layers be attached, hidden and swapped while addresses and purposes stay put."
+                      function="Projects layers over the namespace by selector and mask at each position, resolving attachments from receiver-owned joins to a layer and its source join."
+                      relation="The knowledge engine computes the visible layers for an object from the project selector, incoming layers and the object's own mask."
+                      observation="Selection is by layer namespace names, defaulting to all layers. Hidden layers stay revisioned and resolvable. Inference and layer-controlled bindings need the workflows module.">
+                    <element namespace_address="code.engine.knowledge" name_length="2" role="SE">
+                        <name>Knowledge engine</name>
+                        <refs>
+                            <ref key="path" value="modules/knowledge" />
+                        </refs>
+                    </element>
+                </join>
+                <join type="purpose" provider="code.store.history"
+                      purpose="Trace an output back to the exact artifact bytes that produced it, and rebuild any captured state."
+                      function="Captures an origin and sibling variants of an artifact as namespace-owned joins over content-addressed payloads, compares variants to their origin, and reconstructs a folder from a reference."
+                      relation="The history store retains the artifact under work so a run's inputs stay reproducible."
+                      observation="A committed baseline reads the git tree, not the dirty working files. Reconstruction refuses a non-empty destination and checks file hashes. Text changes above 3,000,000 bytes per variant are not diffed.">
+                    <element namespace_address="code.store.history" name_length="2" role="SE">
+                        <name>Artifact history store</name>
+                        <refs>
+                            <ref key="path" value="modules/history" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+
+        <element namespace_address="stakeholder.harness.agent" name_length="2" role="VE">
+            <name>Agent harness</name>
+            <joins>
+                <join type="purpose" provider="code.runner.harness"
+                      purpose="Receive a prompt and its nonce, run to a submitted answer, and be launched, watched and stopped from the chassis."
+                      function="Launches Codex, Claude or a deterministic fixture as an asynchronous job, wires it to the MCP server, and keeps an answer already submitted through MCP when stdout arrives later."
+                      relation="The harness runner starts a harness for an assignment and publishes its response on the event bus."
+                      observation="Runs from a harness.request event or a direct command, owns and terminates its subprocesses, and drains their final streams.">
+                    <element namespace_address="code.runner.harness" name_length="2" role="SE">
+                        <name>Harness runner</name>
+                        <refs>
+                            <ref key="path" value="modules/harness_runner" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+
+        <element namespace_address="stakeholder.reader.person" name_length="2" role="VE">
+            <name>Person reading the project</name>
+            <joins>
+                <join type="purpose" provider="code.server.web"
+                      purpose="See the project's functional graph and edit workflows from any device, without a terminal."
+                      function="Serves a signed-in browser UI with a namespace graph, a workflow editor and browser terminals over one port per data root."
+                      relation="The web server signs each browser in by token link and shows the graph, the workflow editor and terminal launchers."
+                      observation="Starlette and Uvicorn, imported only at start. Defaults to localhost port 8765 with login required. The terminal module runs the settings TUI and harness launchers in the browser on Linux and macOS.">
+                    <element namespace_address="code.server.web" name_length="2" role="SE">
+                        <name>Web server</name>
+                        <refs>
+                            <ref key="path" value="modules/web" />
+                            <ref key="path" value="modules/terminal" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+
+        <element namespace_address="stakeholder.recipient.project" name_length="2" role="VE">
+            <name>Project recipient</name>
+            <joins>
+                <join type="purpose" provider="code.builder.wheel"
+                      purpose="Receive selected modules and projects as one runnable file, with data that reproduces without the creating machine."
+                      function="Builds a wheel containing the chassis, its dependencies, chosen module files and project namespace data with retained payloads, then installs it into a fresh data root on first run."
+                      relation="The wheel builder captures the chosen closure and lists in a manifest every reference it could not carry."
+                      observation="Existing differing files and conflicting revisions in a data root are preserved and reported. Source files are included only on request.">
+                    <element namespace_address="code.builder.wheel" name_length="2" role="SE">
+                        <name>Wheel builder</name>
+                        <refs>
+                            <ref key="path" value="modules/distribution" />
+                            <ref key="path" value="packaging" />
+                            <ref key="path" value=".github/workflows/wheel.yml" />
+                        </refs>
+                    </element>
+                </join>
+            </joins>
+        </element>
+    </elements>
+</result>

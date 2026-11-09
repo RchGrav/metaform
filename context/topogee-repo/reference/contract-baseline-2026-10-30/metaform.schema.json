@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Metaform Graph Model",
+  "description": "The JSON object is the functional namespace. Nested object keys establish namespace addresses. Plural-named arrays are knowledge layers and retain native contents. providers[] is the functional knowledge layer on a receiving element. A dotted provider address references the element at that path in the namespace tree; the referenced element's own properties and layers remain there. No layers container, copied provider element, synthetic record IDs or semantic array ordering is introduced.",
+  "type": "object",
+  "$defs": {
+    "NamespaceValue": {
+      "title": "Value at a namespace address",
+      "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      ]
+    },
+    "NamespaceNode": {
+      "title": "Namespace branch or receiving element",
+      "description": "Namespace branch or receiving element. Its properties and layers are directly on the element. The same word can name metadata or a namespace branch according to its value and context.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The name used for this functionality in project documentation or specifications, such as Metaform.",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Functional role at the examined scope. DE is the Defining Element: without this functionality the artifact can no longer be the same kind of thing."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy not_built/missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema.",
+              "minLength": 1,
+              "pattern": "\\S",
+              "not": {
+                "enum": [
+                  "not_built",
+                  "missing",
+                  "MISSING",
+                  "BKN",
+                  "broken",
+                  "todo",
+                  "TODO"
+                ]
+              }
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "name_length": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "description": "Number of trailing namespace segments, including the leaf, read backward to form the accepted industry technical name. Count segments, not words.",
+              "minimum": 1
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "providers": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Providers"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            }
+          ],
+          "description": "An array is the functional knowledge layer. An object is a namespace branch and follows namespace rules."
+        },
+        "op": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "A namespace branch or native layer can use this word. The scalar encounter field belongs in a provider relationship, not on the namespace node."
+        },
+        "ef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ],
+          "description": "A namespace branch or native layer can use this word. The scalar encounter field belongs in a provider relationship, not on the namespace node."
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "description": "Optional project metadata; does not introduce a required wrapper."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+      },
+      "propertyNames": {
+        "pattern": "^[^.$\\[\\]\\s]+$",
+        "description": "One namespace segment, never a dotted reference or JSONPath expression."
+      }
+    },
+    "ComposedElementLayer": {
+      "title": "Array-valued composed element layer",
+      "description": "An array at a plural-named namespace location is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+      "type": "array",
+      "items": true
+    },
+    "Providers": {
+      "title": "Functional knowledge layer",
+      "type": "array",
+      "description": "Provider relationships owned by this receiving element. Address keys reference elements in the tree. Properties of those elements remain at their tree locations. No ordering meaning is imposed.",
+      "items": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {
+          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
+          "description": "Project-relative reference to an element in the actual nested namespace."
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/ProviderRecord"
+        }
+      }
+    },
+    "ProviderRecord": {
+      "title": "Provider record",
+      "description": "Receiver-owned relationship fields: OP is why this RE needs the provider; EF is how that PE serves this RE. One relationship per provider address within its receiver. The PE address is a reference, not a location for the PE's properties.",
+      "type": "object",
+      "properties": {
+        "ice": {
+          "type": "boolean",
+          "description": "Indicates indivisible coupling in the receiving/provider relationship. This boolean is not information-flow direction or a generated Block ID."
+        },
+        "ifd": {
+          "type": "string",
+          "description": "Direction of the substance that satisfies this RE's OP: send, receive or both, relative to the receiver. Excludes request and parameter traffic. These literals follow the owner-supplied schema; historical sends/receives spellings are not silently accepted.",
+          "enum": [
+            "send",
+            "receive",
+            "both"
+          ]
+        },
+        "op": {
+          "type": "string",
+          "description": "The active goal (why) of the Receiving Entity (RE) that the EF must satisfy. Formatted strictly in ASD-STE100.",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "ef": {
+          "type": "string",
+          "description": "The mechanism, interface, relationship, or method of the provider that satisfies the op. Formatted strictly in ASD-STE100.",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "ifd",
+        "op",
+        "ef"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$comment": "Owner-authorized reconciliation, 2026-10-30. This describes one selected project namespace; no project wrapper is required. Provider addresses are relative to that root. validate_metaform.py additionally checks reference resolution, per-receiver address uniqueness and name_length bounds. JSON Schema does not certify industry terminology, plural layer names, functional intent or ASD-STE100 language. Authentication, project access, transaction revisions and actor provenance are service concerns; they do not become mandatory fields in this functional document.",
+  "$ref": "#/$defs/NamespaceNode"
+}

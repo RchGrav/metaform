@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:metaform:schema:handoff:1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "handoff_id",
+    "agent_id",
+    "from_context_id",
+    "to_context_id",
+    "snapshot_key",
+    "target_address",
+    "work_unit_id",
+    "worktree_ref",
+    "goal",
+    "completed",
+    "remaining",
+    "decisions",
+    "artifact_refs",
+    "event_cursor",
+    "skill_refs",
+    "reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "metaform.handoff/1"
+    },
+    "handoff_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from_context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to_context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshot_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_address": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work_unit_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "worktree_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "remaining": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "event_cursor": {
+      "type": "object"
+    },
+    "skill_refs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "reason": {
+      "enum": [
+        "context_usage",
+        "goal_boundary",
+        "explicit"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+Your message offers no concrete contribution the participants can evaluate. Replace general assurances, jargon, or statements that merely say competing concerns should be balanced with a specific position, counterexample, correction, or consequential question. Explain what follows from it and what would show it to be mistaken.

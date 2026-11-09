@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roundtable</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #5f6b7a; --line: #e2e6eb;
+  --accent: #2f6fed; --accent-ink: #ffffff; --chair: #eef4ff; --veto: #fff4f2; --veto-ink: #9a3b2f;
+  --ok: #1f8a4c; --warn: #b26b00; --bad: #c0392b; --chip: #eef1f5; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151a; --panel: #1a1e25; --ink: #e6e9ee; --muted: #98a2b0; --line: #2a303a;
+    --accent: #5b8cff; --accent-ink: #0b0d10; --chair: #1d2740; --veto: #2a1c1a; --veto-ink: #f0a597;
+    --ok: #4cc27f; --warn: #e3a541; --bad: #ef6b5b; --chip: #232934;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+input, textarea, select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; }
+header { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0; }
+header .grow { flex: 1; }
+#tableSelect { width: auto; min-width: 180px; }
+.pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.pill.live { color: var(--ok); } .pill.held { color: var(--warn); } .pill.ended { color: var(--bad); }
+main { display: grid; grid-template-columns: 290px 1fr; height: calc(100% - 53px); }
+aside { border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+.seat { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.seat .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.seat .name { font-weight: 600; }
+.seat .meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat .live { color: var(--muted); font-size: 12px; max-height: 3.2em; overflow: hidden; white-space: pre-wrap; margin-top: 4px; }
+.state { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--chip); white-space: nowrap; }
+.state.floor { background: var(--accent); color: var(--accent-ink); }
+.state.working { color: var(--warn); } .state.gone, .state.failed { color: var(--bad); } .state.ready { color: var(--ok); }
+.topic { border-left: 3px solid var(--accent); padding: 6px 10px; background: var(--chip); border-radius: 6px; white-space: pre-wrap; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row label { flex: 1; }
+.center { display: flex; flex-direction: column; min-width: 0; }
+#feed { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 860px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.msg .who { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.msg .who b { font-weight: 600; } .msg .who .id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.badge { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--chip); color: var(--muted); }
+.msg.chair { background: var(--chair); align-self: flex-end; }
+.msg.veto { background: var(--veto); color: var(--veto-ink); opacity: .9; }
+.sys { color: var(--muted); font-size: 12.5px; padding: 0 4px; }
+.sys.warn { color: var(--warn); } .sys.bad { color: var(--bad); }
+.sys.bad { font-weight: 600; border: 1px solid var(--bad); border-radius: 8px; padding: 6px 10px; background: var(--veto); }
+details.sys summary { cursor: pointer; }
+details .note { white-space: pre-wrap; font-size: 12.5px; padding: 6px 10px; border-left: 2px solid var(--line); margin: 4px 0; }
+.divider { display: flex; align-items: center; gap: 10px; color: var(--accent); font-weight: 600; margin: 8px 0; }
+.divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.divider span { max-width: 70%; text-align: center; white-space: pre-wrap; }
+.opening { border: 1px dashed var(--line); border-radius: 12px; padding: 12px; background: var(--panel); white-space: pre-wrap; }
+footer { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
+footer textarea { min-height: 44px; resize: vertical; }
+.empty { margin: auto; text-align: center; color: var(--muted); max-width: 440px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); width: min(820px, 96vw); padding: 0; }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog form { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+dialog h3 { margin: 0; }
+.seatrow { display: grid; grid-template-columns: 1fr 1.3fr 1fr 1.4fr auto; gap: 6px; }
+.hint { color: var(--muted); font-size: 12px; }
+.pastitem { display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 6px 8px; }
+.pastitem .obj { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pastitem.current { border-color: var(--accent); }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 38vh; }
+  .seatrow { grid-template-columns: 1fr 1fr; }
+  #feed { padding: 12px 16px; }
+}
+  details.prompts { margin-top: 6px; } details.prompts summary { cursor: pointer; font-size: 12px; color: var(--muted, #888); }
+  pre.prompt { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; font-size: 12px; padding: 6px; border-radius: 6px; background: rgba(127,127,127,.12); margin: 4px 0 8px; }
+  .badge.warn { background: rgba(214, 120, 0, .18); color: #b35c00; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Roundtable</h1>
+  <select id="tableSelect" aria-label="Table"></select>
+  <span id="status" class="pill">no table</span>
+  <span class="grow"></span>
+  <button id="settingsBtn" type="button">Settings</button>
+  <button id="newBtn" class="primary" type="button">New table</button>
+</header>
+<main>
+  <aside>
+    <section><h2>Topic</h2><div id="topic" class="topic">—</div></section>
+    <section><h2>Seats</h2><div id="seats"></div></section>
+    <section>
+      <h2>Past tables</h2>
+      <div id="past" class="hint">Loading…</div>
+    </section>
+    <section>
+      <h2>Table settings</h2>
+      <div class="row"><label><input id="judging" type="checkbox" style="width:auto"> Judge contributions (JEV)</label></div>
+      <div class="hint" id="jevHint"></div>
+    </section>
+  </aside>
+  <div class="center">
+    <div id="feed"><div class="empty">Open a table to start. Agents from different harnesses and models work on your objective together; their accepted contributions appear here.</div></div>
+    <footer>
+      <textarea id="guidance" placeholder="Guidance from the chair: delivered to every participant at its next turn"></textarea>
+      <div class="row">
+        <button id="sendBtn" class="primary" type="button">Send guidance</button>
+        <button id="holdBtn" type="button">Hold</button>
+        <button id="advanceBtn" type="button">Advance topic…</button>
+        <span class="grow" style="flex:1"></span>
+        <button id="endBtn" type="button">End table</button>
+      </div>
+    </footer>
+  </div>
+</main>
+
+<dialog id="newDialog">
+  <form method="dialog" id="newForm">
+    <h3>New table</h3>
+    <label>Objective<textarea name="objective" rows="4" required placeholder="What should the group produce?"></textarea></label>
+    <label>First topic (optional; defaults to the objective)<input name="topic"></label>
+    <div class="row">
+      <label>Shared workspace (folder)<input name="workspace" required></label>
+    </div>
+    <div class="row">
+      <label style="flex:1"><input name="judging" type="checkbox" checked style="width:auto"> Judge contributions with JEV (needs an OpenRouter key; without it, contributions are shared unjudged and there are no topic changes)</label>
+      <label style="flex:0 0 160px">Reply limit (empty: no limit)<input name="base" type="number" min="1" value=""></label>
+      <label style="flex:0 0 160px">After a busy skip (chars)<input name="recovery" type="number" min="1" value="1024"></label>
+      <label style="flex:0 0 160px">Rounds (empty: no limit)<input name="rounds" type="number" min="1" value="10"></label>
+      <label style="flex:0 0 120px">Topics<input name="topics" type="checkbox" style="width:auto"></label>
+    </div>
+    <div class="row"><strong style="flex:1">Seats</strong><button type="button" id="addSeat">Add seat</button></div>
+    <div class="hint">Harness from ACP autoselection, or a custom ACP command. Model is set through the harness's advertised model option.</div>
+    <div id="seatRows"></div>
+    <datalist id="modelHints"></datalist>
+    <div class="hint" id="harnessNote"></div>
+    <div class="row" style="justify-content:flex-end"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="createBtn" value="create">Open table</button></div>
+  </form>
+</dialog>
+
+<dialog id="settingsDialog">
+  <form method="dialog" id="settingsForm">
+    <h3>Settings</h3>
+    <label>OpenRouter API key (for JEV; held in memory only)<input name="key" type="password" autocomplete="off" placeholder="sk-or-…"></label>
+    <div class="hint" id="keyState"></div>
+    <div class="row" style="justify-content:flex-end"><button value="cancel" formnovalidate>Close</button><button class="primary" value="save">Save</button></div>
+  </form>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+// The chair token arrives in the URL fragment (never sent to the server in the URL bar) and
+// is kept for this tab only.
+(() => {
+  const m = location.hash.match(/token=([0-9a-fA-F]+)/);
+  if (m) { try { sessionStorage.setItem("rt-token", m[1]); } catch {} history.replaceState(null, "", location.pathname); }
+})();
+const TOKEN = (() => { try { return sessionStorage.getItem("rt-token") || ""; } catch { return ""; } })();
+const authed = (url, init = {}) => fetch(url, { ...init, headers: { ...(init.headers || {}), authorization: "Bearer " + TOKEN } });
+// User-keyed dictionaries are Maps, so a seat named "__proto__" is just a name.
+const state = { tables: new Map(), current: null, pinned: false, seen: new Set(), harnesses: [], live: new Set() };
+// Harness models come from each harness's advertised options once its session opens; only
+// OpenRouter models have a catalog to offer here (R §9.4).
+const MODEL_HINTS = {};
+
+function table(id) {
+  if (!state.tables.has(id)) state.tables.set(id, { id, items: [], seats: new Map(), order: [], topic: "", status: "starting", judging: true, jev: false, objective: "", base: 512 });
+  return state.tables.get(id);
+}
+
+// acp-host events name the harness as a "table/seat" string; agent-monitor events carry a
+// { pid, id } object whose id is that same string (or null when the host gave none).
+function harnessId(data) {
+  const h = data.harness;
+  if (typeof h === "string") return h;
+  if (h && typeof h.id === "string") return h.id;
+  return null;
+}
+
+function tableOf(data) {
+  if (data.table) return data.table;
+  const h = harnessId(data);
+  if (h && h.includes("/")) return h.split("/")[0];
+  return null;
+}
+
+function seatOf(data) {
+  if (data.seat) return data.seat;
+  const h = harnessId(data);
+  if (h && h.includes("/")) return h.split("/").slice(1).join("/");
+  return null;
+}
+
+function apply(line) {
+  const d = line.data || {}; const id = tableOf(d); if (!id) return;
+  // Sequence numbers restart with each server run; table ids do not.
+  const key = id + ":" + line.seq;
+  if (state.seen.has(key)) return;
+  state.seen.add(key);
+  const t = table(id); const name = seatOf(d); const ev = line.event;
+  const seat = (n) => { if (!t.seats.has(n)) { t.seats.set(n, { name: n, state: "starting", allowance: t.base, live: "", harness: "", prompts: [], monitor: "" }); t.order.push(n); } return t.seats.get(n); };
+  const known = (n) => n && t.seats.has(n) ? t.seats.get(n) : null;
+  const push = (item) => t.items.push(item);
+  switch (ev) {
+    case "roundtable.opened":
+      if (!state.pinned && !line.replay) state.current = id;
+      t.objective = d.objective; t.topic = d.topic; t.judging = d.judging; t.jev = d.jev_configured; t.status = "starting";
+      t.base = d.base_allowance; t.seats.forEach(s => { s.allowance = t.base; });
+      d.seats.forEach(s => { const x = seat(s.name); x.harness = s.harness + (s.settings.model ? " · " + s.settings.model : ""); });
+      push({ kind: "opening", text: d.objective, workspace: d.workspace });
+      // With no starting topic, topic #1 is the objective itself, shown just above.
+      push({ kind: "divider", text: "Topic #1: " + (d.topic === d.objective ? "the objective" : d.topic) });
+      break;
+    case "roundtable.seat.ready": { const s = seat(name); s.state = "ready"; s.agent = d.name; s.protocol = d.protocol; t.status = "live"; push({ kind: "sys", text: `${name} joined as ${d.name} (ACP v${d.protocol})${d.tools ? "" : " · no Roundtable tools: harness lacks HTTP MCP"}` }); break; }
+    case "roundtable.seat.failed": seat(name).state = "failed"; push({ kind: "sys", level: "bad", text: `${name} could not start: ${d.error}` }); break;
+    case "roundtable.seat.gone": seat(name).state = "gone"; push({ kind: "sys", level: "bad", text: `${name} left: ${d.detail}` }); break;
+    case "roundtable.floor": { const s = seat(name); s.state = "floor"; s.allowance = d.allowance; s.live = ""; break; }
+    case "acp.agent.text": { const s = known(name); if (s && !d.thought && ["floor", "working", "reviewing"].includes(s.state)) s.live = (s.live + d.text).slice(-400); break; }
+    case "acp.agent.tool": { const s = known(name); if (s && d.title) s.tool = d.title; break; }
+    case "acp.permission": if (!d.allowed) push({ kind: "sys", level: "warn", text: `${name}: permission refused (${d.reason})` }); break;
+    case "roundtable.contribution": {
+      const s = seat(name); s.state = "ready"; s.live = "";
+      if (d.accepted) s.allowance = t.base;
+      push({ kind: d.accepted ? "msg" : "veto", seat: name, who: (t.seats.get(name) || {}).agent, id: d.id, text: d.text, judged: d.judged, after: d.after_work, truncated: d.truncated, limit: d.limit, reasons: d.reasons, note: d.note, scores: d.scores });
+      break;
+    }
+    case "roundtable.pass": { const s = seat(name); s.state = "ready"; s.live = ""; push({ kind: "sys", text: `${name} passed` }); break; }
+    case "roundtable.work.started": seat(name).state = "working"; push({ kind: "sys", text: `${name} is working in the workspace` }); break;
+    case "roundtable.review": { const s = seat(name); s.state = "reviewing"; push({ kind: "sys", text: `${name} is the only one free and was asked to review the materials while the others work` }); break; }
+    case "roundtable.background": { const s = seat(name); s.state = d.items ? "working" : "ready"; push({ kind: "sys", text: d.items ? `${name} reports ${d.items} background job${d.items > 1 ? "s" : ""} still running; its turns are skipped until they end` : `${name}'s background work ended` }); break; }
+    case "roundtable.skipped": { push({ kind: "sys", text: `${name} skipped (${d.reason}); its next reply may use the larger limit` }); break; }
+    case "roundtable.ratings.asked": push({ kind: "sys", text: `Rating round: ${d.seats.join(", ")} are rating each other` }); break;
+    case "roundtable.rating": push({ kind: "sys", text: `${d.from_name} rated ${d.to_name}: ${d.points.toFixed(1)} points (${Object.entries(d.ratings).map(([k, v]) => k + " " + v).join(", ")})` }); break;
+    case "roundtable.turn.failed": { const s = seat(name); if (s.state === "floor") s.state = "ready"; push({ kind: "sys", level: "warn", text: `${name}: turn failed: ${d.error}` }); break; }
+    case "roundtable.topic.polling": push({ kind: "sys", text: `Topic complete. Asking ${d.seats.join(", ") || "nobody"} for the next topic…` }); break;
+    case "roundtable.topic.proposed": push({ kind: "sys", text: `${name} proposes: ${d.text}` }); break;
+    case "roundtable.topic": t.topic = d.topic; push({ kind: "divider", text: `Topic #${d.index}: ${d.topic}`, how: d.how }); break;
+    case "roundtable.chair": push({ kind: "chair", text: d.text }); break;
+    case "roundtable.held": t.status = d.held ? "held" : "live"; push({ kind: "sys", level: d.held ? "warn" : "", text: d.held ? "The chair is holding the table." : "The table resumed." }); break;
+    case "roundtable.settings": t.judging = d.judging; t.jev = d.jev_configured; break;
+    case "roundtable.feedback": push({ kind: "sys", text: `${d.from_name} rated ${d.to_name}: ${Object.entries(d.ratings).map(([k, v]) => k + " " + v).join(", ")}${d.note ? " · " + d.note : ""}` }); break;
+    case "roundtable.notice": push({ kind: "sys", level: d.level === "error" ? "bad" : d.level === "warn" ? "warn" : "", text: d.text }); break;
+    case "roundtable.ended": if (!line.replay) loadPast(); t.status = "ended"; t.seats.forEach(s => { if (s.state !== "gone") s.state = "ended"; }); push({ kind: "sys", level: "bad", text: `Table ended: ${d.reason}` }); break;
+    // What each agent actually receives, exactly as sent (the participant prompt included).
+    case "acp.prompt.sent": { const s = known(name); if (s) s.prompts.push(d.text); break; }
+    // AgentSight (R §10.2). Failures already arrive as engine notices; this is status only.
+    case "monitor.attached": { const s = known(name); if (s) s.monitor = `observing (${d.capture})`; push({ kind: "sys", text: `AgentSight is observing ${name} (${d.capture} capture)` }); break; }
+    case "monitor.unavailable": { const s = known(name); if (s) s.monitor = "not observed"; break; }
+    case "monitor.observation": { const s = known(name); if (s) s.monitor = `observed: ${d.comm} ${d.activity && (d.activity.op || d.activity.kind) || ""}`.trim(); break; }
+    case "acp.prompt.completed": { const s = known(name); if (s && ["working", "reviewing"].includes(s.state)) s.state = "ready"; break; }
+  }
+  if (!state.current) state.current = id;
+  scheduleRender();
+}
+
+let pending = false;
+function scheduleRender() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); } }
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+
+// Rendering updates the page in place: the feed only appends new items, seat cards are built
+// once and patched, and text is written only when it changed. Rebuilding nodes on every event
+// would drop the reader's text selection, scroll position and open panels.
+const view = { table: null, items: null, shown: 0, seats: new Map() };
+
+function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+function setClass(node, cls) { if (node.className !== cls) node.className = cls; }
+
+function render() {
+  const sel = $("tableSelect"); const ids = [...state.tables.keys()];
+  const label = (id) => { const x = state.tables.get(id); const o = (x.objective || id).replace(/\s+/g, " "); return (o.length > 48 ? o.slice(0, 47) + "…" : o) + " · " + x.status; };
+  const want = ids.map(label).join("|");
+  if (sel.dataset.labels !== want) { sel.innerHTML = ""; ids.forEach(id => { const o = el("option", "", label(id)); o.value = id; sel.appendChild(o); }); sel.dataset.labels = want; }
+  if (sel.value !== (state.current || "")) sel.value = state.current || "";
+  const t = state.current && state.tables.get(state.current);
+  const status = $("status");
+  setText(status, t ? t.status : "no table"); setClass(status, "pill " + (t ? t.status : ""));
+  if (!t) return;
+  setText($("topic"), t.topic || "—");
+  if ($("judging").checked !== t.judging) $("judging").checked = t.judging;
+  setText($("jevHint"), t.jev ? "JEV key set." : "No OpenRouter key: contributions are shared unjudged.");
+  setText($("holdBtn"), t.status === "held" ? "Resume" : "Hold");
+  const closed = t.status === "ended" || t.status === "stopped";
+  ["sendBtn", "holdBtn", "advanceBtn", "endBtn", "judging"].forEach(b => { if ($(b).disabled !== closed) $(b).disabled = closed; });
+  if ($("guidance").disabled !== closed) $("guidance").disabled = closed;
+  const placeholder = closed ? "This table is not running; you are reading its record." : "Guidance from the chair: delivered to every participant at its next turn";
+  if ($("guidance").placeholder !== placeholder) $("guidance").placeholder = placeholder;
+  document.querySelectorAll(".pastitem").forEach(b => b.classList.toggle("current", b.dataset.id === state.current));
+
+  // A different table: start its seats and feed from scratch, once.
+  const seats = $("seats"); const feed = $("feed");
+  if (view.table !== t.id || view.items !== t.items) {
+    view.table = t.id; view.items = t.items; view.shown = 0; view.seats = new Map();
+    seats.textContent = ""; feed.textContent = "";
+  }
+
+  t.order.forEach(n => {
+    const s = t.seats.get(n);
+    let card = view.seats.get(n);
+    if (!card) {
+      card = { box: el("div", "seat"), state: el("span"), meta: el("div", "meta"), live: el("div", "live"), monitor: el("div", "meta"), details: null, shownPrompts: 0 };
+      const top = el("div", "top"); top.appendChild(el("span", "name", n)); top.appendChild(card.state);
+      card.box.append(top, card.meta, card.live, card.monitor);
+      seats.appendChild(card.box); view.seats.set(n, card);
+    }
+    setClass(card.state, "state " + s.state); setText(card.state, s.state === "floor" ? "has the floor" : s.state);
+    setText(card.meta, `${s.agent ? s.agent + " · " : ""}${s.harness || ""} · ${s.allowance ? s.allowance + " chars" : "no length limit"}`);
+    const live = s.live || (s.tool && (s.state === "floor" || s.state === "working") ? "⚙ " + s.tool : "");
+    setText(card.live, live); card.live.hidden = !live;
+    setText(card.monitor, s.monitor ? "AgentSight: " + s.monitor : ""); card.monitor.hidden = !s.monitor;
+    if (s.prompts.length && !card.details) {
+      card.details = el("details", "prompts"); card.summary = el("summary");
+      card.details.appendChild(card.summary); card.box.appendChild(card.details);
+    }
+    if (card.details) {
+      setText(card.summary, `Prompts received (${s.prompts.length})`);
+      for (; card.shownPrompts < s.prompts.length; card.shownPrompts++) {
+        const k = card.shownPrompts;
+        card.details.append(el("div", "hint", k === 0 ? "First turn" : `Prompt ${k + 1}`), el("pre", "prompt", s.prompts[k]));
+      }
+    }
+  });
+
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+  for (; view.shown < t.items.length; view.shown++) feed.appendChild(renderItem(t.items[view.shown]));
+  if (atBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+function renderItem(item) {
+  switch (item.kind) {
+    case "opening": { const b = el("div", "opening"); b.appendChild(el("strong", "", "Objective")); b.appendChild(el("div", "", item.text)); b.appendChild(el("div", "hint", "Workspace: " + item.workspace)); return b; }
+    case "divider": { const d = el("div", "divider"); d.appendChild(el("span", "", item.text + (item.how ? `  (${item.how})` : ""))); return d; }
+    case "msg": case "veto": {
+      const m = el("div", "msg" + (item.kind === "veto" ? " veto" : "")); const who = el("div", "who");
+      who.appendChild(el("b", "", item.who || item.seat)); if (item.who) who.appendChild(el("span", "badge", item.seat)); if (item.id) who.appendChild(el("span", "id", item.id));
+      if (item.kind === "veto") who.appendChild(el("span", "badge", "vetoed: " + item.reasons.join("; ")));
+      if (!item.judged && item.kind === "msg") who.appendChild(el("span", "badge", "unjudged"));
+      if (item.after) who.appendChild(el("span", "badge", "after work"));
+      // Length against the allowance it was measured by (Unicode characters, as the engine counts).
+      const length = [...item.text].length;
+      who.appendChild(el("span", "badge", item.limit ? `${length} / ${item.limit} chars` : `${length} chars`));
+
+      m.appendChild(who); m.appendChild(el("div", "text", item.text));
+      if (item.kind === "veto") m.title = item.note || ""; return m;
+    }
+    case "chair": { const m = el("div", "msg chair"); const who = el("div", "who"); who.appendChild(el("b", "", "Chair")); m.appendChild(who); m.appendChild(el("div", "text", item.text)); return m; }
+    case "work": { const d = el("details", "sys"); d.appendChild(el("summary", "", `${item.seat} finished working`)); if (item.text) d.appendChild(el("div", "note", item.text)); return d; }
+    default: return el("div", "sys " + (item.level || ""), item.text);
+  }
+}
+
+async function post(url, body) {
+  const r = await authed(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+}
+const cmd = (body) => state.current && post(`/api/tables/${state.current}/command`, body).catch(e => alert(e.message));
+
+$("tableSelect").onchange = (e) => { state.current = e.target.value; state.pinned = true; render(); };
+
+// Past tables come from the records on disk, including earlier runs of the server.
+async function loadPast() {
+  const box = $("past");
+  try {
+    const [past, live] = await Promise.all([authed("/api/history").then(r => r.json()), authed("/api/tables").then(r => r.json())]);
+    state.live = new Set(live.tables || []);
+    box.innerHTML = "";
+    if (!past.tables || !past.tables.length) { box.textContent = "No recorded tables yet."; return; }
+    past.tables.forEach(p => {
+      const b = el("button", "pastitem"); b.type = "button"; b.dataset.id = p.id;
+      b.appendChild(el("span", "obj", (p.objective || p.id).replace(/\s+/g, " ")));
+      const when = p.started_ms ? new Date(p.started_ms).toLocaleString() : "";
+      const status = p.ended ? "ended" : state.live.has(p.id) ? "running" : "stopped";
+      b.appendChild(el("span", "hint", `${when} · ${status} · ${p.contributions} accepted · ${p.topics} topic${p.topics == 1 ? "" : "s"}`));
+      b.onclick = () => openPast(p.id);
+      box.appendChild(b);
+    });
+    render();
+  } catch (e) { box.textContent = "Could not load past tables: " + e.message; }
+}
+
+async function openPast(id) {
+  state.current = id; state.pinned = true;
+  const t = state.tables.get(id);
+  if (!t || !t.items.length) {
+    const r = await authed("/api/history/" + encodeURIComponent(id)).then(r => r.json());
+    (r.events || []).forEach(line => apply({ ...line, replay: true }));
+    const x = table(id);
+    if (x.status !== "ended" && !state.live.has(id)) { x.status = "stopped"; x.seats.forEach(s => { if (s.state !== "gone") s.state = "stopped"; }); }
+  }
+  render();
+}
+$("sendBtn").onclick = () => { const v = $("guidance").value.trim(); if (v) { cmd({ kind: "guidance", text: v }); $("guidance").value = ""; } };
+$("guidance").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("sendBtn").click(); };
+$("holdBtn").onclick = () => { const t = state.tables.get(state.current); cmd({ kind: t && t.status === "held" ? "resume" : "hold" }); };
+$("advanceBtn").onclick = () => { const v = prompt("Next topic (leave empty to have everyone propose one):", ""); if (v !== null) cmd({ kind: "advance", text: v.trim() || null }); };
+$("endBtn").onclick = () => { if (confirm("End this table? Every participant's harness is shut down.")) cmd({ kind: "end" }); };
+$("judging").onchange = (e) => cmd({ kind: "judging", on: e.target.checked });
+
+function seatRow(seed = {}) {
+  const row = el("div", "seatrow");
+  const name = el("input"); name.placeholder = "Name"; name.value = seed.name || "";
+  // Resume an earlier identity: its session continues, so the agent keeps its genesis name and
+  // its profile (owner's AgentIdentity). The session lives in the harness that opened it.
+  const identity = el("select"); identity.appendChild(el("option", "", "New agent"));
+  identity.title = "Resume an earlier agent, so it keeps its name and its ratings";
+  (state.identities || []).filter(x => x.context && x.context.session && x.context.harness).forEach((x, k) => {
+    const o = el("option", "", `${x.name} (${x.ratings ? x.points + " pts" : "unscored"})`); o.value = String(k + 1); o.identity = x; identity.appendChild(o);
+  });
+  const harness = el("select"); const custom = el("option", "", "custom command…"); custom.value = "";
+  state.harnesses.forEach(h => { const o = el("option", "", `${h.name}${h.available ? "" : " (unavailable)"}`); o.value = h.id; o.disabled = !h.available; harness.appendChild(o); });
+  harness.appendChild(custom); harness.value = seed.harness ?? (state.harnesses.find(h => h.available)?.id || "");
+  const model = el("input"); model.placeholder = "Model (optional)"; model.value = seed.model || ""; model.setAttribute("list", "modelHints");
+  model.onfocus = async () => {
+    const dl = $("modelHints"); dl.innerHTML = "";
+    let names = MODEL_HINTS[harness.value];
+    const opencode = /^opencode/.test(harness.value);
+    if (!names && (opencode || harness.value === "pi-acp" || harness.value === "openrouter-acp" || /openrouter/.test(command.value))) {
+      // OpenRouter models come from the published catalog, never a fixed list (R §9.4).
+      if (!state.openrouterModels) { const r = await authed("/api/models").then(r => r.json()).catch(() => ({})); state.openrouterModels = (r.models || []).map(m => m.id); }
+      // OpenCode names OpenRouter models with its provider prefix.
+      names = opencode ? state.openrouterModels.map(m => "openrouter/" + m) : state.openrouterModels;
+    }
+    (names || []).forEach(m => { const o = el("option"); o.value = m; dl.appendChild(o); });
+  };
+  const command = el("input"); command.placeholder = "Custom ACP command"; command.value = seed.command || ""; command.disabled = harness.value !== "";
+  // OpenRouter-model harnesses need the key to run at all.
+  harness.onchange = () => { command.disabled = harness.value !== ""; if (harness.value === "openrouter-acp" || harness.value === "pi-acp") shareBox.checked = true; };
+  // An OpenCode seat on an OpenRouter model needs the key too.
+  model.onchange = () => { if (/^opencode/.test(harness.value) && model.value.startsWith("openrouter/")) shareBox.checked = true; };
+  const share = el("label", "hint"); const shareBox = el("input"); shareBox.type = "checkbox"; shareBox.style.width = "auto"; shareBox.checked = !!seed.share;
+  share.appendChild(shareBox); share.appendChild(document.createTextNode(" key")); share.title = "Give this agent the OpenRouter key (OpenRouter-model harnesses such as Pi)";
+  identity.onchange = () => {
+    const chosen = identity.selectedOptions[0].identity;
+    if (!chosen) return;
+    const ctx = chosen.context;
+    if (state.harnesses.some(h => h.id === ctx.harness)) { harness.value = ctx.harness; command.value = ""; } else { harness.value = ""; command.value = ctx.harness; }
+    command.disabled = harness.value !== "";
+    model.value = (ctx.settings && ctx.settings.model) || "";
+    if (!name.value) name.value = chosen.name;
+  };
+  const remove = el("button", "", "✕"); remove.type = "button"; remove.onclick = () => row.remove();
+  const tail = el("div", "row"); tail.appendChild(share); tail.appendChild(remove);
+  [name, identity, harness, model, command, tail].forEach(x => row.appendChild(x));
+  row.read = () => {
+    const chosen = identity.selectedOptions[0].identity;
+    return { name: name.value.trim(), harness: harness.value || null, command: harness.value ? null : command.value.trim(), model: model.value.trim() || null, share_openrouter_key: shareBox.checked, resume_session: chosen ? chosen.context.session : null };
+  };
+  $("seatRows").appendChild(row);
+}
+
+async function loadHarnesses() {
+  // Identities change after every table, so they are read each time the form opens.
+  const ids = await authed("/api/identities").then(r => r.json());
+  state.identities = ids.identities || [];
+  if (ids.errors && ids.errors.length) alert("Some identity profiles could not be read:\n" + ids.errors.join("\n"));
+  if (state.harnesses.length) return;
+  const r = await authed("/api/harnesses").then(r => r.json());
+  if (!r.harnesses) { alert("Open the page with the URL Roundtable printed at start (it carries the chair token)."); return; }
+  state.harnesses = r.harnesses.sort((a, b) => (b.available - a.available) || (a.source === "builtin") - (b.source === "builtin") || a.name.localeCompare(b.name));
+  $("harnessNote").textContent = r.note || `${r.harnesses.filter(h => h.available).length} harnesses available from ACP autoselection.`;
+}
+
+$("newBtn").onclick = async () => {
+  await loadHarnesses();
+  const f = $("newForm"); if (!$("seatRows").children.length) { seatRow({ name: "Seat 1" }); seatRow({ name: "Seat 2" }); }
+  if (!f.workspace.value) f.workspace.value = "workspace";
+  $("newDialog").showModal();
+};
+$("addSeat").onclick = () => seatRow({ name: "Seat " + ($("seatRows").children.length + 1) });
+$("newForm").addEventListener("submit", () => { state.pinned = false; });
+$("newForm").onsubmit = async (e) => {
+  if (e.submitter && e.submitter.value !== "create") return;
+  e.preventDefault(); const f = e.target;
+  const body = {
+    objective: f.objective.value, topic: f.topic.value || null, workspace: f.workspace.value,
+    judging: f.judging.checked, base_allowance: f.base.value ? Number(f.base.value) : null,
+    recovery_allowance: Number(f.recovery.value) || 1024, rounds: f.rounds.value ? Number(f.rounds.value) : null, topics: f.topics.checked,
+    seats: [...$("seatRows").children].map(r => r.read()),
+  };
+  $("createBtn").disabled = true;
+  try { const r = await post("/api/tables", body); state.current = r.id; table(r.id); $("newDialog").close(); render(); }
+  catch (err) { alert(err.message); } finally { $("createBtn").disabled = false; }
+};
+
+$("settingsBtn").onclick = async () => {
+  const s = await authed("/api/settings").then(r => r.json());
+  $("keyState").textContent = s.openrouter_key_set ? "A key is set." : "No key set.";
+  $("settingsDialog").showModal();
+};
+$("settingsForm").onsubmit = async (e) => {
+  if (e.submitter && e.submitter.value !== "save") return;
+  e.preventDefault(); await post("/api/settings", { openrouter_key: e.target.key.value }); e.target.key.value = ""; $("settingsDialog").close();
+};
+
+if (!TOKEN) {
+  $("feed").innerHTML = ""; $("feed").appendChild(el("div", "empty", "Open Roundtable with the URL it printed at start; that link carries the chair token for this run."));
+} else {
+  const source = new EventSource("/api/events?token=" + encodeURIComponent(TOKEN));
+  source.onmessage = (m) => apply(JSON.parse(m.data));
+  loadPast();
+}
+</script>
+</body>
+</html>

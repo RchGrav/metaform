@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/bus", "crates/acp-host", "crates/roundtable", "crates/roundtable-web", "crates/agent-monitor"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+futures = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "sync", "io-util", "time", "fs"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tracing = "0.1"
+which = "8"

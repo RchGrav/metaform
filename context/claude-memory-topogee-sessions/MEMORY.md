@@ -1,0 +1,12 @@
+- [Founder's files are the reference](owner-files-reference.md) — edit ~/brain only when the founder directly asks, and say exactly what changed; founder handles semantics
+- [Spec is kept current](spec-is-kept-current.md) — put what the founder settles into TOPOGEE-SPEC.md; never record a question as a decision; never a reason to stop work
+- [Commit every test](commit-every-test.md) — feature commits are automatic: test, commit and push before the founder tests; rule is in AGENTS.md
+- [Open: field lists design](open-field-lists-design.md) — unfinished MCP design to return to: values, arrays, base, layers, reading one field
+- [Ask before saving a memory](ask-before-saving-memory.md) — get the founder's yes before any memory; give the reason and context for every claim, in my own words
+- [Intake built-state analysis](intake-built-state-analysis.md) — MISS is now not_built, BKN is too coarse, built-state analysis is core to intake
+- [Intake context vision](intake-context-vision.md) — contextual precision is the prime focus; intake terms are contextual anchors delivered in blocks on demand
+- [Intake context architecture](intake-context-architecture.md) — two sides, concepts + TASTE + procedure + patches, knowledge layers, progressive discovery, address demo
+- [TASTE language rule](taste-language-rule.md) — planned STE subset for tickets, context and agent messages; founder rules in docs/taste.md are the starting point
+- [Verify Boat sandbox ownership](verify-boat-sandbox-ownership.md) — only touch sandboxes whose id this session created; the founder shares the account
+- [WSLg voice recovery](wslg-voice-recovery.md) — "no working recorder" with SoX installed means WSLg's mic channel wedged; restart weston and pulseaudio with -d Ubuntu
+- [Carry the founder's intent](carry-owners-intent.md) — understand and state his why; never hide behind exact quotes or reword to my taste; plain talk; fill gaps his design answers

@@ -1,0 +1,36 @@
+{
+  "mashtrac": {
+    "id": "carverj-mashtrac-2026-10-31",
+    "name": "Mashtrac Protocol",
+    "project": "carverj/mashtrac",
+    "code": {
+      "masher": {
+        "widget": {
+          "technical_name": "widget masher code",
+          "name": "mashbox",
+          "role": "Supportive",
+          "uri": "./src/widgets/mashbox.c"
+        }
+      },
+      "protocol": {
+        "network": {
+          "tracker": {
+            "cs": {
+              "technical_name": "cs tracker network protocol",
+              "name": "mashtrac",
+              "role": "Definitive",
+              "uri": "./src/network/mashtrac.c",
+              "wants": {
+                "code.masher.widget": {
+                  "why": "Receive the mash data to relay it.",
+                  "how": "Prepared mash data packets.",
+                  "intent": "receive"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+import lb from '@ladybugdb/core';
+import fs from 'fs';
+fs.rmSync('/tmp/lb_node',{recursive:true,force:true});
+const db=new lb.Database('/tmp/lb_node'); const c=new lb.Connection(db);
+await c.query("CREATE NODE TABLE El(addr STRING, PRIMARY KEY(addr))");
+await c.query("CREATE (:El {addr:'code.a'})");
+const r=await c.query("MATCH (e:El) RETURN e.addr"); console.log('node query',await r.getAll());
+await c.query("BEGIN TRANSACTION"); await c.query("CREATE (:El {addr:'code.x'})"); await c.query("ROLLBACK");
+const r2=await c.query("MATCH (e:El) RETURN count(e) AS n"); console.log('after rollback',await r2.getAll());
+process.exit(0);

@@ -1,0 +1,16 @@
+{
+  "code": {
+    "application": {
+      "providers": [
+        {
+          "code.sdk": {
+            "op": "Use the required SDK capabilities.",
+            "ef": "Provides the required SDK capabilities.",
+            "ifd": "receive"
+          }
+        }
+      ]
+    },
+    "sdk": {}
+  }
+}

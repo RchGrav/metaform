@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The template module's prompts: the text Metaform sends to agents for the template module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
+     Comments are never sent. -->
+<prompts>
+<!-- template's line in the connect message: one short phrase saying what an agent uses the module for, written
+     after the module's name, '– template: <what it is for>', in the project's terms. Sent to every agent when it
+     connects over MCP, one line per enabled module under mcp's <instructions>, and listed in the compact
+     command-line guide, metaform help agents. Empty, as here, sends nothing. Off until the module is enabled, and
+     when the folder's modules setting leaves it out. -->
+<connect></connect>
+<!-- template's instructions. Returned by metaform_instructions with module template, at metaform://instructions/template, and printed by
+     metaform help agents template and by the full form of the command-line guide. Empty sends nothing.
+     Off until the module is enabled. -->
+<instructions>template is active.</instructions>
+<!-- The line under the counts an agent is told at its node, MCP-039, when this module counts what it holds there with
+     node_count: what is counted and the command that reads it, with <address> written as it is for the agent to fill,
+     such as "Read them: metaform template read node=<address>". Shown once per agent session, with the counts.
+     Empty, as here, leaves the line out; a module with no node_count never shows it. -->
+<counts></counts>
+<!-- Applicable module rules are delivered through explicit instruction reads before command execution;
+     each rule declares its why. -->
+<rules></rules>
+<!-- Ordinary verb-specific instructions are generated from declarations and must be read before tool execution.
+     Keep additional tool usage in named prompts here, resolved by an optional
+     Provides('agent.tool.instructions', callable). Its callable receives (ctx, tool, op) and returns exact
+     named/versioned components for applicable tools and operations, or an empty sequence. A component may
+     include read={'uri': ...}; the canonical combined guide is metaform://tools/<tool>/instructions[/<op>].
+     Readers use ctx.queue_context(components, epoch), and only complete delivered bodies receive receipts.
+     Changed effective content becomes due again. Keep catalog and instruction retrieval reachable, without
+     repeating tool instructions in role prompts or sending all schemas at startup. Receipts establish delivery,
+     not comprehension. This template declares no provider and needs no empty instruction prompt. -->
+<!-- Optional agent.context.changes providers return compact references through pending(ctx, session),
+     then acknowledge the exact revisions through delivered(ctx, session, notices) after transport acceptance.
+     Any notice wording authored by the module belongs in a named prompt here and is read by that provider.
+     Do not put full knowledge bodies in notices or add a timer to send them. Dispatch includes references in
+     the next turn already scheduled for the consuming context. This template declares no provider or wording. -->
+</prompts>

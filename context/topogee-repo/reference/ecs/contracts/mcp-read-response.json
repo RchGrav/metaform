@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": "r-42",
+  "result": {
+    "resultType": "complete",
+    "ttlMs": 0,
+    "cacheScope": "private",
+    "contents": [
+      {
+        "uri": "resource://spatial/tof/matrix_8x8",
+        "mimeType": "application/json",
+        "text": "{\"schema_version\":\"metaform.spatial.tof/1\",\"source\":{\"id\":\"front-tof\",\"kind\":\"virtual\",\"epoch\":\"run-17\"},\"sequence\":\"42\",\"clock\":{\"id\":\"sim-17\",\"kind\":\"simulation\",\"capture_ns\":\"2800000000\",\"received_ns\":\"2800000000\",\"nominal_period_ns\":\"66666667\"},\"frame_id\":\"front_tof_optical\",\"calibration_uri\":\"resource://spatial/tof/front-tof/calibration\",\"shape\":[8,8],\"layout\":\"row-major-top-left\",\"distance_semantics\":\"axial-z\",\"units\":\"mm\",\"distances_mm\":[1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,120.0,120.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,120.0,120.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0,1200.0],\"zone_status\":[\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\",\"valid\"],\"native_status\":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]}"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+Does the new message add something previously unstated, or express a position on a recently raised matter?

@@ -1,0 +1,22 @@
+{
+  "project": "Demonstration",
+  "code": {
+    "client": {
+      "name": "Client",
+      "role": "DE",
+      "name_length": 1,
+      "providers": {
+        "code.server": {
+          "ifd": "receive",
+          "op": "Receive requested data.",
+          "ef": "Return the requested data."
+        }
+      }
+    },
+    "server": {
+      "name": "Server",
+      "role": "SE",
+      "name_length": 1
+    }
+  }
+}

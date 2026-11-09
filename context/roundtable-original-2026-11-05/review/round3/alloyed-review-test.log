@@ -1,0 +1,6 @@
+
+running 1 test
+test a_lone_free_agent_is_asked_to_review_once_while_the_other_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 3.05s
+

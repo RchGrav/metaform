@@ -1,0 +1,561 @@
+{
+ "source": "/home/rich/brain/Intake.xml",
+ "sha256": "fa167557a864f780709ff9472656d462d11507d34267ca3422e3bafd1c07f251",
+ "estimator": "utf8_bytes/4, comparative only",
+ "retired": [
+  "schema.old",
+  "note.tool"
+ ],
+ "blocks": {
+  "goal": [
+   199,
+   1094
+  ],
+  "prompt": [
+   1106,
+   1474
+  ],
+  "c.aue": [
+   1494,
+   1843
+  ],
+  "c.purpose": [
+   1843,
+   2163
+  ],
+  "c.element": [
+   2163,
+   2455
+  ],
+  "c.entity": [
+   2455,
+   2991
+  ],
+  "c.op": [
+   2991,
+   3189
+  ],
+  "c.ef": [
+   3189,
+   3998
+  ],
+  "c.re": [
+   3998,
+   4352
+  ],
+  "c.ice": [
+   4352,
+   4606
+  ],
+  "c.cqu": [
+   4606,
+   5007
+  ],
+  "c.pe": [
+   6897,
+   7141
+  ],
+  "c.at": [
+   7141,
+   7474
+  ],
+  "c.ne": [
+   7474,
+   7793
+  ],
+  "c.de": [
+   7793,
+   8219
+  ],
+  "c.se": [
+   8219,
+   8523
+  ],
+  "c.parametric": [
+   8523,
+   8788
+  ],
+  "c.ns": [
+   8788,
+   8982
+  ],
+  "c.ifd": [
+   8982,
+   9178
+  ],
+  "x.cqu": [
+   5007,
+   6897
+  ],
+  "x.ifd": [
+   9178,
+   10110
+  ],
+  "k1": [
+   10149,
+   10331
+  ],
+  "k2": [
+   10331,
+   10443
+  ],
+  "k3": [
+   10443,
+   10651
+  ],
+  "k4": [
+   10651,
+   10846
+  ],
+  "k5": [
+   10846,
+   10962
+  ],
+  "k6": [
+   10962,
+   11146
+  ],
+  "k7": [
+   11146,
+   11346
+  ],
+  "k8": [
+   11346,
+   11508
+  ],
+  "k9": [
+   11508,
+   11773
+  ],
+  "k10": [
+   11773,
+   11867
+  ],
+  "k11": [
+   11867,
+   12017
+  ],
+  "q1": [
+   12075,
+   12346
+  ],
+  "q2": [
+   12346,
+   12554
+  ],
+  "q3": [
+   12554,
+   12646
+  ],
+  "q4": [
+   12646,
+   12774
+  ],
+  "q5": [
+   12774,
+   13133
+  ],
+  "q6": [
+   13133,
+   13323
+  ],
+  "q7": [
+   13323,
+   13461
+  ],
+  "q8": [
+   13461,
+   13574
+  ],
+  "q9": [
+   13574,
+   13779
+  ],
+  "q10": [
+   13779,
+   14000
+  ],
+  "n.note": [
+   14063,
+   14259
+  ],
+  "n.roots": [
+   14259,
+   14545
+  ],
+  "n1": [
+   14561,
+   14916
+  ],
+  "n2": [
+   14916,
+   15096
+  ],
+  "n3": [
+   15096,
+   15206
+  ],
+  "n4": [
+   15206,
+   15476
+  ],
+  "n5": [
+   15476,
+   15634
+  ],
+  "n6": [
+   15634,
+   16272
+  ],
+  "n7": [
+   16272,
+   16422
+  ],
+  "n8": [
+   16422,
+   16618
+  ],
+  "n9": [
+   16618,
+   17290
+  ],
+  "n10": [
+   17290,
+   17752
+  ],
+  "n11": [
+   17752,
+   18017
+  ],
+  "x.read": [
+   18034,
+   18274
+  ],
+  "x.valid": [
+   18274,
+   20976
+  ],
+  "done": [
+   21026,
+   21426
+  ],
+  "p1": [
+   21491,
+   21849
+  ],
+  "p2": [
+   21849,
+   22051
+  ],
+  "p3": [
+   22051,
+   22525
+  ],
+  "p4": [
+   22525,
+   22909
+  ],
+  "p5": [
+   22909,
+   23357
+  ],
+  "p6": [
+   23357,
+   23552
+  ],
+  "p7": [
+   23552,
+   23719
+  ],
+  "p8": [
+   23719,
+   23847
+  ],
+  "p9": [
+   23847,
+   24542
+  ],
+  "note.tool": [
+   24562,
+   24664
+  ],
+  "m1": [
+   24745,
+   24961
+  ],
+  "m2": [
+   24961,
+   25541
+  ],
+  "m3": [
+   25541,
+   26183
+  ],
+  "m4": [
+   26183,
+   26491
+  ],
+  "m5": [
+   26491,
+   26855
+  ],
+  "m5.ice": [
+   26856,
+   27603
+  ],
+  "m5.tail": [
+   27603,
+   27644
+  ],
+  "m6": [
+   27644,
+   28244
+  ],
+  "m7": [
+   28244,
+   28447
+  ],
+  "m8": [
+   28447,
+   28740
+  ],
+  "m9": [
+   28740,
+   29108
+  ],
+  "m10": [
+   29108,
+   29494
+  ],
+  "m11": [
+   29494,
+   30165
+  ],
+  "m11.ice": [
+   30165,
+   30621
+  ],
+  "m12": [
+   30621,
+   30780
+  ],
+  "m12.ice": [
+   30780,
+   31434
+  ],
+  "m12.tail": [
+   31434,
+   31463
+  ],
+  "schema.old": [
+   31494,
+   33936
+  ]
+ },
+ "operations": {
+  "record_built_state": [
+   "m1",
+   "m2",
+   "m5.tail",
+   "m4"
+  ],
+  "analyze_ice": [
+   "p9",
+   "m5.ice",
+   "m11.ice",
+   "m12.ice"
+  ],
+  "write_purpose_record": [
+   "k3",
+   "k8",
+   "k9",
+   "p4",
+   "p6",
+   "p8",
+   "x.ifd",
+   "m6"
+  ],
+  "identify_cqu": [
+   "q1",
+   "q2",
+   "q3",
+   "q4",
+   "q5",
+   "q6",
+   "q7",
+   "q8",
+   "q9",
+   "q10",
+   "x.cqu",
+   "p5",
+   "p7",
+   "m4"
+  ],
+  "name_an_element": [
+   "n.note",
+   "n.roots",
+   "n1",
+   "n2",
+   "n3",
+   "n4",
+   "n6",
+   "n7",
+   "n8",
+   "n9",
+   "n11",
+   "x.read",
+   "x.valid",
+   "p4"
+  ],
+  "correct_namespace": [
+   "n.note",
+   "n.roots",
+   "n1",
+   "n2",
+   "n3",
+   "n4",
+   "n6",
+   "n7",
+   "n8",
+   "n9",
+   "n11",
+   "x.read",
+   "x.valid",
+   "p4",
+   "n10"
+  ],
+  "anneal_and_review": [
+   "k4",
+   "k5",
+   "k6",
+   "p3",
+   "m10",
+   "m11",
+   "m11.ice",
+   "m12",
+   "m12.ice",
+   "m12.tail",
+   "done"
+  ],
+  "expand_for_new_feature": [
+   "goal",
+   "k1",
+   "k2",
+   "k3",
+   "k8",
+   "k9",
+   "n.note",
+   "n.roots",
+   "n1",
+   "n3",
+   "n4",
+   "n6",
+   "n7",
+   "n8",
+   "n9",
+   "n11",
+   "x.read",
+   "x.valid",
+   "p4",
+   "p5",
+   "p6",
+   "p8",
+   "p9",
+   "x.ifd",
+   "m5",
+   "m5.ice",
+   "m5.tail",
+   "m6",
+   "m7",
+   "m8"
+  ]
+ },
+ "omit_candidates": {
+  "q8": "same rule as q3",
+  "q10": "covered by q4 and the x.cqu rows",
+  "k7": "same idea as the end of c.element",
+  "k10": "m3 finds the SEs",
+  "k3": "n8 states it as a namespace rule"
+ },
+ "duplicates": {
+  "CQU is not the operator, developer or end user": [
+   "q4",
+   "q10",
+   "x.cqu"
+  ],
+  "CQU that causes most improvement": [
+   "c.cqu",
+   "q3",
+   "q8"
+  ],
+  "CQU is receiver of the root record": [
+   "c.cqu",
+   "q5",
+   "m4"
+  ],
+  "address is general, record is AUE-specific": [
+   "k3",
+   "k8",
+   "k9",
+   "n8"
+  ],
+  "a name alone does not make an element important": [
+   "c.element",
+   "k7"
+  ],
+  "RE holds the record, PE has the EF": [
+   "c.ef",
+   "c.re",
+   "c.pe",
+   "p6"
+  ],
+  "record each object as you find it": [
+   "p2",
+   "m6"
+  ],
+  "function, not genre, medium, encoding or style": [
+   "goal",
+   "c.de",
+   "n4",
+   "x.valid"
+  ],
+  "combine records and elements": [
+   "k4",
+   "p3",
+   "m11",
+   "m12"
+  ],
+  "no function left out": [
+   "k5",
+   "m10",
+   "m12",
+   "done"
+  ],
+  "find the SEs": [
+   "k10",
+   "m3"
+  ],
+  "each OP traces to the CQU": [
+   "q5",
+   "m8"
+  ],
+  "no second namespace record for an RE": [
+   "p5",
+   "m5"
+  ],
+  "parametrics get no address": [
+   "c.parametric",
+   "m9"
+  ],
+  "DE serves the external CQU": [
+   "c.de",
+   "m5"
+  ],
+  "ICE analysis during trace, annealing and review": [
+   "p9",
+   "m5.ice",
+   "m11.ice",
+   "m12.ice"
+  ]
+ }
+}

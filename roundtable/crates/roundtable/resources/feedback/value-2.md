@@ -1,0 +1,1 @@
+You identify a possible direction, but leave its practical consequence or justification unresolved. State the decision, correction, or question you are advancing, explain why it matters, and identify an observable result that would support or undermine your claim.

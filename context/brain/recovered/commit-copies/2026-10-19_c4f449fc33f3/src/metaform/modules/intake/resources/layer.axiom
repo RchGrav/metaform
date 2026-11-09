@@ -1,0 +1,69 @@
+{Layer_Schema} :=
+
+LAYER(
+  id          := [generated layer id],
+  name        := [a stable name for the purpose or property, e.g. platformer, code.cpp, best_practices. Attach scope explicitly with map_knowledge op=link-context element=<scope> content=<knowledge namespace>; a name does not establish scope],
+  base_id     := [base id],
+  variable    := [the one question every item in the layer answers; states what the layer holds and how its values are read],
+  for         := [the property or object this layer was built for, when there is one],
+
+  elements := [
+    ELEMENT(
+      namespace_address := [dotted namespace address],
+      role              := [AUE|CQU|DE|SE|NE],
+
+      elements := [
+        ELEMENT(
+          namespace_address := [dotted namespace address],
+          role              := [DE|SE|NE],
+          elements          := [],
+          joins             := []
+        )
+      ],
+
+      joins := [
+        JOIN(
+          type     := purpose,
+          purpose  := [RE Operative Purpose],
+          ef       := [PE Encounter Function within this RE encounter],
+          ifd      := [send|receive|both],
+          elements := []
+        ),
+
+        JOIN(
+          type    := content,
+          to      := [this element, a join here, or a property; the object the content is about],
+          kind    := [instructions|rules|imperatives|logic|workflow|other kind the request implies],
+          name    := [which one, when several sit on the same object],
+          content := [the thing],
+          refs    := [
+            REF(
+              key   := [key],
+              value := [value]
+            )
+          ]
+        ),
+
+        JOIN(
+          type  := property,
+          to    := [the object the property describes],
+          value := [the property's one value]
+        )
+      ]
+    )
+  ]
+)
+
+# Notes
++> A join is an edge between two objects with a type. It is not a kind of thing. Any object may be joined to any object.
++> purpose: a function encounter, the receiver's purpose served by the elements it holds. Does not travel.
++> content: knowledge joined to the object it is about: an element, a join, a property. Local evidence stays local. Deliberately inherited instructions use extra.instruction=true on their items and an explicit link-context attachment; extra.applies_to may narrow them to descendants. refs preserve their source.
++> property: an object with one value, joined to what it describes. Travels: applies toward the leaves from its anchor, visible toward the trunk, never a sibling.
++> name describes the layer's purpose or property, such as platformer or code.cpp. Its identity and explicit attachment establish scope. Existing scope@content names remain readable; new names need no @ convention.
++> A layer is named for what it holds or what it is, never for what produced it.
++> variable is the one question the layer answers, so an agent can use the layer without inferring from the name.
++> Layer names are unique across all layers of the base.
++> A layer overlays the base identified by base_id using the same namespace structure.
++> The layer may contain only the portions of the base for which it contributes knowledge.
++> Do not mirror nodes with empty records or routine checked/ok markers. Inspection status is intake assessment metadata; a CEL must add useful instructions, properties, elements, joins or evidence.
++> An element is named by its namespace_address alone; its name and name_length come from the base.

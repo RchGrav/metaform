@@ -1,0 +1,20 @@
+[package]
+name = "metaform-server"
+version = "0.1.0"
+description = "The functional map server and its stdio forwarder: one `metaform` binary, one MCP tool."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "metaform"
+path = "src/main.rs"
+
+[dependencies]
+metaform-store = { path = "../metaform-store" }
+rmcp = { version = "3.9", default-features = false, features = ["server"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "signal"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,377 @@
+# Roundtable gate registry, under the owner's Gate Burden standard (docs/gate-burden.md).
+#
+# A gate is any mechanism that can prevent, defer, hide, suppress, reject, or stop an
+# otherwise available result, path, command, state transition, publication, or action
+# (standard §3). Each gate below is marked in the code with a comment "gate: <gate_id>".
+# The test crates/roundtable/tests/gates.rs fails when a marker names no entry, when an
+# active entry has no marker, or when a known blocking construct has no marker.
+#
+# Decision authority for every gate is the owner. An agent may propose removal with
+# evidence; only the owner disposes (standard §8).
+#
+# settings: the settings that switch the gate or set its limit (crates/roundtable/src/settings).
+# Changing one is the owner's disposition of the gate for the tables that use it. The gate test
+# checks that this list and the settings' declarations agree.
+#
+# status values:
+#   active, owner-designed          - the owner asked for this gate.
+#   active, owner disposition pending - added by a builder; the owner has not decided.
+#   active, removal proposed        - added by a builder; evidence for removal is recorded.
+#
+# Scope: gates on inference - anything that stops, rejects, hides or delays what the agents
+# produce, or their work. Not registered:
+#   - errors that report a mechanical impossibility (an agent that does not speak a usable ACP
+#     version, a session that does not offer a setting, a table that has ended); standard §3
+#     counts these as reports, not gates;
+#   - ordinary software safeguards that do not gate inference (the web API's chair token, secrets
+#     removed from agents' environment, configuration checks, monitoring privileges).
+# The development log lists what was left out and why.
+
+gates:
+
+- gate_id: RT-G01
+  name: The five message checks
+  status: active, owner-designed
+  settings: [jev.gate_pass]
+  scope: Every discussion message. JEV is required (owner, 2026-11-07); a message JEV could not evaluate is not shared, and the author is told it was not rejected.
+  protected_invariant: Only messages that add something, move the discussion forward, address the subject, have value and can be inspected reach the other agents.
+  silent_failure: Weak, repeated or unreadable messages enter every agent's context and are paid for once per agent; the owner cannot follow the discussion.
+  mutation_path: An agent sends filler, its own work notes, or reasoning that depends on files and shorthand.
+  existing_gates_insufficient: No other gate reads message content.
+  witness_type: observed
+  witness: Table tc9f04df1ba1d (2026-11-07) - agents' work notes ("Only the spec exists. Let me check...") were rejected on every check. The owner reported agents giving "safe but effectively useless suggestions" and messages he could not follow.
+  decision_authority: owner
+  friction_and_proportionality: One JEV request per message, about $0.00005. A rejected agent loses that turn's message and receives the reasons.
+  review_or_retirement_condition: Owner review of rejected messages from live tables.
+  development_log_refs: [2026-11-07-01, 2026-11-07-03]
+
+
+- gate_id: RT-G02
+  name: Reply length limit blocks long messages
+  status: active, owner-designed
+  settings: [limits.reply, limits.recovery]
+  scope: Discussion messages, only when a reply limit is set. Off by default.
+  protected_invariant: A message over the limit is not shared, and no message is ever cut.
+  silent_failure: A cut message reaches the others with its reasoning removed.
+  mutation_path: Truncation removes the end of a message, which is often the conclusion.
+  existing_gates_insufficient: The five checks judge content, not length.
+  witness_type: constructed
+  witness: Test a_message_over_the_limit_is_blocked_not_cut. Owner, 2026-11-07 - "we aren't going to be truncating if we add limits in we will block messages for being too long".
+  decision_authority: owner
+  friction_and_proportionality: None while off. When set, the whole message is lost for that turn. The block notice wording (resources/feedback/too_long.md) is the builder's and awaits the owner's text.
+  review_or_retirement_condition: Owner's length experiment (no limit) decides whether a limit is set.
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G03
+  name: The table waits until two agents are free
+  status: active, owner-designed
+  scope: Giving the next turn.
+  protected_invariant: A discussion has at least two available participants; a lone agent is not given turn after turn.
+  silent_failure: One free agent keeps taking turns with nobody to answer, passing or skipping in a loop.
+  mutation_path: All other agents are busy with file work.
+  existing_gates_insufficient: The round limit ends the table but does not stop the loop inside a round.
+  witness_type: observed
+  witness: 2026-11-06, session 743106da - an agent was prompted again and again with nothing new while others worked; its allowance grew to 37,376 characters. Owner - "we need atleast two agents to have a debate if one agent is idle and the others are busy it should be told to review materials".
+  decision_authority: owner
+  friction_and_proportionality: The table pauses while agents work. The lone agent is told once to review the workspace.
+  review_or_retirement_condition: None set.
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G04
+  name: A busy agent's turn is skipped
+  status: active, owner-designed
+  scope: Giving the next turn.
+  protected_invariant: The discussion does not wait for one agent's file work, and the agent's work is never cancelled.
+  silent_failure: The whole table stalls behind one agent's long task.
+  mutation_path: An agent starts a long tool task during its turn.
+  existing_gates_insufficient: None other moves the table on.
+  witness_type: owner design
+  witness: README §4.4 - "the discussion continues without waiting for it. The agent is skipped during its occupied turns."
+  decision_authority: owner
+  friction_and_proportionality: The skipped agent loses those turns; it receives every missed message when it returns.
+  review_or_retirement_condition: Possible change if ACP v2 agents receive messages while they work (owner question, 2026-11-07).
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G05
+  name: The table ends after its rounds
+  status: active, owner-designed
+  settings: [table.rounds]
+  scope: Tables with a round limit (10 by default).
+  protected_invariant: Every table has a known end and cost.
+  silent_failure: A table keeps running and spending with no one watching.
+  mutation_path: Agents keep producing accepted messages indefinitely.
+  existing_gates_insufficient: No other end exists for a productive table.
+  witness_type: owner design
+  witness: Owner, 2026-11-07 - "make it by default 10 rounds".
+  decision_authority: owner
+  friction_and_proportionality: Work in progress stops at the last round; the rating round follows.
+  review_or_retirement_condition: None set.
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G06
+  name: A table with no round limit ends when there is no more good input
+  status: active, owner disposition pending
+  settings: [table.quiet_rounds]
+  scope: Tables with no round limit.
+  protected_invariant: An unlimited table still ends.
+  silent_failure: An unlimited table runs forever.
+  mutation_path: Agents stop contributing but keep taking turns.
+  existing_gates_insufficient: RT-G05 does not apply without a limit.
+  witness_type: owner design
+  witness: Owner, 2026-11-07 - "unlimited must have some kind of end though like no more good input or all agents state done". The exact condition (two rounds with nothing accepted; with topics, a topic with no accepted message and no file work) is the builder's. "All agents state done" is not built; it needs the owner's wording.
+  decision_authority: owner
+  friction_and_proportionality: Could end a table during a long quiet stretch of file work.
+  review_or_retirement_condition: Owner confirms the condition and the "done" wording.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G07
+  name: Topics are off by default and need JEV
+  status: active, owner-designed
+  settings: [table.topics]
+  scope: The next-topic poll and the advance tool.
+  protected_invariant: The table works on the objective it was sent.
+  silent_failure: One agent steers the table by writing a decision into a topic proposal.
+  mutation_path: A proposal that embeds a decision matches others on "underlying intent" and wins the poll.
+  existing_gates_insufficient: The topic comparison judges sameness, not hidden decisions.
+  witness_type: observed
+  witness: Owner, 2026-11-07, found the hack - "I see there was a way to game it and I went another way.."; "default is no topics its just the sent in prompt". Owner, 2026-11-06 - "topics require jev".
+  decision_authority: owner
+  friction_and_proportionality: No topic changes unless the table turns topics on.
+  review_or_retirement_condition: Owner - "we can keep topics in the code just not by default we need to refine that a bit".
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G08
+  name: Two quiet rounds start a topic poll
+  status: active, owner-designed
+  settings: [table.quiet_rounds]
+  scope: Tables with topics on.
+  protected_invariant: An exhausted topic gives way to a new one chosen by the agents.
+  silent_failure: A table keeps circling a finished topic.
+  mutation_path: Two rounds with nothing accepted, or with every agent passing.
+  existing_gates_insufficient: None other changes the topic.
+  witness_type: owner design
+  witness: README §6.
+  decision_authority: owner
+  friction_and_proportionality: Inactive by default (RT-G07).
+  review_or_retirement_condition: Owner's topic refinement.
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G09
+  name: Only the text after the last tool call becomes the message
+  status: active, owner disposition pending
+  scope: Every reply from an agent turn.
+  protected_invariant: An agent's narration while it works is not sent as its message.
+  silent_failure: Whole work transcripts are sent to every agent as messages.
+  mutation_path: An agent narrates ("Let me read the file") between tool calls.
+  existing_gates_insufficient: The checks reject such messages but the agent's real message is lost with them.
+  witness_type: observed
+  witness: Table teb1471cdaf8a (round 3) - whole turn transcripts were submitted; one submission was 73,807 characters; 33 vetoes against 30 acceptances.
+  decision_authority: owner
+  friction_and_proportionality: Hides output (standard §3). Counter-evidence 2026-11-07 - narration in the same text block as the message still went out (Mercury, table tc9f04df1ba1d), and a real message followed by a tool call and a short closing line would be lost.
+  review_or_retirement_condition: Owner's prompt line telling agents their reply is the message, then re-measure.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G10
+  name: The next turn waits for JEV's verdict
+  status: active, owner disposition pending
+  scope: Discussion messages given on the agent's own turn.
+  protected_invariant: The next agent sees the previous agent's accepted message.
+  silent_failure: Agents answer a discussion that is one message behind.
+  mutation_path: JEV answers after the next turn has been sent.
+  existing_gates_insufficient: None.
+  witness_type: constructed
+  witness: Owner's turn example, 2026-11-06 - "Agent1 speaks, get vetoed, agent2, 3, 4 all speak, when it comes back to agent 1 it is informed ... each agents message". The wait is the builder's reading of it.
+  decision_authority: owner
+  friction_and_proportionality: Adds about a second per message.
+  review_or_retirement_condition: Owner confirms.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G11
+  name: The advance tool is refused during a topic poll and waits for the floor
+  status: active, removal proposed
+  settings: [topics.hold_advance_during_poll]
+  scope: The advance tool.
+  protected_invariant: A topic poll is not interrupted.
+  silent_failure: A poll's result is overwritten by an advance.
+  mutation_path: An agent calls advance while proposals are being collected.
+  existing_gates_insufficient: Unknown.
+  witness_type: none
+  witness: None observed. Found by reviewers reading the code (audit L K#13).
+  decision_authority: owner
+  friction_and_proportionality: Rejects an agent command.
+  review_or_retirement_condition: Owner disposition.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G12
+  name: A topic proposal that arrives after its poll is discarded
+  status: active, owner disposition pending
+  scope: Topic polls.
+  protected_invariant: A poll counts only the proposals it asked for.
+  silent_failure: A proposal from an earlier poll enters a later one unjudged.
+  mutation_path: A busy agent answers an old poll after a new one starts.
+  existing_gates_insufficient: None.
+  witness_type: constructed
+  witness: Review round 2 - "it admits unjudged proposals or contaminates a later poll".
+  decision_authority: owner
+  friction_and_proportionality: Hides a late proposal; the chair sees a notice.
+  review_or_retirement_condition: Inactive while topics are off.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G13
+  name: A topic proposal over its limit is blocked
+  status: active, owner disposition pending
+  settings: [limits.topic_proposal]
+  scope: Topic polls.
+  protected_invariant: The winning proposal, sent to every agent, stays short.
+  silent_failure: A long topic text multiplies cost across agents.
+  mutation_path: An agent writes a long proposal.
+  existing_gates_insufficient: None other limits proposals.
+  witness_type: none
+  witness: None observed. Builder reasoning from the owner's "chats are amplified in cost by the number of participants".
+  decision_authority: owner
+  friction_and_proportionality: Blocks a proposal over the limit (default 512 characters); the agent is told why at its next turn and the chair sees a notice. Until 2026-11-07 it cut the text, which the owner ruled out ("we aren't going to be truncating if we add limits in we will block messages for being too long"); it now blocks, as RT-G02 does. Setting limits.topic_proposal to off removes the limit.
+  review_or_retirement_condition: Owner disposition, by the setting or by removal.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G14
+  name: An empty reply counts as a failed turn
+  status: active, owner disposition pending
+  scope: Every reply.
+  protected_invariant: A turn with no text is reported, not passed over.
+  silent_failure: Agents silently produce nothing and the table counts it as participation.
+  mutation_path: An agent's reply contains no visible text.
+  existing_gates_insufficient: None.
+  witness_type: observed
+  witness: Run 1 of the previous build - 44 empty replies.
+  decision_authority: owner
+  friction_and_proportionality: The turn is lost; the chair sees an error notice.
+  review_or_retirement_condition: Owner confirms.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G15
+  name: A rating or feedback must name exactly one other participant
+  status: active, owner disposition pending
+  scope: The rating round and the feedback tool.
+  protected_invariant: A rating is saved to the right identity.
+  silent_failure: A rating is saved to the wrong agent.
+  mutation_path: Two agents share a genesis name, or a rating names no one.
+  existing_gates_insufficient: None.
+  witness_type: constructed
+  witness: Genesis names come from 65,536 combinations, so two agents can share one.
+  decision_authority: owner
+  friction_and_proportionality: The rating is not recorded; the chair sees an error notice.
+  review_or_retirement_condition: Owner confirms.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G16
+  name: Rejection reasons wait for the agent's next discussion turn
+  status: active, owner disposition pending
+  scope: Rejection and length notices.
+  protected_invariant: Reasons arrive with a turn in which the agent can act on them.
+  silent_failure: Reasons arrive with a rating or topic request and are ignored.
+  mutation_path: The agent's next prompt is not a discussion turn.
+  existing_gates_insufficient: None.
+  witness_type: observed
+  witness: Audit D7 - veto notices arrived inside rating requests.
+  decision_authority: owner
+  friction_and_proportionality: Defers the reasons. The owner is considering an immediate retry instead (2026-11-07).
+  review_or_retirement_condition: Owner's retry decision.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G17
+  name: JEV sees only recent rounds, within its token limits
+  status: active, owner-designed
+  settings: [jev.history_rounds]
+  scope: Every JEV request for a message.
+  protected_invariant: Each request fits JEV's limits.
+  silent_failure: A request over the limit fails, and the message is not shared.
+  mutation_path: A long discussion.
+  existing_gates_insufficient: None.
+  witness_type: owner design
+  witness: Owner's evaluation specification, 2026-11-07 - the past four rounds; 32,000 tokens for state plus the longest question; 64,000 for the request. The token count is the builder's estimate (one token per 3 bytes).
+  decision_authority: owner
+  friction_and_proportionality: Hides older messages from JEV, so an old point may be judged new.
+  review_or_retirement_condition: Replace the estimate with the provider's count.
+  development_log_refs: [2026-11-07-01]
+
+
+- gate_id: RT-G18
+  name: Permission requests naming a path outside the workspace are refused
+  status: active, owner disposition pending
+  settings: [permissions.scope, permissions.read, permissions.edit, permissions.delete, permissions.move, permissions.search, permissions.execute, permissions.think, permissions.fetch, permissions.other]
+  scope: Agents' permission requests.
+  protected_invariant: Agents write only inside the table's workspace.
+  silent_failure: An agent changes files elsewhere on the machine.
+  mutation_path: An agent asks to edit a path outside the workspace.
+  existing_gates_insufficient: Harness sandboxes differ by agent.
+  witness_type: observed
+  witness: Live OpenCode test (previous build) - a write outside the workspace was asked for, refused, and not made. The owner asked for automatic permissions ("never stuck"); the workspace boundary is the builder's.
+  decision_authority: owner
+  friction_and_proportionality: Requests that name no path are allowed, shell commands included, so commands are not confined (safety note).
+  review_or_retirement_condition: Owner decides the boundary and shell commands.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G19
+  name: One prompt at a time per agent session
+  status: active, owner disposition pending
+  scope: Sending prompts to agents.
+  protected_invariant: A new prompt does not collide with one still running.
+  silent_failure: Two turns interleave in one agent's session.
+  mutation_path: Roundtable sends a prompt to a busy agent.
+  existing_gates_insufficient: None.
+  witness_type: constructed
+  witness: ACP v1 has one turn per prompt. ACP v2 allows prompts while the agent works, so this is a policy for v2 agents.
+  decision_authority: owner
+  friction_and_proportionality: Busy v2 agents cannot receive messages mid-work.
+  review_or_retirement_condition: Owner's decision on sending messages to busy v2 agents.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G20
+  name: Agent processes are killed on a timer at shutdown
+  status: active, removal proposed
+  settings: [shutdown.force_stop]
+  scope: Ending a table.
+  protected_invariant: No agent process outlives the table.
+  silent_failure: Agent processes keep running after End.
+  mutation_path: An agent ignores its closed input.
+  existing_gates_insufficient: None.
+  witness_type: observed
+  witness: Agent processes outlived End in a live run (previous build). The timings (1 s, then SIGTERM, 2 s, then SIGKILL) are the Rust ACP SDK's helper defaults.
+  decision_authority: owner
+  friction_and_proportionality: SIGKILL can corrupt workspace files, git state and agent session records. The owner asked "is that the acp spec force kill after 3 seconds?" and called it aggressive (2026-11-07). The ACP spec gives no time limit.
+  review_or_retirement_condition: Proposed replacement - wait for each agent to exit, show any still running, force stop only on the owner's request. Since 2026-11-07 the setting shutdown.force_stop switches it: on (the default until the owner decides) keeps the timers; off closes each agent's input and waits for it to exit, with no signal.
+  development_log_refs: [2026-11-07-02]
+
+
+- gate_id: RT-G21
+  name: A topic poll waits for every agent
+  status: active, owner disposition pending
+  settings: [topics.poll_busy_agents]
+  scope: Topic polls.
+  protected_invariant: Every agent proposes a topic.
+  silent_failure: Busy agents are left out of the poll.
+  mutation_path: Agents are working when the poll starts.
+  existing_gates_insufficient: None.
+  witness_type: observed
+  witness: Audit D4 - the earlier poll left busy agents out, against README §7 ("All participating agents are polled").
+  decision_authority: owner
+  friction_and_proportionality: The table waits for the slowest agent's work. Inactive while topics are off. Off by default since 2026-11-07: the owner's decision of 2026-11-05 is "Poll every participant that is not occupied ... the table never waits on independent work", and README §7 is a disputed source ("that was never my spec"). Setting topics.poll_busy_agents to on brings the wait back.
+  review_or_retirement_condition: Owner's topic refinement.
+  development_log_refs: [2026-11-07-02]

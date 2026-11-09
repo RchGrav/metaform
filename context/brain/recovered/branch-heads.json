@@ -1,0 +1,130 @@
+[
+  {
+    "name": "audit/role-prompts-and-call-sites-2026-10-23",
+    "commit": {
+      "sha": "65834bb0bc57a415fbccfb93b273bf926b04a738",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/65834bb0bc57a415fbccfb93b273bf926b04a738"
+    },
+    "protected": false
+  },
+  {
+    "name": "events-not-polling-2026-10-15",
+    "commit": {
+      "sha": "10e2984ea36231b474b197e30661712ff45e3765",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/10e2984ea36231b474b197e30661712ff45e3765"
+    },
+    "protected": false
+  },
+  {
+    "name": "fix/autoticket-log-capture-recovery",
+    "commit": {
+      "sha": "261a1cb7172159b4354308a423028a86ffc179f3",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/261a1cb7172159b4354308a423028a86ffc179f3"
+    },
+    "protected": false
+  },
+  {
+    "name": "implement/gc-led-orchestration",
+    "commit": {
+      "sha": "96320c2604189241cf7c0896ffe51c4e52a6143f",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/96320c2604189241cf7c0896ffe51c4e52a6143f"
+    },
+    "protected": false
+  },
+  {
+    "name": "land-main-wip-2026-10-14",
+    "commit": {
+      "sha": "4b0e38ae4f1104d46afe12bdcfffcb22b0179010",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/4b0e38ae4f1104d46afe12bdcfffcb22b0179010"
+    },
+    "protected": false
+  },
+  {
+    "name": "main",
+    "commit": {
+      "sha": "625c8afd240506af7b92576f2118766e609770db",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/625c8afd240506af7b92576f2118766e609770db"
+    },
+    "protected": false
+  },
+  {
+    "name": "main-backup-2026-10-08",
+    "commit": {
+      "sha": "d8a2e01593547be23593d9918a21d0c2132b5146",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/d8a2e01593547be23593d9918a21d0c2132b5146"
+    },
+    "protected": false
+  },
+  {
+    "name": "main-wip-2026-09-24",
+    "commit": {
+      "sha": "156bb3d267db17b54c1d504c9f59c4e57316baad",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/156bb3d267db17b54c1d504c9f59c4e57316baad"
+    },
+    "protected": false
+  },
+  {
+    "name": "metaform/cef3473ef907",
+    "commit": {
+      "sha": "b6b302d6fdba1b701d14d26cd374d104ff1d49d8",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/b6b302d6fdba1b701d14d26cd374d104ff1d49d8"
+    },
+    "protected": false
+  },
+  {
+    "name": "metaform/8c80ebff6f13",
+    "commit": {
+      "sha": "1b05269336a156c1f90492d648202016994ae2b1",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/1b05269336a156c1f90492d648202016994ae2b1"
+    },
+    "protected": false
+  },
+  {
+    "name": "metaform/2752890838f1",
+    "commit": {
+      "sha": "517edb89b0f2c4e704182fe2a6ba935e4dd8180e",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/517edb89b0f2c4e704182fe2a6ba935e4dd8180e"
+    },
+    "protected": false
+  },
+  {
+    "name": "order-keys",
+    "commit": {
+      "sha": "2d5c0fd912b67a9ffa75d2be91d86dae243030fe",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/2d5c0fd912b67a9ffa75d2be91d86dae243030fe"
+    },
+    "protected": false
+  },
+  {
+    "name": "realignment-2026-09-10",
+    "commit": {
+      "sha": "59c00e03fac0253f5bbccd0dbe1375c51715cc18",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/59c00e03fac0253f5bbccd0dbe1375c51715cc18"
+    },
+    "protected": false
+  },
+  {
+    "name": "release-quality-wip-2026-09-24",
+    "commit": {
+      "sha": "1538c9f7019cf785495e88309ee5a2b7205cb5fa",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/1538c9f7019cf785495e88309ee5a2b7205cb5fa"
+    },
+    "protected": false
+  },
+  {
+    "name": "remove/consent-layer",
+    "commit": {
+      "sha": "126ba718281ca8f98ca707c05a97ad1278db31b8",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/126ba718281ca8f98ca707c05a97ad1278db31b8"
+    },
+    "protected": false
+  },
+  {
+    "name": "review/metaform-realignment-2026-09-10",
+    "commit": {
+      "sha": "69eed8bd8537e095b6ed1979b2152d4fb76ea549",
+      "url": "https://api.github.com/repos/RchGrav/metaform/commits/69eed8bd8537e095b6ed1979b2152d4fb76ea549"
+    },
+    "protected": false
+  }
+]

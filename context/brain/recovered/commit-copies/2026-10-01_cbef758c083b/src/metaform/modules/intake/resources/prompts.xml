@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- intake's prompts, MCP-031. What is between an element's tags is what is served.
+     <fields> holds the definition of each field the intake tools take, written once and shown by every tool that takes
+     it: <element> for intake element and the element a subtype join holds, <join> for intake join, intake subtype and
+     intake edit. role is defined by its allowed values, and ef by its allowed values as well as these words. -->
+<prompts>
+<instructions>intake is active.</instructions>
+<fields>
+  <element>
+    <namespace_address>dotted namespace address</namespace_address>
+    <name_length>proper_noun_lookback_segment_count</name_length>
+    <name>Canonical Name (Project official terminology) or Informal Name</name>
+    <refs>Uniform dictionary shape for type-specific or artifact-specific keys</refs>
+  </element>
+  <join>
+    <provider>namespace address of the Providing Element</provider>
+    <purpose>State the objective or standard this element or action fulfills.</purpose>
+    <function>Encounter Function of the PE within the RE context</function>
+    <ef>Function if it is the encounter of a functionality, or Encounter if it is the functionality of the encounter</ef>
+    <relation>Active-voice descriptive fragment starting with a third-person singular present-tense verb ending in -s/-es; the implicit subject is the PE if ef is Function, or the RE if ef is Encounter</relation>
+    <verb>The single root verb extracted from the relation (e.g., provides, tracks, restricts)</verb>
+    <observation>Only high-value observations consisting of long-lasting, stable state for agent orientation</observation>
+    <non_goal>high-value non-goals consisting of structural constraints</non_goal>
+    <refs>Uniform dictionary shape for type-specific or artifact-specific keys</refs>
+  </join>
+</fields>
+</prompts>

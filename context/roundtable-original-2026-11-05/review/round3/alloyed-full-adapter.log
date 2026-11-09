@@ -1,0 +1,216 @@
+TAP version 13
+# Subtest: initialize
+    # Subtest: advertises only implemented capabilities
+    ok 1 - advertises only implemented capabilities
+      ---
+      duration_ms: 9.7834
+      type: 'test'
+      ...
+    1..1
+ok 1 - initialize
+  ---
+  duration_ms: 12.81162
+  type: 'suite'
+  ...
+# Subtest: session/new
+    # Subtest: fails loudly when OPENROUTER_API_KEY is absent
+    ok 1 - fails loudly when OPENROUTER_API_KEY is absent
+      ---
+      duration_ms: 2.973448
+      type: 'test'
+      ...
+    # Subtest: offers a model option built from the published catalog
+    ok 2 - offers a model option built from the published catalog
+      ---
+      duration_ms: 30.101597
+      type: 'test'
+      ...
+    # Subtest: rejects a relative cwd, a missing directory and client MCP servers
+    ok 3 - rejects a relative cwd, a missing directory and client MCP servers
+      ---
+      duration_ms: 4.058138
+      type: 'test'
+      ...
+    1..3
+ok 2 - session/new
+  ---
+  duration_ms: 37.640336
+  type: 'suite'
+  ...
+# Subtest: session/set_config_option
+    # Subtest: selects a catalog model, which the next prompt uses
+    ok 1 - selects a catalog model, which the next prompt uses
+      ---
+      duration_ms: 40.783151
+      type: 'test'
+      ...
+    # Subtest: rejects models not in the catalog option and unknown option ids
+    ok 2 - rejects models not in the catalog option and unknown option ids
+      ---
+      duration_ms: 2.145867
+      type: 'test'
+      ...
+    1..2
+ok 3 - session/set_config_option
+  ---
+  duration_ms: 43.30047
+  type: 'suite'
+  ...
+# Subtest: session/prompt
+    # Subtest: streams agent_message_chunk updates and ends with end_turn
+    ok 1 - streams agent_message_chunk updates and ends with end_turn
+      ---
+      duration_ms: 7.244701
+      type: 'test'
+      ...
+    # Subtest: keeps the conversation across prompts
+    ok 2 - keeps the conversation across prompts
+      ---
+      duration_ms: 10.862518
+      type: 'test'
+      ...
+    # Subtest: reports a broken model stream as a prompt error; the session stays usable
+    ok 3 - reports a broken model stream as a prompt error; the session stays usable
+      ---
+      duration_ms: 7.90445
+      type: 'test'
+      ...
+    # Subtest: rejects prompt content types that are not advertised
+    ok 4 - rejects prompt content types that are not advertised
+      ---
+      duration_ms: 2.557954
+      type: 'test'
+      ...
+    1..4
+ok 4 - session/prompt
+  ---
+  duration_ms: 29.194147
+  type: 'suite'
+  ...
+# Subtest: tools
+    # Subtest: asks permission before write_file, writes on allow, and reports the tool lifecycle
+    ok 1 - asks permission before write_file, writes on allow, and reports the tool lifecycle
+      ---
+      duration_ms: 22.468874
+      type: 'test'
+      ...
+    # Subtest: does not run a command the client rejects and tells the model
+    ok 2 - does not run a command the client rejects and tells the model
+      ---
+      duration_ms: 8.208026
+      type: 'test'
+      ...
+    # Subtest: runs an allowed command in the session cwd without the OpenRouter key in its environment
+    ok 3 - runs an allowed command in the session cwd without the OpenRouter key in its environment
+      ---
+      duration_ms: 11.986864
+      type: 'test'
+      ...
+    # Subtest: reads and lists files without a permission request
+    ok 4 - reads and lists files without a permission request
+      ---
+      duration_ms: 10.856118
+      type: 'test'
+      ...
+    # Subtest: confines file tools to the session cwd, including through symlinks
+    ok 5 - confines file tools to the session cwd, including through symlinks
+      ---
+      duration_ms: 16.315275
+      type: 'test'
+      ...
+    # Subtest: refuses dangling symlinks that lead outside the session cwd
+    ok 6 - refuses dangling symlinks that lead outside the session cwd
+      ---
+      duration_ms: 14.90334
+      type: 'test'
+      ...
+    # Subtest: writes through symlinks that stay inside the session cwd, and writes ordinary new files
+    ok 7 - writes through symlinks that stay inside the session cwd, and writes ordinary new files
+      ---
+      duration_ms: 14.598161
+      type: 'test'
+      ...
+    # Subtest: re-checks confinement at write time when the file became a symlink during the permission request
+    ok 8 - re-checks confinement at write time when the file became a symlink during the permission request
+      ---
+      duration_ms: 10.053511
+      type: 'test'
+      ...
+    1..8
+ok 5 - tools
+  ---
+  duration_ms: 110.066878
+  type: 'suite'
+  ...
+# Subtest: session/cancel
+    # Subtest: stops a streaming turn with stopReason cancelled; the session stays usable
+    ok 1 - stops a streaming turn with stopReason cancelled; the session stays usable
+      ---
+      duration_ms: 5.945552
+      type: 'test'
+      ...
+    # Subtest: kills a running command and ends the turn cancelled; history stays well-formed
+    ok 2 - kills a running command and ends the turn cancelled; history stays well-formed
+      ---
+      duration_ms: 11.203044
+      type: 'test'
+      ...
+    # Subtest: kills background jobs that outlive the shell when the turn is cancelled
+    ok 3 - kills background jobs that outlive the shell when the turn is cancelled
+      ---
+      duration_ms: 17.737664
+      type: 'test'
+      ...
+    # Subtest: kills background jobs that outlive the shell when the client disconnects
+    ok 4 - kills background jobs that outlive the shell when the client disconnects
+      ---
+      duration_ms: 19.109953
+      type: 'test'
+      ...
+    # Subtest: ends the turn cancelled when cancel arrives during a permission request
+    ok 5 - ends the turn cancelled when cancel arrives during a permission request
+      ---
+      duration_ms: 6.590669
+      type: 'test'
+      ...
+    1..5
+ok 6 - session/cancel
+  ---
+  duration_ms: 61.112511
+  type: 'suite'
+  ...
+# Subtest: session/close
+    # Subtest: removes the session
+    ok 1 - removes the session
+      ---
+      duration_ms: 2.810755
+      type: 'test'
+      ...
+    1..1
+ok 7 - session/close
+  ---
+  duration_ms: 3.003634
+  type: 'suite'
+  ...
+# Subtest: stdio process
+    # Subtest: answers initialize over stdin/stdout and fails session/new loudly without a key
+    ok 1 - answers initialize over stdin/stdout and fails session/new loudly without a key
+      ---
+      duration_ms: 542.93632
+      type: 'test'
+      ...
+    1..1
+ok 8 - stdio process
+  ---
+  duration_ms: 543.270131
+  type: 'suite'
+  ...
+1..8
+# tests 25
+# suites 8
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1448.314295

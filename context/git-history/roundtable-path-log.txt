@@ -1,0 +1,242 @@
+4736b8f 2026-11-07 10:37:19 -0500 Richard Graver
+    Make JEV required: no judging switch, no table without its key, nothing shared unevaluated
+
+M	roundtable/crates/roundtable-web/assets/app.js
+M	roundtable/crates/roundtable-web/assets/index.html
+M	roundtable/crates/roundtable-web/src/tables.rs
+A	roundtable/crates/roundtable/resources/feedback/not_evaluated.md
+M	roundtable/crates/roundtable/src/agents.rs
+M	roundtable/crates/roundtable/src/config.rs
+M	roundtable/crates/roundtable/src/engine.rs
+M	roundtable/crates/roundtable/src/events.rs
+M	roundtable/crates/roundtable/src/handle.rs
+M	roundtable/crates/roundtable/src/jev.rs
+M	roundtable/crates/roundtable/src/prompts.rs
+M	roundtable/crates/roundtable/src/rules.rs
+M	roundtable/crates/roundtable/src/settings/decl.rs
+M	roundtable/crates/roundtable/src/table.rs
+M	roundtable/crates/roundtable/src/turn.rs
+M	roundtable/crates/roundtable/tests/engine.rs
+M	roundtable/docs/gate-development-log.md
+M	roundtable/docs/gate-registry.yaml
+M	roundtable/docs/open-questions-review.md
+fd57dda 2026-11-07 06:37:11 -0500 Richard Graver
+    Review every open question against EXPECTATIONS.md; decide the 145 open map proposals
+
+A	roundtable/docs/egm-resolution-check/decide-brief.md
+A	roundtable/docs/egm-resolution-check/decide1.md
+A	roundtable/docs/egm-resolution-check/decide2.md
+A	roundtable/docs/egm-resolution-check/decide3.md
+A	roundtable/docs/egm-resolution-check/decide4.md
+A	roundtable/docs/open-questions-review.md
+c30bcd8 2026-11-07 06:35:44 -0500 Richard Graver
+    Settings and permissions: switch the gates by setting, per-kind permission rules
+
+M	roundtable/crates/acp-host/src/launch.rs
+M	roundtable/crates/acp-host/src/lib.rs
+M	roundtable/crates/acp-host/src/permission.rs
+M	roundtable/crates/acp-host/src/process.rs
+A	roundtable/crates/roundtable-web/assets/app.js
+M	roundtable/crates/roundtable-web/assets/index.html
+A	roundtable/crates/roundtable-web/assets/settings.html
+M	roundtable/crates/roundtable-web/src/app.rs
+M	roundtable/crates/roundtable-web/src/app_tests.rs
+M	roundtable/crates/roundtable-web/src/main.rs
+A	roundtable/crates/roundtable-web/src/settings.rs
+M	roundtable/crates/roundtable-web/src/tables.rs
+M	roundtable/crates/roundtable/src/agents.rs
+M	roundtable/crates/roundtable/src/config.rs
+M	roundtable/crates/roundtable/src/engine.rs
+M	roundtable/crates/roundtable/src/jev.rs
+M	roundtable/crates/roundtable/src/lib.rs
+M	roundtable/crates/roundtable/src/prompts.rs
+M	roundtable/crates/roundtable/src/rules.rs
+A	roundtable/crates/roundtable/src/settings/decl.rs
+A	roundtable/crates/roundtable/src/settings/mod.rs
+A	roundtable/crates/roundtable/src/settings/store.rs
+M	roundtable/crates/roundtable/src/topics.rs
+M	roundtable/crates/roundtable/src/turn.rs
+M	roundtable/crates/roundtable/tests/engine.rs
+M	roundtable/crates/roundtable/tests/gates.rs
+M	roundtable/crates/roundtable/tests/rules.rs
+M	roundtable/docs/gate-development-log.md
+M	roundtable/docs/gate-registry.yaml
+4f82985 2026-11-07 06:24:28 -0500 Richard Graver
+    Split engine.rs, turn.rs and app.rs under the 500-line limit
+
+M	roundtable/crates/roundtable-web/src/app.rs
+A	roundtable/crates/roundtable-web/src/app_tests.rs
+A	roundtable/crates/roundtable-web/src/identities.rs
+M	roundtable/crates/roundtable-web/src/main.rs
+M	roundtable/crates/roundtable-web/src/tables.rs
+A	roundtable/crates/roundtable/src/agents.rs
+M	roundtable/crates/roundtable/src/engine.rs
+A	roundtable/crates/roundtable/src/handle.rs
+M	roundtable/crates/roundtable/src/jev.rs
+M	roundtable/crates/roundtable/src/lib.rs
+M	roundtable/crates/roundtable/src/mcp.rs
+A	roundtable/crates/roundtable/src/rating.rs
+A	roundtable/crates/roundtable/src/table.rs
+A	roundtable/crates/roundtable/src/topics.rs
+M	roundtable/crates/roundtable/src/turn.rs
+cde45e8 2026-11-07 06:17:01 -0500 Richard Graver
+    Show JEV's result in each rejection label, as the owner's evaluation spec says
+
+M	roundtable/crates/roundtable/src/prompts.rs
+M	roundtable/crates/roundtable/tests/engine.rs
+M	roundtable/docs/egm-resolution-check/README.md
+2b1e1d0 2026-11-07 06:14:46 -0500 Richard Graver
+    Drop the JEV route question: OpenRouter is settled
+
+M	roundtable/docs/egm-resolution-check/README.md
+d21eeee 2026-11-07 06:07:49 -0500 Richard Graver
+    Check the 26 Roundtable resolutions against the owner's sources
+
+A	roundtable/docs/egm-resolution-check/README.md
+A	roundtable/docs/egm-resolution-check/brief.md
+A	roundtable/docs/egm-resolution-check/group1.md
+A	roundtable/docs/egm-resolution-check/group2.md
+A	roundtable/docs/egm-resolution-check/group3.md
+A	roundtable/docs/egm-resolution-check/group4.md
+A	roundtable/docs/egm-resolution-check/owner-decisions-used.md
+bb18308 2026-11-07 05:41:45 -0500 Richard Graver
+    Roundtable: work through every goldfish layer with a 3-round Roundtable
+
+M	roundtable/docs/egm-map-layers.md
+A	roundtable/docs/egm-resolutions/code.adapter.agent.md
+A	roundtable/docs/egm-resolutions/code.builder.prompt.md
+A	roundtable/docs/egm-resolutions/code.bus.event.md
+A	roundtable/docs/egm-resolutions/code.catalog.model.md
+A	roundtable/docs/egm-resolutions/code.client.agent.md
+A	roundtable/docs/egm-resolutions/code.gate.quality.md
+A	roundtable/docs/egm-resolutions/code.identity.agent.md
+A	roundtable/docs/egm-resolutions/code.launcher.agent.md
+A	roundtable/docs/egm-resolutions/code.manager.chat.group.md
+A	roundtable/docs/egm-resolutions/code.monitor.activity.md
+A	roundtable/docs/egm-resolutions/code.quota.character.md
+A	roundtable/docs/egm-resolutions/code.rating.peer.md
+A	roundtable/docs/egm-resolutions/code.roster.participant.md
+A	roundtable/docs/egm-resolutions/code.selector.topic.md
+A	roundtable/docs/egm-resolutions/code.server.tool.md
+A	roundtable/docs/egm-resolutions/collection.workspace.shared.md
+A	roundtable/docs/egm-resolutions/data.log.discussion.md
+A	roundtable/docs/egm-resolutions/document.prompt.system.md
+A	roundtable/docs/egm-resolutions/downstream.chair.md
+A	roundtable/docs/egm-resolutions/upstream.agent.coding.md
+A	roundtable/docs/egm-resolutions/upstream.gateway.llm.md
+A	roundtable/docs/egm-resolutions/upstream.judge.llm.md
+A	roundtable/docs/egm-resolutions/upstream.registry.agent.md
+A	roundtable/docs/egm-resolutions/upstream.sdk.agent.md
+A	roundtable/docs/egm-resolutions/upstream.system.reputation.md
+A	roundtable/docs/egm-resolutions/upstream.tracer.agent.md
+M	roundtable/metaform.json
+480efe0 2026-11-07 04:35:33 -0500 Richard Graver
+    Roundtable: EGM elephant and goldfish layers on every map element
+
+A	roundtable/docs/egm-map-layers.md
+M	roundtable/metaform.json
+64099ba 2026-11-07 04:27:48 -0500 Richard Graver
+    Roundtable: update its metaform to the code of 2026-11-07
+
+A	roundtable/metaform.json
+d466b3f 2026-11-07 04:14:15 -0500 Richard Graver
+    Roundtable: apply the owner's Gate Burden standard to inference gates
+
+M	roundtable/crates/acp-host/src/harness.rs
+M	roundtable/crates/acp-host/src/permission.rs
+M	roundtable/crates/acp-host/src/process.rs
+M	roundtable/crates/roundtable/src/engine.rs
+M	roundtable/crates/roundtable/src/jev.rs
+M	roundtable/crates/roundtable/src/mcp.rs
+M	roundtable/crates/roundtable/src/turn.rs
+A	roundtable/crates/roundtable/tests/gates.rs
+A	roundtable/docs/gate-burden.md
+A	roundtable/docs/gate-development-log.md
+A	roundtable/docs/gate-registry.yaml
+1ae1b3b 2026-11-07 04:08:03 -0500 Richard Graver
+    Bring Roundtable into topogee
+
+A	roundtable/.gitignore
+A	roundtable/Cargo.lock
+A	roundtable/Cargo.toml
+A	roundtable/README.md
+A	roundtable/Roundtable_ACP_Integration_Design.md
+A	roundtable/adapters/openrouter-acp/README.md
+A	roundtable/adapters/openrouter-acp/package-lock.json
+A	roundtable/adapters/openrouter-acp/package.json
+A	roundtable/adapters/openrouter-acp/src/adapter.ts
+A	roundtable/adapters/openrouter-acp/src/index.ts
+A	roundtable/adapters/openrouter-acp/src/models.ts
+A	roundtable/adapters/openrouter-acp/src/sdk-patch.ts
+A	roundtable/adapters/openrouter-acp/src/tools.ts
+A	roundtable/adapters/openrouter-acp/test/adapter.test.ts
+A	roundtable/adapters/openrouter-acp/test/mock-openrouter.ts
+A	roundtable/adapters/openrouter-acp/tsconfig.json
+A	roundtable/adapters/openrouter-acp/tsconfig.test.json
+A	roundtable/crates/acp-host/Cargo.toml
+A	roundtable/crates/acp-host/examples/probe.rs
+A	roundtable/crates/acp-host/src/bin/acp-fake-agent.rs
+A	roundtable/crates/acp-host/src/events.rs
+A	roundtable/crates/acp-host/src/harness.rs
+A	roundtable/crates/acp-host/src/launch.rs
+A	roundtable/crates/acp-host/src/lib.rs
+A	roundtable/crates/acp-host/src/models.rs
+A	roundtable/crates/acp-host/src/permission.rs
+A	roundtable/crates/acp-host/src/process.rs
+A	roundtable/crates/acp-host/tests/harness.rs
+A	roundtable/crates/agent-monitor/Cargo.toml
+A	roundtable/crates/agent-monitor/src/capture.rs
+A	roundtable/crates/agent-monitor/src/lib.rs
+A	roundtable/crates/agent-monitor/tests/live_capture.rs
+A	roundtable/crates/bus/Cargo.toml
+A	roundtable/crates/bus/src/lib.rs
+A	roundtable/crates/bus/tests/bus.rs
+A	roundtable/crates/roundtable-web/Cargo.toml
+A	roundtable/crates/roundtable-web/assets/index.html
+A	roundtable/crates/roundtable-web/src/app.rs
+A	roundtable/crates/roundtable-web/src/main.rs
+A	roundtable/crates/roundtable-web/src/tables.rs
+A	roundtable/crates/roundtable/Cargo.toml
+A	roundtable/crates/roundtable/resources/feedback/auditability-0.md
+A	roundtable/crates/roundtable/resources/feedback/auditability-1.md
+A	roundtable/crates/roundtable/resources/feedback/auditability-2.md
+A	roundtable/crates/roundtable/resources/feedback/contribution.md
+A	roundtable/crates/roundtable/resources/feedback/prefix.md
+A	roundtable/crates/roundtable/resources/feedback/relevance.md
+A	roundtable/crates/roundtable/resources/feedback/too_long.md
+A	roundtable/crates/roundtable/resources/feedback/usefulness.md
+A	roundtable/crates/roundtable/resources/feedback/value-0.md
+A	roundtable/crates/roundtable/resources/feedback/value-1.md
+A	roundtable/crates/roundtable/resources/feedback/value-2.md
+A	roundtable/crates/roundtable/resources/jev/auditability.md
+A	roundtable/crates/roundtable/resources/jev/contribution.md
+A	roundtable/crates/roundtable/resources/jev/relevance.md
+A	roundtable/crates/roundtable/resources/jev/usefulness.md
+A	roundtable/crates/roundtable/resources/jev/value.md
+A	roundtable/crates/roundtable/resources/names/adjectives.txt
+A	roundtable/crates/roundtable/resources/names/nouns.txt
+A	roundtable/crates/roundtable/resources/participant_prompt.md
+A	roundtable/crates/roundtable/resources/roundtable_prompt.md
+A	roundtable/crates/roundtable/resources/score_received.md
+A	roundtable/crates/roundtable/resources/session_profile.md
+A	roundtable/crates/roundtable/resources/session_rank.md
+A	roundtable/crates/roundtable/resources/session_results.md
+A	roundtable/crates/roundtable/resources/session_scoring.md
+A	roundtable/crates/roundtable/resources/topic_sameness.md
+A	roundtable/crates/roundtable/src/bin/roundtable-fake-agent.rs
+A	roundtable/crates/roundtable/src/config.rs
+A	roundtable/crates/roundtable/src/engine.rs
+A	roundtable/crates/roundtable/src/events.rs
+A	roundtable/crates/roundtable/src/jev.rs
+A	roundtable/crates/roundtable/src/lib.rs
+A	roundtable/crates/roundtable/src/mcp.rs
+A	roundtable/crates/roundtable/src/names.rs
+A	roundtable/crates/roundtable/src/prompts.rs
+A	roundtable/crates/roundtable/src/record.rs
+A	roundtable/crates/roundtable/src/rules.rs
+A	roundtable/crates/roundtable/src/turn.rs
+A	roundtable/crates/roundtable/tests/config.rs
+A	roundtable/crates/roundtable/tests/engine.rs
+A	roundtable/crates/roundtable/tests/rules.rs
+A	roundtable/docs/owner-sources/project_agent.txt
+A	roundtable/docs/owner-sources/roundtable-agent-ratings.md

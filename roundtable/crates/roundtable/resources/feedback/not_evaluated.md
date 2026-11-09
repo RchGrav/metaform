@@ -1,0 +1,1 @@
+Your message was not shared: JEV could not evaluate it ({{reason}}). It was not rejected; you can send it again.

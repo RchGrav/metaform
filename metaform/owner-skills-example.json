@@ -1,0 +1,28 @@
+{
+  "code": {
+    "skills": [
+      {
+        "uri": "skill://git-workflow/SKILL.md",
+        "frontmatter": {
+          "name": "git-workflow",
+          "description": "Follow this team's Git conventions for branching and commits"
+        },
+        "resources": [
+          {
+            "uri": "skill://git-workflow/SKILL.md",
+            "digest": "sha256:b95a384300adeea2d902f7d19cd7c04b378ef58e09759107b9c7db4dcacbaa25",
+            "size": 190
+          }
+        ]
+      }
+    ],
+    "system": {
+      "management": {
+        "knowledge": {
+          "name": "Metaform",
+          "role": "DE"
+        }
+      }
+    }
+  }
+}

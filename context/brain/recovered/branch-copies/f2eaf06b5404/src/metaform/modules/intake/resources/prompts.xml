@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Intake's prompts: the text Metaform sends to agents for this module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     An empty element inside a prompt, such as <register/>, marks a place the code fills in: <register/> with the
+     register_step prompt while the folder is not registered, and with nothing once it is.
+     Comments are never sent. -->
+<prompts>
+<!-- intake's line in the connect message: what an agent uses intake for, one short phrase after its name, in the
+     project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
+     <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
+     intake. Off when the module is disabled or the folder's modules setting leaves it out. -->
+<connect>– intake: map the AUE into its elements and purpose records when you are assigned an intake</connect>
+<!-- Intake's instructions: where the intake procedure and its forms are.
+     Returned by metaform_instructions with module intake, at metaform://instructions/intake, and by metaform instructions intake; printed in the
+     command-line guide while connect_instructions is full. no_intake or unfinished follows it when the folder's state calls for it.
+     Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
+<instructions>intake is active.
+When assigned an intake, read the task with tasks_read name=intake or resource metaform://tasks/definitions/intake.
+The forms it records are at resource metaform://intake/schema.</instructions>
+<!-- The first-run onboarding: ask the person once whether to analyse the project, then start the intake.
+     Follows intake's line in the command-line guide and intake's instructions while the folder has no intake and
+     none is being recorded, whether or not the folder is registered. Served whole as metaform://firstrun, which the
+     connect message of the person's own sessions links while that holds. It stops by itself once an intake starts.
+     Must not be deleted: the code requires it. Empty sends nothing. -->
+<no_intake>FIRST RUN. Metaform has not analysed this project yet. Handle this first,
+even if the person asked for something else; tell them you'll get to their
+request right after.
+
+1. Ask the person once, in your own words:
+   "This is the first time Metaform is running in this project. I'd like to
+   do a quick analysis so I understand how it fits together. You can watch
+   it build live in a browser view on this machine. Want me to start?"
+2. If they say no, drop it and help with what they asked.
+3. If they say yes, do all of this in order without asking again:
+<register/>   b. Start the browser view: the web_start tool. Give them the
+      address. If it fails, tell them what it said and stop.
+   c. Read the task with tasks_read name=intake and the schema with
+      intake_schema. Assign it with tasks_assign name=intake, supplying
+      the person's target and requested focus as assignment input.
+   d. When it finishes, tell them it's done and invite their questions.</no_intake>
+<!-- The registration step, placed in no_intake's <register/> while the folder is not registered; the code indents it.
+     Must not be deleted: the code requires it. Empty leaves a blank line in its place. -->
+<register_step>a. Register this folder: the metaform_register tool.</register_step>
+<!-- Recording mode and request data appended separately from the editable task instructions. -->
+<selected_mode>Selected intake mode: <mode/>
+Use this mode to select the analysis and recording destination. The request below supplies focus within this mode.
+Apply only the selected mode's section. It overrides the procedure's status-based routing.
+
+fresh: Examine project artifacts from the beginning. Call intake_start to open the separate map selected at launch.
+Do not use the previous map as the starting analysis. Follow the assigned intake task from the beginning.
+Existing-map status cannot override fresh mode.
+
+refine: Call intake_start, then intake_show to read the existing map. Examine current artifacts and apply the
+assigned intake task to refine that map, then finish the recording pass.
+
+resume: Call intake_start, then intake_show to read the unfinished intake. Continue the assigned intake task
+and finish that destination. Do not open another map.
+
+Preserve previous maps, work records, knowledge and memories. Map activation remains an explicit operation.
+Memories remain project scoped and reconnect at matching addresses. Memory access isolation is not required.
+
+Request:
+<request/></selected_mode>
+<!-- Says that an intake is waiting to be finished.
+     Follows intake's line in the command-line guide and intake's instructions while an intake layer is being recorded.
+     Must not be deleted: the code requires it. Empty sends nothing. -->
+<unfinished>An intake was started but aborted and still remains to be completed.</unfinished>
+<!-- Intake's slash command: /metaform:intake runs intake prompt and puts the procedure into the conversation.
+     Offered to the person in MCP clients that show server prompts. Delete the child, or empty the element, to drop it.
+     -->
+<commands><intake verb="prompt"/></commands>
+<!-- The field descriptions of the intake recording commands, never sent as one block: each child describes one
+     argument, under <element> for elements and <purpose> for purpose records, in the commands' help and argument schemas.
+     Read once when the module loads. A missing child leaves that field without a description; a test checks the
+     allowed values named here against what the commands accept. -->
+<fields>
+  <element>
+    <namespace_address>The element's dotted address, formed as the intake procedure says, such as code.timer.kitchen.</namespace_address>
+    <role>CQU, DE, SE or NE, as defined in the intake procedure.</role>
+    <name_length>How many of the address's last segments form the element's name, a whole number from 1, as defined in the intake procedure.</name_length>
+    <name>The element's name as the project calls it.</name>
+    <block>The numbered ICE block identifier assigned to this element, such as BLOCK_001. Omit to preserve its assignment; null clears it.</block>
+    <within>The namespace address of the element that contains this part. Omit to preserve its parent; null clears it. This does not change the part's namespace identity.</within>
+    <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
+  </element>
+  <purpose>
+    <receiver>The address of the receiving element, the RE, that holds the purpose record.</receiver>
+    <elements>The addresses of the providing elements, the PEs, that serve the receiver's purpose.</elements>
+    <provider>The address of one providing element, a PE, held by the purpose record.</provider>
+    <purpose>The receiver's operative purpose, the OP, as defined in the intake procedure.</purpose>
+    <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
+    <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
+    <refs>Where the purpose record is found: a list of references, each a key and a value.</refs>
+  </purpose>
+</fields>
+</prompts>

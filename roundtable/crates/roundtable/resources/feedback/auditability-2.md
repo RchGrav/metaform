@@ -1,0 +1,1 @@
+Parts of your reasoning are understandable, but the central argument cannot be reconstructed from the messages. Supply the missing premises or intermediate steps, and explain how they lead to your conclusion. Summarize any referenced rule or artifact that the argument depends on.

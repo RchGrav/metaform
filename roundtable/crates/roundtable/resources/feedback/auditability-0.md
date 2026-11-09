@@ -1,0 +1,1 @@
+The participants cannot inspect your reasoning from the messages. Restate the argument with its essential context, assumptions, and causal steps included. Replace inaccessible references and opaque shorthand with explanations; pointing to an artifact does not explain what it establishes.

@@ -1,0 +1,21 @@
+# Coarse typological intake
+
+Understand the supplied artifact and produce its initial Metaform: a coarse typological account of its core function, who receives its result, what its principal Elements contribute, and how those contributions meet their receivers' purposes.
+
+Use the supplied material, surrounding artifact context, and reusable Type knowledge. Establish the artifact boundary and a functional account before allowing file organization or implementation vocabulary to determine the typology. Reused accounts remain identified as reused evidence.
+
+Identify the Defining Element and its combined Encounter Function through the artifact's core function. Its defining Type expresses that core function; medium, encoding, genre, and style are represented through property joins. Identify each relevant receiving entity and its purpose for receiving that result. Then work through the Defining Element's principal requirements and properties. For each current Element, identify the EFs it receives, its purposes for receiving them, and the providers that satisfy those purposes. Continue this purposeful frontier until the represented functions and relationships form a useful orientation at coarse typological resolution.
+
+Give each Element its own stable identity and freeform description. Use a concise functional summary where it helps later display or grounding. Reuse an existing identity for the same thing. Bind Elements to fitting reusable Types; create or refine Type definitions only where the represented meaning requires it. Keep each universal Type's single EF distinct from the contextual realization of that EF.
+
+Keep the initial shape focused on defining identity, principal capabilities, meaningful properties, boundaries, and relationships. Source symbols, constants, callback details, exhaustive interfaces, and detailed tests belong in evidence or a deeper account unless omitting them would change the coarse functional understanding. Record a useful expansion opportunity when a later question would benefit from that depth.
+
+For each principal Element, use the supplied classification descriptions to identify the meaningful properties observed in its realization. Represent those properties with providers and property joins at their applicable origins, even when a property leaves the Element's function unchanged. Retain this property account at coarse resolution so later instructions can use the complete composite and be inferred again when its properties change.
+
+Type the represented property by its own function or encounter, and explain how that encounter satisfies the receiving Element's purpose in the artifact. For example, an installer realized in Bash retains its Installer function and Bash program-code encounter on the same Element; its language property join names the Bash Type as the provided encounter. Reuse the represented thing's identity across its relevant Type bindings. Keep the observations and source evidence about that thing on its records.
+
+Describe the overall understanding once; a diagram may help show the artifact's functional shape. Preserve actual unusual decisions rather than replacing them with an idealized architecture. Keep critique, proposed improvements, and run-level source-coverage assessments separate from structural capabilities.
+
+Use the supplied structural and namespace semantics. For each OP join, preserve the receiver, its operative purpose, the provider, and the particular provider Type EF being received. Record the receiver-relative role and any meaningful signal. Use the supplied `join_classifications` descriptions to record the join's classification. Type membership is expressed through bindings.
+
+Produce contributions conforming to the supplied intake-contribution schema. The runtime supplies model/revision and activity identities and assembles the completed foundation. Save contributions incrementally through the supplied intake operation when available; the final answer contains remaining unsaved contributions. When everything has been saved, return an empty contribution. Preserve the complete generated account and its evidence rather than editing history into an apparent reference answer.

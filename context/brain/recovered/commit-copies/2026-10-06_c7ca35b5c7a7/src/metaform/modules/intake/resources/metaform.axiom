@@ -1,0 +1,78 @@
+
+{Metaform_Schema} :=
+
+METAFORM(
+  id          := [metaform_id],
+  name        := [project],
+  description := [description of the AT and AUE present],
+
+  elements := [
+
+    # The AUE: the root of the project's elements.
+    ELEMENT(
+      namespace_address := [code|document|media|data dotted namespace address],
+      name_length       := [proper_noun_lookback_segment_count],
+      name              := [Canonical Name (Project official terminology)],
+      role              := AUE,
+
+      elements := [
+        ELEMENT(
+          namespace_address := [dotted namespace address],
+          name_length       := [proper_noun_lookback_segment_count],
+          name              := [Canonical Name (Project official terminology)],
+          role              := [DE|SE|NE],
+          joins             := []
+        )
+      ],
+
+      joins := [JOIN(...)]
+    ),
+
+    # Each CQU: defined at downstream.cqu, beside the AUE.
+    ELEMENT(
+      namespace_address := downstream.cqu.[CQU type],
+      name_length       := [proper_noun_lookback_segment_count],
+      name              := [industry title of the CQU role],
+      role              := CQU,
+      elements          := [],
+
+      joins := [
+        JOIN(
+          type    := purpose,
+          purpose := [RE Operative Purpose],
+          ef      := [PE Encounter Function within this RE encounter],
+          ifd     := [send|receive|both],
+
+          elements := [
+            # The PE.
+            ELEMENT(
+              namespace_address := [dotted namespace address],
+              name_length       := [proper_noun_lookback_segment_count],
+              name              := [Canonical Name (Project official terminology)],
+              role              := [DE|SE|NE],
+              elements          := [],
+
+              joins := [
+                # One level deeper: what this PE receives, in the same JOIN form.
+                JOIN(...)
+              ]
+            )
+          ]
+        )
+      ]
+    )
+  ]
+)
+
+# Notes
++> The element owning a purpose join is the RE; its nested element is the PE.
++> PE is not a role. An element may receive in one join and provide in another.
++> purpose is the only join type.
++> An annealed part is a join one level deeper, in the joins of the PE it is part of; it is not a separate top-level element.
++> An element is written in full where it first appears; where it appears again it carries namespace_address, name_length, name and role only.
++> Project elements remain under code|document|media|data regardless of join role.
++> upstream.* links external code|document|media|data that provide into the project.
++> downstream.cqu.* links external CQUs; other downstream.* entries link external receivers.
++> upstream/downstream are project-boundary links, not join-direction namespaces.
++> Links are not decomposed and hold no project elements beneath them.
++> An element's refs are items of the sources layer, not fields of the metaform.

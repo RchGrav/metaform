@@ -1,0 +1,21 @@
+
+running 16 tests
+test a_busy_seat_failing_or_crashing_after_end_does_not_strand_the_ratings ... ok
+test a_crash_is_loud_and_the_table_ends_when_nobody_is_left ... ok
+test a_failed_seat_is_not_listed_as_joining ... ok
+test a_jev_failure_shares_unjudged_and_says_so ... ok
+test a_late_proposal_does_not_enter_a_decided_poll ... ok
+test a_lone_free_agent_is_asked_to_review_once_while_the_other_works ... ok
+test a_seat_with_tools_is_told_about_them ... ok
+test a_vetoed_truncated_agent_gets_the_owners_format_at_its_next_turn ... ok
+test advance_is_refused_truthfully_without_jev ... ok
+test agents_get_genesis_names_and_rate_each_other_at_the_end ... ok
+test missing_peer_ratings_are_reported ... ok
+test the_core_rejects_invalid_configurations ... ok
+test the_first_turn_carries_the_owners_prompt_with_placeholders_filled ... ok
+test tool_activity_marks_an_agent_working_and_the_table_moves_on ... ok
+test topics_need_jev_and_follow_the_selection_rules ... ok
+test turning_judging_off_mid_poll_stops_topic_selection ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.85s
+

@@ -1,0 +1,60 @@
+```markdown
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Read first
+
+@AGENTS.md
+
+`AGENTS.md` governs this repository. Its owner boundaries override anything here. In particular: intake schemas and prompts are protected, and commits and pushes follow the Feature commits section there, and nothing is deployed without a direct instruction. `docs/README.md` explains where doubt belongs. Read it before forming an opinion on the design.
+
+@TASTE.md
+
+`TASTE.md` contains guidence you must observe for communication.  Plain talk, full thoughts, stop making up your own terms for things, Stuff like that.
+
+## What this project is
+
+@TOPOGEE.md
+
+`TOPOGEE.md` is the opening statement of this project. `_bmad-output/initiative-topogee-navigator/initiative-topogee-navigator.md` holds the draft requirements, and the owner has not confirmed it. The owner's statements in `docs/` govern over older text in other documents. Do not ask the owner to state this intent again.
+
+## Owner constraints for the build
+
+These are stated in `DECISIONS.md` and apply to every change:
+
+- Features land as modules on the chassis, using services it exposes. Do not bypass the chassis or the settings system.
+- Do not add tools without an owner decision. Tools exist for context management, and the specification must say so.
+- Keep the worktree and feature-commit pattern. Do not drop it when reducing tools.
+- Target about 500 lines per source file. Split a file before it grows past that limit.
+
+## Architecture
+
+- **Specification:** `TOPOGEE-SPEC.md` is the specification the build follows. `SPECIFICATION.md` is an older draft. `docs/designs/topogee-map-server-design.md` is the design of the map server, and `docs/designs/topogee-map-server.md` holds the owner's positions behind it. `DECISIONS.md` holds owner decisions and open technical choices. Current owner decisions take precedence over the specification.
+- **Stored data:** the functional namespace is nested JSON, defined by `metaform.schema.json`. Each element owns its properties and native knowledge arrays. A receiver's `wants[]` holds its relationships to providers, keyed by the provider's project-relative address.
+- **Intake vocabulary:** the intake keeps the authored terms RE, PE, OP, EF, IFD, CQU and ICE. The stored fields are `goal` (OP), `function` (EF), `intent` (IFD), and `wants` (the PE relationship). The mapping is in `DECISIONS.md`.
+- **Tool contract:** `mcp-tools.proposed.json` defines one Metaform tool for changes, addressed reads, and orphan queries. Read-only views are projections, not another registered tool. The input schema validates a command. The stored-document schema validates the resulting map. Both are checked by the tests above.
+- **Intake prompt:** `Intake.md` (Digital Typology Intake, version 3.1) is the current intake procedure. It is the project copy of the owner's `intake-new.md`. Use it for test intakes. `Intake.xml` is the older project prompt, and `intake.mmd` is its diagram. The owner's query note is in `docs/mcp-query-source.md`. Maintain these project files; do not depend on the owner's personal folder. Changes to the authored method still require direct owner instruction.
+- **Reference material:** `reference/` is preserved evidence with known obsolete proposals. Do not execute scripts from it, and do not bulk-import its code. `source-register.json` records the snapshot hashes that `tools/verify_bootstrap.py` checks.
+- **Boat:** a development tool for throwaway sandboxes, not a product dependency. Use `boat run --no-env`. Touch only sandboxes whose ID your own create call returned. Do not upload `reference/` or intake material.
+
+## Working with the owner
+
+- Preserve the owner's authored semantics and method. Do not rewrite the intake into code-only analysis, add conditions, or substitute a prompt silently.
+- Present proposals that change the design for confirmation before they land. Keep decisions grounded in the owner's words and the existing specification, not in assistant documents or passing tests.
+- Separate what is known, what is inferred, and what is unknown. State uncertainty plainly.
+- When a question is needed, ask it once and say what it blocks. Do not restate the question at length. Keep the next step visible.
+- Carry out agreed work within its stated scope. List the choices you made.
+- Offer alternatives when they clearly help. Say when a suggestion goes beyond the task. Do not expand scope without permission.
+- Give criticism a concrete reason. Do not add objections to balance a positive assessment.
+- Respect that this project is the owner's personal work.
+
+## Testing
+
+- Append to existing test files instead of creating new ones.
+- Budget: at most five tests per feature. Write one happy-path test and the critical edge cases within that budget. Check the count before adding a test.
+- Test only the public interface. Do not test private methods or internal boilerplate.
+- Run only the affected file or filtered cases while developing. Run the full bootstrap suite once, at the final verification step.
+- Keep tests within the changed file's language directory. Run tests in another language only when the change touches that language.
+- Stub or fixture any cross-language boundary. Do not start another language's runtime during unit or contract tests. Validate schema files with a lightweight validator.
+- When a subagent changes code, its brief must include these rules.

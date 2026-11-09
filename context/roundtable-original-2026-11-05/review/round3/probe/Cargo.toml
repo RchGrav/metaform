@@ -1,0 +1,16 @@
+[package]
+name = "rt-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+bus = { path = "../../../crates/bus" }
+acp-host = { path = "../../../crates/acp-host" }
+roundtable = { path = "../../../crates/roundtable" }
+reqwest = { version = "0.13", default-features = false, features = ["json","rustls"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread","macros","process","sync","io-util","time"] }
+axum = "0.8"

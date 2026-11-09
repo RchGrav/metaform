@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-07",
+  "environment": "Founder's WSL2 machine, Linux 6.18, rustc 1.99.1",
+  "engine": "lbug 0.22.3 (Rust crate, prebuilt library)",
+  "program": "experiments/ladybug-concurrency/rust-probe",
+  "scope": "Single runs. Engine behavior only, small data, no load.",
+  "results": {
+    "second_write_transaction_default": "refused immediately: 'Only one write transaction at a time is allowed in the system.'",
+    "write_after_refused_begin_default": "the process ended with SIGSEGV on the next CREATE on the connection whose BEGIN was refused",
+    "enable_multi_writes": "two connections held open write transactions at once; the second commit failed on a duplicate primary key and its whole transaction was discarded (count 1)",
+    "second_read_write_process": "refused: 'Could not set lock on file ... (Lock is held by PID ...)'",
+    "partitioned_node_table_syntax": "PARTITION BY HASH|LIST|RANGE; 'PARTITION BY HASH(m) PARTITIONS 4' and 'WITH (partitions=4)' create E_p0..E_p3",
+    "partitioned_primary_key": "NOT enforced across partitions: the same primary key was inserted twice with different partition values",
+    "partitioned_rel_create": "refused against the partitioned parent: 'create the relationship against one of its partitions (E_<i>) instead'",
+    "build": "lbug 0.22.3 clean build about 24 s with the prebuilt library",
+    "reopen_during_close_same_process": "a Database opened in the same process while the previous one was still closing on another thread failed with 'Checksum verification failed, the WAL file is corrupted.' Closing the writer and the database before releasing the owner lock fixed it (world-graph, 3 runs). Whether the WAL on disk was damaged, or the open read it mid-checkpoint, is not known."
+  },
+  "not_proven": [
+    "crash recovery on 0.22.3",
+    "load behavior",
+    "multi-writes under load",
+    "non-Linux platforms"
+  ]
+}

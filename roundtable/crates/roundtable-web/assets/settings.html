@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roundtable settings</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #5f6b7a; --line: #e2e6eb;
+  --accent: #2f6fed; --accent-ink: #ffffff; --ok: #1f8a4c; --bad: #c0392b; --chip: #eef1f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151a; --panel: #1a1e25; --ink: #e6e9ee; --muted: #98a2b0; --line: #2a303a;
+    --accent: #5b8cff; --accent-ink: #0b0d10; --ok: #4cc27f; --bad: #ef6b5b; --chip: #232934;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
+header { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0; }
+header a { color: var(--accent); }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+p.note { color: var(--muted); margin: 0 0 16px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 24px 0 8px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.key { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.summary, .meta { color: var(--muted); font-size: 13px; }
+.source { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--chip); }
+.source.saved { color: var(--ok); }
+input, select { width: 100%; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+button { font: inherit; color: inherit; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+#status { min-height: 1.5em; margin: 8px 0; }
+#status.bad { color: var(--bad); }
+@media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><h1>Roundtable settings</h1><a href="/">Back to the tables</a></header>
+<main>
+  <p class="note">Saved settings apply to tables created afterwards. A running table keeps the settings it started with. A setting marked with a gate is that inference gate's switch or limit; changing it is your disposition of the gate.</p>
+  <div id="status"></div>
+  <div id="list"></div>
+</main>
+<script>
+(() => {
+  const m = location.hash.match(/token=([0-9a-fA-F]+)/);
+  if (m) { try { sessionStorage.setItem("rt-token", m[1]); } catch {} history.replaceState(null, "", location.pathname); }
+})();
+const TOKEN = (() => { try { return sessionStorage.getItem("rt-token") || ""; } catch { return ""; } })();
+const status = document.getElementById("status");
+function say(text, bad) { status.textContent = text; status.className = bad ? "bad" : ""; }
+
+async function call(method, url, body) {
+  const r = await fetch(url, { method, headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+
+function report(changed) {
+  say(changed.length ? changed.map(c => `${c.key}: ${c.old} → ${c.new}`).join("; ") : "No changes.");
+}
+
+function control(row) {
+  const words = row.allowed.split(", ");
+  if (row.allowed === "on or off" || (words.length > 1 && !/\d/.test(row.allowed) && !row.allowed.includes("path"))) {
+    const s = document.createElement("select");
+    for (const w of row.allowed === "on or off" ? ["on", "off"] : words) s.add(new Option(w, w, false, w === row.value));
+    return s;
+  }
+  const i = document.createElement("input");
+  i.value = row.value;
+  return i;
+}
+
+async function load() {
+  if (!TOKEN) { say("Open this page with the URL Roundtable printed at start; it carries the chair token.", true); return; }
+  let data;
+  try { data = await call("GET", "/api/settings/list"); } catch (e) { say(e.message, true); return; }
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  let group = "";
+  for (const row of data.settings) {
+    if (row.group !== group) { group = row.group; const h = document.createElement("h2"); h.textContent = group; list.appendChild(h); }
+    const div = document.createElement("div"); div.className = "row";
+    const text = document.createElement("div");
+    text.innerHTML = `<div class="key"></div><div class="summary"></div><div class="meta"></div>`;
+    text.querySelector(".key").textContent = row.key;
+    text.querySelector(".summary").textContent = row.summary;
+    const meta = text.querySelector(".meta");
+    meta.textContent = `Allowed: ${row.allowed}. Default: ${row.default}.${row.gate ? " Gate " + row.gate + "." : ""} `;
+    const src = document.createElement("span"); src.className = "source " + row.source; src.textContent = row.source; meta.appendChild(src);
+    const input = control(row);
+    input.addEventListener("change", async () => {
+      try { report((await call("PUT", "/api/settings/" + encodeURIComponent(row.key), { value: input.value })).changed); load(); }
+      catch (e) { say(e.message, true); input.value = row.value; }
+    });
+    const reset = document.createElement("button"); reset.textContent = "Default";
+    reset.disabled = row.source !== "saved";
+    reset.addEventListener("click", async () => {
+      try { report((await call("DELETE", "/api/settings/" + encodeURIComponent(row.key))).changed); load(); }
+      catch (e) { say(e.message, true); }
+    });
+    div.append(text, input, reset);
+    list.appendChild(div);
+  }
+}
+load();
+</script>
+</body>
+</html>
