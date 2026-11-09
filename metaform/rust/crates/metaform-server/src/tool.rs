@@ -51,9 +51,15 @@ struct Presence {
 /// per context.
 const ONCE_PER_CONTEXT: [&str; 1] = ["instructions"];
 
+/// Sheet parts delivered on every arrival, never held back: a layer's `guidance` at its
+/// definition element, which is where an agent reads the guidance again after a reset (R-5.30).
+const ALWAYS: [&str; 1] = ["guidance"];
+
 impl Presence {
     /// Record an arrival and return only the parts of the sheet not yet delivered unchanged in
-    /// this context (R-5.30: "goto only dumps new info IF the info changes").
+    /// this context (R-5.30: "goto only dumps new info IF the info changes"). The parts held back
+    /// are named in `unchanged`, so an agent whose context was reset can tell "nothing here" from
+    /// "already delivered" and read them again.
     fn arrive(&mut self, sheet: Value) -> Value {
         let Value::Object(sheet) = sheet else {
             return sheet;
@@ -65,24 +71,39 @@ impl Presence {
             .to_string();
         let seen = self.delivered.entry(at.clone()).or_default();
         let mut out = serde_json::Map::new();
+        let mut unchanged: Vec<Value> = Vec::new();
         out.insert("at".into(), Value::String(at.clone()));
         for (part, value) in sheet {
+            if part == "at" {
+                continue;
+            }
+            if ALWAYS.contains(&part.as_str()) {
+                out.insert(part, value);
+                continue;
+            }
             if ONCE_PER_CONTEXT.contains(&part.as_str()) {
                 let Value::Object(entries) = value else { continue };
                 let fresh: serde_json::Map<String, Value> = entries
                     .into_iter()
                     .filter(|(name, text)| self.once.get(name) != Some(text))
                     .collect();
-                if !fresh.is_empty() {
+                if fresh.is_empty() {
+                    unchanged.push(Value::String(part));
+                } else {
                     self.once.extend(fresh.clone());
                     out.insert(part, Value::Object(fresh));
                 }
                 continue;
             }
-            if part != "at" && seen.get(&part) != Some(&value) {
+            if seen.get(&part) == Some(&value) {
+                unchanged.push(Value::String(part));
+            } else {
                 seen.insert(part.clone(), value.clone());
                 out.insert(part, value);
             }
+        }
+        if !unchanged.is_empty() {
+            out.insert("unchanged".into(), Value::Array(unchanged));
         }
         self.at = Some(at);
         Value::Object(out)

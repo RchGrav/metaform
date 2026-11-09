@@ -384,7 +384,7 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
     assert_eq!(sheet["layers"]["features"], json!({"records": 2}));
     assert_eq!(
         sheet["instructions"]["features"],
-        json!("Tag the element with each feature it belongs to.")
+        json!("Tag the element with each feature it belongs to.\ngoto layer.knowledge.features to see this again.")
     );
     assert!(
         sheet["instructions"]["specification"]
