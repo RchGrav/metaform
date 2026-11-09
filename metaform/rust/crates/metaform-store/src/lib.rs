@@ -354,6 +354,12 @@ impl Store {
             .map_err(|_| Failure::Store(StoreError::WriterGone))?
     }
 
+    /// The current map, for reads outside the tool such as the CLI's specification export. The
+    /// server stays the only reader and writer of the store (R-4.4).
+    pub fn snapshot(&self, map: &MapKey) -> Result<Arc<Map>, StoreError> {
+        self.db(&map.db)?.snapshot(&map.map)
+    }
+
     /// Diagnostic: the problems in a map's stored graph shape (R-4.16), or none. For the
     /// operator's view and tests; agents never see it.
     pub fn check_graph(&self, map: &MapKey) -> Result<Vec<String>, StoreError> {

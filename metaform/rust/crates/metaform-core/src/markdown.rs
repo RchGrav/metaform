@@ -230,12 +230,24 @@ fn block_paragraphs(address: &str, element: &Element) -> Vec<String> {
     }
 }
 
+/// The root scope that lists the map's layers, such as `layer.document.specification`. It
+/// describes the map itself, not the project, so the document leaves it out.
+const LAYER_SCOPE: &str = "layer";
+
+fn in_layer_scope(address: &str) -> bool {
+    address.split('.').next() == Some(LAYER_SCOPE)
+}
+
 /// The addresses the document holds, in document order: the root first if it holds blocks.
 pub(crate) fn document_addresses(map: &Map) -> Vec<&str> {
     let mut addresses: Vec<&str> = map
         .elements()
         .filter(|(address, element)| {
-            if *address == ROOT { has_blocks(element) } else { in_document(element) }
+            if *address == ROOT {
+                has_blocks(element)
+            } else {
+                !in_layer_scope(address) && in_document(element)
+            }
         })
         .map(|(address, _)| address)
         .collect();
@@ -313,6 +325,9 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
         } else if atx_level(line) == Some(ELEMENT_HASHES)
             && let Some(address) = heading_address(&atx_text(line))
         {
+            if in_layer_scope(address) {
+                return Err(parse_error(line_at, format!("'{address}' lists a layer of the map; the specification document does not hold it")));
+            }
             if map.element(address).is_none() {
                 return Err(parse_error(line_at, format!("'{address}' is not an element of the map; add it through intake first")));
             }
@@ -488,11 +503,20 @@ mod tests {
 
     #[test]
     fn elements_follow_tree_order_with_scopes_in_r_3_3_order() {
-        let document = render(&map(), "packet-lab");
+        // `layer` becomes a root scope on specification-layer-core; add its element directly.
+        let mut elements: BTreeMap<String, Element> =
+            map().elements().map(|(a, e)| (a.to_string(), e.clone())).collect();
+        let listed = Map::from_tree(&json!({"code": {"technical_name": "specification document layer", "name": "Specification", "role": "Supportive"}})).unwrap();
+        for prefix in ["layer", "layer.document"] {
+            elements.insert(prefix.into(), Element::default());
+        }
+        elements.insert("layer.document.specification".into(), listed.element("code").unwrap().clone());
+        let document = render(&Map::from_elements(elements), "packet-lab");
         let at = |text: &str| document.find(text).unwrap_or_else(|| panic!("{text} missing"));
         assert!(at("(`code`)") < at("(`code.pipeline`)"));
         assert!(at("(`code.pipeline`)") < at("(`code.pipeline-tools`)"));
         assert!(at("(`code.store`)") < at("(`upstream.nic`)"));
+        assert!(!document.contains("(`layer."), "the layer scope is not part of the document");
     }
 
     #[test]

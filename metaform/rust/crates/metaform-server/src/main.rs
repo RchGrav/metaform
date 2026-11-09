@@ -10,6 +10,10 @@
 //! metaform settings [--home DIR] [--project DIR]          every setting, its value and its source
 //! metaform set   [--home DIR] [--project DIR] KEY VALUE   set a setting (VALUE is JSON, or text)
 //! metaform unset [--home DIR] [--project DIR] KEY         remove it, so the next level applies
+//! metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]
+//!                                              print the specification as Markdown (R-1.2);
+//!                                              --check writes TASTE reports to stderr.
+//!                                              Exit 0 with or without reports, 2 on an error.
 //! ```
 //!
 //! The home defaults to `METAFORM_HOME`, then `~/.metaform`.
@@ -24,10 +28,15 @@ async fn main() -> ExitCode {
     let mut project: Option<PathBuf> = None;
     let mut map: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
+    let mut check = false;
     let mut rest = args.iter().skip(1);
     while let Some(arg) = rest.next() {
         if !arg.starts_with("--") {
             positional.push(arg.clone());
+            continue;
+        }
+        if arg == "--check" {
+            check = true;
             continue;
         }
         let value = rest.next().map(PathBuf::from);
@@ -54,6 +63,12 @@ async fn main() -> ExitCode {
         };
         return settings(&home, command, folder, &positional).await;
     }
+    if command == Some("specification") {
+        return specification(&home, &target, &positional, check).await;
+    }
+    if check {
+        return usage("--check belongs to specification export");
+    }
     if command != Some("call") && !positional.is_empty() {
         return usage(&format!("unexpected argument {}", positional[0]));
     }
@@ -66,7 +81,7 @@ async fn main() -> ExitCode {
             Ok(exe) => metaform_server::forward(&home, &target, &exe).await,
             Err(e) => Err(e.to_string()),
         },
-        _ => return usage("expected serve, mcp, call, settings, set or unset"),
+        _ => return usage("expected serve, mcp, call, settings, set, unset or specification"),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -157,9 +172,50 @@ async fn settings(home: &std::path::Path, command: &str, folder: Option<PathBuf>
     }
 }
 
+/// `metaform specification export`: print the specification document to stdout and, with
+/// `--check`, the TASTE reports and their summary to stderr. Reports do not change the exit status,
+/// because TASTE's length and wording rules are targets, not errors.
+async fn specification(
+    home: &std::path::Path,
+    target: &metaform_server::Target,
+    positional: &[String],
+    check: bool,
+) -> ExitCode {
+    if positional != ["export"] {
+        return usage("specification takes one command: export");
+    }
+    let body = match target {
+        metaform_server::Target::Project(folder) => match std::fs::canonicalize(folder) {
+            Ok(folder) => serde_json::json!({"project": folder.to_string_lossy(), "check": check}),
+            Err(e) => return usage(&format!("--project {}: {e}", folder.display())),
+        },
+        metaform_server::Target::Map(name) => serde_json::json!({"map": name, "check": check}),
+    };
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => return usage(&e.to_string()),
+    };
+    match metaform_server::admin::request(home, &exe, serde_json::json!({"export": body})).await {
+        Ok(answer) => {
+            print!("{}", answer["markdown"].as_str().unwrap_or_default());
+            if check {
+                for line in answer["reports"].as_array().into_iter().flatten() {
+                    eprintln!("{}", line.as_str().unwrap_or_default());
+                }
+                eprintln!("{}", answer["summary"].as_str().unwrap_or_default());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(reason) => {
+            eprintln!("metaform: {reason}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn usage(problem: &str) -> ExitCode {
     eprintln!(
-        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY"
+        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]"
     );
     ExitCode::from(2)
 }

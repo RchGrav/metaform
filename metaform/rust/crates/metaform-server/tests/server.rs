@@ -486,3 +486,46 @@ fn settings_are_set_and_shown_through_the_cli() {
     stop_server(&home);
 }
 
+
+/// The specification export through the CLI (R-1.2): an agent writes the skeleton and a
+/// specification block through the tool, and `metaform specification export` prints the document.
+/// `--check` writes TASTE reports to stderr and still exits 0. A folder with no map is refused
+/// with exit 2 and is not registered.
+#[test]
+fn the_specification_exports_as_markdown_through_the_cli() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, project) = (dir.path().join("home"), dir.path().join("lab"));
+    std::fs::create_dir_all(&project).unwrap();
+    let mut agent = Agent::start(&home, &project);
+    agent.request("server/discover", json!({}));
+    let (refused, said) = agent.call(json!({"add": {"code": {
+        "technical_name": "code", "name": "Packet Lab", "role": "DE",
+        "specification": [
+            {"text": "Packet Lab records frames from the network card."},
+            {"level": 1, "title": "Scope", "text": "It MUST record every frame."}
+        ]
+    }}}));
+    assert!(!refused, "{said}");
+    agent.stop();
+    let run = |args: &[&str]| {
+        let out = Command::new(common::BIN).env("METAFORM_LAUNCHER", "").args(args).arg("--home").arg(&home).output().unwrap();
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
+    };
+    let folder = project.to_str().unwrap();
+    let (code, document, _) = run(&["specification", "export", "--project", folder]);
+    assert_eq!(code, 0, "{document}");
+    assert_eq!(
+        document,
+        "# lab\n\n## Packet Lab (`code`)\n\nRole: DE. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
+    );
+    let (code, checked, reports) = run(&["specification", "export", "--check", "--project", folder]);
+    assert_eq!((code, checked), (0, document), "--check leaves stdout as the document");
+    assert!(reports.contains("code block 2 (\"Scope\"): CAPITAL_MODAL: uses \"MUST\""), "{reports}");
+    assert!(reports.trim_end().ends_with("Reports are TASTE targets, not errors."), "{reports}");
+    let other = dir.path().join("empty");
+    std::fs::create_dir_all(&other).unwrap();
+    let (code, _, why) = run(&["specification", "export", "--project", other.to_str().unwrap()]);
+    assert_eq!(code, 2);
+    assert!(why.contains("has no map yet"), "{why}");
+    stop_server(&home);
+}

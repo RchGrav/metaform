@@ -181,7 +181,7 @@ async fn open_project(store: &Arc<Store>, folder: String) -> Result<MapKey, Stri
 ///
 /// Who may open whose private map waits for agent identity (R-8.2). Until then, anyone who can
 /// reach the home's socket can open any map in it, the same as a project.
-fn check_map_name(name: &str) -> Result<(), String> {
+pub(crate) fn check_map_name(name: &str) -> Result<(), String> {
     let ok = (1..=64).contains(&name.len())
         && name
             .bytes()

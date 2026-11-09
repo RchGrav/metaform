@@ -19,6 +19,7 @@ mod model;
 mod names;
 mod reads;
 mod refusal;
+pub mod check;
 pub mod markdown;
 pub mod specification;
 

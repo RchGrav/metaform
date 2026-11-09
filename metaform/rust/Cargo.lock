@@ -700,6 +700,7 @@ dependencies = [
 name = "metaform-server"
 version = "0.1.0"
 dependencies = [
+ "metaform-core",
  "metaform-store",
  "rmcp",
  "serde_json",

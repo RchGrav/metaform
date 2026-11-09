@@ -9,12 +9,18 @@
 //! - `{"admin": {"set": {"key": "<key>", "value"?: <json>, "project"?: "<folder>"}}}` sets a value,
 //!   or removes it when `value` is absent, so the next level applies.
 //!
-//! A folder names a project; it is registered if it is not yet, as an agent's connection does.
+//! - `{"admin": {"export": {"project"?: "<folder>", "map"?: "<name>", "check"?: true}}}` answers
+//!   the specification document (R-1.2) as `markdown`, and with `check` the TASTE reports as
+//!   `reports` (one line each) and `summary`.
+//!
+//! For settings, a folder names a project and is registered if it is not yet, as an agent's
+//! connection does. An export only reads: a folder that is not registered is refused, so an export
+//! never creates an empty map.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use metaform_store::Store;
+use metaform_store::{MapKey, Store};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -46,10 +52,40 @@ fn answer_now(store: &Store, request: &Value) -> Value {
             let applies = metaform_store::settings::declared(key).map_or("", |s| if s.at_start { "at the next start" } else { "at once" });
             Ok(json!({"ok": true, "applies": applies}))
         })
+    } else if let Some(body) = request.get("export") {
+        export(store, body)
     } else {
-        Err("an admin request is settings or set".into())
+        Err("an admin request is settings, set or export".into())
     };
     result.unwrap_or_else(|error| json!({"ok": false, "error": error}))
+}
+
+/// The specification document for one project's main map or one standalone map.
+fn export(store: &Store, body: &Value) -> Result<Value, String> {
+    let (key, title) = match (body["project"].as_str(), body["map"].as_str()) {
+        (Some(folder), None) => {
+            let folder = PathBuf::from(folder);
+            let id = store
+                .find_project(&folder)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("{} has no map yet; an agent creates one by working there through the project-map tool", folder.display()))?;
+            let title = folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            (MapKey::main(&id), title)
+        }
+        (None, Some(name)) => {
+            crate::check_map_name(name)?;
+            (MapKey::standalone(name), name.to_string())
+        }
+        _ => return Err("an export names exactly one of a project folder or a map".into()),
+    };
+    let map = store.snapshot(&key).map_err(|e| e.to_string())?;
+    let mut answer = json!({"ok": true, "markdown": metaform_core::markdown::render(&map, &title)});
+    if body["check"] == json!(true) {
+        let reports = metaform_core::check::check(&map);
+        answer["summary"] = json!(metaform_core::check::summary(&reports));
+        answer["reports"] = json!(reports.iter().map(metaform_core::check::Report::line).collect::<Vec<_>>());
+    }
+    Ok(answer)
 }
 
 /// Send one admin request from the CLI, starting the server if none is running.

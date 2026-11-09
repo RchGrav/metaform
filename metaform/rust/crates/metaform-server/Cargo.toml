@@ -11,6 +11,7 @@ name = "metaform"
 path = "src/main.rs"
 
 [dependencies]
+metaform-core = { path = "../metaform-core" }
 metaform-store = { path = "../metaform-store" }
 rmcp = { version = "3.9", default-features = false, features = ["server"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
