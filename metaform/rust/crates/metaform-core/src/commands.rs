@@ -243,7 +243,7 @@ impl Work<'_> {
             let message = if receivers.len() > 1 {
                 format!(
                     "cannot delete '{address}': these elements still want it: {}. Remove their wants first.",
-                    receivers.join(", ")
+                    receivers.iter().map(|r| format!("'{r}'")).collect::<Vec<_>>().join(", ")
                 )
             } else {
                 format!("cannot delete '{address}': '{first}' still wants it. Remove that want first.")

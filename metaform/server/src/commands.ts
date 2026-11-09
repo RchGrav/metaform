@@ -105,7 +105,7 @@ async function remove(store: Store, address: string, supplied: { wants?: string[
   if (receivers.length > 0) {
     const message =
       receivers.length > 1
-        ? `cannot delete '${address}': these elements still want it: ${receivers.join(", ")}. Remove their wants first.`
+        ? `cannot delete '${address}': these elements still want it: ${receivers.map((r) => `'${r}'`).join(", ")}. Remove their wants first.`
         : `cannot delete '${address}': '${receivers[0]}' still wants it. Remove that want first.`;
     throw new CommandError(message, {
       delete: { [receivers[0]]: { wants: [address] } },
