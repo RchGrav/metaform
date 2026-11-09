@@ -25,7 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use metaform_store::{ClientId, MapKey, Store};
+use metaform_store::{ClientId, Failure, MapKey, Store};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -131,30 +131,21 @@ fn import(store: &Store, body: &Value) -> Result<Value, String> {
         let value = metaform_core::specification::to_json(blocks);
         commands.push((address.clone(), json!({"update": {address.as_str(): {layer: value}}})));
     }
-    // Try every write on a copy first, so a document that breaks a rule writes nothing.
-    let contract = metaform_core::Contract::bundled().map_err(|e| e.to_string())?;
-    let mut trial = (*map).clone();
-    for (address, command) in &commands {
-        match metaform_core::execute(&contract, &trial, command) {
-            Ok(metaform_core::Outcome::Write(write)) => trial = write.map,
-            Ok(_) => {}
-            Err(refusal) => {
-                return Err(format!("'{address}': {}: {}; the import wrote nothing", refusal.code.as_str(), refusal.reason));
-            }
-        }
+    // One write: every section is checked against the map the sections before it made, and
+    // all are stored in one transaction or none are. No other write lands in between.
+    let sent: Vec<Value> = commands.iter().map(|(_, command)| command.clone()).collect();
+    if let Err(failed) = store.execute_all(ClientId(0), &key, &sent) {
+        return Err(match (failed.index, &failed.failure) {
+            (Some(index), Failure::Refused(refusal)) => format!(
+                "'{}': {}: {}; the import wrote nothing",
+                commands[index].0,
+                refusal.code.as_str(),
+                refusal.reason
+            ),
+            (_, failure) => format!("{failure}; the import may or may not be stored, so export the map before you import again"),
+        });
     }
-    let mut written = Vec::new();
-    for (address, command) in &commands {
-        match store.execute(ClientId(0), &key, command) {
-            Ok(_) => written.push(address.clone()),
-            Err(failure) => {
-                return Err(format!(
-                    "'{address}': {failure}. The import stopped here. Sections already written: {}.",
-                    if written.is_empty() { "none".to_string() } else { written.join(", ") }
-                ));
-            }
-        }
-    }
+    let written: Vec<String> = commands.into_iter().map(|(address, _)| address).collect();
     Ok(json!({"ok": true, "written": written, "unchanged": unchanged}))
 }
 

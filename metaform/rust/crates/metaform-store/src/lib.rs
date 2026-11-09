@@ -25,7 +25,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 
 pub use metaform_core::{Code, Refusal};
-use metaform_core::{Contract, Map, Outcome, specification};
+use metaform_core::{Contract, Effect, Map, Outcome, specification};
 use serde_json::{Value, json};
 
 use writer::{Job, Writer};
@@ -119,6 +119,15 @@ impl From<lbug::Error> for StoreError {
     fn from(e: lbug::Error) -> Self {
         StoreError::Ladybug(e.to_string())
     }
+}
+
+/// Why `Store::execute_all` wrote nothing.
+#[derive(Debug, thiserror::Error)]
+#[error("{}{failure}", index.map(|i| format!("command {}: ", i + 1)).unwrap_or_default())]
+pub struct BatchFailure {
+    /// The position, from 0, of the command that was refused; `None` when the store failed.
+    pub index: Option<usize>,
+    pub failure: Failure,
 }
 
 /// Why a command did not succeed.
@@ -373,6 +382,41 @@ impl Store {
             .map_err(|_| Failure::Store(StoreError::WriterGone))?
     }
 
+    /// Run several commands of the Metaform tool against one map as one write: each is checked
+    /// against the map the ones before it made, and all are stored in one transaction, or none
+    /// are. No other client's write lands between them. Returns each command's result in order.
+    /// For writes that must not be split, such as a specification import.
+    pub fn execute_all(
+        &self,
+        client: ClientId,
+        map: &MapKey,
+        commands: &[Value],
+    ) -> Result<Vec<Value>, BatchFailure> {
+        let whole = |failure: Failure| BatchFailure { index: None, failure };
+        self.ensure_defined(map).map_err(|e| whole(e.into()))?;
+        let db = self.db(&map.db).map_err(|e| whole(e.into()))?;
+        let (reply, answer) = mpsc::sync_channel(1);
+        let (snapshots, contract, subscribers) = (
+            Arc::clone(&db.snapshots),
+            Arc::clone(&self.contract),
+            Arc::clone(&self.subscribers),
+        );
+        let (key, commands) = (map.clone(), commands.to_vec());
+        db.writer
+            .submit(Job {
+                client,
+                task: Box::new(move |conn| {
+                    let result =
+                        write_all(conn, &snapshots, &contract, &subscribers, &key, &commands);
+                    let _ = reply.send(result);
+                }),
+            })
+            .map_err(|e| whole(e.into()))?;
+        answer
+            .recv()
+            .map_err(|_| whole(Failure::Store(StoreError::WriterGone)))?
+    }
+
     /// The current map, for reads outside the tool such as the CLI's specification export. The
     /// server stays the only reader and writer of the store (R-4.4).
     pub fn snapshot(&self, map: &MapKey) -> Result<Arc<Map>, StoreError> {
@@ -508,7 +552,7 @@ impl Store {
     }
 }
 
-/// The body of one write job, on the writer thread.
+/// The body of one write job, on the writer thread: one command.
 fn write(
     conn: &lbug::Connection,
     snapshots: &Snapshots,
@@ -517,25 +561,61 @@ fn write(
     key: &MapKey,
     command: &Value,
 ) -> Result<Value, Failure> {
-    let snapshot = load_into(snapshots, conn, &key.map)?;
-    let write = match metaform_core::execute(contract, &snapshot, command) {
-        Err(refusal) => return Err(Failure::Refused(refusal)),
-        Ok(Outcome::Read(result)) => return Ok(result),
-        Ok(Outcome::Write(write)) => write,
-    };
-    writer::transact(conn, |c| graph::persist(c, &key.map, &write.effect))?;
+    write_all(conn, snapshots, contract, subscribers, key, std::slice::from_ref(command))
+        .map(|mut results| results.remove(0))
+        .map_err(|failed| failed.failure)
+}
+
+/// The body of one write job, on the writer thread: every command in order, each checked against
+/// the map the ones before it made. All the changes are stored in one transaction and announced
+/// once, or none are. The job holds the writer, so no other write lands between the commands.
+fn write_all(
+    conn: &lbug::Connection,
+    snapshots: &Snapshots,
+    contract: &Contract,
+    subscribers: &Subscribers,
+    key: &MapKey,
+    commands: &[Value],
+) -> Result<Vec<Value>, BatchFailure> {
+    let whole = |failure: Failure| BatchFailure { index: None, failure };
+    let mut map = load_into(snapshots, conn, &key.map).map_err(|e| whole(e.into()))?;
+    let mut effect = Effect::default();
+    let mut results = Vec::with_capacity(commands.len());
+    for (index, command) in commands.iter().enumerate() {
+        match metaform_core::execute(contract, &map, command) {
+            Err(refusal) => {
+                return Err(BatchFailure {
+                    index: Some(index),
+                    failure: Failure::Refused(refusal),
+                });
+            }
+            Ok(Outcome::Read(result)) => results.push(result),
+            Ok(Outcome::Write(write)) => {
+                // Each entry is the element's state after its command, so a later entry for
+                // the same address replaces an earlier one.
+                effect.elements.extend(write.effect.elements);
+                map = Arc::new(write.map);
+                results.push(write.result);
+            }
+        }
+    }
+    if effect.is_empty() {
+        return Ok(results);
+    }
+    writer::transact(conn, |c| graph::persist(c, &key.map, &effect))
+        .map_err(|e| whole(e.into()))?;
     snapshots
         .write()
         .expect("snapshot lock")
-        .insert(key.map.clone(), Arc::new(write.map));
-    let changed = write.effect.to_json();
+        .insert(key.map.clone(), map);
+    let changed = effect.to_json();
     let announcement = Announcement { map: key.clone(), changed };
     subscribers
         .lock()
         .expect("subscriber lock")
         .entries
         .retain(|(_, map, sink)| map != key || sink(&announcement));
-    Ok(write.result)
+    Ok(results)
 }
 
 /// The `update` that makes the map's specification layer definition equal to

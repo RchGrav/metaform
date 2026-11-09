@@ -407,3 +407,42 @@ fn a_main_map_holds_the_specification_layer_definition() {
         "a field the code no longer defines is removed: {extra}"
     );
 }
+
+/// `execute_all`: each command sees the ones before it, all land in one transaction with one
+/// announcement, and a refused command leaves the map as it was, with its position named.
+#[test]
+fn a_batch_is_stored_whole_or_not_at_all() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let map = project(&store, dir.path());
+    store.execute(B, &map, &json!({".": {}})).unwrap(); // seeds the definition first
+    let announced = store.subscribe(&map);
+    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Pipeline", "role": "Definitive"}}});
+    let blocks = |code: &str| {
+        json!({"update": {"code.pipeline": {"specification": [{"level": 1, "code": code, "title": "Purpose", "text": "Moves frames."}]}}})
+    };
+    let results = store
+        .execute_all(A, &map, &[element.clone(), blocks("PL-1")])
+        .unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(announced.try_iter().count(), 1, "one announcement for the batch");
+    let read = |store: &Store| {
+        store
+            .execute(B, &map, &json!({"code.pipeline": {"layers": ["specification"]}}))
+            .unwrap()
+    };
+    let before = read(&store);
+    assert!(before.to_string().contains("PL-1"), "{before}");
+
+    // The second command is refused (a skipped heading level), so the first is not stored.
+    let bad = json!({"update": {"code.pipeline": {"specification": [{"level": 2, "title": "Deep", "text": "x"}]}}});
+    let failed = store
+        .execute_all(A, &map, &[blocks("PL-2"), bad])
+        .unwrap_err();
+    assert_eq!(failed.index, Some(1));
+    assert!(matches!(failed.failure, Failure::Refused(_)));
+    assert_eq!(read(&store), before, "nothing from the refused batch is stored");
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(read(&store), before, "and nothing reached the database");
+}
