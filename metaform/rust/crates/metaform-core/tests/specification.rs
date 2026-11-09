@@ -307,6 +307,16 @@ fn the_layer_is_readable_and_listed_by_goto() {
     assert_eq!(sheet["layers"]["specification"], json!({"records": 1}));
     let instruction = sheet["instructions"]["specification"].as_str().unwrap();
     assert!(instruction.contains("TASTE") && instruction.contains("\"level\": 1-4"));
+    // The read form the instruction teaches must be one the contract accepts.
+    let taught = instruction
+        .split("Read them with ")
+        .nth(1)
+        .and_then(|rest| rest.split(". ").next())
+        .unwrap()
+        .replace("<address>", MASHER);
+    let (_, again) = run(&contract, &map, serde_json::from_str(&taught).unwrap())
+        .unwrap_or_else(|refusal| panic!("the instruction teaches a refused read {taught}: {refusal:?}"));
+    assert_eq!(again[MASHER]["specification"], sent);
     let (_, trunk) = run(&contract, &map, json!({"goto": "code.masher"})).unwrap();
     assert!(trunk["layers"].get("specification").is_none() && trunk.get("instructions").is_none());
 }
