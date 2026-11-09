@@ -107,8 +107,8 @@ impl Definition {
     }
 }
 
-/// Every layer defined in the map, by field name. If two definitions share a last segment, the
-/// definition whose address sorts first defines the layer.
+/// Every layer defined in the map, by field name. A write cannot create two definitions with the
+/// same last segment; if stored data has them, the definition whose address sorts first wins.
 pub fn definitions(map: &Map) -> Vec<Definition> {
     let mut out: Vec<Definition> = Vec::new();
     for (address, element) in map.elements() {
@@ -139,6 +139,11 @@ pub fn definitions(map: &Map) -> Vec<Definition> {
 /// The definition of one layer, if the map defines it.
 pub fn definition_of(map: &Map, layer: &str) -> Option<Definition> {
     definitions(map).into_iter().find(|d| d.layer == layer)
+}
+
+/// Whether an address is beneath the `layer` root scope, where layer definitions live.
+pub fn in_layer_scope(address: &str) -> bool {
+    is_beneath_layer_scope(address)
 }
 
 fn is_beneath_layer_scope(address: &str) -> bool {

@@ -423,7 +423,7 @@ A project has exactly one Definitive element.
 
 ### 6.0.1 Layers defined in the map, and the specification layer
 
-**R-6.24** Every layer works the same way. A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment, and its value there is a list of records. The specification layer is defined by `layer.document.specification`, so its field is `specification`. The server writes that definition into each main map and refuses any other write to it.
+**R-6.24** Every layer works the same way. A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment, and its value there is a list of records. No two definitions share a last segment. The specification layer is defined by `layer.document.specification`, so its field is `specification`. The server writes that definition into each main map and refuses any other write to it.
 
 **Status:** Decided, owner, 2026-11-09, relayed by Jorge, the store agent: layers have no mechanism of their own, the specification layer is listed as `layer.document.specification` in the main map, and its data is a JSON field named `specification` on the receiving elements. The owner's reason for these decisions has not been recorded yet. Built on branch `specification-layer-core`, not merged. A definition element with an `instruction` field, the last segment as the field name, and locking the code-defined definition are Proposed, in `metaform/docs/designs/specification-layer.md`. Moving the `system` layers of R-6.15 into the map is not decided.
 
