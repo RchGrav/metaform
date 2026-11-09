@@ -45,11 +45,19 @@ struct Presence {
     /// Sheet parts that hold the same text at every address, delivered once per context rather
     /// than once per address: the layer `instructions` (R-6.27).
     once: serde_json::Map<String, Value>,
+    /// Entries of `NAMED_AFTER_FIRST` parts already delivered in full in this context, by part.
+    held: HashMap<String, serde_json::Map<String, Value>>,
 }
 
 /// Sheet parts whose entries are the same wherever they appear, so each entry is delivered once
 /// per context.
 const ONCE_PER_CONTEXT: [&str; 1] = ["instructions"];
+
+/// Sheet parts whose entries can apply at many addresses: the `skills` frontmatter (R-5.30). Each
+/// entry is delivered in full once per context. A later sheet that includes the part names an
+/// entry the context already holds unchanged as `{}`, so the agent still sees what applies at the
+/// address without receiving it again. A changed entry is delivered in full again.
+const NAMED_AFTER_FIRST: [&str; 1] = ["skills"];
 
 impl Presence {
     /// Record an arrival and return only the parts of the sheet not yet delivered unchanged in
@@ -79,10 +87,29 @@ impl Presence {
                 }
                 continue;
             }
-            if part != "at" && seen.get(&part) != Some(&value) {
-                seen.insert(part.clone(), value.clone());
-                out.insert(part, value);
+            if part == "at" || seen.get(&part) == Some(&value) {
+                continue;
             }
+            seen.insert(part.clone(), value.clone());
+            if NAMED_AFTER_FIRST.contains(&part.as_str())
+                && let Value::Object(entries) = value
+            {
+                let held = self.held.entry(part.clone()).or_default();
+                let shown: serde_json::Map<String, Value> = entries
+                    .into_iter()
+                    .map(|(name, entry)| {
+                        if held.get(&name) == Some(&entry) {
+                            (name, Value::Object(serde_json::Map::new()))
+                        } else {
+                            held.insert(name.clone(), entry.clone());
+                            (name, entry)
+                        }
+                    })
+                    .collect();
+                out.insert(part, Value::Object(shown));
+                continue;
+            }
+            out.insert(part, value);
         }
         self.at = Some(at);
         Value::Object(out)
@@ -152,8 +179,8 @@ impl ServerHandler for MapTool {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
         let map = Resource::new(self.uri.clone(), "map").with_description(
-            "This connection's functional map. Reading it returns the root read: every address and \
-             every want as an edge. Subscribe to hear of each commit.",
+            "This connection's functional map. Reading it returns the shallow graph: every address \
+             and every want as an edge. Subscribe to hear of each commit.",
         );
         Ok(ListResourcesResult::with_all_items(vec![map]))
     }

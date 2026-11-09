@@ -642,3 +642,42 @@ fn an_edited_specification_imports_all_or_nothing() {
     assert_eq!(after, edited, "a refused import writes nothing");
     stop_server(&home);
 }
+
+/// `goto` delivers each skill's frontmatter once per context (R-5.30). A later sheet names a skill
+/// the context already holds unchanged as `{}`, so the agent still sees what applies there, and a
+/// changed skill comes back in full.
+#[test]
+fn skills_arrive_once_per_context_then_by_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, project) = (dir.path().join("home"), dir.path().join("proj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let mut agent = Agent::start(&home, &project);
+    agent.request("server/discover", json!({}));
+    let tdd = json!({"name": "tdd", "description": "Write the test first.", "uri": "skills/tdd/SKILL.md"});
+    let paint = json!({"name": "paint", "description": "How frames are drawn.", "uri": "skills/paint/SKILL.md"});
+    for command in [
+        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "Definitive"}}}),
+        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "Supportive", "skills": [paint.clone()]}}}),
+        json!({"update": {"code.audio": {"technical_name": "audio", "name": "mixer", "role": "Supportive"}}}),
+        json!({"update": {".": {"skills": [tdd.clone()]}}}),
+    ] {
+        let (refused, answer) = agent.call(command);
+        assert!(!refused, "{answer}");
+    }
+
+    let (_, first) = agent.call(json!({"goto": "code.engine"}));
+    assert_eq!(first["skills"], json!({"tdd": tdd}), "the first arrival delivers the root skill in full: {first}");
+    let (_, second) = agent.call(json!({"goto": "code.render"}));
+    assert_eq!(second["skills"], json!({"tdd": {}, "paint": paint}), "a held skill is named only: {second}");
+
+    let changed = json!({"name": "tdd", "description": "Write the failing test first.", "uri": "skills/tdd/SKILL.md"});
+    let (refused, answer) = agent.call(json!({"update": {".": {"skills": [changed.clone()]}}}));
+    assert!(!refused, "{answer}");
+    let (_, third) = agent.call(json!({"goto": "code.audio"}));
+    assert_eq!(third["skills"], json!({"tdd": changed}), "a changed skill comes back in full: {third}");
+    let (_, again) = agent.call(json!({"goto": "code.render"}));
+    assert_eq!(again["skills"], json!({"tdd": {}, "paint": {}}), "an address's own skill is named only on a later visit: {again}");
+
+    agent.stop();
+    stop_server(&home);
+}
