@@ -872,85 +872,10 @@
         "role": "Notable"
        },
        "workflow": {
-        "technical_name": "workflow engine reference map",
+        "technical_name": "workflow engine",
         "name": "workflow (mock)",
-        "role": "Definitive",
-        "uri": "https://example.invalid/mock/workflow-engine",
-        "code": {
-         "interpreter": {
-          "flow": {
-           "technical_name": "control flow interpreter",
-           "name": "Interpreter",
-           "role": "Supportive",
-           "wants": {
-            "upstream.code.engine.workflow.code.transport.call": {
-             "why": "(mock) Run each step as a call.",
-             "how": "(mock) Sends one call per step and waits for its result.",
-             "direction": "outbound"
-            },
-            "upstream.code.engine.workflow.code.verifier.step": {
-             "why": "(mock) Accept only checked results.",
-             "how": "(mock) Passes each result through the verifier.",
-             "direction": "outbound"
-            },
-            "upstream.code.engine.workflow.document.procedure": {
-             "why": "(mock) Interpret the authored control flow.",
-             "how": "(mock) Reads each procedure's steps in order.",
-             "direction": "inbound"
-            }
-           }
-          }
-         },
-         "policy": {
-          "retry": {
-           "technical_name": "retry policy",
-           "name": "Retry",
-           "role": "Notable"
-          }
-         },
-         "store": {
-          "frame": {
-           "technical_name": "call frame store",
-           "name": "Frames",
-           "role": "Supportive"
-          }
-         },
-         "transport": {
-          "call": {
-           "technical_name": "procedure call transport",
-           "name": "Call transport",
-           "role": "Supportive",
-           "wants": {
-            "upstream.code.engine.workflow.code.store.frame": {
-             "why": "(mock) Resume interrupted calls.",
-             "how": "(mock) Saves and restores call frames.",
-             "direction": "two-way"
-            }
-           }
-          }
-         },
-         "verifier": {
-          "step": {
-           "technical_name": "step result verifier",
-           "name": "Verifier",
-           "role": "Notable",
-           "wants": {
-            "upstream.code.engine.workflow.code.policy.retry": {
-             "why": "(mock) Recover from a failed check.",
-             "how": "(mock) Asks the retry policy whether to run the step again.",
-             "direction": "outbound"
-            }
-           }
-          }
-         }
-        },
-        "document": {
-         "procedure": {
-          "technical_name": "authored procedure",
-          "name": "Procedures",
-          "role": "Supportive"
-         }
-        }
+        "role": "Supportive",
+        "uri": "https://example.invalid/mock/workflow-engine"
        }
       },
       "harness": {
@@ -1595,6 +1520,131 @@
        "name": "Metaform",
        "role": "Supportive",
        "uri": "metaform://map/project/metaform/main#code.server.tool"
+      }
+     }
+    }
+   }
+  }
+ },
+ "outside": {
+  "https://example.invalid/mock/workflow-engine": {
+   "name": "workflow-engine",
+   "dump": {
+    "code": {
+     "engine": {
+      "workflow": {
+       "technical_name": "workflow engine",
+       "name": "Workflow",
+       "role": "Definitive",
+       "wants": {
+        "code.interpreter.flow": {
+         "why": "(mock) Run authored procedures.",
+         "how": "(mock) Hands each procedure to the interpreter.",
+         "direction": "outbound"
+        }
+       }
+      }
+     },
+     "interpreter": {
+      "flow": {
+       "technical_name": "control flow interpreter",
+       "name": "Interpreter",
+       "role": "Supportive",
+       "wants": {
+        "code.transport.call": {
+         "why": "(mock) Run each step as a call.",
+         "how": "(mock) Sends one call per step and waits for its result.",
+         "direction": "outbound"
+        },
+        "code.verifier.step": {
+         "why": "(mock) Accept only checked results.",
+         "how": "(mock) Passes each result through the verifier.",
+         "direction": "outbound"
+        },
+        "document.procedure": {
+         "why": "(mock) Interpret the authored control flow.",
+         "how": "(mock) Reads each procedure's steps in order.",
+         "direction": "inbound"
+        }
+       }
+      }
+     },
+     "policy": {
+      "retry": {
+       "technical_name": "retry policy",
+       "name": "Retry",
+       "role": "Notable"
+      }
+     },
+     "store": {
+      "frame": {
+       "technical_name": "call frame store",
+       "name": "Frames",
+       "role": "Supportive"
+      }
+     },
+     "transport": {
+      "call": {
+       "technical_name": "procedure call transport",
+       "name": "Call transport",
+       "role": "Supportive",
+       "wants": {
+        "code.store.frame": {
+         "why": "(mock) Resume interrupted calls.",
+         "how": "(mock) Saves and restores call frames.",
+         "direction": "two-way"
+        },
+        "upstream.code.harness.agent": {
+         "why": "(mock) Reason inside each step.",
+         "how": "(mock) Calls the agent harness for the step's reasoning.",
+         "direction": "two-way"
+        }
+       }
+      }
+     },
+     "verifier": {
+      "step": {
+       "technical_name": "step result verifier",
+       "name": "Verifier",
+       "role": "Notable",
+       "wants": {
+        "code.policy.retry": {
+         "why": "(mock) Recover from a failed check.",
+         "how": "(mock) Asks the retry policy whether to run the step again.",
+         "direction": "outbound"
+        }
+       }
+      }
+     }
+    },
+    "document": {
+     "procedure": {
+      "technical_name": "authored procedure",
+      "name": "Procedures",
+      "role": "Supportive"
+     }
+    },
+    "layer": {
+     "document": {
+      "specification": {
+       "technical_name": "specification document layer",
+       "name": "Specification",
+       "role": "Supportive",
+       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
+       "format": "markdown_blocks",
+       "instruction": "(mock) The server seeds this definition; the real instruction is metaform_core::specification::INSTRUCTION.",
+       "template": "{title}: {text}"
+      }
+     }
+    },
+    "upstream": {
+     "code": {
+      "harness": {
+       "agent": {
+        "technical_name": "agent harness",
+        "name": "Harness",
+        "role": "Supportive"
+       }
       }
      }
     }
