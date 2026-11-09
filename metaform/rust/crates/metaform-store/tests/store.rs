@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use metaform_store::{ClientId, DbKey, Failure, MapKey, Store, StoreError};
+use metaform_store::{ClientId, DbKey, Failure, MapKey, Store, StoreError, store_failure_json};
 use serde_json::{Value, json};
 
 const A: ClientId = ClientId(1);
@@ -93,7 +93,16 @@ fn map_persists_across_reopen() {
 fn second_server_on_a_home_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let _first = Store::open(dir.path()).unwrap();
-    assert!(matches!(Store::open(dir.path()), Err(StoreError::Owned(_))));
+    let Err(error) = Store::open(dir.path()) else {
+        panic!("a second store opened an owned home")
+    };
+    assert!(matches!(error, StoreError::Owned(_)));
+    // A store failure reaches an agent in the refusal structure, not as bare text.
+    let answer = store_failure_json(&error);
+    assert_eq!(answer["code"], json!("INTERNAL_ERROR"));
+    assert_eq!(answer["status"], json!("error"));
+    assert!(answer["rule"].as_str().unwrap().contains("read the element before you retry"));
+    assert!(answer["reason"].as_str().unwrap().contains("owned by another"));
 }
 
 /// A refused write changes nothing, in memory or on disk, and its refusal names a remedy.

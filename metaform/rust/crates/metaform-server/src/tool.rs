@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use metaform_store::{ClientId, Failure, MapKey, Store, refusal_json};
+use metaform_store::{ClientId, Failure, MapKey, Store, refusal_json, store_failure_json};
 use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -292,7 +292,7 @@ impl ServerHandler for MapTool {
                 CallToolResult::error(vec![ContentBlock::text(refusal_json(&refusal).to_string())])
             }
             Err(Failure::Store(e)) => {
-                CallToolResult::error(vec![ContentBlock::text(e.to_string())])
+                CallToolResult::error(vec![ContentBlock::text(store_failure_json(&e).to_string())])
             }
         }
         .into())

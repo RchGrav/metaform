@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
 
-use metaform_core::{Contract, Map, Outcome, Refusal};
+use metaform_core::{Code, Contract, Map, Outcome, Refusal};
 use serde_json::{Value, json};
 
 use writer::{Job, Writer};
@@ -465,4 +465,10 @@ pub fn refusal_json(refusal: &Refusal) -> Value {
         o.entry("status").or_insert(json!("error"));
     }
     out
+}
+
+/// A store failure as an agent receives it: the same structure as a refusal, with the code
+/// `INTERNAL_ERROR` (server design, Isolation). The reason is the store's own message.
+pub fn store_failure_json(error: &StoreError) -> Value {
+    refusal_json(&Refusal::new(Code::InternalError, error.to_string(), None))
 }

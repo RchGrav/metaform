@@ -19,6 +19,7 @@ pub enum Code {
     NotFound,
     ElementsBeneath,
     WantIncomplete,
+    InternalError,
 }
 
 impl Code {
@@ -35,6 +36,7 @@ impl Code {
             Code::NotFound => "NOT_FOUND",
             Code::ElementsBeneath => "ELEMENTS_BENEATH",
             Code::WantIncomplete => "WANT_INCOMPLETE",
+            Code::InternalError => "INTERNAL_ERROR",
         }
     }
 
@@ -61,6 +63,9 @@ impl Code {
                 "R-3.1: an element with elements beneath it cannot be deleted before them."
             }
             Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and intent.",
+            Code::InternalError => {
+                "The server could not complete the command. A write may or may not be stored; read the element before you retry it."
+            }
         }
     }
 }

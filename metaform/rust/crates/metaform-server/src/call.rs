@@ -82,8 +82,10 @@ pub async fn call(
     if result["isError"] != json!(true) {
         return Ok(Answer::Ok(text));
     }
-    // A refusal is the store's JSON with a code; any other error text is a server failure.
+    // A refusal is the store's JSON with a code. `INTERNAL_ERROR` and any other error text are
+    // server failures, so the CLI exits 2, not 1.
     match serde_json::from_str::<Value>(&text) {
+        Ok(refusal) if refusal["code"] == json!("INTERNAL_ERROR") => Err(text),
         Ok(refusal) if refusal.get("code").is_some() => Ok(Answer::Refused(text)),
         _ => Err(text),
     }
