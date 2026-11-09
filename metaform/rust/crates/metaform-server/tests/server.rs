@@ -456,7 +456,7 @@ fn an_agent_session_survives_a_server_restart() {
     agent.request("server/discover", json!({}));
     assert!(!agent.call(json!({"update": {"code.part": {"name": "before"}}})).0);
     stop_server(&home);
-    let (refused, read) = agent.call(json!({"code.part": {}}));
+    let (refused, read) = agent.read_after_restart(json!({"code.part": {}}));
     assert!(!refused, "{read}");
     assert_eq!(read, json!({"code.part": {"name": "before"}}), "the same map, from a new server");
     agent.stop();
@@ -570,9 +570,9 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     assert!(second.get("instructions").is_none(), "instructions arrive once per context: {second}");
 
     stop_server(&home);
-    let (refused, read) = agent.call(json!({"code.engine": {"specification": {}}}));
+    let (refused, read) = agent.read_after_restart(json!({"code.engine": {"specification": {}}}));
     assert!(!refused, "{read}");
-    assert_eq!(read["code.engine"]["specification"], blocks, "the blocks survive a restart unchanged");
+    assert_eq!(read["code.engine"]["specification"], blocks, "the blocks survive a restart unchanged: {read}");
     agent.stop();
     stop_server(&home);
 }

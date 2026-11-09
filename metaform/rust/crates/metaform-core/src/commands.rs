@@ -286,6 +286,11 @@ impl Work<'_> {
     fn finish(mut self) -> Result<(Map, Effect), Refusal> {
         self.normalize_specifications()?;
         for address in &self.touched {
+            if let Some(element) = self.elements.get_mut(address) {
+                element.put_in_order();
+            }
+        }
+        for address in &self.touched {
             let Some(element) = self.elements.get(address) else {
                 continue;
             };

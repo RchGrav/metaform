@@ -3,9 +3,12 @@
 //!
 //! Every element is an `Element` node keyed by `<map id>|<stored address>`. Nesting is a
 //! `CONTAINS` relationship from each element to its children. Each want is a `WANTS`
-//! relationship from receiver to provider carrying `why`, `how` and `direction`. Stored keys and
-//! address segments are camelCase; the agent's snake_case form exists only in memory and on
-//! the wire (R-4.11).
+//! relationship from receiver to provider carrying `why`, `how` and `direction`. Each item of a
+//! layer (a non-empty array field, R-6.24) is a `Record` node reached by `HOLDS` from its element,
+//! with its position in `ordinal` and the item itself as JSON in `data`. Ladybug stores every
+//! property as its own column, so the data is a structure of arrays (R-4.6): a write changes only
+//! the rows and columns that changed. Stored keys and address segments are camelCase; the
+//! agent's snake_case form exists only in memory and on the wire (R-4.11).
 
 use std::collections::BTreeMap;
 
@@ -23,7 +26,8 @@ const MAX_DB_SIZE: u64 = 16 << 30;
 /// fast or faster with fewer (`docs/designs/storage.md`, risk 5).
 const THREADS: u64 = 4;
 
-/// Element fields with their own column. Every other field is kept, camelCase, in `extra`.
+/// Element fields with their own column. A non-empty array field is a layer, kept as `Record`
+/// nodes. Every other field is kept, camelCase, in `extra`.
 const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
 /// Want-record fields with their own property. Any other is kept in the record's `extra`.
 const WANT_COLUMNS: [&str; 3] = ["why", "how", "direction"];
@@ -42,30 +46,40 @@ enum Shape {
 struct Table {
     name: &'static str,
     shape: Shape,
-    properties: &'static [&'static str],
+    properties: &'static [(&'static str, &'static str)],
 }
 
-/// Every property is a STRING.
 const TABLES: &[Table] = &[
     Table {
         name: "Map",
         shape: Shape::Node,
-        properties: &["id"],
+        properties: &[("id", "STRING")],
     },
     Table {
         name: "Element",
         shape: Shape::Node,
         properties: &[
-            "key",
-            "mapId",
-            "address",
-            "technicalName",
-            "name",
-            "role",
-            "uri",
-            "status",
-            "childMap",
-            "extra",
+            ("key", "STRING"),
+            ("mapId", "STRING"),
+            ("address", "STRING"),
+            ("technicalName", "STRING"),
+            ("name", "STRING"),
+            ("role", "STRING"),
+            ("uri", "STRING"),
+            ("status", "STRING"),
+            ("childMap", "STRING"),
+            ("extra", "STRING"),
+        ],
+    },
+    Table {
+        name: "Record",
+        shape: Shape::Node,
+        properties: &[
+            ("key", "STRING"),
+            ("mapId", "STRING"),
+            ("layer", "STRING"),
+            ("ordinal", "INT64"),
+            ("data", "STRING"),
         ],
     },
     Table {
@@ -90,7 +104,20 @@ const TABLES: &[Table] = &[
             from: "Element",
             to: "Element",
         },
-        properties: &["why", "how", "direction", "extra"],
+        properties: &[
+            ("why", "STRING"),
+            ("how", "STRING"),
+            ("direction", "STRING"),
+            ("extra", "STRING"),
+        ],
+    },
+    Table {
+        name: "HOLDS",
+        shape: Shape::Rel {
+            from: "Element",
+            to: "Record",
+        },
+        properties: &[],
     },
 ];
 
@@ -104,7 +131,7 @@ const RENAMES: &[(&str, &str, &str)] = &[
 
 impl Table {
     fn ddl(&self) -> String {
-        let properties = self.properties.iter().map(|p| format!("{p} STRING"));
+        let properties = self.properties.iter().map(|(p, t)| format!("{p} {t}"));
         match self.shape {
             Shape::Node => {
                 let mut columns: Vec<String> = properties.collect();
@@ -152,7 +179,7 @@ pub fn open(path: &std::path::Path) -> Result<Database, StoreError> {
             for table in TABLES {
                 c.query(&table.ddl())?;
             }
-            Ok(())
+            move_layers_out_of_extra(c)
         })?;
     }
     Ok(db)
@@ -206,7 +233,7 @@ fn check_schema(conn: &Connection, path: &std::path::Path) -> Result<Vec<String>
         let expected: Vec<(String, String)> = table
             .properties
             .iter()
-            .map(|p| (p.to_string(), "STRING".to_string()))
+            .map(|(p, t)| (p.to_string(), t.to_string()))
             .collect();
         if found != expected {
             let list = |columns: &[(String, String)]| {
@@ -305,48 +332,80 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
             .wants
             .insert(provider, record);
     }
+    let found = rows(
+        conn,
+        "MATCH (e:Element)-[:HOLDS]->(r:Record) WHERE e.mapId = $m \
+         RETURN e.address, r.layer, r.ordinal, r.data",
+        vec![("m", map.into())],
+    )?;
+    let mut layers: BTreeMap<(String, String), Vec<(i64, Json)>> = BTreeMap::new();
+    for row in found {
+        let mut it = row.into_iter();
+        let address = agent_name(&text(it.next())?.unwrap_or_default());
+        let layer = agent_name(&text(it.next())?.unwrap_or_default());
+        let ordinal = match it.next() {
+            Some(Value::Int64(n)) => n,
+            other => {
+                return Err(StoreError::Corrupt(format!(
+                    "{address}: record ordinal {other:?}"
+                )));
+            }
+        };
+        let data = text(it.next())?.unwrap_or_default();
+        let item = serde_json::from_str(&data).map_err(|_| {
+            StoreError::Corrupt(format!("{address}: record data is not JSON: {data}"))
+        })?;
+        layers
+            .entry((address, layer))
+            .or_default()
+            .push((ordinal, item));
+    }
+    // Row order is not guaranteed without ORDER BY, so the ordinal restores each layer's order.
+    for ((address, layer), mut items) in layers {
+        items.sort_by_key(|(ordinal, _)| *ordinal);
+        let element = elements
+            .get_mut(&address)
+            .ok_or_else(|| StoreError::Corrupt(format!("record of missing element {address}")))?;
+        if element.fields.contains_key(&layer) {
+            return Err(StoreError::Corrupt(format!(
+                "{address}: layer {layer} is in both extra and its records"
+            )));
+        }
+        let items = items.into_iter().map(|(_, item)| item).collect();
+        element.fields.insert(layer, Json::Array(items));
+    }
     Ok(Map::from_elements(elements))
 }
 
-/// Write an effect inside the caller's transaction. Nodes first, then wants, then
-/// nesting, then removals, so every relationship finds both of its ends.
-pub fn persist(conn: &Connection, map: &str, effect: &Effect) -> Result<(), StoreError> {
+/// Write an effect inside the caller's transaction. `before` is the map the effect was computed
+/// from, so only what changed is written: an element's columns when they changed, each want that
+/// was added, changed or removed, and each layer record that was added, changed or removed.
+/// Nodes first, then wants and records, then nesting, then removals, so every relationship finds
+/// both of its ends.
+pub fn persist(
+    conn: &Connection,
+    map: &str,
+    before: &Map,
+    effect: &Effect,
+) -> Result<(), StoreError> {
     run(conn, "MERGE (:Map {id: $m})", vec![("m", map.into())])?;
     ensure_root(conn, map)?;
+    let empty = Element::default();
     let mut created = Vec::new();
     for (address, element) in &effect.elements {
-        if let Some(element) = element
+        let Some(element) = element else { continue };
+        let old = before.element(address);
+        if old.is_none_or(|old| node_values(old) != node_values(element))
             && upsert(conn, map, address, element)?
         {
             created.push(address.as_str());
         }
     }
     for (address, element) in &effect.elements {
-        if let Some(element) = element {
-            let k = key(map, address);
-            run(
-                conn,
-                "MATCH (:Element {key: $k})-[w:WANTS]->() DELETE w",
-                vec![("k", k.as_str().into())],
-            )?;
-            for (provider, record) in &element.wants {
-                let (columns, extra) = split(record, &WANT_COLUMNS);
-                let mut params = vec![
-                    ("a", Value::from(k.as_str())),
-                    ("b", Value::from(key(map, provider).as_str())),
-                    ("extra", opt(extra)),
-                ];
-                for (name, value) in WANT_COLUMNS.iter().zip(columns) {
-                    params.push((name, opt(value)));
-                }
-                run(
-                    conn,
-                    "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
-                     CREATE (a)-[:WANTS {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
-                    params,
-                )?;
-            }
-        }
+        let Some(element) = element else { continue };
+        let old = before.element(address).unwrap_or(&empty);
+        persist_wants(conn, map, address, old, element)?;
+        persist_layers(conn, map, address, old, element)?;
     }
     for address in created {
         let k = key(map, address);
@@ -370,12 +429,199 @@ pub fn persist(conn: &Connection, map: &str, effect: &Effect) -> Result<(), Stor
     }
     for (address, element) in &effect.elements {
         if element.is_none() {
+            let k = key(map, address);
+            run(
+                conn,
+                "MATCH (:Element {key: $k})-[:HOLDS]->(r:Record) DETACH DELETE r",
+                vec![("k", k.as_str().into())],
+            )?;
             run(
                 conn,
                 "MATCH (e:Element {key: $k}) DETACH DELETE e",
-                vec![("k", key(map, address).as_str().into())],
+                vec![("k", k.as_str().into())],
             )?;
         }
+    }
+    Ok(())
+}
+
+/// What the `Element` node holds for an element: its columns, `extra` and child map. Layers and
+/// wants are stored apart.
+fn node_values(element: &Element) -> (Vec<Option<String>>, Option<String>, Option<&str>) {
+    let (columns, extra) = split(&element.fields, &COLUMNS);
+    (
+        columns,
+        extra,
+        element.child_map.as_ref().map(|m| m.0.as_str()),
+    )
+}
+
+/// Store the wants that differ between `old` and `new`: a removed or changed want's edge is
+/// deleted, and an added or changed want's edge is created.
+fn persist_wants(
+    conn: &Connection,
+    map: &str,
+    address: &str,
+    old: &Element,
+    new: &Element,
+) -> Result<(), StoreError> {
+    let k = key(map, address);
+    for (provider, record) in &old.wants {
+        if new.wants.get(provider) != Some(record) {
+            run(
+                conn,
+                "MATCH (:Element {key: $a})-[w:WANTS]->(:Element {key: $b}) DELETE w",
+                vec![
+                    ("a", k.as_str().into()),
+                    ("b", key(map, provider).as_str().into()),
+                ],
+            )?;
+        }
+    }
+    for (provider, record) in &new.wants {
+        if old.wants.get(provider) == Some(record) {
+            continue;
+        }
+        let (columns, extra) = split(record, &WANT_COLUMNS);
+        let mut params = vec![
+            ("a", Value::from(k.as_str())),
+            ("b", Value::from(key(map, provider).as_str())),
+            ("extra", opt(extra)),
+        ];
+        for (name, value) in WANT_COLUMNS.iter().zip(columns) {
+            params.push((name, opt(value)));
+        }
+        run(
+            conn,
+            "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
+             CREATE (a)-[:WANTS {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
+            params,
+        )?;
+    }
+    Ok(())
+}
+
+/// The element's layers: every non-empty array field, by name. An empty array stays in `extra`,
+/// so a field written as `[]` reads back as `[]`.
+fn layers_of(element: &Element) -> BTreeMap<&str, &[Json]> {
+    element
+        .fields
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Json::Array(items) if !items.is_empty() => Some((name.as_str(), items.as_slice())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A record's key: the element's key, the stored layer name and the position. `$` cannot occur
+/// in an address segment or a layer name, so the key is unambiguous.
+fn record_key(element_key: &str, layer: &str, ordinal: usize) -> String {
+    format!("{element_key}${layer}${ordinal}")
+}
+
+/// Store the layer records that differ between `old` and `new`, position by position.
+fn persist_layers(
+    conn: &Connection,
+    map: &str,
+    address: &str,
+    old: &Element,
+    new: &Element,
+) -> Result<(), StoreError> {
+    let k = key(map, address);
+    let (old_layers, new_layers) = (layers_of(old), layers_of(new));
+    let names: std::collections::BTreeSet<&str> =
+        old_layers.keys().chain(new_layers.keys()).copied().collect();
+    for name in names {
+        let layer = stored_name(name);
+        let was = old_layers.get(name).copied().unwrap_or_default();
+        let is = new_layers.get(name).copied().unwrap_or_default();
+        for ordinal in 0..was.len().max(is.len()) {
+            let rk = record_key(&k, &layer, ordinal);
+            match (was.get(ordinal), is.get(ordinal)) {
+                (Some(a), Some(b)) if a == b => {}
+                (Some(_), Some(item)) => run(
+                    conn,
+                    "MATCH (r:Record {key: $r}) SET r.data = $d",
+                    vec![("r", rk.as_str().into()), ("d", item.to_string().into())],
+                )?,
+                (None, Some(item)) => create_record(conn, map, &k, &layer, ordinal, item)?,
+                (Some(_), None) => run(
+                    conn,
+                    "MATCH (r:Record {key: $r}) DETACH DELETE r",
+                    vec![("r", rk.as_str().into())],
+                )?,
+                (None, None) => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Create one layer record and the `HOLDS` relationship from its element.
+fn create_record(
+    conn: &Connection,
+    map: &str,
+    element_key: &str,
+    layer: &str,
+    ordinal: usize,
+    item: &Json,
+) -> Result<(), StoreError> {
+    let ordinal_value = i64::try_from(ordinal)
+        .map_err(|_| StoreError::Corrupt(format!("{element_key}: layer {layer} is too long")))?;
+    run(
+        conn,
+        "MATCH (e:Element {key: $e}) \
+         CREATE (e)-[:HOLDS]->(:Record {key: $r, mapId: $m, layer: $l, ordinal: $o, data: $d})",
+        vec![
+            ("e", element_key.into()),
+            ("r", record_key(element_key, layer, ordinal).as_str().into()),
+            ("m", map.into()),
+            ("l", layer.into()),
+            ("o", Value::Int64(ordinal_value)),
+            ("d", item.to_string().into()),
+        ],
+    )
+}
+
+/// Move layers that an earlier build kept in `extra` into `Record` nodes. Runs inside `open`'s
+/// schema transaction; an element is rewritten only when its `extra` holds a non-empty array, so
+/// after the first open of an older database it changes nothing.
+fn move_layers_out_of_extra(conn: &Connection) -> Result<(), StoreError> {
+    let found = rows(
+        conn,
+        "MATCH (e:Element) WHERE e.extra IS NOT NULL RETURN e.key, e.mapId, e.extra",
+        vec![],
+    )?;
+    for row in found {
+        let mut it = row.into_iter();
+        let (Some(k), Some(map), Some(extra)) = (text(it.next())?, text(it.next())?, text(it.next())?)
+        else {
+            continue;
+        };
+        let mut object = parse_object(&extra)?;
+        let moved: Vec<(String, Vec<Json>)> = object
+            .iter()
+            .filter_map(|(name, value)| match value {
+                Json::Array(items) if !items.is_empty() => Some((name.clone(), items.clone())),
+                _ => None,
+            })
+            .collect();
+        if moved.is_empty() {
+            continue;
+        }
+        for (layer, items) in &moved {
+            object.remove(layer);
+            for (ordinal, item) in items.iter().enumerate() {
+                create_record(conn, &map, &k, layer, ordinal, item)?;
+            }
+        }
+        let rest = (!object.is_empty()).then(|| Json::Object(object).to_string());
+        run(
+            conn,
+            "MATCH (e:Element {key: $k}) SET e.extra = $x",
+            vec![("k", k.as_str().into()), ("x", opt(rest))],
+        )?;
     }
     Ok(())
 }
@@ -522,6 +768,7 @@ fn split(fields: &Fields, columns: &[&str]) -> (Vec<Option<String>>, Option<Stri
     let rest: serde_json::Map<String, Json> = fields
         .iter()
         .filter(|(k, _)| !columns.contains(&k.as_str()))
+        .filter(|(_, v)| !matches!(v, Json::Array(items) if !items.is_empty()))
         .map(|(k, v)| (stored_name(k), v.clone()))
         .collect();
     let extra = (!rest.is_empty()).then(|| Json::Object(rest).to_string());

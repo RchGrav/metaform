@@ -140,18 +140,35 @@ impl Agent {
         uri
     }
 
-    /// Call the one tool; returns (is_error, the JSON text it returned).
+    /// Call the one tool; returns (is_error, the JSON text it returned). A JSON-RPC error, such as
+    /// the forwarder's answer to a request that was in flight when the server restarted, is an
+    /// error, returned as its error object.
     pub fn call(&mut self, arguments: Value) -> (bool, Value) {
         let reply = self.request(
             "tools/call",
             json!({"name": "project-map", "arguments": arguments}),
         );
+        if let Some(error) = reply.get("error") {
+            return (true, error.clone());
+        }
         let result = &reply["result"];
         let text = result["content"][0]["text"].as_str().unwrap_or_default();
         (
             result["isError"] == json!(true),
             serde_json::from_str(text).unwrap_or(json!(text)),
         )
+    }
+
+    /// A read sent just after the server was stopped. If the forwarder had already passed it to the
+    /// old server, it answers with the restart error (`relay.rs`), which tells the agent to read
+    /// again. A read is safe to send again, so this sends it once more, as an agent would.
+    pub fn read_after_restart(&mut self, arguments: Value) -> (bool, Value) {
+        let first = self.call(arguments.clone());
+        let restarted = first.0
+            && first.1["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("restarted before answering"));
+        if restarted { self.call(arguments) } else { first }
     }
 
     pub fn stop(mut self) -> String {

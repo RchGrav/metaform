@@ -446,3 +446,83 @@ fn a_batch_is_stored_whole_or_not_at_all() {
     let store = Store::open(dir.path()).unwrap();
     assert_eq!(read(&store), before, "and nothing reached the database");
 }
+
+/// One number from a query run straight against a closed store's database file.
+fn count(file: &Path, query: &str) -> i64 {
+    let db = lbug::Database::new(file, lbug::SystemConfig::default()).unwrap();
+    let conn = lbug::Connection::new(&db).unwrap();
+    let row = conn.query(query).unwrap().next().unwrap();
+    match row.as_slice() {
+        [lbug::Value::Int64(n)] => *n,
+        other => panic!("{query}: {other:?}"),
+    }
+}
+
+/// R-4.6: layers are stored as a structure of arrays, one `Record` node per item, and the map
+/// reads back byte for byte after a reopen, in canonical field order whatever order it was
+/// written in. Changing, shortening or removing a layer leaves exactly its remaining records,
+/// and a database made before records existed has its layers moved out of `extra` on open.
+#[test]
+fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let file = home.join("maps").join("maps.lbug");
+    let map = MapKey::standalone("soa");
+    let records = "MATCH (r:Record) WHERE r.mapId = 'soa' RETURN count(r)";
+    let dump = |store: &Store| store.execute(B, &map, &json!({".": {}})).unwrap().to_string();
+    let written = {
+        let store = Store::open(&home).unwrap();
+        let add = json!({"add": {"code.alpha": {
+            "role": "Supportive", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
+            "features": [{"b": 1, "a": {"y": 2, "x": [1, 2]}}, "naïve ✓ \"quoted\"", 3],
+            "notes": [], "memory": [{"fact": "one"}, {"fact": "two"}]}}});
+        store.execute(A, &map, &add).unwrap();
+        let written = dump(&store);
+        assert!(
+            written.contains(r#"{"technical_name":"alpha","name":"Alpha part","role":"Supportive","features""#),
+            "intake fields first, then the rest by name: {written}"
+        );
+        written
+    };
+    assert_eq!(count(&file, records), 5, "one record per layer item");
+    let store = Store::open(&home).unwrap();
+    assert_eq!(dump(&store), written, "byte for byte after a reopen");
+
+    let change = json!({"update": {"code.alpha": {
+        "features": [{"b": 1, "a": {"y": 2, "x": [1, 2]}}, "changed"], "memory": null}}});
+    store.execute(A, &map, &change).unwrap();
+    let changed = dump(&store);
+    drop(store);
+    assert_eq!(count(&file, records), 2, "a shorter layer and a removed layer leave no records");
+    let store = Store::open(&home).unwrap();
+    assert_eq!(dump(&store), changed);
+    drop(store);
+
+    // A database from before records: the layer back in `extra`, and no Record or HOLDS table.
+    let db = lbug::Database::new(&file, lbug::SystemConfig::default()).unwrap();
+    let conn = lbug::Connection::new(&db).unwrap();
+    for statement in [
+        "MATCH (e:Element {key: 'soa|code.alpha'}) SET e.extra = '{\"features\":[{\"b\":1,\"a\":{\"y\":2,\"x\":[1,2]}},\"changed\"],\"notes\":[],\"zeta\":\"last by name\"}'",
+        "MATCH (r:Record) DETACH DELETE r",
+        "DROP TABLE HOLDS",
+        "DROP TABLE Record",
+    ] {
+        conn.query(statement).unwrap();
+    }
+    drop(conn);
+    drop(db);
+    let store = Store::open(&home).unwrap();
+    assert_eq!(dump(&store), changed, "the older database reads the same");
+    drop(store);
+    assert_eq!(count(&file, records), 2, "its layer moved into records");
+    assert_eq!(
+        count(&file, "MATCH (e:Element) WHERE e.extra CONTAINS 'features' RETURN count(e)"),
+        0,
+        "and out of extra"
+    );
+
+    let store = Store::open(&home).unwrap();
+    store.execute(A, &map, &json!({"delete": {"code.alpha": {}}})).unwrap();
+    drop(store);
+    assert_eq!(count(&file, records), 0, "a deleted element leaves no records");
+}

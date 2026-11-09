@@ -29,7 +29,35 @@ pub struct Element {
     pub child_map: Option<MapRef>,
 }
 
+/// The intake fields, in R-6.15's order. They come first in an element; every other field follows,
+/// sorted by name. One order makes an element's JSON the same after every reload and in every
+/// form of Metaform, whatever order its fields were written in.
+pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
+/// The want-record fields, in R-6.17's order, first in a want record; any other follows by name.
+pub const WANT_ORDER: [&str; 3] = ["why", "how", "direction"];
+
+/// Put `fields` in canonical order: the names in `first`, in that order, then the rest by name.
+fn put_in_order(fields: &mut Fields, first: &[&str]) {
+    let mut rest = std::mem::take(fields);
+    for name in first {
+        if let Some(value) = rest.remove(*name) {
+            fields.insert((*name).to_string(), value);
+        }
+    }
+    let mut rest: Vec<(String, Value)> = rest.into_iter().collect();
+    rest.sort_by(|a, b| a.0.cmp(&b.0));
+    fields.extend(rest);
+}
+
 impl Element {
+    /// Put the fields and every want record in canonical order (`FIELD_ORDER`, `WANT_ORDER`).
+    pub fn put_in_order(&mut self) {
+        put_in_order(&mut self.fields, &FIELD_ORDER);
+        for record in self.wants.values_mut() {
+            put_in_order(record, &WANT_ORDER);
+        }
+    }
+
     /// An element with nothing in it: a namespace branch that a write created.
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty() && self.wants.is_empty() && self.child_map.is_none()
@@ -128,6 +156,7 @@ impl Map {
     /// rebuild a map it loaded; the root is added if it is missing.
     pub fn from_elements(mut elements: BTreeMap<String, Element>) -> Self {
         elements.entry(ROOT.to_string()).or_default();
+        elements.values_mut().for_each(Element::put_in_order);
         Map { elements }
     }
 
@@ -211,7 +240,7 @@ impl Map {
             }
         }
         if problems.is_empty() {
-            Ok(Map { elements })
+            Ok(Map::from_elements(elements))
         } else {
             Err(MapError::Invalid(problems.join("\n")))
         }

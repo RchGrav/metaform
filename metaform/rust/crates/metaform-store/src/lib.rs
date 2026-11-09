@@ -579,6 +579,7 @@ fn write_all(
 ) -> Result<Vec<Value>, BatchFailure> {
     let whole = |failure: Failure| BatchFailure { index: None, failure };
     let mut map = load_into(snapshots, conn, &key.map).map_err(|e| whole(e.into()))?;
+    let before = Arc::clone(&map);
     let mut effect = Effect::default();
     let mut results = Vec::with_capacity(commands.len());
     for (index, command) in commands.iter().enumerate() {
@@ -602,7 +603,7 @@ fn write_all(
     if effect.is_empty() {
         return Ok(results);
     }
-    writer::transact(conn, |c| graph::persist(c, &key.map, &effect))
+    writer::transact(conn, |c| graph::persist(c, &key.map, &before, &effect))
         .map_err(|e| whole(e.into()))?;
     snapshots
         .write()
