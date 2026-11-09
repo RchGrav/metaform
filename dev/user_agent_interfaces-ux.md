@@ -133,7 +133,7 @@ Hint: the first time the user selects an element, a one-line hint appears near i
 First run, when `projects()` is empty, shows one panel in the canvas:
 
 1. "Register a project". The step that works today: connect an agent from the project's folder with `metaform mcp --project <folder>`; the first connection registers the folder. The prompt's `metaform register <project_name>` is shown beside it, labelled "Planned command" (Matthew's rule 6).
-2. "Run a simulated intake". The button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`.
+2. "Run a simulated intake". The button runs a simulated intake on the sample project and fills the graph over about 3 seconds, with the **Simulated** badge. The text says a real intake is run by an agent with `metaform/Intake.md`. The view fits once, when the first element arrives; later elements never refit it, because an update must not move the viewport (section 9). If an intake ever grows past the view, a quiet "N elements outside the view" hint is the right signal, not a move (not built; decided with Jorge, 2026-11-09).
 3. "Open this view again". The prototype shows the command that starts its own host, labelled "Starts this prototype". The product's own reopen command is not named yet (UI-U1).
 
 ## 13. Decisions and open questions
