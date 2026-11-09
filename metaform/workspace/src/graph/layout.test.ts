@@ -10,7 +10,7 @@ import { type Box, type Elk, HEADER, layout as run, layoutKey, nodeWidth } from 
 import type { RenderScene } from "./renderer";
 
 const widthsOf = (scene: RenderScene) =>
-  new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOnArrow)]));
+  new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOutside)]));
 const elk = new ELK() as unknown as Elk;
 const layout = (engine: Elk, scene: RenderScene) => run(engine, scene, widthsOf(scene));
 

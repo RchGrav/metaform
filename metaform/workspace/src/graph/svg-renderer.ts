@@ -2,7 +2,7 @@
 // It reads no GraphSource and decides no meaning; it reports raw input to the state layer.
 
 import type { Address } from "../source/types";
-import { graph as text } from "../strings";
+import { graph as text, layers as layerText } from "../strings";
 import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
   type GraphRenderer,
@@ -47,12 +47,15 @@ function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 }
 
-/** "<label>, <role>, <beneath> beneath" (renderer rule 3). */
+/** "<label>, <role>, <N> elements beneath" (renderer rule 3; Matthew's graph.nodeName). */
 function accessibleName(node: RenderNode): string {
-  const parts = [node.label];
-  if (node.role) parts.push(node.role);
-  if (node.beneath > 0) parts.push(text.beneathBadge(node.beneath));
-  return parts.join(", ");
+  return text.nodeName(node.label, node.role, node.beneath);
+}
+
+/** The address a node sits in: its address without the last segment ("." at the top). */
+function containerOf(address: Address): string {
+  const cut = address.lastIndexOf(".");
+  return cut < 0 ? "." : address.slice(0, cut);
 }
 
 /** Corner radius of a routed edge's bends. */
@@ -156,7 +159,7 @@ export class ElkRenderer implements GraphRenderer {
 
   render(scene: RenderScene): Promise<void> {
     const generation = ++this.generation;
-    const widths = new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOnArrow)]));
+    const widths = new Map(scene.nodes.map((n) => [n.address, nodeWidth(n, text.beneathBadge, text.wantsOutside)]));
     if (this.current?.key === layoutKey(scene, widths)) {
       // Only flags changed: redraw in place, never lay out again (rule 1).
       const known = this.current;
@@ -312,18 +315,24 @@ export class ElkRenderer implements GraphRenderer {
       });
       if (container) right -= 24;
     }
-    const counts: string[] = [];
-    if (node.beneath > 0) counts.push(text.beneathBadge(node.beneath));
-    if (node.outside > 0) counts.unshift(text.wantsOnArrow(node.outside));
-    if (counts.length > 0) {
-      const badge = el("text", { class: "mf-beneath", x: right + (container || node.beneath === 0 ? 0 : 4), y: row2, "text-anchor": "end", "aria-hidden": "true" }, g);
-      badge.textContent = counts.join(" · ");
+    const badgeRight = right + (container || node.beneath === 0 ? 0 : 4);
+    if (node.beneath > 0) {
+      const badge = el("text", { class: "mf-beneath", x: badgeRight, y: row2, "text-anchor": "end", "aria-hidden": "true" }, g);
+      badge.textContent = text.beneathBadge(node.beneath);
+    }
+    if (node.outside > 0) {
+      const shift = node.beneath > 0 ? (text.beneathBadge(node.beneath).length * 6.4 + 12) : 0;
+      const out = el("text", {
+        class: "mf-outside", x: badgeRight - shift, y: row2, "text-anchor": "end",
+        "aria-label": text.wantsOutsideLabel(node.outside, containerOf(node.address)),
+      }, g);
+      out.textContent = text.wantsOutside(node.outside);
     }
     let x = container ? 16 + node.label.length * 7.8 + 12 : 16;
     for (const mark of node.layers) {
       const shape = SHAPES[mark.style % SHAPES.length] ?? "square";
       const m = el("g", { class: `mf-layer mf-layer-${mark.style % 8}`, transform: `translate(${x},${row2 - 4})` }, g);
-      el("title", {}, m).textContent = `${mark.layer}: ${mark.records}`;
+      el("title", {}, m).textContent = layerText.mark(mark.layer, mark.records);
       if (shape === "circle") el("circle", { cx: 3.5, cy: 0, r: 4 }, m);
       else if (shape === "diamond") el("path", { d: "M3.5,-4.5 L8,0 L3.5,4.5 L-1,0 z" }, m);
       else if (shape === "triangle") el("path", { d: "M3.5,-4.5 L8,4 L-1,4 z" }, m);
