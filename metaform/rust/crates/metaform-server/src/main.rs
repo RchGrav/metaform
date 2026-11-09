@@ -260,7 +260,11 @@ async fn import(home: &std::path::Path, exe: &std::path::Path, mut body: serde_j
             let unchanged = answer["unchanged"].as_u64().unwrap_or(0) as usize;
             let sections = |n: usize| format!("{n} section{}", if n == 1 { "" } else { "s" });
             if written.is_empty() {
-                println!("imported: nothing to write; all {} already match the map", sections(unchanged));
+                if unchanged == 1 {
+                    println!("imported: nothing to write; the 1 section already matches the map");
+                } else {
+                    println!("imported: nothing to write; all {} already match the map", sections(unchanged));
+                }
             } else {
                 println!(
                     "imported: wrote {} ({}); {} already matched the map",
