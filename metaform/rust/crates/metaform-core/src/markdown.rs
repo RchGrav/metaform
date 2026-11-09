@@ -65,6 +65,17 @@ fn atx_text(line: &str) -> String {
     }
 }
 
+/// A block heading's text split into its code, a leading code span, and its title.
+fn split_code(text: &str) -> (Option<String>, String) {
+    if let Some(rest) = text.strip_prefix('`')
+        && let Some((code, title)) = rest.split_once('`')
+        && !code.is_empty()
+    {
+        return (Some(code.to_string()), title.trim().to_string());
+    }
+    (None, text.to_string())
+}
+
 /// A line of only `=` or only `-`, which makes the line above it a heading.
 pub(crate) fn is_setext_underline(line: &str) -> bool {
     let Some(rest) = unindented(line) else {
@@ -215,8 +226,9 @@ fn block_paragraphs(address: &str, element: &Element) -> Vec<String> {
             .flat_map(|block| {
                 let heading = match (block.level, &block.title) {
                     (Some(level), Some(title)) => Some(format!(
-                        "{} {title}",
-                        "#".repeat(container_hashes(address) + usize::from(level))
+                        "{} {}{title}",
+                        "#".repeat(container_hashes(address) + usize::from(level)),
+                        block.code.as_ref().map_or(String::new(), |code| format!("`{code}` "))
                     )),
                     _ => None,
                 };
@@ -253,6 +265,21 @@ pub(crate) fn document_addresses(map: &Map) -> Vec<&str> {
         .collect();
     addresses.sort_by(|a, b| tree_order(a, b));
     addresses
+}
+
+/// Elements that hold some intake field (`technical_name`, `name` or `role`) but not all three, so
+/// the document leaves them out. The CLI names them, so a map from an older intake does not export
+/// as an empty document with no explanation.
+pub fn left_out(map: &Map) -> Vec<&str> {
+    map.elements()
+        .filter(|(address, element)| {
+            *address != ROOT
+                && !in_layer_scope(address)
+                && !in_document(element)
+                && ["technical_name", "name", "role"].iter().any(|key| element.fields.contains_key(*key))
+        })
+        .map(|(address, _)| address)
+        .collect()
 }
 
 /// The map's specification as one Markdown document.
@@ -348,9 +375,17 @@ pub fn parse(document: &str, map: &Map, project: &str) -> Result<BTreeMap<String
     }
 
     let mut out = BTreeMap::new();
+    let mut codes: BTreeMap<String, (String, usize)> = BTreeMap::new();
     for section in sections {
         let body = strip_facts(map, &section)?;
-        let blocks = read_blocks(&section.address, section.heading_line, &body)?;
+        let (blocks, lines) = read_blocks(&section.address, section.heading_line, &body)?;
+        for (block, line_at) in blocks.iter().zip(&lines) {
+            let Some(code) = &block.code else { continue };
+            if let Some((first, first_line)) = codes.get(&code.to_ascii_lowercase()) {
+                return Err(parse_error(*line_at, format!("code '{code}' is already used at line {first_line}, under '{first}'; a code is unique across the specification")));
+            }
+            codes.insert(code.to_ascii_lowercase(), (section.address.clone(), *line_at));
+        }
         if section.address == ROOT && blocks.is_empty() && !has_blocks(map.element(ROOT).expect("a map has a root")) {
             continue;
         }
@@ -386,9 +421,11 @@ fn strip_facts<'a>(map: &Map, section: &Section<'a>) -> Result<Vec<(usize, &'a s
 
 /// Read a section's body, after its skeleton facts, as blocks, and check them with the layer's
 /// write rules, so a document that parses can be written.
-fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Result<Vec<Block>, ParseError> {
+fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Result<(Vec<Block>, Vec<usize>), ParseError> {
     struct Open<'a> {
+        line: usize,
         level: Option<u8>,
+        code: Option<String>,
         title: Option<String>,
         text: Vec<&'a str>,
     }
@@ -396,11 +433,13 @@ fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Re
     let mut blocks = Vec::new();
     let mut open: Option<Open> = None;
     let mut fence: Option<(char, usize)> = None;
-    let close = |open: Option<Open>, blocks: &mut Vec<Block>| {
+    let mut lines = Vec::new();
+    let close = |open: Option<Open>, blocks: &mut Vec<Block>, lines: &mut Vec<usize>| {
         if let Some(open) = open {
             let text = open.text.join("\n").trim().to_string();
             if open.level.is_some() || !text.is_empty() {
-                blocks.push(Block { level: open.level, title: open.title, text });
+                blocks.push(Block { level: open.level, code: open.code, title: open.title, text });
+                lines.push(open.line);
             }
         }
     };
@@ -415,8 +454,9 @@ fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Re
         }
         match heading {
             Some(hashes) if hashes > base && hashes - base <= usize::from(specification::MAX_LEVEL) => {
-                close(open.take(), &mut blocks);
-                open = Some(Open { level: Some((hashes - base) as u8), title: Some(atx_text(line)), text: Vec::new() });
+                close(open.take(), &mut blocks, &mut lines);
+                let (code, title) = split_code(&atx_text(line));
+                open = Some(Open { line: line_at, level: Some((hashes - base) as u8), code, title: Some(title), text: Vec::new() });
             }
             Some(hashes) => {
                 let allowed = format!("{} to {}", "#".repeat(base + 1), "#".repeat(base + usize::from(specification::MAX_LEVEL)));
@@ -425,15 +465,16 @@ fn read_blocks(address: &str, heading_line: usize, body: &[(usize, &str)]) -> Re
             }
             None => match open.as_mut() {
                 Some(open) => open.text.push(line),
-                None => open = Some(Open { level: None, title: None, text: vec![line] }),
+                None => open = Some(Open { line: line_at, level: None, code: None, title: None, text: vec![line] }),
             },
         }
     }
-    close(open, &mut blocks);
+    close(open, &mut blocks, &mut lines);
     let value = Value::Array(blocks.iter().map(Block::to_json).collect());
-    specification::blocks(&value).map_err(|refusal| {
+    let checked = specification::blocks(&value).map_err(|refusal| {
         parse_error(body.first().map_or(heading_line, |(line_at, _)| *line_at), format!("'{address}': {}", refusal.reason))
-    })
+    })?;
+    Ok((checked, lines))
 }
 
 #[cfg(test)]
@@ -446,7 +487,7 @@ mod tests {
         Map::from_tree(&json!({
             "specification": [
                 {"text": "Packet Lab records network traffic for later study."},
-                {"level": 1, "title": "Scope", "text": "Packet Lab covers capture only."},
+                {"level": 1, "code": "PL-1", "title": "Scope", "text": "Packet Lab covers capture only."},
                 {"level": 2, "title": "Out of scope", "text": "Replay."}
             ],
             "code": {
@@ -460,7 +501,7 @@ mod tests {
                     "status": "un_built",
                     "wants": {"code.store": {"why": "Keep frames.", "how": "holds frames on disk", "direction": "outbound"}},
                     "specification": [
-                        {"level": 1, "title": "Purpose", "text": "The pipeline moves frames.\n\n```text\n## not a heading (`code.x`)\n```"},
+                        {"level": 1, "code": "PL-2.a", "title": "Purpose", "text": "The pipeline moves frames, as `PL-1` limits.\n\n```text\n## not a heading (`code.x`)\n```"},
                         {"level": 2, "title": "Limits", "text": "- At most 10 Gbit/s."},
                         {"level": 1, "title": "Errors", "text": ""}
                     ]
@@ -495,9 +536,9 @@ mod tests {
         let again = write_back(&map, &parsed);
         assert_eq!(again, map);
         assert_eq!(render(&again, "packet-lab"), first);
-        assert!(first.starts_with("# packet-lab\n\nPacket Lab records network traffic for later study.\n\n## Scope\n\n"));
+        assert!(first.starts_with("# packet-lab\n\nPacket Lab records network traffic for later study.\n\n## `PL-1` Scope\n\n"));
         assert!(first.contains("### Out of scope"));
-        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: Supportive. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### Purpose"));
+        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: Supportive. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### `PL-2.a` Purpose"));
         assert!(first.contains("#### Limits"));
     }
 
@@ -517,14 +558,16 @@ mod tests {
         assert!(at("(`code.pipeline`)") < at("(`code.pipeline-tools`)"));
         assert!(at("(`code.store`)") < at("(`upstream.nic`)"));
         assert!(!document.contains("(`layer."), "the layer scope is not part of the document");
+        let older = Map::from_tree(&json!({"code": {"name": "Old", "role": "Notable", "part": {"name": "Part"}}})).unwrap();
+        assert_eq!(left_out(&older), vec!["code", "code.part"]);
     }
 
     #[test]
     fn an_edited_document_parses_into_new_blocks() {
         let map = map();
         let edited = render(&map, "packet-lab").replace(
-            "### Purpose\n\nThe pipeline moves frames.",
-            "### Purpose\n\nThe pipeline moves frames from the card to the store.",
+            "### `PL-2.a` Purpose\n\nThe pipeline moves frames, as `PL-1` limits.",
+            "### `PL-2.a` Purpose\n\nThe pipeline moves frames from the card to the store.",
         );
         let parsed = parse(&edited, &map, "packet-lab").unwrap();
         assert_eq!(parsed["code.pipeline"][0].text.lines().next(), Some("The pipeline moves frames from the card to the store."));
@@ -542,6 +585,7 @@ mod tests {
             (document.replace("#### Limits", "##### Limits"), "skips a heading level"),
             (document.replace("# packet-lab", "# other"), "project heading"),
             (format!("{document}\n## Loose heading\n"), "element heading ends with its address"),
+            (document.replace("#### Limits", "#### `pl-1` Limits"), "code 'pl-1' is already used at line"),
         ];
         for (text, expected) in cases {
             let error = parse(&text, &map, "packet-lab").unwrap_err();

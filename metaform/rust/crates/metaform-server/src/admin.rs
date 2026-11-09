@@ -79,7 +79,11 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
         _ => return Err("an export names exactly one of a project folder or a map".into()),
     };
     let map = store.snapshot(&key).map_err(|e| e.to_string())?;
-    let mut answer = json!({"ok": true, "markdown": metaform_core::markdown::render(&map, &title)});
+    let mut answer = json!({
+        "ok": true,
+        "markdown": metaform_core::markdown::render(&map, &title),
+        "left_out": metaform_core::markdown::left_out(&map),
+    });
     if body["check"] == json!(true) {
         let reports = metaform_core::check::check(&map);
         answer["summary"] = json!(metaform_core::check::summary(&reports));

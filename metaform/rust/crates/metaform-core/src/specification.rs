@@ -19,6 +19,9 @@ pub const MAX_LEVEL: u8 = 4;
 pub struct Block {
     /// The heading level relative to its container, 1 to `MAX_LEVEL`; `None` for the intro.
     pub level: Option<u8>,
+    /// A key unique across the map's specification, so text can refer to the block; titled
+    /// blocks only.
+    pub code: Option<String>,
     /// The heading; `None` for the intro.
     pub title: Option<String>,
     /// The Markdown under the heading. It holds no heading of its own.
@@ -31,6 +34,9 @@ impl Block {
         let mut out = JsonMap::new();
         if let (Some(level), Some(title)) = (self.level, &self.title) {
             out.insert("level".into(), json!(level));
+            if let Some(code) = &self.code {
+                out.insert("code".into(), json!(code));
+            }
             out.insert("title".into(), json!(title));
         }
         out.insert("text".into(), json!(self.text));
@@ -56,19 +62,42 @@ pub fn blocks(value: &Value) -> Result<Vec<Block>, Refusal> {
             return Err(refuse(format!("{at}: line {line} of the text is a Markdown heading")));
         }
         match (fields.get("level").and_then(Value::as_u64), fields.get("title").and_then(Value::as_str)) {
-            (None, None) if index == 0 && !text.is_empty() => out.push(Block { level: None, title: None, text }),
+            (None, None) if index == 0 && !text.is_empty() && !fields.contains_key("code") => {
+                out.push(Block { level: None, code: None, title: None, text })
+            }
             (Some(level), Some(title)) if (1..=u64::from(MAX_LEVEL)).contains(&level) => {
                 let level = level as u8;
                 if level > previous.map_or(1, |p| p + 1) {
                     return Err(refuse(format!("{at}: level {level} skips a heading level")));
                 }
                 previous = Some(level);
-                out.push(Block { level: Some(level), title: Some(title.to_string()), text });
+                if title.starts_with('`') {
+                    return Err(refuse(format!("{at}: a title must not start with a code span; put the key in code")));
+                }
+                let code = match fields.get("code") {
+                    None => None,
+                    Some(Value::String(code)) if is_code(code) => Some(code.clone()),
+                    Some(_) => return Err(refuse(format!("{at}: code must be a letter and then up to 31 letters, digits, '.', '_' or '-'"))),
+                };
+                if let Some(code) = &code
+                    && out.iter().any(|b: &Block| b.code.as_ref().is_some_and(|c| c.eq_ignore_ascii_case(code)))
+                {
+                    return Err(refuse(format!("{at}: code '{code}' is already used")));
+                }
+                out.push(Block { level: Some(level), code, title: Some(title.to_string()), text });
             }
             _ => return Err(refuse(format!("{at} breaks the block shape"))),
         }
     }
     Ok(out)
+}
+
+/// A block code: a letter, then up to 31 letters, digits, `.`, `_` or `-`.
+pub fn is_code(code: &str) -> bool {
+    let mut chars = code.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && code.len() <= 32
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// The first line of `text`, from 1, that Markdown reads as a heading outside fenced code.

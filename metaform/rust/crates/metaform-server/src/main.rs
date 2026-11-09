@@ -198,6 +198,16 @@ async fn specification(
     match metaform_server::admin::request(home, &exe, serde_json::json!({"export": body})).await {
         Ok(answer) => {
             print!("{}", answer["markdown"].as_str().unwrap_or_default());
+            let left_out: Vec<&str> = answer["left_out"].as_array().into_iter().flatten().filter_map(|a| a.as_str()).collect();
+            if !left_out.is_empty() {
+                let shown = left_out.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+                let more = left_out.len().saturating_sub(5);
+                let more = if more > 0 { format!(" and {more} more") } else { String::new() };
+                eprintln!(
+                    "metaform: {} left out of the document, because the skeleton needs technical_name, name and role: {shown}{more}",
+                    if left_out.len() == 1 { "1 element is".to_string() } else { format!("{} elements are", left_out.len()) }
+                );
+            }
             if check {
                 for line in answer["reports"].as_array().into_iter().flatten() {
                     eprintln!("{}", line.as_str().unwrap_or_default());
