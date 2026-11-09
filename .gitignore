@@ -24,3 +24,7 @@ metaform/verification/latest-schema-check-results.json
 
 # TASTE audit records (local, not shared)
 .taste/
+
+# Local build caches (Vite dependency cache; per-agent cargo target folders)
+.vite/
+metaform/rust/target-*/

@@ -14,8 +14,9 @@ use std::time::Duration;
 use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
-/// Bytes of the compact `tools/list` result (R-1.3 baseline). Recorded 2026-11-09.
-const TOOLS_LIST_BYTES: usize = 11_762;
+/// Bytes of the compact `tools/list` result (R-1.3 baseline). 11,762 at b202557; 11,973 after
+/// the specification-layer commands and the contract trim (consolidation, 2026-11-09).
+const TOOLS_LIST_BYTES: usize = 11_973;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]
