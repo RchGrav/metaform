@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ShallowGraph } from "../source";
 import { buildScene, elementScene, type SceneInput } from "./scene";
-import { TOP, beneathCounts, layerCounts, layerNames, outsideAddress, sceneEdges, visibleIn } from "./structure";
+import { TOP, beneathCounts, graphAddresses, layerCounts, layerNames, outsideAddress, sceneEdges, startBudget, startExpansion, visibleIn } from "./structure";
 import { currentView, initialState, reduce, type Action, type ViewState } from "./view";
 
 const graph: ShallowGraph = {
@@ -64,6 +64,20 @@ describe("structure", () => {
     expect(outsideAddress("code.engine.game")).toBe("code.engine.game");
   });
 
+  it("expands a first view level by level within a canvas-sized budget", () => {
+    expect(startBudget(1440, 760)).toBe(18);
+    expect(startBudget(100, 100)).toBe(10);
+    expect(startBudget(4000, 3000)).toBe(60);
+    // Top level: code, upstream (2). code has 3 children, upstream 1.
+    expect(startExpansion(graphAddresses(graph), TOP, 6).sort()).toEqual(["code", "upstream"]);
+    // Budget 4: code (3 children) does not fit, so upstream stays closed too: outside bands open
+    // only once every project element at that level has opened.
+    expect(startExpansion(graphAddresses(graph), TOP, 4)).toEqual([]);
+    // Budget 9: both open (6), then code.server (1) and code.store (2) fit.
+    expect(startExpansion(graphAddresses(graph), TOP, 9).sort()).toEqual(["code", "code.server", "code.store", "upstream"]);
+    expect(startExpansion(graphAddresses(graph), TOP, 2)).toEqual([]);
+  });
+
   it("counts every address beneath an element", () => {
     expect(beneathCounts(graph.addresses).get("code")).toBe(6);
   });
@@ -95,6 +109,12 @@ describe("view state", () => {
     const back = reduce(up, { type: "back" });
     expect(currentView(back).container).toBe("code.store");
     expect(back.gestureHintDone).toBe(true);
+  });
+
+  it("marks a container visited on its first view, and does it once", () => {
+    const first = reduce(start, { type: "first-view", container: TOP, expand: ["code"] });
+    expect(currentView(first)).toMatchObject({ expanded: ["code"], visited: [TOP] });
+    expect(reduce(first, { type: "first-view", container: TOP, expand: ["upstream"] })).toBe(first);
   });
 
   it("opens a leaf in Element mode", () => {
