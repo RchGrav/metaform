@@ -152,8 +152,8 @@ impl ServerHandler for MapTool {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
         let map = Resource::new(self.uri.clone(), "map").with_description(
-            "This connection's functional map. Reading it returns the root read: every address and \
-             every want as an edge. Subscribe to hear of each commit.",
+            "This connection's functional map. Reading it returns the shallow graph: every address \
+             and every want as an edge. Subscribe to hear of each commit.",
         );
         Ok(ListResourcesResult::with_all_items(vec![map]))
     }

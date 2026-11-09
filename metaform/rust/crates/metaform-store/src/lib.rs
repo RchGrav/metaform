@@ -15,6 +15,7 @@
 
 mod graph;
 mod registry;
+pub use registry::Registered;
 pub mod settings;
 mod writer;
 
@@ -330,6 +331,11 @@ impl Store {
             }),
         })?;
         answer.recv().map_err(|_| StoreError::WriterGone)?
+    }
+
+    /// Every project registered in this home (the chassis registry), by name. Registers nothing.
+    pub fn projects(&self) -> Result<Vec<Registered>, StoreError> {
+        registry::list(&self.chassis.db)
     }
 
     /// The registered project id for a source folder, if any.
