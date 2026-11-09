@@ -5,10 +5,10 @@ import type { Address } from "../source/types";
 import { graph as text, intake, layers as layerText } from "../strings";
 import { Camera } from "./camera";
 import { Flow } from "./flow";
+import { Glide, type GlideItem } from "./glide";
 import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
   type GraphRenderer,
-  MAX_ANIMATION_MS,
   MAX_FIT_ZOOM,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -46,10 +46,6 @@ function el<K extends keyof SVGElementTagNameMap>(
 
 function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
-}
-
-function reducedMotion(): boolean {
-  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function isMac(): boolean {
@@ -136,6 +132,7 @@ export class ElkRenderer implements GraphRenderer {
   private drag: { pointer: number; x: number; y: number; moved: boolean } | null = null;
   private readonly cleanup: (() => void)[] = [];
   private readonly flow = new Flow();
+  private readonly glide = new Glide();
   /** Wants with OP or EF to show when zoomed close, collected while edges are drawn. */
   private details: { edge: RenderEdge; at: Point }[] = [];
 
@@ -165,6 +162,7 @@ export class ElkRenderer implements GraphRenderer {
   unmount(): void {
     this.generation++;
     this.flow.clear();
+    this.glide.stop();
     for (const off of this.cleanup.splice(0)) off();
     clearTimeout(this.settleTimer);
     this.camera.stop();
@@ -181,15 +179,14 @@ export class ElkRenderer implements GraphRenderer {
       // Only flags changed: redraw in place, never lay out again (rule 1).
       const known = this.current;
       this.scene = scene;
-      this.draw(scene, known, null);
+      this.draw(scene, known);
       return this.pending;
     }
-    const previous = this.current;
     this.pending = layout(this.elk(), scene, widths).then((next) => {
       if (generation !== this.generation || !this.canvas) return; // superseded
       this.current = next;
       this.scene = scene;
-      this.draw(scene, next, previous);
+      this.draw(scene, next);
     });
     return this.pending;
   }
@@ -244,7 +241,7 @@ export class ElkRenderer implements GraphRenderer {
 
   // Drawing ------------------------------------------------------------------------------------
 
-  private draw(scene: RenderScene, next: Layout, previous: Layout | null): void {
+  private draw(scene: RenderScene, next: Layout): void {
     const canvas = this.canvas;
     if (!canvas) return;
     const focused = (document.activeElement as Element | null)?.getAttribute?.("data-address") ?? null;
@@ -266,19 +263,12 @@ export class ElkRenderer implements GraphRenderer {
     this.flow.setLayer(flowLayer);
     const nodes = el("g", { class: "mf-nodes" }, canvas);
     const parents = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
-    const animate = previous !== null && !reducedMotion();
+    const glides: GlideItem[] = [];
     for (const node of scene.nodes) {
       const box = next.boxes.get(node.address);
       if (!box) continue;
       const group = this.drawNode(node, box, parents.has(node.address), parents.has(node.address) ? containers : nodes);
-      const old = previous?.boxes.get(node.address);
-      if (animate && old && (old.x !== box.x || old.y !== box.y)) {
-        group.style.transform = `translate(${old.x - box.x}px, ${old.y - box.y}px)`;
-        requestAnimationFrame(() => {
-          group.style.transition = `transform ${MAX_ANIMATION_MS}ms ease-out`;
-          group.style.transform = "";
-        });
-      }
+      glides.push({ address: node.address, group, to: { x: box.x, y: box.y }, width: box.width, height: box.height });
     }
     const ids = new Set(scene.edges.map((e) => e.id));
     this.details = [];
@@ -287,9 +277,12 @@ export class ElkRenderer implements GraphRenderer {
       if (!route) continue;
       // Two wants in opposite directions would share one line: move each 4 px to its own side.
       const paired = ids.has(`${edge.to}->${edge.from}`);
-      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate, scene);
+      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, scene);
     }
-    this.placeDetails(scene, next, el("g", { class: "mf-details" }, canvas));
+    const details = el("g", { class: "mf-details" }, canvas);
+    this.placeDetails(scene, next, details);
+    // Elements glide from where they are drawn now; wants, flow and detail fade in after.
+    this.glide.run(glides, [edges, flowLayer, details]);
     if (focused) {
       const again = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`);
       if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
@@ -380,7 +373,7 @@ export class ElkRenderer implements GraphRenderer {
     return g;
   }
 
-  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, animate: boolean, scene: RenderScene): void {
+  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, scene: RenderScene): void {
     const g = el("g", { class: `mf-edge${edge.dimmed ? " mf-dimmed" : ""}`, "data-edge": edge.id }, parent);
     const path = el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
     const direction = edge.direction;
@@ -395,13 +388,6 @@ export class ElkRenderer implements GraphRenderer {
       const mid = midpoint(route);
       const label = el("text", { class: "mf-edge-count", x: mid.x + 6, y: mid.y - 4 }, g);
       label.textContent = text.wantsOnArrow(edge.count);
-    }
-    if (animate) {
-      g.style.opacity = "0";
-      setTimeout(() => {
-        g.style.transition = `opacity ${MAX_ANIMATION_MS / 2}ms ease-out`;
-        g.style.opacity = "";
-      }, MAX_ANIMATION_MS / 2);
     }
   }
 
