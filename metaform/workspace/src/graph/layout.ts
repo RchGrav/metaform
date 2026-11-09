@@ -153,7 +153,54 @@ export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>):
       entry.crossing.push(edge);
     }
   }
+  wrapLooseChildren(scene, byAddress, bands, widths);
   return bands;
+}
+
+/** Width over height that a wrapped block of children aims for (climb step 3a). */
+const WRAP_ASPECT = 1.6;
+
+/**
+ * Children of an expanded element that have no wants to their siblings would all fall into one
+ * layer, one long row (8 for roundtable's upstream). They are chained into a grid with edges used
+ * only for layout, `wrap:` ids, never drawn: child i points to child i + columns. Children joined
+ * by wants keep ELK's own layering. Columns are chosen so the block is about WRAP_ASPECT wide.
+ */
+function wrapLooseChildren(
+  scene: RenderScene,
+  byAddress: Map<Address, RenderNode>,
+  bands: Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }>,
+  widths: ReadonlyMap<Address, number>,
+): void {
+  const childOf = (address: Address, container: Address): Address | null => {
+    let current = byAddress.get(address);
+    while (current && current.parent !== null && current.parent !== container) current = byAddress.get(current.parent);
+    return current && current.parent === container ? current.address : null;
+  };
+  const containers = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
+  for (const container of containers) {
+    const members = scene.nodes.filter((n) => n.parent === container).map((n) => n.address);
+    const joined = new Set<Address>();
+    for (const edge of scene.edges) {
+      const a = childOf(edge.from, container);
+      const b = childOf(edge.to, container);
+      if (a && b && a !== b) {
+        joined.add(a);
+        joined.add(b);
+      }
+    }
+    const loose = members.filter((m) => !joined.has(m));
+    if (loose.length < 4) continue;
+    const width = loose.reduce((sum, m) => sum + (widths.get(m) ?? MIN_WIDTH), 0) / loose.length;
+    // Columns c and rows r = k / c with c * (width + gap) ≈ WRAP_ASPECT * r * (height + gap).
+    const cell = { w: width + 32, h: NODE_HEIGHT + 56 };
+    const columns = Math.max(2, Math.round(Math.sqrt((WRAP_ASPECT * loose.length * cell.h) / cell.w)));
+    const node = byAddress.get(container);
+    const graph = node ? bands.get(bandOf(node, byAddress))?.graph : undefined;
+    for (let i = 0; i + columns < loose.length; i++) {
+      graph?.edges?.push({ id: `wrap:${loose[i]}->${loose[i + columns]}`, sources: [loose[i]!], targets: [loose[i + columns]!] });
+    }
+  }
 }
 
 function collectBoxes(node: ElkGraph, dx: number, out: Map<Address, Box>): void {
