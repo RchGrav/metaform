@@ -371,6 +371,38 @@ const LEGEND_ENTRIES = [
   "agent", "agentActive", "agentIdle", "unseen", "projectLink", "arrow", "arrowCount", "band",
 ] as const;
 
+/**
+ * Each legend line's mark, drawn with the renderer's own classes and colour tokens (src/graph/style.ts),
+ * so it matches the graph in both themes (climb step 10).
+ */
+function Swatch({ entry }: { entry: (typeof LEGEND_ENTRIES)[number] }) {
+  const box = <rect className="mf-box" x={2} y={3} width={34} height={16} rx={3} />;
+  const marks: Record<(typeof LEGEND_ENTRIES)[number], JSX.Element> = {
+    roleBar: <g className="mf-role-supportive">{box}<rect className="mf-role-bar" x={2} y={3} width={4} height={16} rx={2} /></g>,
+    definitive: <g>{box}<rect className="mf-definitive-ring" x={4} y={5} width={30} height={12} rx={2} /></g>,
+    stack: <g><rect className="mf-stack" x={6} y={6} width={34} height={14} rx={3} />{box}</g>,
+    chevron: <path className="mf-chevron-mark" d="M17,6 L23,11 L17,16" />,
+    beneath: <text className="mf-beneath" x={4} y={15}>89</text>,
+    outside: <text className="mf-outside" x={4} y={15}>{strings.graph.wantsOutside(2)}</text>,
+    layerMark: <g className="mf-layer mf-layer-0" transform="translate(8,11)"><rect x={0} y={-3.5} width={7} height={7} /><text className="mf-layer-count" x={11} y={4}>3</text></g>,
+    agent: <g className="mf-agent" transform="translate(20,11)"><circle r={9} /><text textAnchor="middle" y={3.5}>MA</text></g>,
+    agentActive: <g className="mf-agent mf-agent-active" transform="translate(20,11)"><circle r={9} /></g>,
+    agentIdle: <g className="mf-agent" transform="translate(20,11)"><circle r={9} /></g>,
+    unseen: <circle className="mf-unseen" cx={20} cy={11} r={4.5} />,
+    projectLink: <g className="mf-project-link" transform="translate(14,5)"><path d="M2,10 L10,2 M5,2 L10,2 L10,7" /></g>,
+    arrow: <g className="mf-edge"><path d="M4,11 L30,11" /><path className="mf-arrowhead" d="M30,7 L37,11 L30,15 z" /></g>,
+    arrowCount: <g className="mf-edge"><path d="M4,15 L30,15" /><path className="mf-arrowhead" d="M30,11 L37,15 L30,19 z" /><text className="mf-edge-count" x={14} y={10}>3</text></g>,
+    band: <line className="mf-separator" x1={20} y1={1} x2={20} y2={21} />,
+  };
+  // The outside count is words in the graph, so its swatch is as wide as the words.
+  const width = entry === "outside" ? 96 : 42;
+  return (
+    <svg className="mf-graph legend-swatch" width={width} height={22} viewBox={`0 0 ${width} 22`} aria-hidden="true">
+      {marks[entry]}
+    </svg>
+  );
+}
+
 export function Legend({ onClose }: { onClose: () => void }) {
   return (
     <aside className="legend" aria-labelledby="legend-title">
@@ -380,7 +412,10 @@ export function Legend({ onClose }: { onClose: () => void }) {
       </header>
       <ul>
         {LEGEND_ENTRIES.map((key) => (
-          <li key={key}>{strings.legend[key]}</li>
+          <li key={key}>
+            <Swatch entry={key} />
+            <span>{strings.legend[key]}</span>
+          </li>
         ))}
       </ul>
     </aside>

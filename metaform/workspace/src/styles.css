@@ -87,7 +87,10 @@ button, select { font: inherit; color: inherit; }
 .legend header { display: flex; justify-content: space-between; align-items: baseline; }
 .legend h2 { font-size: 12px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .legend header button { background: none; border: 0; font-size: 16px; cursor: pointer; }
-.legend ul { margin: 0; padding-left: 16px; display: grid; gap: 3px; }
+.legend ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.legend li { display: flex; gap: 8px; align-items: center; }
+.legend li > svg { flex: 0 0 auto; }
+.legend-swatch { background: none; cursor: default; }
 .off-view { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2; background: var(--panel); color: var(--text); border: 1px solid var(--unseen); border-radius: 12px; padding: 3px 12px; cursor: pointer; }
 .gesture-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); margin: 0; padding: 4px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); }
 .onboarding { position: relative; margin: auto; max-width: 560px; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
