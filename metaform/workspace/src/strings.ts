@@ -154,8 +154,10 @@ export const onboarding = {
   },
   reopen: {
     title: "Open this view again",
-    // The product's own reopen command is an owner decision (UI-U1). Until it exists, show the
-    // command the host reports it was started with; never a name invented here.
+    // The owner named the command (2026-11-09). It is not in the CLI yet, so it shows with
+    // onboarding.register.plannedLabel until the host provides it.
+    command: "metaform gui",
+    // Also shown: the command the host reports it was started with.
     prototypeCommand: (command: string) => `This prototype was started with: ${command}`,
   },
 } as const;
