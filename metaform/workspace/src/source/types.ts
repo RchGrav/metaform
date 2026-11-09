@@ -45,14 +45,13 @@ export interface ElementFields {
   [field: string]: unknown;
 }
 
-/** The result of {"goto": "<address>"} (R-5.30, R-6.27). */
+/** The result of {"goto": "<address>"} (R-5.30, R-6.27). No skills: a functionality's skill arrives with its ticket (R-5.31). */
 export interface SummarySheet {
   at: Address;
   element: ElementFields;
   wants: Record<Address, Want>;
   wanted_by: Record<Address, Want>;
   layers: Record<string, { records: number }>;
-  skills: Record<string, { name: string; description?: string; uri?: string }>;
   memory: { records: number };
   /** Layer guidance; the server delivers each entry once per connection. */
   instructions?: Record<string, string>;
