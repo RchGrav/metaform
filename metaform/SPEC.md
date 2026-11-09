@@ -118,7 +118,7 @@ Nothing is exposed until all three are done.
 
 **Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11.
 
-**R-3.4** An element's fields are `technical_name`, `name`, `role`, `uri`, `status` and `wants`. `technical_name`, `name` and `role` are mandatory. `uri` and `status` are optional. A want record holds `why`, `how` and `intent`.
+**R-3.4** An element's fields are `technical_name`, `name`, `role`, `uri`, `status` and `wants`. `technical_name`, `name` and `role` are mandatory. `uri` and `status` are optional. A want record holds `why`, `how` and `direction` (formerly `intent`, R-3.6).
 
 **Status:** Decided. **Source:** the founder's documentation set, module 3.1. This replaces `name_length`, `id`, `project`, `goal`, `function` and `ice`. `why` and `how` replaced `goal` and `function` everywhere on 2026-11-07 (`DECISIONS.md`, "Want fields are why and how"); `ice` was removed from the intake, schema, contract and code on 2026-11-07 (R-3.14). `technical_name` and the four roles were aligned on 2026-11-07 (`DECISIONS.md`, "technical_name and the four roles").
 
@@ -181,9 +181,9 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. **Source:** "this element and the other element"; "the whole system reasons against where an agent is operating"; "lets lock it in". `originator` changes sides with the flow, so it is not used.
 
-**R-3.6** `intent` has three values: `inbound`, `outbound` and `two-way`. They are relative to the element that holds the want, not to the project. The request is never the intent.
+**R-3.6** `direction` has three values: `inbound`, `outbound` and `two-way`. They are relative to the element that holds the want, not to the project. The request is never the direction. The field was called `intent`.
 
-**Status:** Decided. **Source:** "I thought we would make the third value send_receive"; "not including the request". The values replace `send`, `receive` and `send_receive`. **Source:** "inbound outbound two-way"; "add outside of the project to those and its all hunky dorey in my book". Not built.
+**Status:** Decided. **Source:** "I thought we would make the third value send_receive"; "not including the request". The values replace `send`, `receive` and `send_receive`. **Source:** "inbound outbound two-way"; "add outside of the project to those and its all hunky dorey in my book". The field name `direction` replaces `intent`. **Source:** the founder, 2026-11-08. Not built: the intake procedure, the schema, the tool contract, the canonical map, the servers and the stored maps still use `intent` with `send`, `receive` and `send_receive`.
 
 **R-3.7** `upstream` is what the project relies on, outside of the project. `downstream` is what relies on the project, outside of the project. Neither is part of the project being mapped.
 
@@ -257,9 +257,9 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. **Source:** "storage is nested, agents see full namerspace addresses, nested is for storage. Agents dont see nested form."
 
-**R-4.16** The map is realized as a graph in its Ladybug database. Every element is a node carrying its fields (R-3.4). Nesting is a relationship from each address segment to its children. Each want is a relationship from the receiver to the provider, carrying `why`, `how` and `intent`. Agents see only the flat view (R-4.12).
+**R-4.16** The map is realized as a graph in its Ladybug database. Every element is a node carrying its fields (R-3.4). Nesting is a relationship from each address segment to its children. Each want is a relationship from the receiver to the provider, carrying `why`, `how` and `direction`. Agents see only the flat view (R-4.12).
 
-**Status:** Decided. **Source:** "its a graph db thats how its realized.. how is anything a table" (2026-11-07); the founder's documentation set, section 5.1, "Nested Storage View (Internal Database State)" (`metaform/docs/documentation-set.md`), which the founder pointed to as the database state (2026-11-07). The database holds 5.1's state with 5.1's names: `technical_name`, `name`, `role` (Definitive, Supportive, Notable, Divergent), `uri`, `status`, `wants` records with `why`, `how` and `intent`, and the native arrays `memory` and `sources`. `metaform/metaform.schema.json` (2026-10-31) still uses earlier names and lags 5.1; it is protected and changes only on the founder's instruction. How layers attach to the graph follows the founder's unified layer approach, still to be described.
+**Status:** Decided. **Source:** "its a graph db thats how its realized.. how is anything a table" (2026-11-07); the founder's documentation set, section 5.1, "Nested Storage View (Internal Database State)" (`metaform/docs/documentation-set.md`), which the founder pointed to as the database state (2026-11-07). The database holds 5.1's state with 5.1's names: `technical_name`, `name`, `role` (Definitive, Supportive, Notable, Divergent), `uri`, `status`, `wants` records with `why`, `how` and `intent` (now `direction`, R-3.6), and the native arrays `memory` and `sources`. `metaform/metaform.schema.json` (2026-10-31) still uses earlier names and lags 5.1; it is protected and changes only on the founder's instruction. How layers attach to the graph follows the founder's unified layer approach, still to be described.
 
 **R-4.13** *(Superseded 2026-11-07, as a default: a Ladybug transaction is the commit point and no separate effect log is kept. Ladybug kept committed rows and dropped uncommitted ones after SIGKILL; the log existed to make JSON file writes atomic. `docs/designs/storage.md`, section 2.3.)* The effect log is the commit point. Each write appends its effect to the project's log and syncs it before any file changes. After a crash, the functional map server replays the entries that the files do not yet hold.
 
@@ -505,7 +505,7 @@ Negations apply first. Additions apply second. If one element adds and negates t
   "fields": {
     "why": {"part_of_speech": "Bare infinitive verb phrase", "rule": "State the active goal as a sentence fragment beginning with a base action verb. Do not include a leading 'to', subject nouns, or any words ending in -ing.", "example": "drain raw frames from the network interface card"},
     "how": {"part_of_speech": "Third-person singular present indicative verb phrase", "rule": "State how the provider satisfies the goal beginning with a present-tense verb ending in -s or -es that agrees with 'which'. Do not include subject nouns, 'by', or any words ending in -ing.", "example": "holds descriptor pointers across contiguous memory segments"},
-    "intent": {"part_of_speech": "Controlled value", "rule": "One of inbound, outbound or two-way, relative to the element that holds the want.", "example": "inbound"}
+    "direction": {"part_of_speech": "Controlled value", "rule": "One of inbound, outbound or two-way, relative to the element that holds the want.", "example": "inbound"}
   }
 }
 ```

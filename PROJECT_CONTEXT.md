@@ -152,7 +152,7 @@ No credentials were found in the copy. **Verified:** a pattern scan found only t
   - search
   - the memory module
   - the refusal codes of R-5.24
-  - the new intent value names
+  - the `direction` field and its value names (formerly `intent`)
 
 ### 5.3 Build and test commands
 
@@ -200,7 +200,7 @@ python3 tools/verify_bootstrap.py                 # PASS (see below)
 1. An intake agent runs the owner's procedure (`metaform/Intake.md` 3.1) on any artifact: code, specification, manual or screenplay. It records the project's functional form as a tree of dotted addresses.
 2. Each element has `technical_name`, `name`, `role`, `uri`, `status` and `wants`.
    - `role` is one of Definitive, Supportive, Notable or Divergent, and exactly one element is Definitive.
-   - `wants` is a dictionary keyed by provider address. Each entry holds `why` (OP), `how` (EF) and `intent` (IFD).
+   - `wants` is a dictionary keyed by provider address. Each entry holds `why` (OP), `how` (EF) and `direction` (IFD; called `intent` in the current intake, schema and code).
 3. One map server per home owns the store. Agents reach it through a stdio forwarder and one MCP tool, `project-map`.
    - The tool takes JSON commands: `add`, `update`, `delete`, `orphaned`, addressed reads and `goto`.
    - Agents see the form, never the store (R-2.1).
@@ -239,7 +239,7 @@ Each item below was checked against the files. File references are to the copies
 | C-1 | **Server language.** `DECISIONS.md` "Technical choices still to make" still lists the runtime language (Python, Node or hybrid) as open, and its "The chassis" section (3 Nov) says the map server "stays a standalone Node MCP server". | `SPEC.md` R-4.6, "Decided 2026-11-07: Rust", although its status line still begins "Proposed". `DECISIONS.md` "The Node server is a test harness". | Yes, by later text. The old lines were never edited. Also stale: `AGENTS.md`, the original `README.md` and `verification/bootstrap-status.json` ("runtime_language: not selected"). |
 | C-2 | **Current intake prompt.** `DECISIONS.md` (sections of 31 Oct and 3 Nov), `AGENTS.md`, `DEVELOPMENT.md` and `docs/README.md` say `Intake.xml`. | `metaform/Intake.md` 3.1 (`SPEC.md`, `CLAUDE.md`, `metaform/README.md`). Later `DECISIONS.md` calls `Intake.xml` "the tested record from before the change". | Yes, in practice. The stale untracked root `Intake.md` (old goal, function and ICE wording) has been carried into `metaform/Intake.md`. **Verified.** |
 | C-3 | **Storage layout.** This changed five times:<br>1. JSON files (3 Nov, recorded as decided)<br>2. one `project.lbug` per project (documentation set; `CLAUDE.md`)<br>3. one database per map (commit ee41126; `AGENTS.md`)<br>4. maps as partitions of the project database (`SPEC.md` R-4.1, `storage.md` 2.2)<br>5. `DECISIONS.md` still also says "JSON is the default" | Partitions (2026-11-07 17:08), marked as a default "for the founder's confirmation" | **Open:** waits for owner confirmation (D-17). |
-| C-4 | **Intent values.** `SPEC.md` R-3.6 (Decided) uses `inbound`, `outbound` and `two-way`. | The schema, the contract, `metaform-canonical.json` and `Intake.md` still use `send`, `receive` and `send_receive`. | **Open:** decided but not applied. Note that `SPEC.md` D-2 says it is closed by R-3.6. |
+| C-4 | **Direction (formerly intent).** `SPEC.md` R-3.6 (Decided) names the field `direction` (owner decision, 2026-11-08) with the values `inbound`, `outbound` and `two-way`. | The schema, the contract, `metaform-canonical.json`, `Intake.md`, both servers and the stored maps still use `intent` with `send`, `receive` and `send_receive`. | **Open:** decided but not applied. Applying it needs the owner's instruction for the protected files. Note that `SPEC.md` D-2 says it is closed by R-3.6. |
 | C-5 | **Old vocabulary in `TOPOGEE.md`.** It uses roles CQU, DE, SE and NE, plus `name_length`, `goal` and `function`. The current terms are Definitive, Supportive, Notable and Divergent, `technical_name`, `why` and `how`, and CQU is not a role. | Current terms | **Owner's call:** agents may not edit `TOPOGEE.md`. Old terms also remain in `metaform/docs/metaform-concepts.md`, `DEVELOPMENT.md` and the initiative draft. |
 | C-6 | **The owner edited the documentation set after it was imported.** `context/brain/Universal Intake & Layer Architecture Documentation Set.md` (11-07 16:06) differs from `metaform/docs/documentation-set.md`:<br>- In the §6.4 example, `wants` changed from an array to a dictionary.<br>- Root `skills` lost its brackets. The result is invalid JSON, and it contradicts `DECISIONS.md` ("root `skills` stay lists"). | Brain copy | **Open.** The project copy is stale. `DECISIONS.md` and `SPEC.md` §11 call it "unchanged". |
 | C-7 | **The owner's query note is newer than the project copy.** `context/brain/mcp_query.md` (11-01) adds a query item, and a definition of `name` as an alias that differs from the address term. `metaform/docs/mcp-query-source.md` is the older backup. | Brain copy | **Open.** The "alias" definition appears nowhere in `SPEC.md`. |

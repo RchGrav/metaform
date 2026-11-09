@@ -75,7 +75,7 @@ These are written from the agent's and the owner's point of view.
 - Each want is keyed by the provider's address and holds three things:
   - **why**: the receiver's purpose
   - **how**: what the provider supplies
-  - **intent**: which way the substance flows, not counting the request
+  - **direction** (formerly **intent**): which way the substance flows, not counting the request: inbound, outbound or two-way
 - There is one relationship per provider per receiver, and every provider must exist in the map.
 - **Confirmed** (`DECISIONS.md` 7 Nov: "Want fields are why and how", "technical_name and the four roles", "Anything keyed by a unique name is a dictionary").
 - ICE is gone. The Definitive–Supportive relationship is the inseparable boundary. **Confirmed** (7 Nov).
@@ -151,7 +151,7 @@ These are written from the agent's and the owner's point of view.
 Each question says what it affects.
 
 1. **Q1. Storage grouping.** Should maps be stored as partitions of one database per project (the current default), or as one database per map? This affects the store layout and any migration. *Recommendation in the materials:* partitions (`storage.md` 2.2).
-2. **Q2. Intent values.** The spec decided `inbound`, `outbound` and `two-way`, but the intake, schema and contract still say `send`, `receive` and `send_receive`. Should the rename be applied? The intake is protected, so it needs your instruction.
+2. **Q2. Direction.** *Answered 2026-11-08:* the field is now `direction`, with the values `inbound`, `outbound` and `two-way` (`SPEC.md` R-3.6). *Still open:* the intake, schema, tool contract, canonical map, both servers and the stored maps still say `intent` with `send`, `receive` and `send_receive`. Should the rename be applied to them now? The intake is protected, so it needs your instruction.
 3. **Q3. Your newer documentation set.** You edited `~/brain/Universal Intake & Layer Architecture Documentation Set.md` on 7 Nov after it was imported. In the example, `wants` became a dictionary, and root `skills` lost its brackets, which leaves broken JSON and contradicts "root skills stay a list". Should the project copy be updated, and should `skills` stay a list?
 4. **Q4. Your newer query note.** `~/brain/mcp_query.md` adds an extra query item, and a definition of `name` as an alias for the address term. Should these go into the spec?
 5. **Q5. `TOPOGEE.md`.** It still uses the old role names, `goal`/`function` and `name_length`, and it calls the context engine "Topogee". Will you update it, or should it stay as a historical opening statement? Should "Product: Topogee Navigator" be retired?
