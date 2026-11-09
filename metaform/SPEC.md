@@ -114,9 +114,9 @@ Nothing is exposed until all three are done.
 
 **R-3.2** An address is a dotted namespace path, such as `code.engine.game`. Each segment names functionality.
 
-**R-3.3** The valid root scopes are `code`, `document`, `media`, `data`, `collection`, `upstream`, `downstream` and `layer`. Like `upstream` and `downstream` (R-3.7), `layer` holds what is not located in the project: here, layer definitions (R-6.24).
+**R-3.3** The valid root scopes are `code`, `document`, `media`, `data`, `collection`, `upstream`, `downstream` and `layer`. `upstream`, `downstream` and `layer` are root prefixes: they hold what is not located in the project, and the segment after one of them can be another root scope. `upstream.code.engine.physics` is physics engine code that the project relies on (R-3.7). `layer.document.specification` defines the specification layer (R-6.24).
 
-**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24). `layer` is a root of its own, like `upstream` and `downstream`, because a layer definition is not located in the project. Placed under a project root such as `data`, it would mix with the project's functionality and read as part of the project (owner, 2026-11-09). Intake places nothing in `layer`: intake infers no layers, so the intake procedure does not list `layer` (owner, 2026-11-09).
+**Status of R-3.1 to R-3.3:** Decided. **Source:** `TOPOGEE.md`; `intake-new.md` version 3.1. The documentation set lists six root scopes, without `collection`. That is decision D-11. `layer` was added on 2026-11-09: the owner decided that a layer is defined by an element in the main map, such as `layer.document.specification` (relayed by Jorge, the store agent; see R-6.24). `layer` is a root of its own, like `upstream` and `downstream`, because a layer definition is not located in the project. Placed under a project root such as `data`, it would mix with the project's functionality and read as part of the project (owner, 2026-11-09). Intake places nothing in `layer`: intake infers no layers, so the intake procedure does not list `layer` (owner, 2026-11-09). Root prefixes: the owner, 2026-11-09: "all three of them are root prefixes, so stuff under them can be the roots".
 
 **R-3.4** An element's fields are `technical_name`, `name`, `role`, `uri`, `status` and `wants`. `technical_name`, `name` and `role` are mandatory. `uri` and `status` are optional. A want record holds `why`, `how` and `direction` (formerly `intent`, R-3.6).
 
@@ -596,7 +596,7 @@ A step is accepted when:
 | D-2 | Closed by R-3.6: the values are `inbound`, `outbound` and `two-way`. | Nothing. |
 | D-3 | Closed by R-3.13. | Nothing. |
 | D-4 | The shape of `wants` in the document: the schema's array, or the canonical map's object. | Exact export equality. |
-| D-5 | How an agent looks inside an `upstream` project that has had an intake. Proposed: the address continues past the link, as `upstream.service.billing.code.api`. | Section 7 read path. |
+| D-5 | How an agent looks inside an `upstream` project that has had an intake. Proposed: the address continues past the link, as `upstream.service.billing.code.api`. The owner's example of a link between projects puts a root scope directly after the prefix, as `upstream.code.engine.physics` (R-3.3, 2026-11-09). | Section 7 read path. |
 | D-6 | How the store matches a `uri` to a project, including `~` on a shared server and the same repository reached by `file://` and `https://`. | Section 7 read path. |
 | D-7 | Whether a read returns only active layers, or whether a raw read exists. | Step 4. |
 | D-8 | Which identity the server trusts. MCP client names are self-reported. | R-5.3, R-6.11. |
