@@ -990,7 +990,7 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
       },
       {
         "type": "object",
-        "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed (metaform/SPEC.md R-5.30).",
+        "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts and the memory count. A later goto to the same address in the same context returns only what changed (metaform/SPEC.md R-5.30).",
         "properties": {
           "goto": {
             "type": "string",

@@ -238,7 +238,7 @@ fn heading_lines_in_text_are_refused() {
 }
 
 /// A read can name the layer, and `goto` lists it wherever it applies, with its instruction
-/// (R-5.21, R-6.27).
+/// (R-5.21, R-6.27). `goto` carries no skills, the root's or the element's (R-5.30).
 #[test]
 fn the_layer_is_readable_and_listed_by_goto() {
     let contract = Contract::bundled().unwrap();
@@ -303,8 +303,15 @@ fn the_layer_is_readable_and_listed_by_goto() {
     );
     assert!(dump["."]["layer"]["document"]["specification"]["instruction"].is_string());
 
+    let skill = json!([{"name": "tdd", "description": "Write the test first."}]);
+    let (map, _) = run(&contract, &map, json!({"update": {".": {"skills": skill.clone()}}})).unwrap();
+    let (map, _) = run(&contract, &map, json!({"update": {MASHER: {"skills": skill}}})).unwrap();
     let (_, sheet) = run(&contract, &map, json!({"goto": MASHER})).unwrap();
     assert_eq!(sheet["layers"]["specification"], json!({"records": 1}));
+    assert!(
+        sheet.get("skills").is_none() && sheet["layers"].get("skills").is_none(),
+        "goto delivers no skills; they arrive with a ticket (R-5.30, R-5.31): {sheet}"
+    );
     let instruction = sheet["instructions"]["specification"].as_str().unwrap();
     assert!(instruction.contains("TASTE") && instruction.contains("\"level\": 1-4"));
     // The read form the instruction teaches must be one the contract accepts.
