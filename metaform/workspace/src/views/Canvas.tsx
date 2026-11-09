@@ -43,6 +43,9 @@ export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: 
     let live = true;
     void renderer.render(scene).then(() => {
       if (!live || restoredFor.current === placeKey) return;
+      // An empty graph has nothing to fit. Keep waiting, so the first render with elements fits,
+      // and never store the unchanged viewport an empty fit returns.
+      if (scene.nodes.length === 0) return;
       restoredFor.current = placeKey;
       // A container shown before gets its own viewport back; a new one is fitted (UX section 1).
       const stored = latest.current.viewport;
