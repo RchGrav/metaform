@@ -67,5 +67,7 @@ export const GRAPH_CSS = `
 .mf-agent text { fill: var(--mf-ink); font-size: 9px; font-weight: 700; }
 .mf-agent.mf-agent-active text { fill: var(--mf-canvas); }
 .mf-unseen { fill: var(--mf-focus); }
+.mf-flow-dot { fill: var(--mf-accent); stroke: var(--mf-canvas); stroke-width: 1.5; }
+.mf-flow-chevron { fill: none; stroke: var(--mf-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mf-project-link path { fill: none; stroke: var(--mf-accent); stroke-width: 1.6; }
 `;

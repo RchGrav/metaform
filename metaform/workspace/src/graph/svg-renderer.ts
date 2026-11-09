@@ -2,7 +2,9 @@
 // It reads no GraphSource and decides no meaning; it reports raw input to the state layer.
 
 import type { Address } from "../source/types";
-import { graph as text, layers as layerText } from "../strings";
+import { graph as text, intake, layers as layerText } from "../strings";
+import { Camera } from "./camera";
+import { Flow } from "./flow";
 import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
 import {
   type GraphRenderer,
@@ -116,7 +118,10 @@ export class ElkRenderer implements GraphRenderer {
   private events: RendererEvents | null = null;
   private svg: SVGSVGElement | null = null;
   private canvas: SVGGElement | null = null;
+  /** The viewport last asked for: the target of a running camera move, or where it rests. */
   private viewport: Viewport = { x: 0, y: 0, zoom: 1 };
+  /** What is on screen now; moves ease from here (camera.ts). */
+  private readonly camera = new Camera((shown) => this.paintViewport(shown));
   private current: Layout | null = null;
   private scene: RenderScene | null = null;
   private pending: Promise<void> = Promise.resolve();
@@ -124,6 +129,7 @@ export class ElkRenderer implements GraphRenderer {
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private drag: { pointer: number; x: number; y: number; moved: boolean } | null = null;
   private readonly cleanup: (() => void)[] = [];
+  private readonly flow = new Flow();
 
   constructor(private readonly elk: () => Elk) {}
 
@@ -144,14 +150,16 @@ export class ElkRenderer implements GraphRenderer {
     this.canvas = el("g", { class: "mf-canvas" }, svg);
     host.appendChild(svg);
     this.svg = svg;
-    this.applyViewport(false);
+    this.camera.moveTo(this.viewport, false);
     this.listen();
   }
 
   unmount(): void {
     this.generation++;
+    this.flow.clear();
     for (const off of this.cleanup.splice(0)) off();
     clearTimeout(this.settleTimer);
+    this.camera.stop();
     this.svg?.remove();
     this.svg = this.canvas = this.host = null;
     this.events = null;
@@ -180,7 +188,7 @@ export class ElkRenderer implements GraphRenderer {
 
   setViewport(viewport: Viewport, animate: boolean): void {
     this.viewport = { ...viewport, zoom: clampZoom(viewport.zoom) };
-    this.applyViewport(animate);
+    this.camera.moveTo(this.viewport, animate);
   }
 
   async fit(animate: boolean): Promise<Viewport> {
@@ -246,6 +254,8 @@ export class ElkRenderer implements GraphRenderer {
     // Containers first, then edges, then leaf nodes, so arrows run above container fills.
     const containers = el("g", { class: "mf-containers" }, canvas);
     const edges = el("g", { class: "mf-edges" }, canvas);
+    const flowLayer = el("g", { class: "mf-flows", "aria-hidden": "true" }, canvas);
+    this.flow.setLayer(flowLayer);
     const nodes = el("g", { class: "mf-nodes" }, canvas);
     const parents = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
     const animate = previous !== null && !reducedMotion();
@@ -268,7 +278,7 @@ export class ElkRenderer implements GraphRenderer {
       if (!route) continue;
       // Two wants in opposite directions would share one line: move each 4 px to its own side.
       const paired = ids.has(`${edge.to}->${edge.from}`);
-      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate);
+      this.drawEdge(edge, paired ? offset(route, 4) : route, edges, animate, scene);
     }
     if (focused) {
       const again = this.canvas?.querySelector<SVGGElement>(`[data-address="${CSS.escape(focused)}"]`);
@@ -360,9 +370,19 @@ export class ElkRenderer implements GraphRenderer {
     return g;
   }
 
-  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, animate: boolean): void {
+  private drawEdge(edge: RenderEdge, route: Point[], parent: SVGGElement, animate: boolean, scene: RenderScene): void {
     const g = el("g", { class: `mf-edge${edge.dimmed ? " mf-dimmed" : ""}`, "data-edge": edge.id }, parent);
-    el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
+    const path = el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
+    const direction = edge.direction;
+    if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
+      const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
+      el("title", {}, g).textContent = intake.ifdLine(direction, label(edge.from), label(edge.to));
+      // UX section 12a: the flow runs where it helps. The scene marks those wants with `flowing`
+      // once renderer.ts carries it; until then, the selected element's wants flow.
+      const marked = (edge as { flowing?: boolean }).flowing;
+      const selected = scene.nodes.some((n) => n.selected && (n.address === edge.from || n.address === edge.to));
+      if (!edge.dimmed && (marked ?? selected)) this.flow.add(edge.id, path, direction);
+    }
     if (edge.count > 1) {
       const mid = midpoint(route);
       const label = el("text", { class: "mf-edge-count", x: mid.x + 6, y: mid.y - 4 }, g);
@@ -379,11 +399,11 @@ export class ElkRenderer implements GraphRenderer {
 
   // Viewport and input ------------------------------------------------------------------------
 
-  private applyViewport(animate: boolean): void {
+  /** Paints one camera frame. No CSS transition: the camera does the easing (camera.ts). */
+  private paintViewport(shown: Viewport): void {
     if (!this.canvas) return;
-    const { x, y, zoom } = this.viewport;
-    this.canvas.style.transition = animate && !reducedMotion() ? `transform ${MAX_ANIMATION_MS}ms ease-out` : "";
-    this.canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    this.canvas.style.transition = "";
+    this.canvas.style.transform = `translate(${shown.x}px, ${shown.y}px) scale(${shown.zoom})`;
   }
 
   private settled(): void {
@@ -407,7 +427,8 @@ export class ElkRenderer implements GraphRenderer {
       const rect = svg.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
-      const { x, y, zoom } = this.viewport;
+      // From what is on screen now, so a turn during a camera move continues it, not its target.
+      const { x, y, zoom } = this.camera.current;
       const next = clampZoom(zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
       this.setViewport({ x: px - ((px - x) * next) / zoom, y: py - ((py - y) * next) / zoom, zoom: next }, false);
       this.settled();
@@ -426,7 +447,8 @@ export class ElkRenderer implements GraphRenderer {
       drag.moved = true;
       drag.x = e.clientX;
       drag.y = e.clientY;
-      this.setViewport({ ...this.viewport, x: this.viewport.x + dx, y: this.viewport.y + dy }, false);
+      const shown = this.camera.current;
+      this.setViewport({ ...shown, x: shown.x + dx, y: shown.y + dy }, false);
       svg.classList.add("mf-panning");
     });
     const endDrag = (e: PointerEvent) => {
