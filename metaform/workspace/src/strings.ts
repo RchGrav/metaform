@@ -21,6 +21,8 @@ export const modes = {
 
 export const topBar = {
   projects: "Projects",
+  // The accessible name of the breadcrumb navigation: one breadcrumb per address segment.
+  address: "Address",
   zoom: (percent: number) => `Zoom ${Math.round(percent)}%`,
 } as const;
 
@@ -59,11 +61,22 @@ export const graph = {
   downstreamBand: "downstream",
   opensAnotherProject: "Opens another project",
   containerGone: (gone: string, shown: string) => `${gone} no longer exists. Showing ${shown}.`,
+  // A node's accessible name: label, role, and the elements beneath it. Empty parts are left out.
+  nodeName: (label: string, role: string | null, beneath: number) =>
+    [label, role, beneath > 0 ? count(beneath, "element") + " beneath" : null]
+      .filter((part): part is string => part !== null && part !== "")
+      .join(", "),
+  // The badge for wants between this element and elements outside the current view.
+  wantsOutside: (n: number) => `${count(n, "want")} outside`,
+  wantsOutsideLabel: (n: number, container: string) =>
+    `${count(n, "want")} cross outside ${container}`,
 } as const;
 
 export const details = {
   close: "Close",
   openProject: "Open project",
+  // An outside element's own functional map, opened like another project (SPEC R-4.15, seam gap 4).
+  openItsMap: "Open its map",
   setAsFocus: "Set as focus",
   // Field and part names are shown exactly as the server returns them (R-3.4, R-5.30).
   wants: "wants",
@@ -87,6 +100,8 @@ export const layers = {
   isolate: "Isolate",
   isolated: "Isolated",
   records: (n: number) => count(n, "record"),
+  // The tooltip on a layer's mark at an element.
+  mark: (layer: string, n: number) => `${layer}: ${count(n, "record")}`,
 } as const;
 
 export const activity = {
@@ -114,6 +129,8 @@ export const simulated = {
 export const connection = {
   // `reason` is the host's or the server's text, shown unchanged.
   notConnected: (reason: string) => `Not connected: ${reason}`,
+  // A refusal from the Metaform server: its message and code, unchanged (R-5.24).
+  refused: (message: string, code: string) => `The server refused the command: ${message} (${code})`,
 } as const;
 
 export const navigation = {
@@ -141,4 +158,24 @@ export const onboarding = {
     // command the host reports it was started with; never a name invented here.
     prototypeCommand: (command: string) => `This prototype was started with: ${command}`,
   },
+} as const;
+
+/** The keyboard help list, in the order the panel shows it. Keys follow the UX design, section 3 to 11. */
+export const keyboard = {
+  title: "Keyboard shortcuts",
+  keys: (platform: Platform) =>
+    [
+      { keys: "1, 2, 3", action: `Switch to ${modes.graph}, ${modes.element} or ${modes.present}` },
+      { keys: "+, −", action: "Zoom in or out" },
+      { keys: "0", action: "Fit to view" },
+      { keys: "Shift+0", action: "Zoom to 100%" },
+      { keys: platform === "mac" ? "Backspace, ⌥←" : "Backspace, Alt+Left", action: "Back" },
+      { keys: "Enter", action: "Open the selected element" },
+      { keys: "Shift+Enter", action: "Go up one address level" },
+      { keys: "Space", action: "Collapse or expand the selected element" },
+      { keys: "F", action: "Set the selected element as focus" },
+      { keys: "M", action: "Show the menu" },
+      { keys: "Esc", action: "Close the panel, or leave Present" },
+      { keys: "Arrow keys", action: "In Present, move the selection along wants" },
+    ] as const,
 } as const;
