@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "boat-docs": {
+      "type": "http",
+      "url": "https://docs.boat.dev/mcp"
+    },
+    "metaform": {
+      "type": "stdio",
+      "command": "metaform/rust/target/release/metaform",
+      "args": [
+        "mcp",
+        "--home",
+        "${HOME}/.metaform-rust",
+        "--project",
+        "."
+      ],
+      "env": {}
+    }
+  }
+}
