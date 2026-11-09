@@ -1,5 +1,6 @@
 //! End-to-end engine tests against the scripted fake ACP agent and a local fake JEV. Each test
-//! names the docs/TRACEABILITY.md rows it proves.
+//! names the rows it proves in `context/roundtable-original-2026-11-05/docs/TRACEABILITY.md`,
+//! from the repository root. That file's code line numbers refer to the earlier build.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -199,7 +200,7 @@ async fn tool_activity_marks_an_agent_working_and_the_table_moves_on() {
 async fn a_lone_free_agent_is_asked_to_review_once_while_the_other_works() {
     let busy = seat("Busy", json!([{"reply": "done working", "delay_ms": 3000}, {"reply": "PASS"}]));
     let free = seat("Free", json!([{"reply": "reviewed", "delay_ms": 200}, {"reply": "PASS"}]));
-    // A nondefault base, so the review request's allowance line is the table's own (F13).
+    // A nondefault reply limit (700) for the table.
     let (table, bus, mut tap) = start("f3", config(vec![busy, free], false, 700), pass_jev().await);
     let sent = collect(&mut tap, "f3", Duration::from_secs(20), |name, data| name == "acp.prompt.sent" && data["harness"] == "f3/Busy").await;
     let (_, prompt) = sent.last().unwrap();
@@ -317,7 +318,7 @@ async fn a_crash_is_loud_and_the_table_ends_when_nobody_is_left() {
     let (table, _bus, mut tap) = start("f8", config(vec![gone("Ada"), gone("Bo")], false, 512), pass_jev().await);
     let events = collect(&mut tap, "f8", Duration::from_secs(20), |name, _| name == "roundtable.ended").await;
     let t = trace(&events);
-    assert!(events.iter().any(|(n, d)| n == "roundtable.notice" && d["level"] == "error" && d["text"].as_str().unwrap().contains("crashed")), "{t:#?}");
+    assert!(events.iter().any(|(n, d)| n == "roundtable.notice" && d["level"] == "error" && d["text"].as_str().unwrap().contains("left the table unexpectedly")), "{t:#?}");
     assert!(table.is_ended(), "{t:#?}");
 }
 
@@ -469,7 +470,7 @@ async fn a_failed_seat_is_not_listed_as_joining() {
 }
 
 /// The owner's roundtable prompt on the first turn, with the owner's participant prompt inside
-/// it and the first turn (round line and characters line) as its delivery. Nothing else.
+/// it and the first turn (the round line only) as its delivery. Nothing else.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_first_turn_carries_the_owners_prompt_with_placeholders_filled() {
     let (jev, _) = fake_jev(0.8, false).await;

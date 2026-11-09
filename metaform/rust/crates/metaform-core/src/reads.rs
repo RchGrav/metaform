@@ -9,8 +9,8 @@ use crate::names::ROOT;
 use crate::refusal::{Code, Refusal};
 use crate::specification;
 
-/// Role values that mark the Definitive element: `DE`, as the intake writes it today; `defining`,
-/// the earlier spelled-out name of DE in the canonical map; `definitive`, R-3.13's name.
+/// Role values that mark the Definitive element: `definitive`, R-3.13's name, which the intake
+/// writes; `DE`, its abbreviation; `defining`, an earlier name of DE in the canonical map.
 pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
     role.and_then(Value::as_str).is_some_and(|role| {
         ["de", "defining", "definitive"]
@@ -131,7 +131,7 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 
 /// Fields that are not layers in the summary sheet: `memory` has its own count, and `skills`
 /// deliver their frontmatter.
-const OWN_PARTS: [&str; 2] = ["memory", "skills"];
+const NON_LAYER_FIELDS: [&str; 2] = ["memory", "skills"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
 /// own fields and wants, every element that wants it (`wanted_by`) with that element's want, each layer
@@ -146,9 +146,9 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     };
     let wanted_by: JsonMap<String, Value> = map
         .elements()
-        .filter_map(|(holder, other)| {
+        .filter_map(|(holder, holder_element)| {
             (holder != address)
-                .then(|| other.wants.get(address))
+                .then(|| holder_element.wants.get(address))
                 .flatten()
                 .map(|record| (holder.to_string(), Value::Object(record.clone())))
         })
@@ -156,7 +156,7 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let mut layers: JsonMap<String, Value> = element
         .fields
         .iter()
-        .filter(|(key, value)| value.is_array() && !OWN_PARTS.contains(&key.as_str()))
+        .filter(|(key, value)| value.is_array() && !NON_LAYER_FIELDS.contains(&key.as_str()))
         .map(|(key, value)| {
             (
                 key.clone(),

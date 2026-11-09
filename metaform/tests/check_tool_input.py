@@ -1,4 +1,4 @@
-"""Check the agreed command input without pretending to execute a service."""
+"""Check the agreed command input without performing the commands against a service."""
 from copy import deepcopy
 import importlib.util
 import json

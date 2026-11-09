@@ -1,4 +1,4 @@
-//! The saved settings: only the values the owner set, in one JSON file in Roundtable's home
+//! The saved settings: only the values the chair set, in one JSON file in Roundtable's home
 //! folder. One writer at a time; each write replaces the file whole.
 
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ use crate::config::TableConfig;
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     Default,
-    /// Saved by the owner in the settings file.
+    /// Saved by the chair in the settings file.
     Saved,
     /// Given for one table only.
     Table,

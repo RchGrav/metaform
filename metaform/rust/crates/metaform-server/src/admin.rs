@@ -53,7 +53,7 @@ fn answer_now(store: &Store, request: &Value) -> Value {
         project(body).map(|id| json!({"ok": true, "settings": store.settings().list(id.as_deref())}))
     } else if let Some(body) = request.get("set") {
         let Some(key) = body["key"].as_str() else {
-            return json!({"ok": false, "error": "set needs a key"});
+            return json!({"ok": false, "error": "set must name a key"});
         };
         project(body).and_then(|id| {
             let value = body.get("value").filter(|v| !v.is_null()).cloned();

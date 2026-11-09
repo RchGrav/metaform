@@ -21,3 +21,6 @@ metaform/verification/latest-schema-check-results.json
 .ida/
 .marcus/
 .jorge/
+
+# TASTE audit records (local, not shared)
+.taste/

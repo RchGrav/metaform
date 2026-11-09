@@ -149,14 +149,14 @@ async fn session(store: Arc<Store>, stream: UnixStream, client: ClientId) {
 }
 
 async fn handshake(store: &Arc<Store>, line: &str) -> Result<MapKey, String> {
-    let request: Value = serde_json::from_str(line).map_err(|e| format!("bad handshake: {e}"))?;
+    let request: Value = serde_json::from_str(line).map_err(|e| format!("the handshake is not valid JSON: {e}"))?;
     match (request["project"].as_str(), request["map"].as_str()) {
         (Some(folder), None) => open_project(store, folder.to_string()).await,
         (None, Some(name)) => {
             check_map_name(name)?;
             Ok(MapKey::standalone(name))
         }
-        _ => Err("the handshake names exactly one of a project folder or a map".into()),
+        _ => Err("the handshake must name exactly one of: a project folder or a map".into()),
     }
 }
 
@@ -249,7 +249,7 @@ pub(crate) async fn open_session(
         }
     };
     let answer: Value =
-        serde_json::from_str(&answer).map_err(|_| format!("server answered {answer:?}"))?;
+        serde_json::from_str(&answer).map_err(|_| format!("the server's handshake answer is not JSON: {answer:?}"))?;
     if answer["ok"] != json!(true) {
         return Err(answer["error"]
             .as_str()

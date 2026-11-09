@@ -1,5 +1,7 @@
 //! Inside an opportunity: the prompt a seat receives (O format), how its reply is resolved,
-//! judging (which never holds the table, R §4), the next-topic poll (only with JEV, O), and
+//! judging (the owner's rule is that judging never holds the table, R §4; today the next turn
+//! waits for JEV's verdict, gate RT-G10, owner disposition pending), the next-topic poll (only
+//! with JEV, O), and
 //! the rating round at the end (O).
 
 use std::collections::BTreeMap;
@@ -19,10 +21,10 @@ pub(crate) struct Commit {
 }
 
 impl Table {
-    /// The prompt for seat `i`, in the owner's order: the round line, the truncation notice, the
-    /// rejection reasons, each other participant's message, then the characters line (O). Only
-    /// what is new since its last turn; its ACP session keeps the rest. `ask` replaces the
-    /// characters line for special requests (review, topic proposal, ratings). `discussion`: a
+    /// The prompt for seat `i`, in the owner's order: the round line, the notices (length,
+    /// rejection, not evaluated), each other participant's message, then `ask` when given (O).
+    /// Only what is new since its last turn; its ACP session keeps the rest. `ask` is appended
+    /// for special requests (review, topic proposal, ratings). `discussion`: a
     /// floor turn or a review, whose reply is a contribution. The round line and the notices go
     /// only to such a turn, as R §4.6 says "when the vetoed participant's next turn arrives".
     /// On its first turn the agent gets the owner's roundtable prompt, with this turn in place of

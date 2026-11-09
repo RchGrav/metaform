@@ -15,7 +15,7 @@ The round trip has four parts:
 
 The skeleton holds functionality only. Detail lives in layers built around it (R-3.20). That separation is what lets each part change one thing at a time.
 
-## Out: the export (built)
+## Out: the export (built in the Node test harness only)
 
 `node src/main.ts <folder> --specification [--layers <file>]` prints the map as Markdown. It is a CLI command, not an MCP command, because MCP is for data manipulation and reads (R-5.14 to R-5.16, the founder's rule of 2026-11-06). The code is `metaform/server/src/specify.ts`.
 
@@ -50,7 +50,7 @@ So the export is also a quality check. A map whose export reads correctly obeys 
 
 A specification is evidence of functionality, like code (section 1).
 
-1. **Intake builds the skeleton.** The intake procedure (`metaform/Intake.md`) runs on the specification as its artifact. It records elements, roles and wants, with status `not_built` wherever the specification describes functionality that does not exist yet. No new procedure is needed.
+1. **Intake builds the skeleton.** The intake procedure (`metaform/Intake.md`) runs on the specification as its artifact. It records elements, roles and wants, with status `un_built` wherever the specification describes functionality that does not exist yet. No new procedure is needed.
 2. **Materials go into layers.** For each registered layer, an agent reads the specification with that layer's `instruction` and writes records at the addresses each passage concerns, using the ordinary `add` command (R-5.28). The instruction is the inbound half of a layer, and the template is the outbound half.
 3. **Material that fits no layer is listed, not dropped.** The list is the evidence for registering a new layer with `layer`. **(agent's choice)**
 
@@ -60,7 +60,7 @@ This needs no new MCP command. The CLI only starts the work; the intake agent wr
 
 The founder proposed that an agent owns its own map and brings others into a roundtable, as its head, to refine it (section 11).
 
-- A seat orients by `goto` or by taking a ticket, never by reading the whole export.
+- A seat (an agent taking part in a roundtable) orients by `goto` or by taking a ticket, never by reading the whole export.
 - A change to one record changes one sentence of the next export, so the specification is never rewritten by hand.
 
 ## Round-trip check (designed, not built)

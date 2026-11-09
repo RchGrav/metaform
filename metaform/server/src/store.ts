@@ -4,8 +4,8 @@
  * Addresses are project-relative. The root element is stored at `.`, and callers know it as ''.
  * The database never says which project it is. The main database does that, see home.ts.
  *
- * Step one only: this process owns the database because the chassis does not exist yet.
- * Ladybug allows one read-write process, so the chassis takes over this ownership later.
+ * This Node test harness owns the database itself; in the build, the Rust functional map server
+ * owns the home (R-4.4). Ladybug allows one read-write process.
  */
 import lb from '@ladybugdb/core';
 

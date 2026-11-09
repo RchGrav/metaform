@@ -1,5 +1,5 @@
 //! Conformance tests of the public interface against the shared fixtures in `metaform/`.
-//! Budget (CLAUDE.md): at most five tests for this feature. This file holds four.
+//! Budget (`context/topogee-repo/CLAUDE.md`): at most five tests for this feature. This file holds four.
 
 use std::fs;
 use std::path::PathBuf;
@@ -21,7 +21,7 @@ fn seeded() -> Map {
         .1
 }
 
-/// Run a write, check that its effect turns the old map into the new one, and return the new map.
+/// Perform a write, check that its effect turns the old map into the new one, and return the new map.
 fn write(contract: &Contract, map: &Map, command: Value) -> Map {
     match execute(contract, map, &command) {
         Ok(Outcome::Write(write)) => {

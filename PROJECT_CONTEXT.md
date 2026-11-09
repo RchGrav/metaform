@@ -15,7 +15,7 @@
 
 - **Metaform is a component that was developed inside a wider repository.** **Verified.** It lived in `~/topogee/metaform/` inside `RchGrav/topogee`. That repository also develops Topogee (the shared world), a C service launcher and Roundtable. The owner, `DECISIONS.md` "Where Metaform lives": Metaform is kept "as part of this private repo to later replace the existing private metaform repo."
 - **This copy is partial.** Material about the following is not here:
-  - **Unknown / not available:** the earlier private `RchGrav/metaform` repository (the Python chassis-and-modules system the preprint and `reference/` describe).
+  - **Unknown / not available:** the earlier private repository, now `RchGrav/metaform-archive` (the Python chassis-and-modules system the preprint and `reference/` describe).
   - **Unknown / not available:** `/home/rich/metaform-tasks`, where the old Roundtables module lived (cited in `SPEC.md` §11). That path does not exist on this machine. **Verified.**
   - **Unknown / not available:** `RchGrav/tempo`, where the mutation framework lives (cited in `SPEC.md` §11).
   - **Not copied, by design:** the Topogee world, its server and client, and the service launcher. See section 4.
@@ -33,7 +33,7 @@
 | `context/topogee-repo/` | Selected files from `~/topogee` | Same relative paths as in the repository |
 | `context/brain/` | `~/brain/` | All files except `.obsidian/` |
 | `context/roundtable-original-2026-11-05/` | `~/roundtable/` | Not a git repository; snapshot of 2026-11-05 |
-| `context/roundtable-runs/` | `~/roundtable-runs/` | EGM run outputs, 2026-11-07 |
+| `context/roundtable-runs/` | `~/roundtable-runs/` | Elephant-Goldfish Model (EGM) run outputs, 2026-11-07 |
 | `context/claude-memory-topogee-sessions/` | `~/.claude/projects/-home-rich-topogee/memory/` | Agent memory notes |
 | `context/git-history/` | Generated from `~/topogee` git | Logs for `metaform/`, `roundtable/`, the supporting documents and all branches, plus `repo-state.txt` |
 
@@ -177,7 +177,7 @@ python3 tools/verify_bootstrap.py                 # PASS (see below)
 - portable links. A link in `metaform/*.md` that resolves under `context/topogee-repo/` at its old repository path counts as relocated.
 - the exact schema, tool and skill appendices in `SPECIFICATION.md`, plus the presence of the required files
 
-`.github/workflows/validate.yml` runs the same three Python checks, on Boat, as the original did. It will run only once this folder has a GitHub remote.
+`.github/workflows/validate.yml` runs the same three Python checks, on Boat, as the original did. The folder now has the GitHub remote `origin` (`RchGrav/metaform`). This document has not checked whether the workflow has run there.
 
 ### 5.4 Configuration and runtime ties
 
@@ -290,8 +290,8 @@ Also noted:
 ## 10. Suggested next steps for developers
 
 1. Decide the conflicts that need the owner (`OWNER_REVIEW_SPEC.md` §7). Then update the stale lines in the governing documents. Those documents are now in `context/`, so first decide where the live copies of `DECISIONS.md` and `AGENTS.md` belong.
-2. ~~`git init`~~ Done 2026-11-08. Commit 1 is the consolidated snapshot. Commit 2 is the standalone wiring. There is no remote yet.
+2. ~~`git init`~~ Done 2026-11-08. Commit 1 is the consolidated snapshot. Commit 2 is the standalone wiring. The GitHub remote `origin` (`RchGrav/metaform`) was added later.
 3. ~~Port `verify_bootstrap.py` and CI~~ Done (section 5.3).
 4. ~~Build the Rust server and add `.mcp.json`~~ Done (sections 5.3 and 5.4). Restart Claude Code in this folder to load the `metaform` MCP server.
 5. Fix `experiments/map-viewer/server.mjs` (dead `mcp-server` path) and the absolute path in `intake-blocks`. These are copies in `context/`, so a fix belongs in a working copy.
-6. Add a GitHub remote, so CI runs and the Full Auto push rule can apply.
+6. ~~Add a GitHub remote, so CI runs and the Full Auto push rule can apply~~ Done: the remote is `origin` (`RchGrav/metaform`).

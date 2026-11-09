@@ -2,7 +2,7 @@
 
 Metaform is a perception-based context management knowledge engine for AI agents. It does the work of understanding a project in advance, keeps that understanding, and gives each agent exactly the part it needs for its task.
 
-The aim is simple. An agent should spend its reasoning on the work, and should not have to spend it on finding out where it is.
+An agent should spend its reasoning on the work, and should not have to spend it on finding out where it is.
 
 This document explains the problem, the idea, and the key concepts. It is written for a person or an agent who knows nothing about the project. Read it from the start, because each concept depends on the ones before it.
 
@@ -54,7 +54,7 @@ A model already understands kinds of things: engines, queues, game engines, phot
 
 Each functional element has a namespace address, such as `code.engine.game.fps`. The address names a functional type. Read in reverse, it gives a name: first-person game engine code. Each prefix is also a complete type, so `code.engine.game` is game engine code.
 
-An address is therefore more than a storage key. It is a prompt in itself. The founder proved this with four prompts of the form "write 10 best practices for [address]", with no project supplied. The addresses were nearly identical, and the four lists hardly overlapped. Most of the inference came from the last segment, and the earlier segments held it in the correct domain.
+An address is therefore more than a storage key. It is a prompt in itself. The founder tested this with four prompts of the form "write 10 best practices for [address]", with no project supplied. The addresses were nearly identical, and the four lists hardly overlapped. Most of the inference came from the last segment, and the earlier segments held it in the correct domain.
 
 Practices attached at a parent address apply to everything below it. This one-way inheritance is how one prompt can be magnified across a whole project.
 
@@ -70,11 +70,11 @@ Elements connect through relationships. A relationship belongs to the element th
 
 Each relationship records three things:
 
-- **goal:** what the receiver needs to achieve. Intake calls this the Operative Purpose (OP).
-- **function:** how this provider satisfies that goal in this relationship. Intake calls this the Encounter Function (EF).
-- **direction:** the direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound, inbound or two-way. Intake calls this the Information Flow Direction (IFD).
+- **why** (formerly `goal`): what the receiver needs to achieve. Intake calls this the Operative Purpose (OP).
+- **how** (formerly `function`): how this provider satisfies that purpose in this relationship. Intake calls this the Encounter Function (EF).
+- **direction** (formerly `intent`): the substantial flow of information which satisfies the (OP) purpose, not including the request: `inbound`, `outbound` or `two-way`, relative to the receiver (`metaform/SPEC.md` R-3.6). Intake calls this the Information Flow Direction (IFD).
 
-For example, an email client wants an email server. The goal is to send and receive mail. The function is the email server service. The direction is two-way.
+For example, an email client wants an email server. The why is to send and receive mail. The how is the email server service. The direction is two-way.
 
 Every chain of relationships traces back to the Cestui Que Use (CQU). This is the type of party with a vested interest in improving this kind of artifact. The term is unusual on purpose. Plain terms lead models to answer "the user" or "the developer", and those answers say nothing about the artifact.
 
@@ -131,7 +131,7 @@ MCP is designed for progressive discovery. A client finds out what is available,
 
 Tools, skills and tasks are therefore things an agent perceives at a location. They are not a list that it receives at startup. This is what keeps the system usable as a project grows.
 
-Skills also follow position. When an agent gets an assignment, the system selects or generates the skill for that part of the functional topology. The skill lives in a knowledge layer and reaches the agent through the MCP skills format.
+Skills also follow position. When an agent gets an assignment, the system is meant to select or generate the skill for that part of the functional topology (`metaform/SPEC.md` R-5.32; not built yet). The skill lives in a knowledge layer and reaches the agent through the MCP skills format.
 
 ### ECS and Resources
 
@@ -141,7 +141,7 @@ The same discovery pattern serves two places: what is in perceptual range in Top
 
 ### TASTE
 
-TASTE is Technically Accurate, Simple, Transparent English, the project's writing rules, adapted from ASD-STE100. Think of it as being for communication what code smell is for code.
+TASTE is Technically Accurate, Simple, Transparent English, the project's writing rules, adapted from ASD-STE100.
 
 Models paraphrase, and they write from inside their own reasoning, as if the reader shared their context. In a system where agents hand work to each other, this spreads errors. An agent also cannot tell its own context from shared context.
 
@@ -151,7 +151,7 @@ TASTE has one rule at its center: there is no "my word for it". There is the acc
 
 This repository develops two products (`DECISIONS.md`, "Naming: Topogee and Metaform").
 
-**Metaform: the development tool.** Metaform maps a project and gives agents perception of it. A small GUI runs intake. Metaform orchestrates agents through ACP, and agents work through MCP.
+**Metaform: the development tool.** Metaform maps a project and gives agents perception of it. A small intake GUI is proposed (`metaform/docs/proposals/intake-gui-slice.md`). Metaform is meant to orchestrate agents through ACP (Agent Client Protocol), and agents work through MCP.
 
 **Topogee: a shared world.** Topogee is a world where agents and people collaborate and build anything, including the world itself. Its design is `docs/designs/world-system-spec.md`. The same perception model extends to a 3D world. An agent can position itself in space, see through a camera, test physics and program non-player characters. World perception is range-limited to 65,535 mm, or about 215 ft. Agents mainly perceive objects, data and text. A camera image divides into 64 parts, and each part has a distance, so an agent can estimate distance.
 

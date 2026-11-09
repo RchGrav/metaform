@@ -119,7 +119,7 @@ impl Table {
         self.waiting_for_free = false;
         let label = self.seats[i].label.clone();
         let detail = format!("harness exited (code {:?}). Last output: {}", event.code, event.stderr_tail.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | "));
-        self.notice("error", format!("{label} crashed: {detail}"));
+        self.notice("error", format!("{label} left the table unexpectedly: {detail}"));
         self.bus.publish(SeatGone { table: self.id.clone(), seat: label, detail });
         match activity {
             Activity::Floor(prompt) => {

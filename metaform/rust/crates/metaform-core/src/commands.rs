@@ -42,7 +42,7 @@ impl Outcome {
     }
 }
 
-/// Run one command against a map. The command is checked against the contract, then its names
+/// Perform one command on a map. The command is checked against the contract, then its names
 /// (R-4.11), then applied to a copy of the map.
 pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcome, Refusal> {
     contract.check_input(command)?;

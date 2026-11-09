@@ -107,7 +107,7 @@ gates:
   witness_type: owner design
   witness: Owner, 2026-11-07 - "make it by default 10 rounds".
   decision_authority: owner
-  friction_and_proportionality: Work in progress stops at the last round; the rating round follows.
+  friction_and_proportionality: Discussion turns stop at the last round. Agents' work in progress continues, and the rating round asks each busy agent once its work ends.
   review_or_retirement_condition: None set.
   development_log_refs: [2026-11-07-01]
 
@@ -205,7 +205,7 @@ gates:
   mutation_path: An agent calls advance while proposals are being collected.
   existing_gates_insufficient: Unknown.
   witness_type: none
-  witness: None observed. Found by reviewers reading the code (audit L K#13).
+  witness: None observed. Found by reviewers reading the code (audit L K#13, context/roundtable-original-2026-11-05/review/AUDIT-OWNER-DESIGN.md).
   decision_authority: owner
   friction_and_proportionality: Rejects an agent command.
   review_or_retirement_condition: Owner disposition.

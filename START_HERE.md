@@ -4,6 +4,8 @@ This folder is the development copy of **Metaform**, the context tool for develo
 
 Topogee, the shared world, is a separate project and is not copied here. Only the parts of it that explain Metaform are kept, under `context/`.
 
+The owner is the person who directs this project. Documents under `metaform/` and `context/` call the same person "the founder".
+
 ## Read in this order
 
 1. [OWNER_REVIEW_SPEC.md](OWNER_REVIEW_SPEC.md): what Metaform is meant to do, in plain English, with the owner's open questions.
@@ -24,7 +26,7 @@ Agents also load [CLAUDE.md](CLAUDE.md), which brings in [TASTE.md](TASTE.md) (h
 | `context/topogee-repo/` | Metaform-related files from `~/topogee`, at their original relative paths (decisions, owner statements, designs, reference evidence, experiments, agent definitions) | No, preserved evidence |
 | `context/brain/` | The owner's personal source notes from `~/brain` | No, owner's originals |
 | `context/roundtable-original-2026-11-05/` | The earlier standalone `~/roundtable` (Rust) with its reviews and proposals | No, history |
-| `context/roundtable-runs/` | Output of the EGM layer runs on the Roundtable map | No |
+| `context/roundtable-runs/` | Output of the Elephant-Goldfish Model (EGM) layer runs on the Roundtable map | No |
 | `context/claude-memory-topogee-sessions/` | Agent memory notes from the `~/topogee` sessions | No |
 | `context/git-history/` | Exported git logs for the copied paths, and the repository state at copy time | No |
 | `MANIFEST.sha256` | Checksums of every file at preparation time. `tools/verify_bootstrap.py` uses it to check that `context/` is unchanged. | No |

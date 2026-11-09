@@ -11,10 +11,11 @@ use crate::rules::{self, Reply};
 
 impl Table {
     /// Poll every participant for a next-topic proposal (R §7: "All participating agents are
-    /// polled"). Free ones are asked now; busy ones when they become free.
+    /// polled"). Free participants are asked now. Busy ones are asked when their prompt ends only
+    /// if `topics.poll_busy_agents` is on; otherwise they are left out.
     pub(crate) fn start_polling(&mut self) {
         self.topic_due = false;
-        // Every participant is polled (R §7): free ones now, busy ones when their prompt ends.
+        // Free participants are polled now; busy ones only with `topics.poll_busy_agents` (RT-G21).
         let mut waiting = HashSet::new();
         let mut pending = HashSet::new();
         let mut polled = Vec::new();

@@ -7,8 +7,11 @@ use std::fmt;
 
 use serde_json::{Value, json};
 
-/// The fixed error codes. The first six are R-5.24's (Decided). The others are the functional map
-/// server's additions in the same pattern (Proposed in R-5.24 and the server design).
+/// The fixed error codes. R-5.24 decides six: TechnicalNameAlignmentFailure,
+/// CanonicalNameCollisionFailure, RoleTaxonomyFailure, GrammarConstraintViolation,
+/// LayerNotRegistered and DependencyLock. FieldMismatch, RootScopeNotAllowed and
+/// FieldElementCollision follow the founder's direction of 2026-11-09 (R-5.24). The others are the
+/// functional map server's additions in the same pattern (Proposed in R-5.24 and the server design).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     TechnicalNameAlignmentFailure,
@@ -143,7 +146,7 @@ impl Refusal {
         }
     }
 
-    /// The rule the command broke, fixed by its code.
+    /// The rule the command broke, as its code determines.
     pub fn rule(&self) -> &'static str {
         self.code.rule()
     }

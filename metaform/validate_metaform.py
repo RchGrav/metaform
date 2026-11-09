@@ -1,6 +1,6 @@
 """Validate Metaform JSON shape and cross-reference integrity.
 
-Usage: python /workspace/validate_metaform.py document.json [schema.json]
+Usage: python3 metaform/validate_metaform.py document.json [schema.json]
 Requires jsonschema. Does not rewrite input or certify functional language.
 """
 from pathlib import Path
@@ -79,7 +79,7 @@ def validate_command(command, input_schema):
 def technical_name_errors(label, segments, fields):
     """TECHNICAL_NAME_ALIGNMENT_FAILURE and CANONICAL_NAME_COLLISION_FAILURE (documentation set, 6.1, 6.2):
     the technical name is the same number of leading words of the reversed, space-separated address,
-    and the project name must differ from it."""
+    and `name`, the project's own name for the element, must differ from it."""
     technical = fields.get('technical_name')
     if not isinstance(technical, str):
         return []
@@ -120,7 +120,7 @@ def main():
         print('FAIL:\n' + '\n'.join(errors))
         return 1
     print('PASS: JSON shape, provider references and technical name alignment.')
-    print('Functional naming, plurality and the meaning of goal/function require review.')
+    print('Functional naming, plurality and the meaning of why/how require review.')
     return 0
 
 

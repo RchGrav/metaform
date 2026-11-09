@@ -3,7 +3,7 @@
 //! of its own (`Element::child_map`), so nothing here assumes one map per project.
 //!
 //! In memory the map is flat, keyed by full address in the agent's snake_case form (R-4.12). The
-//! nested tree exists only at the edges: documents (R-4.2) and the stored file (R-4.1).
+//! nested tree exists only at the edges: documents (R-4.2) and the Ladybug graph (R-4.1, R-4.16).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,7 +25,8 @@ pub struct Element {
     pub fields: Fields,
     /// Want records keyed by the address of the other element (R-3.5).
     pub wants: BTreeMap<String, Fields>,
-    /// The element's own child map, if it has one. Step 1 stores and loads it but no command sets it.
+    /// The element's own child map, if it has one. The store saves and loads it, but no command
+    /// sets it yet.
     pub child_map: Option<MapRef>,
 }
 
@@ -288,9 +289,6 @@ impl Map {
     }
 }
 
-/// A value read as want records: one dictionary keyed by provider address whose values are all
-/// want records (the contract's and the canonical map's form), or an older list of such objects. Anything else named `wants` is a
-/// namespace branch, as in the stored-document schema.
 /// A wants update: a dictionary keyed by provider address whose values change want fields.
 pub(crate) fn is_want_updates(map: &JsonMap<String, Value>) -> bool {
     !map.is_empty()
@@ -301,6 +299,9 @@ pub(crate) fn is_want_updates(map: &JsonMap<String, Value>) -> bool {
         })
 }
 
+/// A value read as want records: one dictionary keyed by provider address whose values are all
+/// want records (the contract's and the canonical map's form), or an older list of such objects.
+/// Anything else named `wants` is a namespace branch, as in the stored-document schema.
 fn read_wants(value: &Value) -> Option<BTreeMap<String, Fields>> {
     let is_record = |record: &Value| {
         record.get("why").is_some_and(Value::is_string)

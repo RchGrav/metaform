@@ -10,10 +10,10 @@ OpenRouter model id.
 ## Launch
 
 ```sh
-OPENROUTER_API_KEY=... node /home/rich/roundtable/adapters/openrouter-acp/dist/index.js
+OPENROUTER_API_KEY=... node roundtable/adapters/openrouter-acp/dist/index.js
 ```
 
-or `npx /home/rich/roundtable/adapters/openrouter-acp`. The agent speaks ACP v1
+or `npx ./roundtable/adapters/openrouter-acp`, from the repository root. The agent speaks ACP v1
 as newline-delimited JSON-RPC on stdin/stdout. Diagnostics go to stderr.
 
 Build and test (Node.js 22.18 or later):

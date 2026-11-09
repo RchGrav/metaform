@@ -1,10 +1,12 @@
 //! The Roundtable rules that involve no I/O: reply limits, reply kinds, rounds, topic scoring
 //! and rating points. Every rule cites where it comes from (R = README.md, O = an owner
-//! decision recorded in docs/TRACEABILITY.md).
+//! decision recorded in `context/roundtable-original-2026-11-05/docs/TRACEABILITY.md`, from the
+//! repository root).
 
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Default reply limit in characters (owner's spec: 512). The chair sets it; agents cannot.
+/// README §4.1's starting allowance, 512 characters. Not the default reply limit: `limits.reply`
+/// is off by default. The chair sets the reply limit; agents cannot.
 pub const DEFAULT_BASE: usize = 512;
 /// Default limit for the one reply after an agent was skipped while busy (owner's spec: 1,024).
 pub const DEFAULT_RECOVERY: usize = 1024;
@@ -19,7 +21,8 @@ pub const SCORE_PASS: f64 = 3.0;
 pub const PROPOSAL_LIMIT: usize = 512;
 
 /// Cut `text` to `limit` characters (Unicode scalar values) at a grapheme boundary: the text
-/// kept and the number of characters removed. Length alone never rejects a contribution (R §4.5).
+/// kept and the number of characters removed. Not used by the engine: since 2026-11-07 a
+/// message over a limit is blocked, never cut (owner).
 pub fn truncate_to(text: &str, limit: usize) -> (&str, usize) {
     let total = text.chars().count();
     if total <= limit {

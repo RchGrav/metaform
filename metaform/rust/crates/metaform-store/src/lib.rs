@@ -174,7 +174,7 @@ impl Drop for Watch {
     }
 }
 
-/// One open grouping database. Field order is drop order: the writer stops before the
+/// One open grouping database. Field order is drop order: the writer ends before the
 /// database closes.
 struct DbHandle {
     writer: Writer,
@@ -349,7 +349,7 @@ impl Store {
         self.contract.tool().clone()
     }
 
-    /// Run one command of the Metaform tool against a map.
+    /// Perform one command of the Metaform tool on a map.
     pub fn execute(
         &self,
         client: ClientId,
@@ -538,7 +538,7 @@ impl Store {
             DbKey::Standalone => self.home.join("maps").join("maps.lbug"),
         };
         // Close idle databases first. A handle only this map holds has no command in flight,
-        // so its writer's queue is empty. Dropping it stops the writer and closes the database
+        // so its writer's queue is empty. Dropping it ends the writer and closes the database
         // before another database opens.
         while dbs.handles.len() >= self.max_open {
             let idle = dbs

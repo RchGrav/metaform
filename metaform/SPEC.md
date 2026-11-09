@@ -173,11 +173,11 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. **Source:** "The map is really for stuff that is durable, and long-lasting"; "If we need something like that, we'll have it write a ticket for it."; the founder's documentation set, module 1.1.
 
-**R-3.17** Each goal and each function is one sentence fragment. It states what happens, without tunable values.
+**R-3.17** Each `why` and each `how` is one sentence fragment. It states what happens, without tunable values.
 
 **Status:** Decided. **Source:** "All goal and function language should be no more than a sentence fragment"; "after should have been this Monitors context window use over the ACP session." The documentation set gives the grammar of each field (R-6.17).
 
-**R-3.5** A want record belongs to the element that holds the goal. The key of the record is the address of the element that serves the goal.
+**R-3.5** A want record belongs to the receiver, the element whose purpose its `why` states. The key of the record is the address of the provider, the element whose service to the receiver its `how` describes.
 
 **R-3.19** The two ends of a want are this element, where the agent stands and which holds the want, and the other element, which the want names. The system reasons from where the agent is operating.
 
@@ -203,7 +203,7 @@ A project has exactly one Definitive element.
 
 ### 4.1 Storage
 
-**R-4.1** Maps are stored in LadybugDB. A map is the logical unit: it has its own map id, its own write queue (R-4.7) and its own identity. A database is the physical unit that groups maps. A project's main map and its chained maps are partitions of the project's database, `projects/<encoded-path-id>/project.lbug`. Maps that belong to no project are partitions of the home's standalone database, `maps/maps.lbug`. A map moves to its own database when it needs its own writer, its own sharing or its own size; a map run as its own instance (R-4.14) has its own home and so its own database. Rust code works through Ladybug and never writes map files itself. Settings and the project registry may be JSON. Nothing is written into a project's own folder, and a project's database never stores the project's name.
+**R-4.1** Maps are stored in LadybugDB. A map is the logical unit: it has its own map id, its own write queue (R-4.7) and its own identity. A database is the physical unit that groups maps. The home is the folder that one functional map server owns and writes under (R-4.4); this project's `.mcp.json` uses `~/.metaform-rust`. A project's main map and its chained maps are partitions of the project's database, `projects/<encoded-path-id>/project.lbug`. Maps that belong to no project are partitions of the home's standalone database, `maps/maps.lbug`. A map moves to its own database when it needs its own writer, its own sharing or its own size; a map run as its own instance (R-4.14) has its own home and so its own database. Rust code works through Ladybug and never writes map files itself. Settings and the project registry may be JSON. Nothing is written into a project's own folder, and a project's database never stores the project's name.
 
 **Status of the grouping (2026-11-07):** Default, for the founder's confirmation. It replaces "one database per map", which read the founder's "any element in the metaform map can be given its own db" as a rule rather than a capability. One process failed at about 7 Ladybug databases on default settings, so a database for every map would not scale. The design and evidence are in `docs/designs/storage.md`, section 2.2.
 
@@ -213,7 +213,7 @@ A project has exactly one Definitive element.
 
 **R-4.8** Every setting is declared in code with its default. A default is never stored. A global value is stored in the main database. A project value overrides it and is stored in the project database. Every lookup goes through one place.
 
-**Status:** Decided. Global settings were built on Ladybug in the Node harness, and project overrides were not built. The values move to `settings.json` (R-4.1). In the Rust server (2026-11-08): settings are declared in code with their defaults (`metaform-store/src/settings.rs`), global values are in `<home>/settings.json` and a project's in `projects/<id>/settings.json`, and the CLI reads and sets them through the server (`metaform settings`, `metaform set`, `metaform unset`), not through an agent tool. The first setting is `stores.max_open_databases`. **Source:** "Every setting the system has would be surfaced as a global setting and would apply to all projects unless they're overrided with a local setting in that project"; "defaults aren't stored. There's no point."; CLI-023 in `RchGrav/metaform`.
+**Status:** Decided. Global settings were built on Ladybug in the Node harness, and project overrides were not built. The values move to `settings.json` (R-4.1). In the Rust server (2026-11-08): settings are declared in code with their defaults (`metaform-store/src/settings.rs`), global values are in `<home>/settings.json` and a project's in `projects/<id>/settings.json`, and the CLI reads and sets them through the server (`metaform settings`, `metaform set`, `metaform unset`), not through an agent tool. The first setting is `stores.max_open_databases`. **Source:** "Every setting the system has would be surfaced as a global setting and would apply to all projects unless they're overrided with a local setting in that project"; "defaults aren't stored. There's no point."; CLI-023 in `RchGrav/metaform-archive`.
 
 **R-4.9** The system is built for many projects from the start.
 
@@ -239,7 +239,7 @@ A project has exactly one Definitive element.
 
 **R-4.4** The functional map server is one long-running process on the home. It tracks every project, and it is the only process that writes under the home. It is not the chassis. Only one functional map server can run on a home.
 
-**R-4.5** Each agent still starts its own MCP instance. That instance is a forwarder to the functional map server. It names its project folder when it connects, and it never writes files. The CLI, the viewer and every outside part reach the data through the functional map server. The server lists every project registered in its home: `metaform projects`, through the admin request `{"admin": {"projects": {}}}`, answers each project's id, name and folder, and registers nothing. One web server per host uses this list to serve every project through one GUI.
+**R-4.5** Each agent still starts its own MCP process, the forwarder. The forwarder relays to the functional map server. It names its project folder when it connects, and it never writes files. The CLI, the viewer and every outside part reach the data through the functional map server. The server lists every project registered in its home: `metaform projects`, through the admin request `{"admin": {"projects": {}}}`, answers each project's id, name and folder, and registers nothing. One web server per host uses this list to serve every project through one GUI.
 
 **Status of R-4.4 and R-4.5:** Decided. Replaces the chassis as owner of the databases. Project listing and one web server per host: owner decision, 2026-11-09. The GUI must cover many projects, so one web server on a host serves them all through the one process that manages the core database and every project's databases. Listing built 2026-11-09 on branch `project-listing`; the web server is not built. **Source:** "So long as that map can have a live running server that tracks all of the projects and can be a sink for each agents mcp server then yes"; "well its a process its not the chassis as a specified it."; "yeah only one can start".
 
@@ -269,7 +269,7 @@ A project has exactly one Definitive element.
 
 **R-4.6** This project's functional map server is built in Rust, as a library and a binary (`metaform/docs/designs/metaform-rust.md`). Ladybug leaves it. The Node server in `metaform/server/` is a test harness, built in minutes to test the contract. It is not the design and is never a source for it; the design is the founder's documentation set (the founder, when it was built: "this better not become the design we have one already").
 
-**Status:** Proposed. It follows the founder's statement "at present we are working on the mcp server which exists in node". The chassis is event driven, in Rust, and uses Bevy (D-9). **Reconsidered 2026-11-07:** the founder: "I'm not against realizing metaform in rust also for this project". **Decided 2026-11-07: Rust** for this project's Metaform server. The founder: "I recommend rust too"; "I dont mind creating a version of metaform in rust, in node, in python, thats fine.. it might be interesting to use in rust for this project". Other implementations may exist beside it; each must meet this specification. The Node server in `metaform/server/` was a quick first build and has no concurrency. **Decided 2026-11-09:** Metaform ships in three forms, Rust, Node and Python, and each stores its data as a structure of arrays (SoA): one narrow table per field or layer, keyed by element, not one record per element holding every field (AoS). **Reason:** "AoS gets slow fast" (owner, 2026-11-09). **Engines, decided 2026-11-09:** Rust keeps LadybugDB (R-4.1, R-4.16), with its write queue engine (R-4.7) handling multiple writers; Node and Python use SQLite, which both have built in. **Reason:** "its like the state of the art modern version, while the others are fine also.. but for certain projects ladybug useful" (owner, 2026-11-09). Ladybug stores each property as its own column, so its tables are SoA. Layer data is kept apart from the element's JSON column, as one Record node per layer item: built 2026-11-09 in `28d19ed` (R-4.16).
+**Status:** Proposed. It follows the founder's statement "at present we are working on the mcp server which exists in node". The chassis is event driven, in Rust, and uses Bevy (D-9). **Reconsidered 2026-11-07:** the founder: "I'm not against realizing metaform in rust also for this project". **Decided 2026-11-07: Rust** for this project's functional map server. The founder: "I recommend rust too"; "I dont mind creating a version of metaform in rust, in node, in python, thats fine.. it might be interesting to use in rust for this project". Other implementations may exist beside it; each must meet this specification. The Node server in `metaform/server/` was a quick first build and has no concurrency. **Decided 2026-11-09:** Metaform ships in three forms, Rust, Node and Python, and each stores its data as a structure of arrays (SoA): one narrow table per field or layer, keyed by element, not one record per element holding every field (AoS). **Reason:** "AoS gets slow fast" (owner, 2026-11-09). **Engines, decided 2026-11-09:** Rust keeps LadybugDB (R-4.1, R-4.16), with its write queue engine (R-4.7) handling multiple writers; Node and Python use SQLite, which both have built in. **Reason:** "its like the state of the art modern version, while the others are fine also.. but for certain projects ladybug useful" (owner, 2026-11-09). Ladybug stores each property as its own column, so its tables are SoA. Layer data is kept apart from the element's JSON column, as one Record node per layer item: built 2026-11-09 in `28d19ed` (R-4.16).
 
 ## 5. The form
 
@@ -277,7 +277,7 @@ A project has exactly one Definitive element.
 
 **R-5.1** The form is one MCP tool, `project-map`. Its input schema is in `metaform/mcp-tools.proposed.json`. Its commands are `add`, `update`, `delete`, `orphaned`, `search`, `layer`, `goto`, `map`, an addressed read and a raw dump. A key without a period is a command. A key that starts with a period is a raw dump (R-5.34). Any other key with a period is an addressed read (owner, 2026-11-09).
 
-**Status:** Decided. **Source:** the founder's tool design; `metaform/docs/mcp-query-source.md`; `metaform/tool-examples.json`. The name: "something an agent can actually reason against is highly preferred over something they have no idea what it is for"; "dash if its allowed". The contract is named `project-map`; it has no `search`, `layer` or `goto` until the build adds them.
+**Status:** Decided. **Source:** the founder's tool design; `metaform/docs/mcp-query-source.md`; `metaform/tool-examples.json`. The name: "something an agent can actually reason against is highly preferred over something they have no idea what it is for"; "dash if its allowed". The contract is named `project-map`; it has no `search` or `layer` until the build adds them.
 
 **R-5.26** Tools are organized by module. A module exposes a tool, and all tools that act on the same functionality collapse into one tool. Tools are not gated by where an agent stands. A new module can also unlock commands and features under other tools that do not come from that module directly.
 
@@ -377,9 +377,9 @@ A project has exactly one Definitive element.
 
 **Status:** Decided, owner, 2026-11-09. Built on branch `specification-store-batch`, not merged. **Reason:** a read without the period answers in the form data is entered (R-5.10); a read with the period answers in the stored form, so both forms can be read. **Source:** "period should dump the full nested json because thats what makes sense"; "can we have starts with a . is a raw dump, and how it is now dump how it reads now"; "without the . it matches how data is entered"; "Memory is a layer you can dump it"; "skills is a layer". Keying the result by the path asked for is Proposed.
 
-### 5.4 The MCP server and the CLI
+### 5.4 The functional map server and the CLI
 
-**R-5.13** The MCP server is a broker to modules.
+**R-5.13** The functional map server is a broker to modules.
 
 **R-5.14** Every MCP tool can be used through the CLI, so a harness without MCP access can still use it.
 
@@ -401,7 +401,7 @@ A project has exactly one Definitive element.
 
 **R-5.19** Intake has no start and no stop. Its data lives in one place and is visualized.
 
-**Status of R-5.18 and R-5.19:** Proposed. **Source:** "you are building way too much code here.. too much ceremony.. my vision is that its a tool the ceremony live in a prompt"; "there is no start and stop there is a place where data lives and its visualized". Both quotes were relayed by the agent working on `RchGrav/metaform`. The wording is an agent's. The earlier build's `intake_start`, `intake_finish`, locks and verification passes are that agent's examples of what to exclude. The founder has not reviewed that list.
+**Status of R-5.18 and R-5.19:** Proposed. **Source:** "you are building way too much code here.. too much ceremony.. my vision is that its a tool the ceremony live in a prompt"; "there is no start and stop there is a place where data lives and its visualized". Both quotes were relayed by the agent working on `RchGrav/metaform-archive` (then named `RchGrav/metaform`). The wording is an agent's. The earlier build's `intake_start`, `intake_finish`, locks and verification passes are that agent's examples of what to exclude. The founder has not reviewed that list.
 
 **R-5.20** Logic is added to a tool only to fix an observed issue.
 
@@ -477,7 +477,7 @@ Negations apply first. Additions apply second. If one element adds and negates t
 
 **R-6.7** The intake layer is the metaform itself. It is not selectable.
 
-**Status:** Decided. **Source:** `reference/theory/technical-reference.md` section 9; earlier implementation `src/metaform/data/selection.py` in `RchGrav/metaform`.
+**Status:** Decided. **Source:** `reference/theory/technical-reference.md` section 9; earlier implementation `src/metaform/data/selection.py` in `RchGrav/metaform-archive`.
 
 **R-6.8** A hidden layer is removed after the walk, with every layer built from it. A layer that is still being built is not selected.
 
@@ -614,7 +614,7 @@ A step is accepted when:
 | D-14 | How the grammar check tells a verb ending in `-ing` from a noun such as `ring` or `string`. The documentation set forbids words ending in `-ing` in `why` and `how`. | R-5.24. |
 | D-16 | How chaining (R-4.15) relates to links between projects (section 7). Partly answered 2026-11-09: an outside project is one `upstream` or `downstream` element in the map, with a `uri` naming its repository; its own functional map is a separate map with its own addresses, read only on request (R-4.15). Storage of a chained map is a default: a `Map` node in its parent's database, reached by `CHAINS`, promotable to its own database (`docs/designs/storage.md` 2.2). The earlier recommendation of a folder with its own `map.json` is withdrawn. | Section 7 read path. |
 | D-17 | Defaults taken 2026-11-07 (`docs/designs/storage.md` 2.3, 2.4): the layout under the home, maps grouped into project databases, no separate effect log, at most 16 open databases (lowered from 64 after measuring memory, storage note risk 5) with a 64 MB pool, a 16 GB limit and 4 worker threads each. Open only for the founder's confirmation of the grouping (R-4.1). | Nothing; the build proceeds on the defaults. |
-| D-10 | How the system scales sideways. Default for the rule (`docs/designs/storage.md` 2.5): every store has one owning process, declared in settings and proved by a lock file; every other process, on this machine or another, goes through the owner, never through a shared file. Still open: how several world servers or chassis divide work. | Any multi-chassis deployment. |
+| D-10 | How the system scales sideways. Default for the rule (`docs/designs/storage.md` 2.5): every store has one owning process, declared in settings and proved by a lock file; every other process, on this machine or another, goes through that owning process, never through a shared file. Still open: how several world servers or chassis divide work. | Any multi-chassis deployment. |
 
 ## 11. Not in this document yet
 

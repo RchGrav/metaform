@@ -1,12 +1,12 @@
-//! Settings: every value a table runs with that the owner can change, declared once.
+//! Settings: every value a table runs with that the chair can change, declared once.
 //!
-//! The rules follow the owner's settings design (topogee `docs/designs/cli-design.md`, C-9 to
+//! The rules follow the owner's settings design (`context/topogee-repo/docs/designs/cli-design.md`, C-9 to
 //! C-17):
 //! - One declaration per setting ([`SETTINGS`]). Validation, listing, the API, the settings page
 //!   and the table configuration all come from it; nothing keeps a second list.
 //! - Defaults are home: unsetting a key restores its default, and a reset never leaves a value
 //!   empty (C-9).
-//! - Only what the owner set is stored; defaults are computed, and every value shows its source
+//! - Only what the chair set is stored; defaults are computed, and every value shows its source
 //!   (C-13).
 //! - Settings belong to the user: they live in Roundtable's home folder, never in a workspace
 //!   (C-14).

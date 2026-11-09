@@ -117,7 +117,7 @@ fn first_string(found: Vec<Vec<Value>>) -> Result<Option<String>, StoreError> {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
         Some(other) => Err(StoreError::Corrupt(format!(
-            "expected a string, got {other:?}"
+            "the project registry holds a value that is not a string: {other:?}"
         ))),
     }
 }

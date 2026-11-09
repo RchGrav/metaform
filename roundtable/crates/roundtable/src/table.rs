@@ -60,7 +60,9 @@ pub(crate) enum SeatState {
 }
 
 pub(crate) struct Seat {
+    /// The chair's seat name (`SeatConfig.name`).
     pub label: String,
+    /// The agent's genesis name, set once its session opens.
     pub name: Option<String>,
     pub harness: Option<Harness>,
     pub session: String,
@@ -71,7 +73,8 @@ pub(crate) struct Seat {
     pub recovery_due: bool,
     pub activity: Activity,
     pub prompt_topic: u64,
-    /// Truncation and veto notices for the next turn, in the order they arose.
+    /// Notices for the next discussion turn (length, rejection, not evaluated, and feedback that
+    /// was not recorded), in the order they arose.
     pub notices: Vec<String>,
     /// The agent reports background work still running after its turn ended (ACP v2). D §5.2:
     /// "`idle` does not necessarily mean background work has ceased". It is working, so its
@@ -141,9 +144,8 @@ pub(crate) struct Table {
     pub floor: Option<(usize, u64)>,
     pub judgements: HashMap<u64, Judgement>,
     pub polling: Option<Polling>,
-    /// The rating round: seats still to rate, and those already asked.
     /// A floor contribution is with JEV: the next turn waits for its answer, so the next
-    /// agent sees an accepted message (owner's example, M: "Agent1 speaks ... agent2, 3, 4 all
+    /// agent sees an accepted message (owner's example, O: "Agent1 speaks ... agent2, 3, 4 all
     /// speak, when it comes back to agent 1 it is informed ... each agents message").
     pub judging_floor: Option<u64>,
     /// Where identity profiles are read from, if the host keeps them.
@@ -154,6 +156,7 @@ pub(crate) struct Table {
     pub ranking: Option<String>,
     /// Seats that were sent the results.
     pub results_sent: HashSet<usize>,
+    /// The rating round: seats still to rate, and those already asked.
     pub rating: Option<(HashSet<usize>, HashSet<usize>)>,
     pub topic_due: bool,
     pub advance: Option<(String, Option<String>)>,

@@ -1,4 +1,5 @@
-//! Starting a home's server when no server answers (launcher step 5, SL-6.1; D-RS1).
+//! Starting a home's server when no server answers: launcher step 5 and SL-6.1 in
+//! `context/topogee-repo/docs/designs/service-launcher.md`; D-RS1 in `metaform/docs/designs/metaform-rust.md`.
 //!
 //! With the project's service launcher installed, the forwarder starts the server as a named,
 //! retained user call, so it has a record, captured logs and `hold <name>` to start it again.

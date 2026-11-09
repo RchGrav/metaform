@@ -14,7 +14,8 @@
  * A setting is declared in code. A setting at its default has nothing stored, so a new default
  * reaches it. Every setting lookup comes through `setting`, so a project override has one place to go.
  *
- * Step one only: the chassis takes over this database later. Until then a process opens it for a
+ * This Node test harness opens the database itself; in the build, the Rust functional map server
+ * owns the home (R-4.4). Here a process opens the database for a
  * lookup and closes it, because Ladybug allows one read-write process.
  */
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
@@ -59,7 +60,7 @@ export function homePath(): string {
   return process.env.METAFORM_HOME ?? join(homedir(), '.metaform');
 }
 
-/** The full path with each separator replaced. */
+/** The full path with every character that is not a letter or digit replaced by `-`. */
 function folderName(path: string): string {
   return path.replace(/[^A-Za-z0-9]/g, '-');
 }

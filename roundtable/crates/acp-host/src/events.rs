@@ -5,7 +5,8 @@ use serde::Serialize;
 
 use bus::Event;
 
-/// Caller-chosen name of a launched harness, for example a seat name.
+/// Caller-chosen instance name of one launched harness (Roundtable uses `<table>/<seat>`).
+/// Not a harness catalog id such as `opencode`.
 pub type HarnessId = String;
 /// The agent's ACP session id.
 pub type SessionId = String;
