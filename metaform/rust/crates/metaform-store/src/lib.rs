@@ -87,6 +87,11 @@ pub enum StoreError {
     Ladybug(String),
     #[error("stored data is not in the expected form: {0}")]
     Corrupt(String),
+    #[error(
+        "the database was made by a different build and cannot be brought up to date: {0}. \
+         Nothing was changed. Use the build that made it, or another home"
+    )]
+    Schema(String),
     #[error("the writer has ended")]
     WriterGone,
     #[error("unknown project {0}")]
@@ -474,7 +479,12 @@ pub fn refusal_json(command: &Value, refusal: &Refusal) -> Value {
 /// to do before a retry: a write may have been stored before the failure, and a repeated `add`
 /// can duplicate entries.
 pub fn store_failure_json(command: &Value, error: &StoreError) -> Value {
-    let message =
-        format!("{error}. A write may or may not be stored; read the element before you retry it.");
+    let message = match error {
+        // Refused on open, before any write: nothing can have been stored.
+        StoreError::Schema(_) => format!("{error}."),
+        _ => format!(
+            "{error}. A write may or may not be stored; read the element before you retry it."
+        ),
+    };
     refusal_json(command, &Refusal::new(Code::InternalError, message, None))
 }
