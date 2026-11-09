@@ -63,6 +63,11 @@ export class MetaformSource implements GraphSource {
     return (await this.call(project, { goto: at })) as SummarySheet;
   }
 
+  /** Not connected: the server has no request for an outside project's map yet (seam gap 4). */
+  async outsideMap(_project: string, _at: Address): Promise<ProjectRef | null> {
+    return null;
+  }
+
   async layerRecords(project: string, at: Address, layer: string): Promise<unknown[]> {
     const result = (await this.call(project, { [at]: { [layer]: {} } })) as Record<
       string,
