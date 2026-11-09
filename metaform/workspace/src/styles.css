@@ -36,8 +36,6 @@ button, select { font: inherit; color: inherit; }
 .notice button, .focus-banner button { background: none; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 .body { position: relative; flex: 1; display: flex; min-height: 0; }
 .canvas { flex: 1; min-width: 0; position: relative; overflow: hidden; }
-.graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
-.graph g { transform-origin: 0 0; }
 .rail-zone { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; z-index: 2; }
 .rail { position: absolute; left: 8px; top: 8px; z-index: 3; display: flex; flex-direction: column; gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; transition: opacity 150ms ease-out, transform 150ms ease-out; }
 .rail.hidden { opacity: 0; transform: translateX(-8px); pointer-events: none; }
@@ -82,28 +80,6 @@ button, select { font: inherit; color: inherit; }
 .onboarding code { background: var(--bg); padding: 2px 6px; border-radius: 4px; }
 .onboarding button { background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
 .onboarding .close { position: absolute; top: 8px; right: 8px; border: 0; }
-/* The graph (fallback renderer). */
-.node { cursor: pointer; }
-.node .body { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
-.node .stack { fill: var(--panel); stroke: var(--line); }
-.node .label { fill: var(--text); font-weight: 600; font-size: 13px; }
-.node .sub, .node .beneath, .edge-count, .layer-count, .outside { fill: var(--muted); font-size: 11px; }
-.role-definitive .body { stroke: var(--definitive); stroke-width: 2.5; }
-.role-supportive .body { stroke: var(--supportive); }
-.role-notable .body { stroke: var(--notable); stroke-dasharray: 5 3; }
-.role-divergent .body { stroke: var(--divergent); stroke-dasharray: 2 3; }
-.node.selected .body { fill: var(--bg); stroke: var(--accent); stroke-width: 2.5; }
-.node.focus .body { stroke-width: 4; }
-.node.dimmed { opacity: 0.3; }
-.node:focus-visible { outline: none; } .node:focus-visible .body { stroke: var(--accent); stroke-width: 3; }
-.chevron path { fill: none; stroke: var(--muted); stroke-width: 2; }
-.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; } .edge.dimmed { opacity: 0.25; }
-.arrowhead { fill: var(--muted); }
-.layer-mark.layer-0 { fill: var(--layer-0); } .layer-mark.layer-1 { fill: var(--layer-1); } .layer-mark.layer-2 { fill: var(--layer-2); }
-.layer-mark.layer-3 { fill: var(--layer-3); } .layer-mark.layer-4 { fill: var(--layer-4); } .layer-mark.layer-5 { fill: var(--layer-5); }
-.agent circle { fill: var(--panel); stroke: var(--muted); stroke-width: 1.5; } .agent.active circle { stroke: var(--accent); fill: var(--bg); }
-.agent text { fill: var(--text); font-size: 9px; font-weight: 600; }
-.unseen { fill: var(--unseen); }
 .present .canvas { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 /* Narrow screens (UX section 11): details become a bottom sheet, the strip wraps. */

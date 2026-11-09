@@ -38,6 +38,11 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
 
+  // The renderer's tokens follow :root[data-theme] (src/graph/style.ts).
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const addresses = useMemo(() => (current ? graphAddresses(current.graph) : []), [current]);
   const counts = useMemo(() => beneathCounts(addresses), [addresses]);
   const beneath = useCallback((address: Address) => counts.get(address) ?? 0, [counts]);
@@ -116,6 +121,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
+      // A focused graph node handles Enter, Shift+Enter and Space itself (the renderer's keyboard map).
+      const onNode = e.target instanceof Element && e.target.closest("[data-address]") !== null;
+      if (onNode && (e.key === "Enter" || e.key === " ")) return;
       const selection = view.selection;
       switch (true) {
         case e.key === "1" || e.key === "2" || e.key === "3":

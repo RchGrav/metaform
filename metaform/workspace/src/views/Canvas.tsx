@@ -1,6 +1,7 @@
 // Hosts a GraphRenderer and turns its raw input into state actions (UX sections 4 and 5).
 
 import { useEffect, useRef } from "react";
+import type React from "react";
 import type { GraphRenderer, RenderScene, Viewport } from "../graph/renderer";
 import type { Action } from "../state/view";
 
@@ -53,5 +54,12 @@ export function Canvas({ renderer, scene, viewport, placeKey, beneath, dispatch 
     };
   }, [renderer, scene, placeKey]);
 
-  return <div className="canvas" ref={host} />;
+  // Keyboard focus on a node selects it; pointer focus does not, so a Ctrl-click is never preceded
+  // by a plain select (Jorge's renderer leaves keyboard selection to the shell).
+  const onFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const node = e.target instanceof Element ? e.target.closest("[data-address]") : null;
+    const address = node?.getAttribute("data-address");
+    if (address && node?.matches(":focus-visible")) latest.current.dispatch({ type: "select", address });
+  };
+  return <div className="canvas" ref={host} onFocus={onFocus} />;
 }

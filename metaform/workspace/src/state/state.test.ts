@@ -171,6 +171,13 @@ describe("scene", () => {
     expect(after.nodes.find((n) => n.address === "code.store")?.dimmed).toBe(false);
   });
 
+  it("rolls the records of hidden elements up to their collapsed ancestor", () => {
+    const deep = input({ layerCounts: new Map([["code.store.memory", new Map([["specification", 4]])]]) });
+    const isolated = reduce(inCode, { type: "isolate", layer: "specification" });
+    const store = buildScene(isolated, deep).nodes.find((n) => n.address === "code.store");
+    expect(store).toMatchObject({ dimmed: false, layers: [{ layer: "specification", records: 4, style: 1 }] });
+  });
+
   it("puts the pivot on top and dims what lies beyond reach", () => {
     const state = reduce(inCode, { type: "set-focus", address: "code.server-tools" });
     const scene = buildScene(state, input());

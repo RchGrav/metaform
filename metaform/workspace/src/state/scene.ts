@@ -82,11 +82,22 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
     agentsAt.set(shown, marks);
   }
 
+  // A collapsed element carries the records of the elements hidden beneath it, as its arrows
+  // carry their wants; otherwise an isolated layer whose records sit deeper looks absent.
+  const rolled = new Map<Address, Map<string, number>>();
+  for (const [address, perLayer] of input.layerCounts) {
+    const shown = only ? (visible.has(address) ? address : null) : nearestVisible(address, visible);
+    if (shown === null) continue;
+    const into = rolled.get(shown) ?? new Map<string, number>();
+    for (const [layer, n] of perLayer) into.set(layer, (into.get(layer) ?? 0) + n);
+    rolled.set(shown, into);
+  }
+
   const shownLayers = input.layers.filter((layer) => layerShown(state, layer));
   const nodes: RenderNode[] = [...visible].sort().map((address) => {
     const fields = input.fields.get(address) ?? {};
     const role = roleOf(fields.role);
-    const own = input.layerCounts.get(address);
+    const own = rolled.get(address);
     const parent = parentOf(address);
     const isolatedMissing = state.isolated !== null && !(own?.get(state.isolated) ?? 0);
     const tooFar = reach !== null && !reach.has(address);
