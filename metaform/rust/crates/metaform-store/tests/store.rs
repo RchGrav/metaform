@@ -472,10 +472,14 @@ fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
     let dump = |store: &Store| store.execute(B, &map, &json!({".": {}})).unwrap().to_string();
     let written = {
         let store = Store::open(&home).unwrap();
+        // A list is a layer's records, so the layer is defined first (R-6.24). `sources` is a
+        // system layer (R-6.15) and needs no definition.
+        let define = json!({"update": {"layer.knowledge.features": {"instruction": "Tag each element with the groups it belongs to."}}});
+        store.execute(A, &map, &define).unwrap();
         let add = json!({"add": {"code.alpha": {
             "role": "Supportive", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
             "features": [{"b": 1, "a": {"y": 2, "x": [1, 2]}}, "naïve ✓ \"quoted\"", 3],
-            "notes": [], "memory": [{"fact": "one"}, {"fact": "two"}]}}});
+            "sources": [], "memory": [{"fact": "one"}, {"fact": "two"}]}}});
         store.execute(A, &map, &add).unwrap();
         let written = dump(&store);
         assert!(
@@ -502,7 +506,7 @@ fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
     let db = lbug::Database::new(&file, lbug::SystemConfig::default()).unwrap();
     let conn = lbug::Connection::new(&db).unwrap();
     for statement in [
-        "MATCH (e:Element {key: 'soa|code.alpha'}) SET e.extra = '{\"features\":[{\"b\":1,\"a\":{\"y\":2,\"x\":[1,2]}},\"changed\"],\"notes\":[],\"zeta\":\"last by name\"}'",
+        "MATCH (e:Element {key: 'soa|code.alpha'}) SET e.extra = '{\"features\":[{\"b\":1,\"a\":{\"y\":2,\"x\":[1,2]}},\"changed\"],\"sources\":[],\"zeta\":\"last by name\"}'",
         "MATCH (r:Record) DETACH DELETE r",
         "DROP TABLE HOLDS",
         "DROP TABLE Record",

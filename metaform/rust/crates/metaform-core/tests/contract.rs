@@ -215,7 +215,22 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"add": {"code.relay": {"name": "r", "technical_name": "relay code extra"}}}),
             Code::TechnicalNameAlignmentFailure,
-            Some(json!({"update": {"code.relay": {"technical_name": "relay"}}})),
+            Some(json!({"add": {"code.relay": {"name": "r", "technical_name": "relay"}}})),
+        ),
+        (
+            json!({"add": {"code.cache.response": {"name": "c", "technical_name": "cache response"}}}),
+            Code::TechnicalNameAlignmentFailure,
+            Some(json!({"add": {"code.cache.response": {"name": "c", "technical_name": "response cache"}}})),
+        ),
+        (
+            json!({"update": {"code.masher.widget": {"technical_name": "masher widget"}}}),
+            Code::TechnicalNameAlignmentFailure,
+            Some(json!({"update": {"code.masher.widget": {"technical_name": "widget masher"}}})),
+        ),
+        (
+            json!({"update": {"code.masher.widget": {"references": [{"path": "./src/widgets/mashbox.c"}]}}}),
+            Code::LayerNotRegistered,
+            Some(json!({"map": {}})),
         ),
         (
             json!({"add": {"code.relay": {"role": "DE"}}}),
@@ -276,16 +291,16 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"name": "renamed", "notes": ["a"], "wants": {"code.third.part": want}}}}),
+        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "wants": {"code.third.part": want}}}}),
     );
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"notes": ["b"]}}}),
+        json!({"add": {"code.new.part": {"sources": ["b"]}}}),
     );
     map = write(&contract, &map, json!({"update": {".": {"name": "demo"}}}));
     assert_eq!(
-        map.element("code.new.part").unwrap().fields["notes"],
+        map.element("code.new.part").unwrap().fields["sources"],
         json!(["a", "b"])
     );
     assert_eq!(

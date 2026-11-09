@@ -24,6 +24,10 @@ use crate::names::{ROOT, ROOT_SCOPES};
 use crate::reads::is_project_definitive;
 use crate::refusal::{Code, Refusal};
 
+/// The system layers (R-6.15): defined in code, shared by every project, written by agents at an
+/// address without a definition in the map.
+pub const SYSTEM_LAYERS: [&str; 3] = ["skills", "memory", "sources"];
+
 /// The root scope that holds layer definitions (R-3.3, R-6.24).
 pub const LAYER_SCOPE: &str = "layer";
 
