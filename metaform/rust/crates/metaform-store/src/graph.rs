@@ -28,16 +28,112 @@ const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
 /// Want-record fields with their own property. Any other is kept in the record's `extra`.
 const WANT_COLUMNS: [&str; 3] = ["why", "how", "direction"];
 
-const DDL: &[&str] = &[
-    "CREATE NODE TABLE IF NOT EXISTS Map(id STRING PRIMARY KEY)",
-    "CREATE NODE TABLE IF NOT EXISTS Element(key STRING PRIMARY KEY, mapId STRING, address STRING, \
-     technicalName STRING, name STRING, role STRING, uri STRING, status STRING, childMap STRING, extra STRING)",
-    "CREATE REL TABLE IF NOT EXISTS ROOT(FROM Map TO Element)",
-    "CREATE REL TABLE IF NOT EXISTS CONTAINS(FROM Element TO Element)",
-    "CREATE REL TABLE IF NOT EXISTS WANTS(FROM Element TO Element, why STRING, how STRING, direction STRING, extra STRING)",
+/// What a table connects: a node table keyed by its first property, or a relationship table.
+enum Shape {
+    Node,
+    Rel {
+        from: &'static str,
+        to: &'static str,
+    },
+}
+
+/// One table of the map graph. Its properties, in order, are both the DDL and what `open`
+/// expects to find in a database made earlier.
+struct Table {
+    name: &'static str,
+    shape: Shape,
+    properties: &'static [&'static str],
+}
+
+/// Every property is a STRING.
+const TABLES: &[Table] = &[
+    Table {
+        name: "Map",
+        shape: Shape::Node,
+        properties: &["id"],
+    },
+    Table {
+        name: "Element",
+        shape: Shape::Node,
+        properties: &[
+            "key",
+            "mapId",
+            "address",
+            "technicalName",
+            "name",
+            "role",
+            "uri",
+            "status",
+            "childMap",
+            "extra",
+        ],
+    },
+    Table {
+        name: "ROOT",
+        shape: Shape::Rel {
+            from: "Map",
+            to: "Element",
+        },
+        properties: &[],
+    },
+    Table {
+        name: "CONTAINS",
+        shape: Shape::Rel {
+            from: "Element",
+            to: "Element",
+        },
+        properties: &[],
+    },
+    Table {
+        name: "WANTS",
+        shape: Shape::Rel {
+            from: "Element",
+            to: "Element",
+        },
+        properties: &["why", "how", "direction", "extra"],
+    },
 ];
 
-/// Open a grouping database with tuned settings and its schema.
+/// Property renames since the first store, applied on open to a database made before them:
+/// `(table, old name, new name)`. Each runs only when the old name is present and the new one
+/// is not, so it runs once.
+const RENAMES: &[(&str, &str, &str)] = &[
+    // R-3.6: the want field `intent` became `direction` (commit 020b65b).
+    ("WANTS", "intent", "direction"),
+];
+
+impl Table {
+    fn ddl(&self) -> String {
+        let properties = self.properties.iter().map(|p| format!("{p} STRING"));
+        match self.shape {
+            Shape::Node => {
+                let mut columns: Vec<String> = properties.collect();
+                if let Some(first) = columns.first_mut() {
+                    first.push_str(" PRIMARY KEY");
+                }
+                format!(
+                    "CREATE NODE TABLE IF NOT EXISTS {}({})",
+                    self.name,
+                    columns.join(", ")
+                )
+            }
+            Shape::Rel { from, to } => {
+                let columns: Vec<String> = std::iter::once(format!("FROM {from} TO {to}"))
+                    .chain(properties)
+                    .collect();
+                format!(
+                    "CREATE REL TABLE IF NOT EXISTS {}({})",
+                    self.name,
+                    columns.join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// Open a grouping database with tuned settings and its schema. A database made by an earlier
+/// build is brought up to date by `RENAMES`. One whose tables differ from `TABLES` in any other
+/// way is refused before anything is changed, read or written.
 pub fn open(path: &std::path::Path) -> Result<Database, StoreError> {
     let config = SystemConfig::default()
         .buffer_pool_size(BUFFER_POOL)
@@ -46,11 +142,90 @@ pub fn open(path: &std::path::Path) -> Result<Database, StoreError> {
     let db = Database::new(path, config)?;
     {
         let conn = Connection::new(&db)?;
-        for ddl in DDL {
-            conn.query(ddl)?;
-        }
+        let renames = check_schema(&conn, path)?;
+        // One transaction: the renames and any missing tables land together or not at all
+        // (DDL rolls back in lbug 0.22.3).
+        crate::writer::transact(&conn, |c| {
+            for statement in &renames {
+                c.query(statement)?;
+            }
+            for table in TABLES {
+                c.query(&table.ddl())?;
+            }
+            Ok(())
+        })?;
     }
     Ok(db)
+}
+
+/// The names of the tables that exist in this database.
+fn existing_tables(conn: &Connection) -> Result<Vec<String>, StoreError> {
+    conn.query("CALL show_tables() RETURN name")?
+        .map(|row| match row.as_slice() {
+            [Value::String(name)] => Ok(name.clone()),
+            other => Err(StoreError::Corrupt(format!(
+                "show_tables returned {other:?}"
+            ))),
+        })
+        .collect()
+}
+
+/// The properties a table has in this database, as name and type, in order.
+fn properties(conn: &Connection, table: &str) -> Result<Vec<(String, String)>, StoreError> {
+    // `table_info` takes a literal, not a parameter. `table` comes from `TABLES`, never input.
+    conn.query(&format!("CALL table_info('{table}') RETURN name, type"))?
+        .map(|row| match row.as_slice() {
+            [Value::String(name), Value::String(kind)] => Ok((name.clone(), kind.clone())),
+            other => Err(StoreError::Corrupt(format!(
+                "table_info('{table}') returned {other:?}"
+            ))),
+        })
+        .collect()
+}
+
+/// Compare every existing table of `TABLES` with what this build expects, with `RENAMES`
+/// applied in memory. Returns the renames to apply, or refuses without changing anything.
+/// A table that does not exist yet is not compared; `open` creates it.
+fn check_schema(conn: &Connection, path: &std::path::Path) -> Result<Vec<String>, StoreError> {
+    let existing = existing_tables(conn)?;
+    let mut renames = Vec::new();
+    for table in TABLES
+        .iter()
+        .filter(|t| existing.iter().any(|e| e == t.name))
+    {
+        let mut found = properties(conn, table.name)?;
+        for (_, old, new) in RENAMES.iter().filter(|(t, _, _)| *t == table.name) {
+            let has_new = found.iter().any(|(name, _)| name == new);
+            if let Some(column) = found.iter_mut().find(|(name, _)| name == old)
+                && !has_new
+            {
+                column.0 = new.to_string();
+                renames.push(format!("ALTER TABLE {} RENAME {old} TO {new}", table.name));
+            }
+        }
+        let expected: Vec<(String, String)> = table
+            .properties
+            .iter()
+            .map(|p| (p.to_string(), "STRING".to_string()))
+            .collect();
+        if found != expected {
+            let list = |columns: &[(String, String)]| {
+                columns
+                    .iter()
+                    .map(|(name, kind)| format!("{name} {kind}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(StoreError::Schema(format!(
+                "{}: table {} has ({}); this build expects ({})",
+                path.display(),
+                table.name,
+                list(&found),
+                list(&expected)
+            )));
+        }
+    }
+    Ok(renames)
 }
 
 fn key(map: &str, address: &str) -> String {
