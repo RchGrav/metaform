@@ -26,8 +26,6 @@ export interface ProjectView {
   viewports: Record<Address, Viewport>;
   /** Elements with activity the user has not seen. */
   unseen: Address[];
-  /** Containers already shown once; a first view expands to fill the screen (UX section 12a). */
-  visited: Address[];
 }
 
 /** A place in the workspace that Back returns to. */
@@ -72,8 +70,6 @@ export type Action =
   | { type: "toggle-expanded"; address: Address }
   | { type: "expand-all"; addresses: Address[] }
   | { type: "collapse-all" }
-  /** A first view of a container: open these elements, and remember the container as visited. */
-  | { type: "first-view"; container: Address; expand: Address[] }
   | { type: "layer"; layer: string; visibility: LayerVisibility }
   | { type: "isolate"; layer: string | null }
   | { type: "all-layers"; layers: string[]; visibility: LayerVisibility }
@@ -103,7 +99,7 @@ export function initialState(): ViewState {
 }
 
 export function emptyView(): ProjectView {
-  return { container: TOP, selection: null, focus: null, expanded: [], viewports: {}, unseen: [], visited: [] };
+  return { container: TOP, selection: null, focus: null, expanded: [], viewports: {}, unseen: [] };
 }
 
 /** The current project's view; an empty one before any project is open. */
@@ -216,12 +212,6 @@ export function reduce(state: ViewState, action: Action): ViewState {
       });
     case "expand-all":
       return withView(state, { expanded: [...action.addresses] });
-    case "first-view":
-      if (view.visited.includes(action.container)) return state;
-      return withView(state, {
-        expanded: [...new Set([...view.expanded, ...action.expand])],
-        visited: [...view.visited, action.container],
-      });
     case "collapse-all":
       return withView(state, { expanded: [] });
     case "layer":

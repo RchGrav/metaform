@@ -12,29 +12,15 @@ export interface CanvasProps {
   viewport: Viewport | null;
   /** Changes whenever the project or container changes, so the canvas restores or fits once. */
   placeKey: string;
-  /** False until the container's first view has been expanded; the canvas does not fit before then. */
-  ready: boolean;
-  /** Reports the canvas size, for the start-up budget (UX section 12a). */
-  onSize: (width: number, height: number) => void;
   /** The action a double-click or Enter on an element performs. */
   open: (address: string) => Action;
   dispatch: (action: Action) => void;
 }
 
-export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, open, dispatch }: CanvasProps) {
+export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: CanvasProps) {
   const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ open, dispatch, viewport, onSize });
-  latest.current = { open, dispatch, viewport, onSize };
-
-  useEffect(() => {
-    const element = host.current;
-    if (!element) return;
-    const report = () => latest.current.onSize(element.clientWidth, element.clientHeight);
-    report();
-    const observer = new ResizeObserver(report);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  const latest = useRef({ open, dispatch, viewport });
+  latest.current = { open, dispatch, viewport };
   const restoredFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -59,7 +45,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, ope
       if (!live || restoredFor.current === placeKey) return;
       // An empty graph has nothing to fit. Keep waiting, so the first render with elements fits,
       // and never store the unchanged viewport an empty fit returns.
-      if (scene.nodes.length === 0 || !ready) return;
+      if (scene.nodes.length === 0) return;
       restoredFor.current = placeKey;
       // A container shown before gets its own viewport back; a new one is fitted (UX section 1).
       const stored = latest.current.viewport;
@@ -69,7 +55,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, ope
     return () => {
       live = false;
     };
-  }, [renderer, scene, placeKey, ready]);
+  }, [renderer, scene, placeKey]);
 
   // Keyboard focus on a node selects it; pointer focus does not, so a Ctrl-click is never preceded
   // by a plain select (Jorge's renderer leaves keyboard selection to the shell).
