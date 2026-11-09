@@ -67,25 +67,32 @@ pub struct Registered {
     pub folder: String,
 }
 
-/// Every registered project, by name and then id. Reads only; registers nothing.
+/// Every registered project, by name and then id. Reads only; registers nothing. A project whose
+/// name is missing is listed under its folder's last segment, so one incomplete row cannot hide
+/// every project.
 pub fn list(db: &Database) -> Result<Vec<Registered>, StoreError> {
     let conn = Connection::new(db)?;
-    let text = |value: Value| match value {
-        Value::String(s) => Ok(s),
-        other => Err(StoreError::Corrupt(format!("expected a string, got {other:?}"))),
-    };
-    rows(
-        &conn,
-        "MATCH (p:Project) RETURN p.id, p.name, p.source ORDER BY p.name, p.id",
-        vec![],
-    )?
-    .into_iter()
-    .map(|row| {
-        let mut cells = row.into_iter();
-        let mut next = || cells.next().ok_or_else(|| StoreError::Corrupt("a project row is short".into())).and_then(text);
-        Ok(Registered { id: next()?, name: next()?, folder: next()? })
-    })
-    .collect()
+    let mut projects = rows(&conn, "MATCH (p:Project) RETURN p.id, p.name, p.source", vec![])?
+        .into_iter()
+        .map(|row| {
+            let mut cells = row.into_iter();
+            let (Some(Value::String(id)), name, Some(Value::String(folder))) =
+                (cells.next(), cells.next(), cells.next())
+            else {
+                return Err(StoreError::Corrupt("a project row has no id or no source".into()));
+            };
+            let name = match name {
+                Some(Value::String(name)) => name,
+                _ => Path::new(&folder)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+            };
+            Ok(Registered { id, name, folder })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    projects.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    Ok(projects)
 }
 
 pub fn source_of(db: &Database, id: &str) -> Result<Option<String>, StoreError> {
