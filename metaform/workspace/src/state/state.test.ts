@@ -189,7 +189,9 @@ describe("scene", () => {
     const expanded = run([{ type: "toggle-expanded", address: "code.server" }], inCode);
     const scene = buildScene(expanded, input({ wants }));
     const arrow = scene.edges.find((e) => e.from === "code.server.relay" && e.to === "code.store");
-    expect(arrow).toMatchObject({ count: 2, direction: "mixed", why: null });
+    expect(arrow).toMatchObject({ count: 2, direction: "mixed", why: null, how: null, flowing: false });
+    const single = buildScene(run([{ type: "select", address: "code.server" }], inCode), input({ wants }));
+    expect(single.edges.find((e) => e.from === "code.server")).toMatchObject({ why: null, flowing: true });
     const collapsed = buildScene(inCode, input({ wants }));
     expect(collapsed.nodes.find((n) => n.address === "code.server")).toMatchObject({ outside: 1, technicalName: null });
   });

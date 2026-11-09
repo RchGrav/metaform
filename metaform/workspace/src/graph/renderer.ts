@@ -74,6 +74,14 @@ export interface RenderEdge {
   direction: "outbound" | "inbound" | "two-way" | "mixed" | null;
   /** The want's `why` (OP), only when the arrow stands for exactly one want; shown when zoomed close. */
   why: string | null;
+  /** The want's `how` (EF), under the same rule as `why`. */
+  how: string | null;
+  /**
+   * Whether the direction flows along this arrow (UX section 12a): on the selected element's wants,
+   * on wants that touch an element with unseen activity (the intake's new wants), and on every want
+   * in Present mode. Elsewhere the line is still, so the graph does not shimmer.
+   */
+  flowing: boolean;
   dimmed: boolean;
 }
 

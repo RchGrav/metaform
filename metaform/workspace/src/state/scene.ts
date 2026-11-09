@@ -148,6 +148,12 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
       count: edge.count,
       direction: directionOf(edge.members),
       why: typeof single?.why === "string" ? single.why : null,
+      how: typeof single?.how === "string" ? single.how : null,
+      flowing:
+        state.mode === "present" ||
+        (view.selection !== null && (edge.from === view.selection || edge.to === view.selection)) ||
+        unseen.has(edge.from) ||
+        unseen.has(edge.to),
       dimmed: reach !== null && !(reach.has(edge.from) && reach.has(edge.to)),
       };
     })
