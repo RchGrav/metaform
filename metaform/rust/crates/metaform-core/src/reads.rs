@@ -20,8 +20,8 @@ pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
 }
 
 /// The project's own Definitive element at an address: a Definitive role on an element inside the
-/// project (`names::in_project`). An element under `upstream`, `downstream` or `layer` can carry its
-/// own map's Definitive role, such as a chained map's (R-4.15), and does not count (R-3.13, R-3.3, R-3.7).
+/// project (`names::in_project`). An element under `upstream`, `downstream` or `layer` is outside the
+/// project (R-3.3, R-3.7), so a Definitive role there does not count (R-3.13).
 pub(crate) fn is_project_definitive(address: &str, role: Option<&Value>) -> bool {
     crate::names::in_project(address) && is_definitive(role)
 }

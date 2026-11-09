@@ -467,8 +467,8 @@ impl Work<'_> {
     }
 
     /// A project has one Definitive element (R-3.13). A write that would make a second is refused.
-    /// Elements under a root prefix do not count: a chained map under `upstream` keeps its own
-    /// Definitive element (R-4.15), and those prefixes are outside the project (R-3.3, R-3.7).
+    /// Elements under a root prefix do not count, because those prefixes are outside the project
+    /// (R-3.3, R-3.7).
     fn check_definitive(&self) -> Result<(), Refusal> {
         let definitive: Vec<&String> = self
             .elements

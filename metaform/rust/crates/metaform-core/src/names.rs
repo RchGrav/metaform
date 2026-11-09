@@ -22,7 +22,7 @@ pub const ROOT_SCOPES: [&str; 8] = [
 
 /// The root prefixes (R-3.3): what follows them is not located in the project. `upstream` and
 /// `downstream` are outside the project being mapped (R-3.7), and `layer` holds layer
-/// definitions (R-6.24). A chained map sits under `upstream` (R-4.15).
+/// definitions (R-6.24).
 pub const ROOT_PREFIXES: [&str; 3] = ["upstream", "downstream", "layer"];
 
 /// Whether an address belongs to the project itself: the root, or an element not under a root

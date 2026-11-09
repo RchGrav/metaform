@@ -362,8 +362,8 @@ fn writes_create_paths_and_reads_return_each_form() {
     assert_eq!(map.element(".").unwrap().fields["name"], "demo");
 }
 
-/// R-3.13 counts only the project's own elements (R-3.3, R-3.7): a chained map under `upstream`
-/// keeps its own Definitive element (R-4.15) beside the project's, writes to either pass, a second
+/// R-3.13 counts only the project's own elements (R-3.3, R-3.7): an element under `upstream` with
+/// a Definitive role sits beside the project's Definitive, writes to either pass, a second
 /// Definitive inside the project is still refused, and `map` names the project's Definitive.
 #[test]
 fn one_definitive_rule_counts_only_the_project() {
