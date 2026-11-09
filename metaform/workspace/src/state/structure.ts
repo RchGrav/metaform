@@ -237,3 +237,49 @@ export function wantsFromDump(dump: RawDump): Map<Address, Record<Address, Recor
   walk(dumpTree(dump), TOP);
   return out;
 }
+
+/** One element per this many square pixels of canvas, for the start-up budget (UX section 12a). */
+export const PIXELS_PER_ELEMENT = 34_000;
+export const MIN_START_ELEMENTS = 12;
+export const MAX_START_ELEMENTS = 60;
+
+/** How many elements a first view of a container may show on a canvas of this size. */
+export function startBudget(width: number, height: number): number {
+  const fits = Math.round((Math.max(0, width) * Math.max(0, height)) / PIXELS_PER_ELEMENT);
+  return Math.min(MAX_START_ELEMENTS, Math.max(MIN_START_ELEMENTS, fits));
+}
+
+/**
+ * The elements to expand on a first view of a container, so the start-up fills the screen
+ * (owner, 2026-11-09: "barely shows anything"). Within a level, elements open smallest first while
+ * the visible count stays within the budget; the next level is tried only after the whole level
+ * opened, so the view never goes deep on one side while a sibling stays closed.
+ */
+export function startExpansion(addresses: readonly Address[], container: Address, budget: number): Address[] {
+  const childrenOf = new Map<Address, Address[]>();
+  for (const address of addresses) {
+    if (!isBeneath(address, container)) continue;
+    const parent = parentOf(address);
+    const list = childrenOf.get(parent) ?? [];
+    list.push(address);
+    childrenOf.set(parent, list);
+  }
+  const count = (address: Address) => childrenOf.get(address)?.length ?? 0;
+  let level = childrenOf.get(container) ?? [];
+  let visible = level.length;
+  const expanded: Address[] = [];
+  for (;;) {
+    const candidates = level
+      .filter((address) => count(address) > 0)
+      .sort((a, b) => count(a) - count(b) || (a < b ? -1 : 1));
+    const opened: Address[] = [];
+    for (const address of candidates) {
+      if (visible + count(address) > budget) continue;
+      opened.push(address);
+      visible += count(address);
+    }
+    expanded.push(...opened);
+    if (opened.length < candidates.length || opened.length === 0) return expanded;
+    level = opened.flatMap((address) => childrenOf.get(address) ?? []);
+  }
+}
