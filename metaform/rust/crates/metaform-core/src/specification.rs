@@ -11,7 +11,7 @@
 //! `{"level": 1-4, "title": "...", "text": "..."}`, and the first block may be `{"text": "..."}`
 //! alone, an intro with no heading. Levels are relative to the element's own heading in the
 //! export, so the same rule holds at every address, and the tool enforces them so the prose can
-//! be exported as Markdown and taken in again without loss. The tool refuses only what would
+//! be exported as Markdown and imported again without loss. The tool refuses only what would
 //! break that round trip or put records before the skeleton; the TASTE targets are reported by
 //! `metaform specification export --check`, not refused (R-5.20, TASTE rule 4).
 //!
@@ -57,7 +57,7 @@ pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, 
 
 /// How records of the `markdown_blocks` format are written through the tool (R-6.25, R-6.26).
 /// `goto` delivers it before the definition's own instruction. `{layer}` is the field name.
-const MARKDOWN_FORM: &str = "The {layer} field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks. Read them with {\"<address>\": {\"layers\": [\"{layer}\"]}}. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.";
+const MARKDOWN_FORM: &str = "The {layer} field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"layers\": [\"{layer}\"]}}. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.";
 
 /// The fields of the specification layer's definition element at `DEFINITION_ADDRESS`. The store
 /// writes it into each main map, so the export and `goto` always find the layer (R-6.24).
@@ -108,7 +108,7 @@ impl Definition {
 }
 
 /// Every layer defined in the map, by field name. If two definitions share a last segment, the
-/// first by address defines the layer.
+/// definition whose address sorts first defines the layer.
 pub fn definitions(map: &Map) -> Vec<Definition> {
     let mut out: Vec<Definition> = Vec::new();
     for (address, element) in map.elements() {

@@ -1,16 +1,16 @@
 # Specification layer
 
-**State:** built on branches, not merged. Owner review pending. Written 2026-11-09 by Marcus (MCP review, session metaform-b6), with Ida (metaform-54), Matthew (metaform-38, TASTE) and Jorge (metaform-33, store). Requirements: `metaform/SPEC.md` R-6.24 to R-6.28.
+**State:** built on branches, not merged. Owner review pending. Written 2026-11-09 by Marcus (MCP review), with Ida (export and import), Matthew (TASTE) and Jorge (store). Requirements: `metaform/SPEC.md` R-6.24 to R-6.28.
 
 ## Purpose
 
-Intake records a project's functional skeleton: elements, roles and wants, with no prose (R-3.20). The specification layer holds the prose the skeleton leaves out on purpose: what each element does, how it behaves, and the reasons behind it. Agents keep the prose current through the `project-map` tool. A CLI command exports the map and its prose as one Markdown specification. The structure is built for round trips: the export can be taken in again with nothing lost, because the tool enforces the Markdown heading structure when the prose is written.
+Intake records a project's functional skeleton: elements, roles and wants, with no prose (R-3.20). The specification layer holds the prose the skeleton leaves out on purpose: what each element does, how it behaves, and the reasons behind it. Agents keep the prose current through the `project-map` tool. A CLI command exports the map and its prose as one Markdown specification. The structure is built for round trips: the export can be imported again with nothing lost, because the tool enforces the Markdown heading structure when the prose is written.
 
 ## Owner decisions
 
 Each entry restates the decision and gives its reason. "Relayed" means the decision reached Marcus through another session, not from the owner directly.
 
-1. **A specification layer starts after intake** (owner, 2026-11-09, this session's goal). The layer stores data in the map. It encodes Markdown heading levels for its text, and the tool enforces them. Its text is not normative and follows TASTE. Agents use the MCP server to keep specifications up to date, and a CLI export produces a well-organized specification document. Reason: the skeleton holds functionality only, so a specification needs its prose kept elsewhere in the map, in a form agents can maintain and export.
+1. **A specification layer starts after intake** (owner, 2026-11-09, the goal the owner gave for this work). The layer stores data in the map. It encodes Markdown heading levels for its text, and the tool enforces them. Its text is not normative and follows TASTE. Agents use the MCP server to keep specifications up to date, and a CLI export produces a well-organized specification document. Reason: the skeleton holds functionality only, so a specification needs its prose kept elsewhere in the map, in a form agents can maintain and export.
 2. **All layers work the same way** (owner, 2026-11-09, relayed by Jorge). The specification layer gets no mechanism of its own. Reason: not stated to Marcus. See Open decisions, item 3.
 3. **The layer is defined by the element `layer.document.specification` in the main map** (owner, 2026-11-09, relayed by Jorge). So `layer` becomes a root scope. Reason: not stated to Marcus. The inferred reason is that a layer then lives in the map like everything else, and agents find it with `goto` (R-1.2: users never need to know the layers' names).
 4. **The data sits on the receiving elements as a JSON field named `specification`** (owner, 2026-11-09, relayed by Jorge). The owner left the choice between a dictionary and an array to the team. Jorge chose an array, for the reasons under Decision rationale.
@@ -20,7 +20,7 @@ Each entry restates the decision and gives its reason. "Relayed" means the decis
 
 ### Layer definitions (every layer)
 
-- A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment. `layer.document.specification` defines `specification`. If two definitions share a last segment, the first by address wins.
+- A layer is defined by an element beneath the `layer` root scope that has an `instruction` field. The layer's field name at receiving elements is the definition's last address segment. `layer.document.specification` defines `specification`. If two definitions share a last segment, the definition whose address sorts first wins.
 - A layer's value at an element is a list of records.
 - Records are accepted only at a skeleton element: one with `technical_name`, `name` and `role`, which are R-3.4's mandatory fields. The root `.` is the exception: it accepts records once the map has a Definitive element. Elements in the `layer` scope never hold records. Refusal: `ELEMENT_NOT_IN_SKELETON`. This is how "after intake" is enforced without a done marker, which R-5.19 rules out.
 - Records the write did not change are not checked again. So a later intake correction, such as removing a role, is never refused because of records already stored.
@@ -50,7 +50,7 @@ The tool enforces these rules on every write that changes the blocks:
 | A code is a letter, then up to 31 letters, digits, `.`, `_` or `-`, ending with a letter or digit. Only a titled block has one. | `FIELD_MISMATCH` |
 | A code is unique in its layer across the whole map, ignoring case. | `CODE_NOT_UNIQUE`, naming the block that already holds it |
 
-On write, the tool converts line ends to LF and trims each title and text. An empty list removes the field. `update` replaces every block at the address and is safe to repeat. `add` appends blocks and is not safe to repeat after a lost answer (finding 7 in `.marcus/notes.md`).
+On write, the tool converts line ends to line feeds (LF) and trims each title and text. An empty list removes the field. `update` replaces every block at the address and is safe to repeat. `add` appends blocks and is not safe to repeat: if the answer is lost, a retried `add` appends the blocks twice.
 
 The tool refuses nothing else. Sentence length, paragraph length, word choice and normative keywords are TASTE targets that depend on meaning. They are reported by `export --check`, which a person reviews (R-5.20; TASTE ranks meaning above length).
 
@@ -60,7 +60,7 @@ The tool refuses nothing else. Sentence length, paragraph length, word choice an
 
 ### Instruction (TASTE for one block)
 
-Prepared by Matthew from `TASTE.md` and the owner's short version. It is delivered with `goto`, after the format rules.
+Prepared by Matthew from `TASTE.md` and the owner's short version (`context/brain/taste.md`). It is delivered with `goto`, after the format rules.
 
 ```text
 Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.
@@ -85,10 +85,10 @@ Write each block in TASTE: Technically Accurate, Simple, Transparent English. A 
 
 - Line 1 is `# <project name>`.
 - Root blocks follow. Their Markdown level is the relative level plus 1. The intro is a plain paragraph.
-- Each element has a heading `## <name> (`<address>`)`. Its blocks follow at the relative level plus 2, so `###` to `######`. A block's code is a leading code span in its heading: `### `PL-2.a` Purpose`.
+- Each element has a heading ``## <name> (`<address>`)``. Its blocks follow at the relative level plus 2, so `###` to `######`. A block's code is a leading code span in its heading: ``### `PL-2.a` Purpose``.
 - Under each element heading, a generated preamble comes before the intro: `Role: X. Technical name: Y. Status: Z.` (Status only when set), then one list item per want, using the R-6.17 template.
-- The elements are every skeleton element, plus any element that still holds blocks. The `layer` scope is left out. Order: R-3.3 scope order, then a pre-order walk by segment list (`specification::scope_order`).
-- The parser regenerates each preamble from the current map and strips it. It refuses a document whose preamble no longer matches (a stale document), an unknown address, a duplicate section or code, a loose `##` heading and an unclosed fence. Its result, one block list per element, is written as `update` commands, so import goes through the same checks as an agent's write.
+- The elements are every skeleton element, plus any element that still holds blocks. The `layer` scope is left out. Order: R-3.3 scope order, then each element directly before the elements beneath it (`specification::scope_order`).
+- The parser regenerates each preamble from the current map and strips it. It refuses a document whose preamble no longer matches (a stale document), an unknown address, a duplicate section or code, a `##` heading that does not end with an element address in backticks, and an unclosed fence. Its result, one block list per element, is written as `update` commands, so import goes through the same checks as an agent's write.
 - `--check` prints the reports to stderr and leaves stdout as clean Markdown. It exits 0 with or without reports; reports are targets, not errors. Its 11 checks (Matthew's rules) are `CAPITAL_MODAL`, `SHALL`, `SENTENCE_LENGTH` (over 25 words), `PARAGRAPH_LENGTH` (over six sentences), `BLACKLIST` (the `TASTE.md` blacklist), `VAGUE_WORD`, `OPENING`, `START_PRONOUN`, `ABBREVIATION`, `REPEATED_SENTENCE` and `EMPTY_SECTION`. They skip code spans, fenced code, URLs, table rows and quoted text. Exact messages are in `metaform-core/src/check.rs`.
 
 ## Specification updates
@@ -116,7 +116,7 @@ Proposed additions to `metaform/SPEC.md`, made on this branch:
 
 1. **The layer read changes the protected tool contract.** The goal tells the team to refine the MCP surface so agents keep specifications current through it. Ida and Marcus read that as covering the change, but the owner did not name the contract. Options: (a) keep `LayerRead`, which is what is built; (b) deliver block contents through `goto`, which breaks R-5.30's "counts, not records" rule; (c) no read, so agents keep their own copy. Recommendation: (a). Choose (b) only if the contract must stay unchanged. Merging to `main` waits for this answer.
 2. **The `goto` `instructions` part** adds a part to the R-5.30 summary sheet. Recommendation: keep it. The alternative is the tool description, which costs every agent tokens on every session.
-3. **The reasons for owner decisions 2 and 3** have not reached Marcus. Please state them, so the spec can record them (project rule: every recorded decision carries its reason).
+3. **The reasons for owner decisions 2 and 3** have not reached Marcus. Please state them, so the spec can record them (the owner asks that every recorded decision carry its reason).
 4. **R-6.15 lists `system` layers** (skills, memory, sources) as layers created only in code. Owner decision 2 suggests every layer, including those, should become a definition in the map. This design does not move them. Recommendation: decide this when memory and skills are built, not now.
 
 ## Risks and verification
