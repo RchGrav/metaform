@@ -14,8 +14,8 @@ describe("MockSource reads", () => {
 
   it("returns the shallow graph sorted by address, without the root", async () => {
     const graph = await fixed().map("metaform");
-    expect(graph.addresses).toHaveLength(132);
-    expect(graph.edges).toHaveLength(73);
+    expect(graph.addresses).toHaveLength(119);
+    expect(graph.edges).toHaveLength(68);
     expect([...graph.addresses].sort()).toEqual(graph.addresses);
     expect(graph.addresses).not.toContain("");
     expect(graph.definitive).toBe("code.system.management.knowledge");
@@ -81,17 +81,19 @@ describe("MockSource reads", () => {
     expect(Object.keys(((await source.dump("metaform"))["."]) as object)).toContain("code");
   });
 
-  it("holds one simulated chained map under upstream at its holder's address, with no linking want", async () => {
+  it("lists an outside project as one element, and answers its own map in its own addresses", async () => {
     const source = fixed();
     const graph = await source.map("metaform");
-    const chained = graph.addresses.filter((a) => a.startsWith("upstream.code.engine.workflow"));
-    expect(chained.length).toBeGreaterThanOrEqual(6);
-    expect(graph.addresses).toContain("code.engine.workflow");
-    expect(graph.edges.some(([h, w]) => h === "code.engine.workflow" && w.startsWith("upstream.code.engine.workflow"))).toBe(false);
-    const root = await source.goto("metaform", "upstream.code.engine.workflow");
-    expect(root.element.role).toBe("Definitive");
-    expect(root.element.uri).toMatch(/^https:\/\/example\.invalid\//);
-    expect(graph.definitive).toBe("code.system.management.knowledge");
+    expect(graph.addresses.filter((a) => a.startsWith("upstream.code.engine.workflow"))).toEqual(["upstream.code.engine.workflow"]);
+    const element = (await source.goto("metaform", "upstream.code.engine.workflow")).element;
+    expect(element.uri).toMatch(/^https:\/\/example\.invalid\//);
+    const outside = await source.map("metaform", "upstream.code.engine.workflow");
+    expect(outside.definitive).toBe("code.engine.workflow");
+    expect(outside.addresses).toContain("code.interpreter.flow");
+    expect(outside.addresses.some((a) => a.startsWith("upstream.code.engine.workflow"))).toBe(false);
+    expect(outside.edges).toContainEqual(["code.engine.workflow", "code.interpreter.flow"]);
+    const refused = await source.map("metaform", "code.store").catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(RefusalError);
   });
 
   it("names cross-project links with the map URI and the element as fragment", async () => {

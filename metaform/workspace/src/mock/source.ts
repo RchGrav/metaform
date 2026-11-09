@@ -132,6 +132,8 @@ export class MockSource implements GraphSource, WorkspaceEvents {
   /** Shown by the views wherever this source supplies data. */
   readonly simulated = true;
   private readonly maps = new Map<string, ProjectMap>();
+  /** Outside maps by repository uri. */
+  private readonly outside = new Map<string, ProjectMap>();
   private readonly refs: ProjectRef[];
   private readonly listeners = new Map<string, Set<(event: WorkspaceEvent) => void>>();
   /** Layers whose guidance this source has already delivered, per project (R-6.27). */
@@ -152,6 +154,9 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     for (const project of Object.values(this.workspace.projects)) {
       this.maps.set(project.id, new ProjectMap(project.dump));
     }
+    for (const [uri, outside] of Object.entries(this.workspace.outside ?? {})) {
+      this.outside.set(uri, new ProjectMap(outside.dump));
+    }
     if (options.playEvents ?? true) this.play();
   }
 
@@ -165,9 +170,13 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     return this.refs.map((ref) => ({ ...ref }));
   }
 
-  /** {"map": {}} (reads.rs `shallow`). */
-  async map(project: string): Promise<ShallowGraph> {
-    const map = this.project(project);
+  /**
+   * {"map": {}} (reads.rs `shallow`). With `at`, the proposed read {"map": "<address>"}: the
+   * outside project's map that the element at `at` names by its `uri`, in that map's own
+   * addresses (SPEC c7f9eb2). Not in the server yet; an owner contract decision.
+   */
+  async map(project: string, at?: Address): Promise<ShallowGraph> {
+    const map = at === undefined ? this.project(project) : this.outsideOf(project, at);
     const edges: [Address, Address][] = [];
     for (const address of map.sorted) {
       for (const other of Object.keys(map.elements.get(address)?.wants ?? {})) {
@@ -177,6 +186,25 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     const definitive =
       map.sorted.find((a) => isDefinitive(map.elements.get(a)?.fields["role"])) ?? null;
     return { addresses: [...map.sorted], edges, definitive };
+  }
+
+  /** The outside map an element names by its `uri`, or a refusal. */
+  private outsideOf(project: string, at: Address): ProjectMap {
+    const element = this.project(project).element(at);
+    if (!element) throw notFound({ map: at }, at);
+    const uri = element.fields["uri"];
+    const outside = typeof uri === "string" ? this.outside.get(uri) : undefined;
+    if (!outside) {
+      // Mock wording: the server has no refusal for this read yet.
+      throw new RefusalError({
+        map: at,
+        status: "error",
+        code: "NOT_FOUND",
+        message: `'${at}' names no outside map`,
+        remediation: { goto: at },
+      });
+    }
+    return outside;
   }
 
   /** {".": {}} (reads.rs `raw`): the stored nested tree, keyed by ".". */

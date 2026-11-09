@@ -33,9 +33,18 @@ export interface MockEvent {
   move?: Address;
 }
 
+/** An outside project's own functional map, keyed in MockWorkspace by its repository uri. */
+export interface MockOutside {
+  name: string;
+  /** In that map's own addresses (code.engine.workflow, not upstream.code.engine.workflow). */
+  dump: Tree;
+}
+
 export interface MockWorkspace {
   simulated: true;
   projects: Record<string, MockProject>;
+  /** Outside maps by repository uri (R-4.15; SPEC c7f9eb2). */
+  outside: Record<string, MockOutside>;
   agents: MockAgent[];
   events: MockEvent[];
 }

@@ -162,35 +162,41 @@ def main():
         "technical_name": "functional map server", "name": "Metaform", "role": "Supportive",
         "uri": link("metaform", "code.server.tool")})
 
-    # A chained map (R-4.15, D-16): an element can hold its own functional map for reference.
-    # Seen from the parent map, the held map sits under `upstream` at the holder's address: the
-    # upstream project's Definitive element is upstream.code.engine.workflow, placed inside our
-    # code.engine.workflow, with the rest of its map beneath. No want links the two. The
-    # Definitive element's `uri` names the upstream repository. SIMULATED: a small reference map;
-    # the uri uses the reserved .invalid domain (RFC 2606), so it can never name a real one.
-    chained = "upstream.code.engine.workflow"
-    reference = {
-        "": ("workflow engine reference map", "workflow (mock)", "Definitive"),
+    # An outside project (R-4.15, D-16; owner's correction in SPEC c7f9eb2): it is ONE element in
+    # our map, upstream.code.engine.workflow, with a `uri` naming its repository. Its functional
+    # map is a separate map with its own root scopes and addresses: our
+    # upstream.code.engine.workflow corresponds to its code.engine.workflow. `{"map": {}}` lists
+    # only our element; `{"map": "upstream.code.engine.workflow"}` (proposed read) answers the
+    # outside map's shallow graph in its own addresses. SIMULATED: the uri uses the reserved
+    # .invalid domain (RFC 2606), so it can never name a real repository.
+    outside_uri = "https://example.invalid/mock/workflow-engine"
+    at(metaform, "upstream.code.engine.workflow").update({
+        "technical_name": "workflow engine", "name": "workflow (mock)", "role": "Supportive",
+        "uri": outside_uri})
+    workflow = {}
+    for address, (technical, label, role) in {
+        "code.engine.workflow": ("workflow engine", "Workflow", "Definitive"),
         "code.interpreter.flow": ("control flow interpreter", "Interpreter", "Supportive"),
         "code.transport.call": ("procedure call transport", "Call transport", "Supportive"),
         "code.store.frame": ("call frame store", "Frames", "Supportive"),
         "code.verifier.step": ("step result verifier", "Verifier", "Notable"),
         "code.policy.retry": ("retry policy", "Retry", "Notable"),
         "document.procedure": ("authored procedure", "Procedures", "Supportive"),
-    }
-    for suffix, (technical, label, role) in reference.items():
-        at(metaform, f"{chained}.{suffix}" if suffix else chained).update(
-            {"technical_name": technical, "name": label, "role": role})
+        "upstream.code.harness.agent": ("agent harness", "Harness", "Supportive"),
+    }.items():
+        at(workflow, address).update({"technical_name": technical, "name": label, "role": role})
     for holder, wanted, why, how, direction in [
+        ("code.engine.workflow", "code.interpreter.flow", "(mock) Run authored procedures.", "(mock) Hands each procedure to the interpreter.", "outbound"),
         ("code.interpreter.flow", "document.procedure", "(mock) Interpret the authored control flow.", "(mock) Reads each procedure's steps in order.", "inbound"),
         ("code.interpreter.flow", "code.transport.call", "(mock) Run each step as a call.", "(mock) Sends one call per step and waits for its result.", "outbound"),
         ("code.transport.call", "code.store.frame", "(mock) Resume interrupted calls.", "(mock) Saves and restores call frames.", "two-way"),
+        ("code.transport.call", "upstream.code.harness.agent", "(mock) Reason inside each step.", "(mock) Calls the agent harness for the step's reasoning.", "two-way"),
         ("code.interpreter.flow", "code.verifier.step", "(mock) Accept only checked results.", "(mock) Passes each result through the verifier.", "outbound"),
         ("code.verifier.step", "code.policy.retry", "(mock) Recover from a failed check.", "(mock) Asks the retry policy whether to run the step again.", "outbound"),
     ]:
-        at(metaform, f"{chained}.{holder}").setdefault("wants", {})[f"{chained}.{wanted}"] = {
-            "why": why, "how": how, "direction": direction}
-    at(metaform, chained)["uri"] = "https://example.invalid/mock/workflow-engine"
+        at(workflow, holder).setdefault("wants", {})[wanted] = {"why": why, "how": how, "direction": direction}
+    at(workflow, "layer.document.specification").update(SPEC_DEFINITION)
+    outside = {outside_uri: {"name": "workflow-engine", "dump": canonical(workflow)}}
 
     projects = {
         "metaform": project("metaform", metaform, [
@@ -227,12 +233,14 @@ def main():
          "write": {"layer": "memory", "record": memory("adapter", "Pi + pi-acp is the existing route.")}},
     ]
 
-    out = {"simulated": True, "projects": projects, "agents": agents, "events": events}
+    out = {"simulated": True, "projects": projects, "outside": outside, "agents": agents, "events": events}
     OUT.write_text(json.dumps(out, indent=1) + "\n")
     for name, p in projects.items():
         n = sum(1 for _ in addresses(p["dump"]))
         w = sum(len(e.get("wants", {})) for _, e in addresses(p["dump"]))
         print(f"{name}: {n} addresses, {w} wants")
+    for uri, o in outside.items():
+        print(f"outside {o['name']} ({uri}): {sum(1 for _ in addresses(o['dump']))} addresses")
 
 
 if __name__ == "__main__":
