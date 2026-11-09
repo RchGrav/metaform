@@ -12,15 +12,17 @@ export interface CanvasProps {
   viewport: Viewport | null;
   /** Changes whenever the project or container changes, so the canvas restores or fits once. */
   placeKey: string;
+  /** Every viewport the canvas shows or settles on, so zoom controls start from what is on screen. */
+  onViewport: (viewport: Viewport) => void;
   /** The action a double-click or Enter on an element performs. */
   open: (address: string) => Action;
   dispatch: (action: Action) => void;
 }
 
-export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: CanvasProps) {
+export function Canvas({ renderer, scene, viewport, placeKey, open, onViewport, dispatch }: CanvasProps) {
   const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ open, dispatch, viewport });
-  latest.current = { open, dispatch, viewport };
+  const latest = useRef({ open, dispatch, viewport, onViewport });
+  latest.current = { open, dispatch, viewport, onViewport };
   const restoredFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -34,7 +36,10 @@ export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: 
       nodeDoubleClick: (address) => latest.current.dispatch(latest.current.open(address)),
       chevronClick: (address) => latest.current.dispatch({ type: "toggle-expanded", address }),
       backgroundClick: () => latest.current.dispatch({ type: "select", address: null }),
-      viewportChange: (next) => latest.current.dispatch({ type: "viewport", viewport: next }),
+      viewportChange: (next) => {
+        latest.current.onViewport(next);
+        latest.current.dispatch({ type: "viewport", viewport: next });
+      },
     });
     return () => renderer.unmount();
   }, [renderer]);
@@ -49,8 +54,15 @@ export function Canvas({ renderer, scene, viewport, placeKey, open, dispatch }: 
       restoredFor.current = placeKey;
       // A container shown before gets its own viewport back; a new one is fitted (UX section 1).
       const stored = latest.current.viewport;
-      if (stored) renderer.setViewport(stored, false);
-      else void renderer.fit(false).then((fitted) => latest.current.dispatch({ type: "viewport", viewport: fitted }));
+      if (stored) {
+        renderer.setViewport(stored, false);
+        latest.current.onViewport(stored);
+      } else {
+        void renderer.fit(false).then((fitted) => {
+          latest.current.onViewport(fitted);
+          latest.current.dispatch({ type: "viewport", viewport: fitted });
+        });
+      }
     });
     return () => {
       live = false;

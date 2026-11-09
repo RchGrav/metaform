@@ -1,6 +1,6 @@
 // The graph workspace (dev/user_agent_interfaces.md; interaction: dev/user_agent_interfaces-ux.md).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
@@ -145,27 +145,37 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const viewportKey = state.mode === "element" ? `element:${focusTarget ?? ""}` : view.container;
   const storedViewport: Viewport | null = view.viewports[viewportKey] ?? null;
 
-  useEffect(() => {
-    const stored = view.viewports[view.container];
-    if (stored) setZoom(stored.zoom);
-  }, [view.viewports, view.container]);
+  // The viewport on screen: every zoom control starts from it, and the zoom label follows it.
+  const shown = useRef<Viewport | null>(null);
+  const onViewport = useCallback((viewport: Viewport) => {
+    shown.current = viewport;
+    setZoom(viewport.zoom);
+  }, []);
 
-  const zoomBy = useCallback(
-    (factor: number) => {
-      const base = view.viewports[view.container] ?? { x: 0, y: 0, zoom };
-      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, base.zoom * factor));
-      renderer.setViewport({ ...base, zoom: next }, true);
-      setZoom(next);
+  /** Zooms to `target` around the centre of the canvas, from the viewport on screen. */
+  const zoomTo = useCallback(
+    (target: number) => {
+      const base = shown.current ?? { x: 0, y: 0, zoom: 1 };
+      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, target));
+      const canvas = document.querySelector<HTMLElement>(".canvas");
+      const cx = (canvas?.clientWidth ?? 0) / 2;
+      const cy = (canvas?.clientHeight ?? 0) / 2;
+      const k = next / base.zoom;
+      const viewport = { zoom: next, x: cx - (cx - base.x) * k, y: cy - (cy - base.y) * k };
+      renderer.setViewport(viewport, true);
+      onViewport(viewport);
+      dispatch({ type: "viewport", viewport });
     },
-    [renderer, view.viewports, view.container, zoom],
+    [renderer, onViewport, dispatch],
   );
+  const zoomBy = useCallback((factor: number) => zoomTo((shown.current?.zoom ?? 1) * factor), [zoomTo]);
   const fit = useCallback(
     () =>
       void renderer.fit(true).then((v) => {
-        setZoom(v.zoom);
+        onViewport(v);
         dispatch({ type: "viewport", viewport: v });
       }),
-    [renderer, dispatch],
+    [renderer, onViewport, dispatch],
   );
 
   const openLinked = useCallback(
@@ -206,7 +216,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           fit();
           break;
         case e.key === ")" || (e.key === "0" && e.shiftKey):
-          zoomBy(1 / (view.viewports[view.container]?.zoom ?? zoom));
+          zoomTo(1);
           break;
         case e.key === "Backspace" || (e.key === "ArrowLeft" && e.altKey):
           dispatch({ type: "back" });
@@ -254,7 +264,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, view, state.mode, state.notice, zoomBy, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys, scene, renderer]);
+  }, [dispatch, view, state.mode, state.notice, zoomBy, zoomTo, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys, scene, renderer]);
 
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
@@ -290,7 +300,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             setOpen={setRailOpen}
             onFit={fit}
             onZoom={zoomBy}
-            onResetZoom={() => zoomBy(1 / zoom)}
+            onResetZoom={() => zoomTo(1)}
             onBack={() => dispatch({ type: "back" })}
             onCollapseAll={() => dispatch({ type: "collapse-all" })}
             onExpandAll={() => dispatch({ type: "expand-all", addresses: addresses.filter((a) => (counts.get(a) ?? 0) > 0 && (view.container === TOP || a.startsWith(`${view.container}.`))) })}
@@ -328,6 +338,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             viewport={storedViewport}
             placeKey={`${state.project ?? ""}|${viewportKey}|${visibleCount > 0 ? "ready" : "empty"}`}
             open={open}
+            onViewport={onViewport}
             dispatch={dispatch}
           />
         )}

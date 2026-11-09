@@ -148,6 +148,11 @@ export interface GraphRenderer {
   setViewport(viewport: Viewport, animate: boolean): void;
   /** Frames every node with a 48 px margin, after any pending layout, and resolves to the resulting viewport. */
   fit(animate: boolean): Promise<Viewport>;
+  /**
+   * The given addresses whose box lies wholly outside the viewport shown now, mid-move included
+   * (UX section 12a: the indicator of new elements outside the view). Added for climb step 6b.
+   */
+  outsideView?(addresses: readonly Address[]): Address[];
   /** Moves keyboard focus to a node, without changing the viewport unless the node is off screen. */
   focusNode(address: Address): void;
   unmount(): void;
