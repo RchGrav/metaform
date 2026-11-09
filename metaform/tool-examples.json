@@ -52,7 +52,7 @@
       "code.masher.widget": {}
     },
     "status": "error",
-    "message": "cannot delete, 'code.masher.widget', must be orphaned first",
+    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
     "remediation": {
       "delete": {
         "code.protocol.network.tracker.cs": {

@@ -129,7 +129,7 @@ fn refused_write_changes_nothing() {
                     "delete": {"code.masher.widget": {}},
                     "status": "error",
                     "code": "DEPENDENCY_LOCK",
-                    "message": "cannot delete, 'code.masher.widget', must be orphaned first",
+                    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
                     "remediation": {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}}
                 });
                 assert_eq!(answer.to_string(), expected.to_string(), "fields and their order");

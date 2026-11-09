@@ -237,14 +237,20 @@ impl Work<'_> {
         }
         let receivers = Map::receivers(&self.elements, address);
         if let Some(first) = receivers.first() {
-            let others = if receivers.len() > 1 {
-                format!("; wanted by: {}", receivers.join(", "))
+            // TASTE wording (Matthew, 2026-11-09): the problem, then what to do. It replaces the
+            // founder's sample "cannot delete, '<address>', must be orphaned first"; the refusal's
+            // structure and code are unchanged.
+            let message = if receivers.len() > 1 {
+                format!(
+                    "cannot delete '{address}': these elements still want it: {}. Remove their wants first.",
+                    receivers.join(", ")
+                )
             } else {
-                String::new()
+                format!("cannot delete '{address}': '{first}' still wants it. Remove that want first.")
             };
             return Err(Refusal::new(
                 Code::DependencyLock,
-                format!("cannot delete, '{address}', must be orphaned first{others}"),
+                message,
                 Some(json!({"delete": {first: {"wants": [address]}}})),
             ));
         }
