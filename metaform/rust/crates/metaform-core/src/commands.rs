@@ -359,7 +359,7 @@ impl Work<'_> {
         match clash {
             None => Ok(()),
             Some((holder, key)) => Err(Refusal::new(
-                Code::GrammarConstraintViolation,
+                Code::FieldElementCollision,
                 format!("'{holder}': '{key}' cannot be both a field and an element beneath it"),
                 Some(json!({"update": {holder: {key: null}}})),
             )),

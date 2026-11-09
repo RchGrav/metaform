@@ -81,7 +81,7 @@ impl Contract {
             return Ok(());
         }
         let reason = explain(self.input.iter_errors(command));
-        Err(Refusal::new(Code::GrammarConstraintViolation, reason, None))
+        Err(Refusal::new(Code::FieldMismatch, reason, None))
     }
 
     /// Refuse an element view that does not match the stored-document schema.
@@ -90,7 +90,7 @@ impl Contract {
             return Ok(());
         }
         let reason = format!("'{address}': {}", explain(self.stored.iter_errors(view)));
-        Err(Refusal::new(Code::GrammarConstraintViolation, reason, None))
+        Err(Refusal::new(Code::FieldMismatch, reason, None))
     }
 }
 

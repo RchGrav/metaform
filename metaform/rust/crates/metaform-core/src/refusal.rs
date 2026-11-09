@@ -15,6 +15,9 @@ pub enum Code {
     CanonicalNameCollisionFailure,
     RoleTaxonomyFailure,
     GrammarConstraintViolation,
+    FieldMismatch,
+    RootScopeNotAllowed,
+    FieldElementCollision,
     LayerNotRegistered,
     DependencyLock,
     NameRoundTripFailure,
@@ -32,6 +35,9 @@ impl Code {
             Code::CanonicalNameCollisionFailure => "CANONICAL_NAME_COLLISION_FAILURE",
             Code::RoleTaxonomyFailure => "ROLE_TAXONOMY_FAILURE",
             Code::GrammarConstraintViolation => "GRAMMAR_CONSTRAINT_VIOLATION",
+            Code::FieldMismatch => "FIELD_MISMATCH",
+            Code::RootScopeNotAllowed => "ROOT_SCOPE_NOT_ALLOWED",
+            Code::FieldElementCollision => "FIELD_ELEMENT_COLLISION",
             Code::LayerNotRegistered => "LAYER_NOT_REGISTERED",
             Code::DependencyLock => "DEPENDENCY_LOCK",
             Code::NameRoundTripFailure => "NAME_ROUND_TRIP_FAILURE",
@@ -51,7 +57,14 @@ impl Code {
             Code::CanonicalNameCollisionFailure => "R-3.12: name must not equal technical_name.",
             Code::RoleTaxonomyFailure => "R-3.13: a map has exactly one Definitive element.",
             Code::GrammarConstraintViolation => {
-                "The command must match the project-map input schema, and every element must match the stored-document schema and R-3.3's root scopes."
+                "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
+            }
+            Code::FieldMismatch => {
+                "The command must match the project-map input schema, and every element must match the stored-document schema."
+            }
+            Code::RootScopeNotAllowed => "R-3.3: a top-level element is in one of the root scopes.",
+            Code::FieldElementCollision => {
+                "A word on an element is either a field or the name of an element beneath it, not both."
             }
             Code::LayerNotRegistered => {
                 "R-6.10: a layer must be registered before data is written to it."

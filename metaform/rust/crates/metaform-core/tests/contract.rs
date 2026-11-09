@@ -186,20 +186,25 @@ fn refusals_name_the_rule_and_change_nothing() {
         ),
         (
             json!({"add": {"widgets.relay": {"name": "r"}}}),
-            Code::GrammarConstraintViolation,
+            Code::RootScopeNotAllowed,
             None,
         ),
         (
             json!({"add": {"code.relay": {"wants": {"code.masher.widget": want("push")}}}}),
-            Code::GrammarConstraintViolation,
+            Code::FieldMismatch,
             None,
         ),
         (
             json!({"update": {"code.masher.widget": {"status": "missing"}}}),
-            Code::GrammarConstraintViolation,
+            Code::FieldMismatch,
             None,
         ),
-        (json!({"add": {}}), Code::GrammarConstraintViolation, None),
+        (json!({"add": {}}), Code::FieldMismatch, None),
+        (
+            json!({"add": {"code.masher.widget.name": {"name": "n"}}}),
+            Code::FieldElementCollision,
+            Some(json!({"update": {"code.masher.widget": {"name": null}}})),
+        ),
         (
             json!({"update": {"code.relay": {"wants": {"code.other": {"intent": "send"}}}}}),
             Code::WantIncomplete,

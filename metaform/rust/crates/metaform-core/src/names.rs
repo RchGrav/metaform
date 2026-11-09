@@ -141,7 +141,7 @@ pub(crate) fn check_scope(address: &str) -> Result<(), Refusal> {
         return Ok(());
     }
     Err(Refusal::new(
-        Code::GrammarConstraintViolation,
+        Code::RootScopeNotAllowed,
         format!(
             "'{address}': the root scope '{scope}' is not one of: {}",
             ROOT_SCOPES.join(", ")
