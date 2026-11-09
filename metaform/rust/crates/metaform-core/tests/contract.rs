@@ -361,3 +361,21 @@ fn writes_create_paths_and_reads_return_each_form() {
     );
     assert_eq!(map.element(".").unwrap().fields["name"], "demo");
 }
+
+/// R-3.13 counts only the project's own elements (R-3.3, R-3.7): a chained map under `upstream`
+/// keeps its own Definitive element (R-4.15) beside the project's, writes to either pass, a second
+/// Definitive inside the project is still refused, and `map` names the project's Definitive.
+#[test]
+fn one_definitive_rule_counts_only_the_project() {
+    let contract = Contract::bundled().unwrap();
+    let project = json!({"technical_name": "game engine code", "name": "Game Engine", "role": "Definitive"});
+    let chained = json!({"technical_name": "game engine code upstream", "name": "Physics", "role": "Definitive",
+        "uri": "https://example.com/physics.git"});
+    let map = write(&contract, &Map::new(), json!({"add": {"code.engine.game": project}}));
+    let map = write(&contract, &map, json!({"add": {"upstream.code.engine.game": chained}}));
+    let map = write(&contract, &map, json!({"update": {"upstream.code.engine.game": {"status": "built"}}}));
+    let map = write(&contract, &map, json!({"update": {"code.engine.game": {"status": "built"}}}));
+    let second = refused(&contract, &map, &json!({"add": {"code.engine.audio": {"technical_name": "audio engine code", "name": "Audio", "role": "Definitive"}}}));
+    assert_eq!(second.code, Code::RoleTaxonomyFailure, "{second:?}");
+    assert_eq!(read(&contract, &map, json!({"map": {}}))["definitive"], json!("code.engine.game"));
+}

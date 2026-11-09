@@ -20,6 +20,17 @@ pub const ROOT_SCOPES: [&str; 8] = [
     "layer",
 ];
 
+/// The root prefixes (R-3.3): what follows them is not located in the project. `upstream` and
+/// `downstream` are outside the project being mapped (R-3.7), and `layer` holds layer
+/// definitions (R-6.24). A chained map sits under `upstream` (R-4.15).
+pub const ROOT_PREFIXES: [&str; 3] = ["upstream", "downstream", "layer"];
+
+/// Whether an address belongs to the project itself: the root, or an element not under a root
+/// prefix. The one-Definitive rule (R-3.13) counts only these elements.
+pub fn in_project(address: &str) -> bool {
+    address == ROOT || !ROOT_PREFIXES.contains(&address.split('.').next().unwrap_or_default())
+}
+
 pub(crate) fn to_camel(snake: &str) -> String {
     let mut out = String::with_capacity(snake.len());
     let mut upper = false;

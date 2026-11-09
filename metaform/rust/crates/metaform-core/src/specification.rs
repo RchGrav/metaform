@@ -21,7 +21,7 @@ use serde_json::{Map as JsonMap, Value, json};
 
 use crate::model::{Element, Fields, Map};
 use crate::names::{ROOT, ROOT_SCOPES};
-use crate::reads::is_definitive;
+use crate::reads::is_project_definitive;
 use crate::refusal::{Code, Refusal};
 
 /// The root scope that holds layer definitions (R-3.3, R-6.24).
@@ -238,7 +238,7 @@ pub fn is_skeleton(element: &Element) -> bool {
 pub fn records_allowed(map: &Map, address: &str) -> bool {
     if address == ROOT {
         map.elements()
-            .any(|(_, element)| is_definitive(element.fields.get("role")))
+            .any(|(at, element)| is_project_definitive(at, element.fields.get("role")))
     } else {
         address != LAYER_SCOPE
             && !is_beneath_layer_scope(address)

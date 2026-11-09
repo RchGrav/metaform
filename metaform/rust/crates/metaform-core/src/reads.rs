@@ -19,6 +19,13 @@ pub(crate) fn is_definitive(role: Option<&Value>) -> bool {
     })
 }
 
+/// The project's own Definitive element at an address: a Definitive role on an element inside the
+/// project (`names::in_project`). An element under `upstream`, `downstream` or `layer` can carry its
+/// own map's Definitive role, such as a chained map's (R-4.15), and does not count (R-3.13, R-3.3, R-3.7).
+pub(crate) fn is_project_definitive(address: &str, role: Option<&Value>) -> bool {
+    crate::names::in_project(address) && is_definitive(role)
+}
+
 /// `{"<address>": {}}` returns that element's own fields, keyed by its address: the form in which
 /// data is entered (R-5.10). `{"<address>": {"<layer>": {}, ...}}` adds each named layer held
 /// there (R-5.21). A layer is named in the slot where it is written: `{"wants": {}}`,
@@ -98,7 +105,7 @@ pub(crate) fn shallow(map: &Map) -> Value {
         .collect();
     let definitive = map
         .elements()
-        .find(|(_, element)| is_definitive(element.fields.get("role")))
+        .find(|(address, element)| is_project_definitive(address, element.fields.get("role")))
         .map(|(address, _)| address);
     json!({"addresses": addresses, "edges": edges, "definitive": definitive})
 }
