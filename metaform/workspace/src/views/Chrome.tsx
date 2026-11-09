@@ -167,7 +167,16 @@ export function Details(props: {
         {fields.map(([key, value]) => (
           <div key={key}>
             <dt>{key}</dt>
-            <dd>{String(value)}</dd>
+            <dd>
+              {key === "uri" && typeof value === "string" && /^https?:\/\//.test(value) ? (
+                // A chained map's uri names its upstream repository (SPEC R-4.15).
+                <a href={value} target="_blank" rel="noreferrer noopener">
+                  {value}
+                </a>
+              ) : (
+                String(value)
+              )}
+            </dd>
           </div>
         ))}
       </dl>
