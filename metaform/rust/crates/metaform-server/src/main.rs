@@ -14,6 +14,11 @@
 //!                                              print the specification as Markdown (R-1.2);
 //!                                              --check writes TASTE reports to stderr.
 //!                                              Exit 0 with or without reports, 2 on an error.
+//! metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -
+//!                                              read an exported document back into the
+//!                                              specification layer; `-` reads stdin. All or
+//!                                              nothing: exit 0 written, 1 refused, 2 usage or
+//!                                              connection error.
 //! ```
 //!
 //! The home defaults to `METAFORM_HOME`, then `~/.metaform`.
@@ -181,20 +186,28 @@ async fn specification(
     positional: &[String],
     check: bool,
 ) -> ExitCode {
-    if positional != ["export"] {
-        return usage("specification takes one command: export");
-    }
-    let body = match target {
+    let mut body = match target {
         metaform_server::Target::Project(folder) => match std::fs::canonicalize(folder) {
-            Ok(folder) => serde_json::json!({"project": folder.to_string_lossy(), "check": check}),
+            Ok(folder) => serde_json::json!({"project": folder.to_string_lossy()}),
             Err(e) => return usage(&format!("--project {}: {e}", folder.display())),
         },
-        metaform_server::Target::Map(name) => serde_json::json!({"map": name, "check": check}),
+        metaform_server::Target::Map(name) => serde_json::json!({"map": name}),
     };
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(e) => return usage(&e.to_string()),
     };
+    match positional {
+        [verb] if verb == "export" => {}
+        [verb, source] if verb == "import" => {
+            if check {
+                return usage("--check works only with specification export");
+            }
+            return import(home, &exe, body, source).await;
+        }
+        _ => return usage("specification takes export, or import with a FILE or -"),
+    }
+    body["check"] = serde_json::json!(check);
     match metaform_server::admin::request(home, &exe, serde_json::json!({"export": body})).await {
         Ok(answer) => {
             print!("{}", answer["markdown"].as_str().unwrap_or_default());
@@ -227,9 +240,45 @@ async fn specification(
     }
 }
 
+/// `metaform specification import`: send the document to the server, which writes every changed
+/// section or none of them.
+async fn import(home: &std::path::Path, exe: &std::path::Path, mut body: serde_json::Value, source: &str) -> ExitCode {
+    let read = if source == "-" {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map(|_| text)
+    } else {
+        std::fs::read_to_string(source)
+    };
+    let document = match read {
+        Ok(text) => text,
+        Err(e) => return usage(&format!("could not read {source}: {e}")),
+    };
+    body["markdown"] = serde_json::json!(document);
+    match metaform_server::admin::exchange(home, exe, serde_json::json!({"import": body})).await {
+        Ok(answer) if answer["ok"] == serde_json::json!(true) => {
+            let written: Vec<&str> = answer["written"].as_array().into_iter().flatten().filter_map(|a| a.as_str()).collect();
+            let unchanged = answer["unchanged"].as_u64().unwrap_or(0);
+            if written.is_empty() {
+                println!("imported: nothing changed; {unchanged} sections were already current");
+            } else {
+                println!("imported: wrote {} ({}); {unchanged} sections were already current", written.len(), written.join(", "));
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(answer) => {
+            eprintln!("metaform: {}", answer["error"].as_str().unwrap_or("the server refused the import"));
+            ExitCode::from(1)
+        }
+        Err(reason) => {
+            eprintln!("metaform: {reason}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn usage(problem: &str) -> ExitCode {
     eprintln!(
-        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]"
+        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]\n       metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -"
     );
     ExitCode::from(2)
 }

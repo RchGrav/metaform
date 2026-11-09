@@ -576,3 +576,69 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     agent.stop();
     stop_server(&home);
 }
+
+/// The specification round trip through the CLI (R-1.2): export, edit the Markdown, import, and
+/// export again gives the edited document. Importing it again changes nothing. A document that
+/// breaks a write rule is refused with exit 1 and writes nothing, not even its valid sections.
+#[test]
+fn an_edited_specification_imports_all_or_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, project) = (dir.path().join("home"), dir.path().join("lab"));
+    std::fs::create_dir_all(&project).unwrap();
+    let mut agent = Agent::start(&home, &project);
+    agent.request("server/discover", json!({}));
+    for command in [
+        json!({"add": {"code": {"technical_name": "code", "name": "Packet Lab", "role": "Definitive",
+            "specification": [{"level": 1, "code": "PL-1", "title": "Scope", "text": "Packet Lab records frames."}]}}}),
+        json!({"add": {"code.store": {"technical_name": "store code", "name": "Frame Store", "role": "Supportive",
+            "specification": [{"level": 1, "title": "Retention", "text": "The store keeps frames for a week."}]}}}),
+    ] {
+        let (refused, said) = agent.call(command);
+        assert!(!refused, "{said}");
+    }
+    agent.stop();
+    let run = |args: &[&str], stdin: Option<&str>| {
+        let mut child = Command::new(common::BIN)
+            .env("METAFORM_LAUNCHER", "")
+            .args(args)
+            .arg("--home")
+            .arg(&home)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        if let Some(text) = stdin {
+            std::io::Write::write_all(&mut input, text.as_bytes()).unwrap();
+        }
+        drop(input);
+        let out = child.wait_with_output().unwrap();
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
+    };
+    let folder = project.to_str().unwrap();
+    let (code, document, why) = run(&["specification", "export", "--project", folder], None);
+    assert_eq!(code, 0, "{why}");
+    let edited = document
+        .replace("Packet Lab records frames.", "Packet Lab records frames from the network card.")
+        .replace("The store keeps frames for a week.", "The store keeps frames for a week.\n\n#### `PL-2` Deletion\n\nThe store deletes a frame after seven days.");
+    assert_ne!(edited, document);
+    let (code, said, why) = run(&["specification", "import", "--project", folder, "-"], Some(&edited));
+    assert_eq!(code, 0, "{said}{why}");
+    assert!(said.contains("wrote 2 (code, code.store)"), "{said}");
+    let (_, again, _) = run(&["specification", "export", "--project", folder], None);
+    assert_eq!(again, edited, "export after import gives the edited document");
+    let (code, said, _) = run(&["specification", "import", "--project", folder, "-"], Some(&again));
+    assert_eq!(code, 0);
+    assert!(said.contains("nothing changed"), "{said}");
+
+    // A second valid edit plus a level jump: refused as a whole, nothing written.
+    let broken = again
+        .replace("from the network card.", "from the network card, then stores them.")
+        .replace("#### `PL-2` Deletion", "###### `PL-2` Deletion");
+    let (code, _, why) = run(&["specification", "import", "--project", folder, "-"], Some(&broken));
+    assert_eq!(code, 1, "{why}");
+    let (_, after, _) = run(&["specification", "export", "--project", folder], None);
+    assert_eq!(after, edited, "a refused import writes nothing");
+    stop_server(&home);
+}

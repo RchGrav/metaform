@@ -12,6 +12,11 @@
 //! - `{"admin": {"export": {"project"?: "<folder>", "map"?: "<name>", "check"?: true}}}` answers
 //!   the specification document (R-1.2) as `markdown`, and with `check` the TASTE reports as
 //!   `reports` (one line each) and `summary`.
+//! - `{"admin": {"import": {"project"?: "<folder>", "map"?: "<name>", "markdown": "<document>"}}}`
+//!   reads a document made by `export` back into the specification layer (R-1.2). Every changed
+//!   section becomes one `update` through the tool's own write rules. All of them are first applied
+//!   to a copy of the current map, so a document that breaks any rule writes nothing. Answers
+//!   `written` (the addresses changed) and `unchanged` (how many sections were already current).
 //!
 //! For settings, a folder names a project and is registered if it is not yet, as an agent's
 //! connection does. An export only reads: a folder that is not registered is refused, so an export
@@ -20,7 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use metaform_store::{MapKey, Store};
+use metaform_store::{ClientId, MapKey, Store};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -54,15 +59,17 @@ fn answer_now(store: &Store, request: &Value) -> Value {
         })
     } else if let Some(body) = request.get("export") {
         export(store, body)
+    } else if let Some(body) = request.get("import") {
+        import(store, body)
     } else {
-        Err("an admin request must be `settings`, `set` or `export`".into())
+        Err("an admin request must be `settings`, `set`, `export` or `import`".into())
     };
     result.unwrap_or_else(|error| json!({"ok": false, "error": error}))
 }
 
-/// The specification document for one project's main map or one standalone map.
-fn export(store: &Store, body: &Value) -> Result<Value, String> {
-    let (key, title) = match (body["project"].as_str(), body["map"].as_str()) {
+/// The map an export or import names, and the document's project title.
+fn target(store: &Store, body: &Value, verb: &str) -> Result<(MapKey, String), String> {
+    Ok(match (body["project"].as_str(), body["map"].as_str()) {
         (Some(folder), None) => {
             let folder = PathBuf::from(folder);
             let id = store
@@ -76,8 +83,13 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
             crate::check_map_name(name)?;
             (MapKey::standalone(name), name.to_string())
         }
-        _ => return Err("an export must name exactly one of: a project folder or a map".into()),
-    };
+        _ => return Err(format!("an {verb} must name exactly one of: a project folder or a map")),
+    })
+}
+
+/// The specification document for one project's main map or one standalone map.
+fn export(store: &Store, body: &Value) -> Result<Value, String> {
+    let (key, title) = target(store, body, "export")?;
     let map = store.snapshot(&key).map_err(|e| e.to_string())?;
     let mut answer = json!({
         "ok": true,
@@ -92,17 +104,78 @@ fn export(store: &Store, body: &Value) -> Result<Value, String> {
     Ok(answer)
 }
 
-/// Send one admin request from the CLI, starting the server if none is running.
+/// Read a document back into the specification layer. Nothing is written unless every changed
+/// section passes the write rules against the current map.
+fn import(store: &Store, body: &Value) -> Result<Value, String> {
+    let (key, title) = target(store, body, "import")?;
+    let Some(document) = body["markdown"].as_str() else {
+        return Err("an import must carry the document as markdown".into());
+    };
+    let map = store.snapshot(&key).map_err(|e| e.to_string())?;
+    let parsed = metaform_core::markdown::parse(document, &map, &title).map_err(|e| e.to_string())?;
+    let layer = metaform_core::specification::LAYER;
+    let mut commands = Vec::new();
+    let mut unchanged = 0;
+    for (address, blocks) in &parsed {
+        let current = map
+            .element(address)
+            .and_then(|element| element.fields.get(layer))
+            .map(|value| metaform_core::specification::blocks(address, value))
+            .transpose()
+            .map_err(|refusal| refusal.reason)?
+            .unwrap_or_default();
+        if &current == blocks {
+            unchanged += 1;
+            continue;
+        }
+        let value = metaform_core::specification::to_json(blocks);
+        commands.push((address.clone(), json!({"update": {address.as_str(): {layer: value}}})));
+    }
+    // Try every write on a copy first, so a document that breaks a rule writes nothing.
+    let contract = metaform_core::Contract::bundled().map_err(|e| e.to_string())?;
+    let mut trial = (*map).clone();
+    for (address, command) in &commands {
+        match metaform_core::execute(&contract, &trial, command) {
+            Ok(metaform_core::Outcome::Write(write)) => trial = write.map,
+            Ok(_) => {}
+            Err(refusal) => {
+                return Err(format!("'{address}': {}: {}; nothing was written", refusal.code.as_str(), refusal.reason));
+            }
+        }
+    }
+    let mut written = Vec::new();
+    for (address, command) in &commands {
+        match store.execute(ClientId(0), &key, command) {
+            Ok(_) => written.push(address.clone()),
+            Err(failure) => {
+                return Err(format!(
+                    "'{address}': {failure}; written before it: {}",
+                    if written.is_empty() { "none".to_string() } else { written.join(", ") }
+                ));
+            }
+        }
+    }
+    Ok(json!({"ok": true, "written": written, "unchanged": unchanged}))
+}
+
+/// Send one admin request from the CLI, starting the server if none is running. A refusal by the
+/// server is an error, as is a connection failure.
 pub async fn request(home: &Path, server_exe: &Path, body: Value) -> Result<Value, String> {
-    let stream = crate::connect_or_start(home, server_exe).await?;
-    let (read, mut write) = stream.into_split();
-    write.write_all(format!("{}\n", json!({"admin": body})).as_bytes()).await.map_err(|e| e.to_string())?;
-    let mut line = String::new();
-    BufReader::new(read).read_line(&mut line).await.map_err(|e| e.to_string())?;
-    let answer: Value = serde_json::from_str(&line).map_err(|_| format!("the server answered {line:?}"))?;
+    let answer = exchange(home, server_exe, body).await?;
     if answer["ok"] == json!(true) {
         Ok(answer)
     } else {
         Err(answer["error"].as_str().unwrap_or("the server refused the request").to_string())
     }
+}
+
+/// Send one admin request and return the server's answer, refused or not. `Err` means the
+/// request did not reach the server or the answer was not JSON.
+pub async fn exchange(home: &Path, server_exe: &Path, body: Value) -> Result<Value, String> {
+    let stream = crate::connect_or_start(home, server_exe).await?;
+    let (read, mut write) = stream.into_split();
+    write.write_all(format!("{}\n", json!({"admin": body})).as_bytes()).await.map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    BufReader::new(read).read_line(&mut line).await.map_err(|e| e.to_string())?;
+    serde_json::from_str(&line).map_err(|_| format!("the server answered {line:?}"))
 }
