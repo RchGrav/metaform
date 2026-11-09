@@ -207,17 +207,3 @@ export function fieldsFromDump(dump: RawDump): Map<Address, Record<string, unkno
   return out;
 }
 
-/**
- * What double-clicking an element opens (owner, 2026-11-09; SPEC R-4.15, D-16). An element can hold
- * an upstream project's map as its chained map, with that map's Definitive element at
- * upstream.<address>. When that element exists and is Definitive, the element opens it; otherwise
- * the element opens its own address subgraph.
- */
-export function openTarget(address: Address, fields: ReadonlyMap<Address, Record<string, unknown>>): Address {
-  const chained = `upstream.${address}`;
-  // A chained map's Definitive element sits at upstream.<address> (SPEC 6cae85c). A plain
-  // dependency at the same address is not Definitive, so it does not capture the double-click.
-  const role = fields.get(chained)?.role;
-  const definitive = typeof role === "string" && role.toLowerCase() === "definitive";
-  return bandOf(address) === "project" && definitive ? chained : address;
-}

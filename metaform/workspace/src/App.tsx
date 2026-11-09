@@ -6,7 +6,7 @@ import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
 import { buildScene, elementScene, type SceneInput } from "./state/scene";
-import { TOP, beneathCounts, graphAddresses, openTarget, visibleIn } from "./state/structure";
+import { TOP, beneathCounts, graphAddresses, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { BottomStrip, Details, FocusBanner, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
@@ -47,7 +47,6 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const addresses = useMemo(() => (current ? graphAddresses(current.graph) : []), [current]);
   const counts = useMemo(() => beneathCounts(addresses), [addresses]);
   const beneath = useCallback((address: Address) => counts.get(address) ?? 0, [counts]);
-  const fieldsByAddress = useMemo(() => current?.fields ?? new Map<Address, Record<string, unknown>>(), [current]);
 
   // The project an element's `uri` names, if any (seam gap 3, proposed form).
   const linkTarget = useCallback(
@@ -83,7 +82,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       layers: current.layers,
       agents: ws.agents
         .filter((agent) => agent.project === state.project)
-        .map((agent) => ({ id: agent.id, name: agent.id, at: agent.at, active: now - agent.lastSeen < ACTIVE_MS })),
+        .map((agent) => ({ id: agent.id, name: agent.name, at: agent.at, active: now - agent.lastSeen < ACTIVE_MS })),
       opensProject: (address) => linkedProject(address) !== null,
     };
   }, [current, state.project, ws.agents, linkedProject]);
@@ -139,16 +138,12 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     [followLink, dispatch],
   );
 
-  // Double-click and Enter: a link to another project opens that project (UX section 7); an element
-  // holding a chained map opens it; anything else opens its own address subgraph (UX section 5).
+  // Double-click and Enter: a link to another project opens that project (UX section 7); anything
+  // else opens its own address subgraph (UX section 5). An outside element's own map opens from
+  // Details ("Open its map") once the seam can read it (gap 4).
   const open = useCallback(
-    (address: Address): Action => {
-      const link = followLink(address);
-      if (link) return link;
-      const target = openTarget(address, fieldsByAddress);
-      return { type: "open", address: target, beneath: beneath(target) };
-    },
-    [followLink, fieldsByAddress, beneath],
+    (address: Address): Action => followLink(address) ?? { type: "open", address, beneath: beneath(address) },
+    [followLink, beneath],
   );
 
   // The keyboard map (UX sections 3 to 11). Every action also has a pointer route.

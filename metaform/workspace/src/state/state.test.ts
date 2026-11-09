@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ShallowGraph } from "../source";
 import { buildScene, elementScene, type SceneInput } from "./scene";
-import { TOP, beneathCounts, layerCounts, layerNames, openTarget, sceneEdges, visibleIn } from "./structure";
+import { TOP, beneathCounts, layerCounts, layerNames, sceneEdges, visibleIn } from "./structure";
 import { currentView, initialState, reduce, type Action, type ViewState } from "./view";
 
 const graph: ShallowGraph = {
@@ -54,17 +54,6 @@ describe("structure", () => {
     const { edges } = sceneEdges(graph, visible);
     expect(edges.find((e) => e.from === "code" && e.to === "code")).toBeUndefined();
     expect(edges).toEqual([{ from: "code", to: "upstream", count: 1 }]);
-  });
-
-  it("opens a chained map only at a Definitive upstream element, never at a plain dependency", () => {
-    const fields = new Map<string, Record<string, unknown>>([
-      ["upstream.code.store", { role: "Definitive", uri: "https://example.com/store.git" }],
-      ["upstream.code", { role: "Supportive" }],
-    ]);
-    expect(openTarget("code.store", fields)).toBe("upstream.code.store");
-    expect(openTarget("code", fields)).toBe("code");
-    expect(openTarget("code.server", fields)).toBe("code.server");
-    expect(openTarget("upstream.code.store", fields)).toBe("upstream.code.store");
   });
 
   it("counts every address beneath an element", () => {

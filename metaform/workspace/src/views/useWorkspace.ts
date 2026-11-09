@@ -17,6 +17,8 @@ export interface ProjectData {
 
 export interface AgentState {
   id: string;
+  /** The agent's name, when the source sends one; otherwise its id. */
+  name: string;
   project: string;
   at: Address | null;
   activity: string;
@@ -120,11 +122,11 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
         } else {
           setAgents((current) => ({
             ...current,
-            [event.agent]: { id: event.agent, project: event.project, at: event.at, activity: event.activity, lastSeen: time.getTime() },
+            [event.agent]: { id: event.agent, name: event.name ?? event.agent, project: event.project, at: event.at, activity: event.activity, lastSeen: time.getTime() },
           }));
           if (announcing) return;
           setActivity((lines) => [
-            { id: lineId.current, time, project: event.project, kind: "presence" as const, agent: event.agent, at: event.at, activity: event.activity, simulated: true },
+            { id: lineId.current, time, project: event.project, kind: "presence" as const, agent: event.name ?? event.agent, at: event.at, activity: event.activity, simulated: true },
             ...lines,
           ].slice(0, ACTIVITY_LIMIT));
           // New activity marks its element unseen; it never moves the viewport or the selection.
