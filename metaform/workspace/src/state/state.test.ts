@@ -192,7 +192,7 @@ describe("scene", () => {
     const addresses = scene.nodes.map((n) => n.address);
     expect(addresses).toEqual([...addresses].sort());
     const memory = scene.nodes.find((n) => n.address === "code.store.memory");
-    expect(memory).toMatchObject({ parent: "code.store", agents: [{ id: "ida", initials: "ID", active: true }] });
+    expect(memory).toMatchObject({ parent: "code.store", agents: [{ id: "ida", name: "Ida", initials: "ID", active: true, doing: null }] });
     const store = scene.nodes.find((n) => n.address === "code.store");
     expect(store).toMatchObject({ collapsed: false, beneath: 2, layers: [{ layer: "specification", records: 2, style: 1 }] });
     expect(scene.nodes.find((n) => n.address === "code.store.cache")?.unseen).toBe(true);

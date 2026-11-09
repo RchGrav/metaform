@@ -109,7 +109,13 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       layers: current.layers,
       agents: ws.agents
         .filter((agent) => agent.project === state.project)
-        .map((agent) => ({ id: agent.id, name: agent.name, at: agent.at, active: now - agent.lastSeen < ACTIVE_MS })),
+        .map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          at: agent.at,
+          active: now - agent.lastSeen < ACTIVE_MS,
+          doing: agent.activity || null,
+        })),
       opensProject: (address) => linkedProject(address) !== null,
     };
   }, [current, state.project, ws.agents, linkedProject]);

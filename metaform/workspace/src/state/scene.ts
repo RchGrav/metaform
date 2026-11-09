@@ -31,7 +31,7 @@ export interface SceneInput {
   layerCounts: ReadonlyMap<Address, ReadonlyMap<string, number>>;
   /** Every layer name, in a stable order; a layer's index is its style. */
   layers: readonly string[];
-  agents: readonly { id: string; name: string; at: Address | null; active: boolean }[];
+  agents: readonly { id: string; name: string; at: Address | null; active: boolean; doing?: string | null }[];
   /** True for an element that names another project (seam gap 3). */
   opensProject: (address: Address) => boolean;
 }
@@ -82,7 +82,7 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
     const shown = nearestVisible(agent.at, visible);
     if (shown === null) continue;
     const marks = agentsAt.get(shown) ?? [];
-    marks.push({ id: agent.id, initials: initials(agent.name), active: agent.active });
+    marks.push({ id: agent.id, name: agent.name, initials: initials(agent.name), active: agent.active, doing: agent.doing ?? null });
     agentsAt.set(shown, marks);
   }
 

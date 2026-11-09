@@ -22,8 +22,12 @@ export interface LayerMark {
 /** One agent shown at an element (UX section 9). Always simulated in this prototype. */
 export interface AgentMark {
   id: string;
+  /** The agent's name, for the mark's tooltip (presence.at), so "MA" says who it is. */
+  name: string;
   initials: string;
   active: boolean;
+  /** What the agent is doing there, such as "writing specification"; null when not reported. */
+  doing: string | null;
 }
 
 export interface RenderNode {
