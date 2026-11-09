@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ShallowGraph } from "../source";
 import { buildScene, elementScene, type SceneInput } from "./scene";
-import { TOP, beneathCounts, layerCounts, layerNames, sceneEdges, visibleIn } from "./structure";
+import { TOP, beneathCounts, layerCounts, layerNames, outsideAddress, sceneEdges, visibleIn } from "./structure";
 import { currentView, initialState, reduce, type Action, type ViewState } from "./view";
 
 const graph: ShallowGraph = {
@@ -54,6 +54,12 @@ describe("structure", () => {
     const { edges } = sceneEdges(graph, visible);
     expect(edges.find((e) => e.from === "code" && e.to === "code")).toBeUndefined();
     expect(edges).toEqual([{ from: "code", to: "upstream", count: 1 }]);
+  });
+
+  it("finds an outside element's address in its own project's map", () => {
+    expect(outsideAddress("upstream.code.engine.game")).toBe("code.engine.game");
+    expect(outsideAddress("downstream.service.chat")).toBe("service.chat");
+    expect(outsideAddress("code.engine.game")).toBe("code.engine.game");
   });
 
   it("counts every address beneath an element", () => {

@@ -50,6 +50,8 @@ function failed(error: unknown): Action {
 export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simulated: boolean) {
   const [state, dispatchRaw] = useReducer(reduce, undefined, initialState);
   const [projects, setProjects] = useState<ProjectRef[] | null>(null);
+  /** Outside maps opened from Details: listed beside the registered projects while the page lives. */
+  const [outside, setOutside] = useState<ProjectRef[]>([]);
   const [data, setData] = useState<Record<string, ProjectData>>({});
   const [agents, setAgents] = useState<Record<string, AgentState>>({});
   const [activity, setActivity] = useState<ActivityLine[]>([]);
@@ -155,6 +157,10 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
     [source],
   );
 
+  const addOutside = useCallback((ref: ProjectRef) => {
+    setOutside((current) => (current.some((p) => p.id === ref.id) ? current : [...current, ref]));
+  }, []);
+
   const unseenActivity = activity.length - activitySeen;
   const current = state.project !== null ? data[state.project] ?? null : null;
 
@@ -162,7 +168,8 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
     () => ({
       state,
       dispatch,
-      projects,
+      projects: projects === null ? null : [...projects, ...outside.filter((ref) => !projects.some((p) => p.id === ref.id))],
+      addOutside,
       current,
       agents: Object.values(agents),
       activity,
@@ -171,7 +178,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
       sheet,
       simulated,
     }),
-    [state, dispatch, projects, current, agents, activity, unseenActivity, sheet, simulated],
+    [state, dispatch, projects, outside, addOutside, current, agents, activity, unseenActivity, sheet, simulated],
   );
 }
 

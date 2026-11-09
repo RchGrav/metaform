@@ -64,6 +64,8 @@ export const graph = {
 export const details = {
   close: "Close",
   openProject: "Open project",
+  // An outside element's own functional map, opened like another project (SPEC R-4.15, seam gap 4).
+  openItsMap: "Open its map",
   setAsFocus: "Set as focus",
   // Field and part names are shown exactly as the server returns them (R-3.4, R-5.30).
   wants: "wants",

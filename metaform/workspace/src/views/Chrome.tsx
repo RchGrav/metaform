@@ -147,6 +147,8 @@ export function Details(props: {
   address: Address;
   sheet: SummarySheet | null;
   opensProject: boolean;
+  /** Present when the element is outside the project and its own map can be read (seam gap 4). */
+  onOpenMap?: () => void;
   onClose: () => void;
   onFocus: () => void;
   onOpenProject: () => void;
@@ -184,6 +186,9 @@ export function Details(props: {
         <button type="button" onClick={props.onFocus}>{strings.details.setAsFocus}</button>
         {props.opensProject && (
           <button type="button" onClick={props.onOpenProject}>{strings.details.openProject}</button>
+        )}
+        {props.onOpenMap && (
+          <button type="button" onClick={props.onOpenMap}>{strings.details.openItsMap}</button>
         )}
       </div>
       <h3>{strings.details.wants}</h3>

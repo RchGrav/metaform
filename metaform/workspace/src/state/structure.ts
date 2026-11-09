@@ -207,3 +207,10 @@ export function fieldsFromDump(dump: RawDump): Map<Address, Record<string, unkno
   return out;
 }
 
+/**
+ * The address an outside element has in its own project's map (SPEC R-4.15): our
+ * upstream.code.engine.game is their code.engine.game. Addresses inside the project are unchanged.
+ */
+export function outsideAddress(address: Address): Address {
+  return bandOf(address) === "project" ? address : address.slice(address.indexOf(".") + 1);
+}

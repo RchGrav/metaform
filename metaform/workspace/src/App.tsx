@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
-import type { Address, GraphSource, SummarySheet, WorkspaceEvents } from "./source";
+import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
 import { buildScene, elementScene, type SceneInput } from "./state/scene";
-import { TOP, beneathCounts, graphAddresses, visibleIn } from "./state/structure";
+import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { BottomStrip, Details, FocusBanner, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
@@ -38,6 +38,8 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const [showGuide, setShowGuide] = useState(false);
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
+  /** The selected outside element's own map, when the source can read it (seam gap 4). */
+  const [outsideMap, setOutsideMap] = useState<ProjectRef | null>(null);
 
   // The renderer's tokens follow :root[data-theme] (src/graph/style.ts).
   useEffect(() => {
@@ -97,6 +99,21 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
       live = false;
     };
   }, [focusTarget, ws.sheet, current]);
+
+  useEffect(() => {
+    let live = true;
+    setOutsideMap(null);
+    const at = view.selection;
+    if (at !== null && state.project !== null && bandOf(at) !== "project" && source.outsideMap) {
+      source.outsideMap(state.project, at).then(
+        (ref) => live && setOutsideMap(ref),
+        () => live && setOutsideMap(null),
+      );
+    }
+    return () => {
+      live = false;
+    };
+  }, [source, state.project, view.selection]);
 
   const scene = useMemo(() => {
     if (!sceneInput) return { nodes: [], edges: [], top: null };
@@ -282,6 +299,15 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onClose={() => dispatch({ type: "select", address: null })}
             onFocus={() => view.selection && dispatch({ type: "set-focus", address: view.selection })}
             onOpenProject={() => view.selection && openLinked(view.selection)}
+            {...(outsideMap && view.selection !== null
+              ? {
+                  onOpenMap: () => {
+                    if (view.selection === null) return;
+                    ws.addOutside(outsideMap);
+                    dispatch({ type: "open-project", project: outsideMap.id, from: "link", at: outsideAddress(view.selection) });
+                  },
+                }
+              : {})}
             onSelect={(address) => dispatch({ type: "select", address })}
           />
         )}
