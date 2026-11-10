@@ -208,3 +208,9 @@ kbd { font: .857em/1.6 ui-monospace, monospace; background: var(--bg); border: 1
 .legend-terms dd { margin: 0; color: var(--muted); line-height: 1.4; }
 .legend h3 { margin: 12px 0 6px; font-size: 1em; }
 .breadcrumbs button { white-space: nowrap; }
+.breadcrumbs { flex-wrap: nowrap; overflow: hidden; }
+.breadcrumbs button { overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+.top-bar .breadcrumbs { flex: 1 0 auto; max-width: 40%; }
+.top-main { flex-shrink: 2; }
+.top-selected { flex-shrink: 6; }
+.top-status { flex-shrink: 0; flex-wrap: nowrap; }
