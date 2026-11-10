@@ -98,8 +98,9 @@ export const PANELS: readonly PanelDefinition[] = [
   { id: "outline", title: strings.panels.title.outline, zone: "left", open: false },
   { id: "markdown", title: strings.panels.title.markdown, zone: "right", open: false },
   { id: "evidence", title: strings.panels.title.evidence, zone: "right", open: false },
-  { id: "findings", title: strings.panels.title.findings, zone: "bottom", open: false },
-  { id: "review", title: strings.panels.title.review, zone: "bottom", open: false },
+  // Findings and Review open beside the graph, so opening one does not alter the shape of the graph's pane.
+  { id: "findings", title: strings.panels.title.findings, zone: "right", open: false },
+  { id: "review", title: strings.panels.title.review, zone: "right", open: false },
 ];
 
 /** The component that renders each panel's body. */

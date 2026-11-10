@@ -257,12 +257,12 @@ export function Entity(props: EntityProps) {
         <button type="button" onClick={props.onClose} aria-label={strings.details.close}>×</button>
       </header>
       <p className="chips">
-        {field("role") !== "" && <span className={`chip role-${field("role").toLowerCase()}`}>{field("role")}</span>}
+        {field("role") !== "" && <span className={`chip role-${field("role").toLowerCase()}`} title={strings.details.roleMeaning[field("role").toLowerCase()]}>{field("role")}</span>}
         {field("status") === "un_built" && <span className="chip not-built">{strings.details.notBuilt}</span>}
         <code className="chip address" title={strings.details.address}>{address}</code>
       </p>
       <div className="actions">
-        <button type="button" onClick={props.onFocus}>{strings.details.setAsFocus}</button>
+        <button type="button" title={strings.details.setAsFocusTip} onClick={props.onFocus}>{strings.details.setAsFocus}</button>
         {props.opensProject && <button type="button" onClick={props.onOpenProject}>{strings.details.openProject}</button>}
         {props.onOpenMap && <button type="button" onClick={props.onOpenMap}>{strings.details.openItsMap}</button>}
       </div>

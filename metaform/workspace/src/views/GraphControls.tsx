@@ -83,8 +83,8 @@ export function GraphControls(props: GraphControlsProps) {
               <button
                 type="button"
                 className="gc-button"
-                title={text.categories.toggle(name, elements, state)}
-                aria-label={text.categories.toggle(name, elements, state)}
+                title={text.categories.toggle(name, elements, state, category)}
+                aria-label={text.categories.toggle(name, elements, state, category)}
                 aria-pressed={state !== "hidden"}
                 onClick={() => props.onToggleCategory(category)}
               >

@@ -555,6 +555,8 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
           selected={selection === null ? null : nameOf(selection)}
           markdownOpen={placeOf(layout, "markdown") !== null}
           onMarkdown={() => panelActions.toggle("markdown")}
+          reviewOpen={placeOf(layout, "review") !== null}
+          onReview={() => panelActions.toggle("review")}
           dispatch={dispatch}
         />
       )}

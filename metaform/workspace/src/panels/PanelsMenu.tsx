@@ -42,7 +42,7 @@ function TextSizeRow(props: { label: string; which: keyof TextSize; layout: Layo
 
 /**
  * The Panels menu. Each panel is a checkbox item that opens or closes it; the words beside the
- * title say where the panel is. The menu stays open while panels and text sizes are adjusted.
+ * title say where the panel is. The menu closes when a panel is chosen and stays open while text sizes are adjusted.
  */
 export function PanelsMenu(props: { layout: Layout; actions: LayoutActions; panels: readonly DockPanel[]; narrow: boolean }) {
   const { layout, actions } = props;
@@ -62,7 +62,11 @@ export function PanelsMenu(props: { layout: Layout; actions: LayoutActions; pane
               type="button"
               role="menuitemcheckbox"
               aria-checked={placeOf(layout, panel.id) !== null}
-              onClick={() => actions.toggle(panel.id)}
+              onClick={() => {
+                // The menu closes, so it never covers the panel the user just opened.
+                close();
+                actions.toggle(panel.id);
+              }}
             >
               <span className="check" aria-hidden="true">{placeOf(layout, panel.id) !== null ? "✓" : ""}</span>
               <span className="menu-title">{panel.title}</span>

@@ -50,6 +50,9 @@ export function TopBar(props: {
   /** Whether the Markdown panel is open, and the action that opens or closes it. */
   markdownOpen: boolean;
   onMarkdown: () => void;
+  /** Whether the Review panel is open, and the action that opens or closes it. */
+  reviewOpen: boolean;
+  onReview: () => void;
   dispatch: (action: Action) => void;
 }) {
   const { state, projects, container, zoom, dispatch, status } = props;
@@ -105,6 +108,9 @@ export function TopBar(props: {
           {strings.navigation.backTo(projects.find((p) => p.id === state.returnTo?.project)?.name ?? state.returnTo.project, state.returnTo.container)}
         </button>
       )}
+      <button type="button" className="top-markdown" aria-pressed={props.reviewOpen} title={strings.topBar.reviewTip} onClick={props.onReview}>
+        {strings.topBar.review}
+      </button>
       <button type="button" className="top-markdown" aria-pressed={props.markdownOpen} title={strings.topBar.markdownTip} onClick={props.onMarkdown}>
         {strings.topBar.markdown}
       </button>

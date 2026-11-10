@@ -21,7 +21,7 @@ export const depth = {
 export const categoryState = {
   shown: { word: "shown", mark: "✓" },
   hidden: { word: "hidden", mark: "–" },
-  isolated: { word: "isolated", mark: "◉" },
+  isolated: { word: "only", mark: "◉" },
 } as const;
 
 /** The names of the categories: the first segment of an element's address. */
@@ -34,13 +34,23 @@ const CATEGORY_NAMES: Record<string, string> = {
   upstream: "Upstream",
 };
 
+/** What each category holds, for its tooltip. */
+const CATEGORY_MEANINGS: Record<string, string> = {
+  downstream: "the outside parties the project serves",
+  code: "the project's own code",
+  document: "the project's own documents",
+  data: "the project's own data",
+  media: "the project's own media",
+  upstream: "what the project relies on outside itself",
+};
+
 /** The graph controls. Each control has a short label and a tooltip that says what it does. */
 export const controls = {
   label: "Graph controls",
   fit: {
     group: "Fit",
     graph: { label: "Graph", tip: "Fit graph: show the whole graph" },
-    selection: { label: "Selection", tip: "Fit selection: show the selected element and the elements joined to it by a want" },
+    selection: { label: "Selection", tip: "Fit selection: show the selected element and the elements directly connected to it" },
     branch: { label: "Branch", tip: "Fit branch: show the selected element and everything it relies on, directly or through other elements" },
     needsSelection: "Select an element first.",
   },
@@ -48,21 +58,21 @@ export const controls = {
     group: "Depth",
     less: { label: "−", tip: "Collapse one level: hide the deepest level on screen" },
     more: { label: "+", tip: "Expand one level: show the next level of every element that holds hidden elements" },
-    current: (shown: number, most: number) => `Depth ${shown} of ${most}. Depth 1 is the first level that draws a want.`,
-    expandAll: { label: "All", tip: "Expand all: show every level" },
-    collapseAll: { label: "First", tip: "Collapse all: show only the first level that draws a want" },
+    current: (shown: number, most: number) => `Depth ${shown} of ${most}: how many levels of elements the graph shows, counted from the top.`,
+    expandAll: { label: "Expand all", tip: "Expand all: show every level" },
+    collapseAll: { label: "Collapse all", tip: "Collapse all: show only the top level. Each element then shows how many hidden elements it holds." },
     undo: { label: "Undo", tip: "Undo: show the elements that were on screen before the last depth action" },
     nothingToUndo: "No depth action to undo.",
   },
   categories: {
     group: "Categories",
     name: (category: string) => CATEGORY_NAMES[category] ?? category,
-    toggle: (name: string, elements: number, state: keyof typeof categoryState) =>
-      `${name}: ${count(elements, "element")}, ${categoryState[state].word}. ${state === "hidden" ? "Show" : "Hide"} this category.`,
-    isolate: { label: "Only", tip: (name: string) => `Isolate ${name}: quiet every other category. The other categories stay in place.` },
-    endIsolation: (name: string) => `End the isolation of ${name}.`,
+    toggle: (name: string, elements: number, state: keyof typeof categoryState, category?: string) =>
+      `${name}: ${CATEGORY_MEANINGS[category ?? ""] ?? "a category of elements"}. ${count(elements, "element")}, ${categoryState[state].word}. ${state === "hidden" ? "Show" : "Hide"} them.`,
+    isolate: { label: "Only", tip: (name: string) => `Only ${name}: keep these elements clear and fade the other categories. Nothing moves.` },
+    endIsolation: (name: string) => `Make every category clear again, not only ${name}.`,
     showAll: { label: "Show all", tip: "Show every category" },
     hideAll: { label: "Hide all", tip: "Hide every category" },
-    restore: { label: "Restore", tip: "Restore: end the isolation and show every category" },
+    restore: { label: "Reset", tip: "Reset: show every category, all clear" },
   },
 } as const;

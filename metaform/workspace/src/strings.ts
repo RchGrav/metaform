@@ -44,6 +44,8 @@ export const topBar = {
   pendingTip: "Edits the server has not confirmed. The Review panel lists them.",
   proposals: (n: number) => `${count(n, "proposal")} to review`,
   proposalsTip: "Proposals that wait for you to accept or reject them. The Review panel lists them.",
+  review: "Proposals",
+  reviewTip: "Ask for proposals to improve the specification, and accept or reject each one",
   markdown: "Specification as Markdown",
   markdownTip: "Show the specification on screen as a Markdown document, to copy or download",
 } as const;
@@ -100,15 +102,23 @@ export const details = {
   openProject: "Open project",
   // An outside element's own functional map, opened like another project (SPEC R-4.15, seam gap 4).
   openItsMap: "Open its map",
-  setAsFocus: "Set as focus",
+  setAsFocus: "Show only this and its wants",
+  setAsFocusTip: "Draw only this element, the elements it relies on and the elements that rely on it. A banner above the graph brings the whole graph back.",
+  // What each role means, for the tooltip on the role (SPEC.md, section on roles).
+  roleMeaning: {
+    definitive: "Definitive: the element without which the project is not what it is.",
+    supportive: "Supportive: an element coupled to the Definitive element, whose function is meant to assist it.",
+    notable: "Notable: an independent feature, or an outside party or dependency, with its own significance to the project.",
+    divergent: "Divergent: an element that does not align with the rest. It is to be investigated, then repaired or removed.",
+  } as Record<string, string>,
   // Field and part names are shown exactly as the server returns them (R-3.4, R-5.30).
   wants: "wants",
   wantedBy: "wanted by",
   layers: "layers",
   // The folder of an element. "Serves" lists the elements that want this one; "relies on"
   // lists the elements this one wants.
-  serves: (n: number) => (n === 1 ? "serves 1 element" : `serves ${n} elements`),
-  reliesOn: (n: number) => (n === 1 ? "relies on 1 element" : `relies on ${n} elements`),
+  serves: (n: number) => (n === 1 ? "1 element relies on this" : `${n} elements rely on this`),
+  reliesOn: (n: number) => (n === 1 ? "This relies on 1 element" : `This relies on ${n} elements`),
   notBuilt: "not built",
   source: "source",
   address: "The element's address in the map",
@@ -336,7 +346,7 @@ export const panels = {
   pixels: (n: number) => `${n} px`,
   // Shown in the Entity panel while no element is selected.
   noProject: "No project is open.",
-  noSelection: "Select an element in the graph to see its folder here.",
+  noSelection: "Select an element in the graph to see its details here: what it is, what relies on it, and what it relies on.",
   // Shown in the Evidence panel while no element is selected.
   noSelectionEvidence: "Select an element in the graph to see its evidence here.",
   // Shown in the Activity panel while its list is empty.

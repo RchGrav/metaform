@@ -137,11 +137,19 @@ In round 3 both agents received fewer bytes than they sent, and both recorded la
 
 ## 7. The graph workspace
 
-- The page uses the host's real data when `metaform-web` serves it, and the mock under `npm run dev` or with `?mock`. Nothing simulated appears on real data.
-- `metaform gui` listens on `http://127.0.0.1:4170/`, or a free port when that one is in use. The page shows its own address with a control that copies it.
-- Polish, checked in Chrome on the four real maps: header text no longer overlaps in an expanded element; a want count has a halo so lines do not strike through it; Details for an address that only groups elements lists them and says the arrows belong to them; an empty home and an empty map each say what they are.
+The owner rejected the first page and gave a specification, `dev/gui_specification.md`. The page was built again to it. `metaform/workspace/ARCHITECTURE.md` says how it is built, what is real and what is simulated, and its limits.
 
-Not established: the clipboard copy, and behavior in Firefox or Safari.
+- `metaform gui` prints the address, `http://127.0.0.1:4170/` or a free port when that one is in use. The server's instructions tell each agent to give its user this address. The page does not show its own address.
+- One specification model feeds the graph, the outline, the element panels and the Markdown.
+- Checked in Chrome through the Rust host, on the axum, rmcp, lbug and metaform maps:
+  - First fit with and without side panels; depth (collapse all, expand all, one level, undo); categories (hide, isolate, restore); fit graph. Each change settled in about 800 ms with every element in view.
+  - An edited name was stored by the server, shown on the graph, marked user-authored and recorded in the `review` layer.
+  - Of two simulated proposals, one was accepted (stored, shown, recorded) and one rejected (listed as rejected, nothing written).
+  - The Markdown preview opened from the top bar with the whole project.
+  - Present mode, Element mode, the light theme and a 900-pixel window drew without overlap.
+- Three defects were found by looking at the page and fixed: a first view with a left panel was never fitted; keyboard focus on the selected element restarted the slide on every redraw; the graph was not fitted again when the pane changed size.
+
+Not established: the clipboard copy and the file download (the browser under test has no clipboard or downloads folder to inspect), behavior in Firefox or Safari, and maps above 200 elements in a browser.
 
 ## 8. Open for the owner
 
