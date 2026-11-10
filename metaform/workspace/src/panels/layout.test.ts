@@ -33,7 +33,7 @@ function memory(initial?: string, broken = false): LayoutStorage & { value: stri
 describe("the default layout", () => {
   it("opens only the panels that are open at first, in their zones, at the default sizes", () => {
     const layout = defaultLayout(SEEDS);
-    expect(layout.version).toBe(1);
+    expect(layout.version).toBe(2);
     expect(layout.zones.right).toEqual({ panels: ["entity"], active: "entity", size: 400 });
     expect(layout.zones.left).toEqual({ panels: [], active: null, size: 300 });
     expect(layout.zones.bottom).toEqual({ panels: [], active: null, size: 220 });
@@ -209,7 +209,7 @@ describe("the saved layout", () => {
 
   it("drops a panel that no longer exists and keeps the rest", () => {
     const saved = {
-      version: 1,
+      version: 2,
       zones: {
         left: { panels: ["removed", "outline"], active: "removed", size: 320 },
         right: { panels: ["entity", "entity"], active: "entity", size: 410 },
@@ -232,7 +232,7 @@ describe("the saved layout", () => {
 
   it("keeps sizes within the limits when the saved numbers are out of range or not numbers", () => {
     const saved = {
-      version: 1,
+      version: 2,
       zones: {
         left: { panels: [], active: null, size: 99999 },
         right: { panels: [], active: null, size: "wide" },
@@ -252,7 +252,7 @@ describe("the saved layout", () => {
   it("ignores a value with another version, a value that does not parse, and a value with the wrong shape", () => {
     const good = JSON.stringify(defaultLayout(SEEDS));
     expect(parseLayout(good, SEEDS)).not.toBeNull();
-    expect(parseLayout(good.replace('"version":1', '"version":2'), SEEDS)).toBeNull();
+    expect(parseLayout(good.replace('"version":2', '"version":3'), SEEDS)).toBeNull();
     expect(parseLayout("{not json", SEEDS)).toBeNull();
     expect(parseLayout("null", SEEDS)).toBeNull();
     expect(parseLayout("[1]", SEEDS)).toBeNull();

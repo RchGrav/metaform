@@ -109,7 +109,7 @@ export const details = {
   // What each role means, for the tooltip on the role (SPEC.md, section on roles).
   roleMeaning: {
     definitive: "Definitive: the element without which the project is not what it is.",
-    supportive: "Supportive: an element coupled to the Definitive element, whose function is meant to assist it.",
+    supportive: "Supportive: an element that belongs with the Definitive element and assists it.",
     notable: "Notable: an independent feature, or an outside party or dependency, with its own significance to the project.",
     divergent: "Divergent: an element that does not align with the rest. It is to be investigated, then repaired or removed.",
   } as Record<string, string>,
@@ -287,8 +287,23 @@ export const intake = {
  */
 export const legend = {
   title: "Legend",
-  show: "Show legend",
-  hide: "Hide legend",
+  show: "How to read this page",
+  hide: "Hide how to read this page",
+  marksTitle: "Marks on the graph",
+  // The words the page uses, each with its meaning. Shown above the marks.
+  terms: [
+    ["Element", "One piece of what the project does, such as a router or a message schema. Each box in the graph is an element. Select one to read it."],
+    ["Name and technical name", "The name is the project's own word for the element. The technical name says what kind of thing it is in general terms, such as \"http router\"."],
+    ["Want", "A line between two elements. The element that holds the want relies on the other element. The want records why it relies on it and how the other element provides."],
+    ["Direction", "Where the substance of a want travels, shown by the arrowhead. Inbound: it arrives at the element that holds the want. Outbound: it leaves that element. Two-way: both, with a head at each end. The panel always says which element relies on which."],
+    ["Role", "Definitive: the main element, without which the project is not what it is. Supportive: an element that belongs with the main element and assists it. Notable: an independent feature, an outside party or a dependency. Divergent: an element that does not fit and needs investigation."],
+    ["Category", "Served parties are outside the project and use it. Dependencies are outside the project, and the project relies on them. Code, Document, Data and Media are the project's own."],
+    ["Depth", "How many levels of elements the graph shows, counted from the top. A closed element shows how many hidden elements it holds."],
+    ["Fit", "Moves the view to show the whole graph, the selected element with its neighbours, or the selected element with everything it relies on (its branch)."],
+    ["Knowledge layer", "Records kept at an element, of one kind per layer. The specification layer holds written descriptions. The review layer holds who edited or accepted what. A small mark on an element shows it holds records."],
+    ["Evidence status", "Source-backed: the element names a file in the repository. Unverified: it names none. Inferred: recorded with no file of its own. User-authored, agent-proposed, accepted, rejected: what happened in this page."],
+    ["Graph, Element, Present", "Graph shows the map. Element shows one element with its neighbours. Present shows the graph alone, without controls."],
+  ] as readonly (readonly [string, string])[],
   roleBar: "Coloured bar: the element's role, Definitive, Supportive, Notable or Divergent",
   definitive: "Inner ring: the Definitive element, the one without which the project is not what it is",
   stack: "Stacked outline: this element holds hidden elements",
@@ -316,7 +331,7 @@ export const panels = {
   menu: "Panels",
   title: {
     entity: "Entity",
-    legend: "Legend",
+    legend: "How to read this",
     activity: "Activity",
     outline: "Outline",
     markdown: "Markdown",

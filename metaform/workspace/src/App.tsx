@@ -469,6 +469,14 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
     const found = diff(last.spec, saved, new Date(), simulated);
     if (found.length > 0) setItems((all) => [...all, ...found].slice(-500));
   }, [saved, state.project, simulated]);
+  // Selecting an element brings its details forward when the Entity panel is open behind another tab.
+  const entityPlaced = placeOf(layout, "entity");
+  const openPanel = panelActions.open;
+  useEffect(() => {
+    if (selection !== null && entityPlaced !== null && entityPlaced !== "floating") openPanel("entity");
+    // Only a new selection brings the tab forward, so the user can go back to another tab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
   /** The selection before the user chose an activity item, so "Back to where I was" restores it. */
   const beforeActivity = useRef<Address | null | undefined>(undefined);
   const activityOpen = placeOf(layout, "activity") !== null;

@@ -203,3 +203,8 @@ kbd { font: .857em/1.6 ui-monospace, monospace; background: var(--bg); border: 1
 .top-main { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border: 1px solid var(--line); border-radius: 12px; background: none; color: var(--text); cursor: pointer; }
 .top-main:hover { border-color: var(--accent); }
 .role-meaning { margin: 4px 0 8px; color: var(--muted); font-size: .857em; line-height: 1.35; }
+.legend-terms { margin: 0 0 12px; display: grid; gap: 8px; }
+.legend-terms dt { font-weight: 600; color: var(--text); }
+.legend-terms dd { margin: 0; color: var(--muted); line-height: 1.4; }
+.legend h3 { margin: 12px 0 6px; font-size: 1em; }
+.breadcrumbs button { white-space: nowrap; }

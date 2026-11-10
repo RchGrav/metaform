@@ -10,7 +10,7 @@ export type Zone = "left" | "right" | "bottom";
 export const ZONES: readonly Zone[] = ["left", "right", "bottom"];
 
 /** The version of the saved value. A saved value with another version is ignored. */
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 
 /** What the layout needs to know about a registered panel: its id, its default zone, and whether it is open at first. */
 export interface PanelSeed {

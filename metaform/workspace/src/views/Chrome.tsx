@@ -364,6 +364,15 @@ const SIMULATED_ENTRIES: readonly string[] = ["agent", "agentActive", "agentIdle
 export function Legend({ simulated }: { simulated: boolean }) {
   return (
     <div className="legend">
+      <dl className="legend-terms">
+        {strings.legend.terms.map(([term, meaning]) => (
+          <div key={term}>
+            <dt>{term}</dt>
+            <dd>{meaning}</dd>
+          </div>
+        ))}
+      </dl>
+      <h3>{strings.legend.marksTitle}</h3>
       <ul>
         {LEGEND_ENTRIES.filter((key) => simulated || !SIMULATED_ENTRIES.includes(key)).map((key) => (
           <li key={key}>

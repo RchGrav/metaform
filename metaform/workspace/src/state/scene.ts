@@ -203,8 +203,10 @@ export function focusOnSelection(scene: RenderScene, selected: Address | null): 
     }
   }
   const focused = near.size > 0;
-  // An expanded element stays clear while anything inside it is clear.
-  const holds = (address: Address) => [...near].some((n) => n.startsWith(`${address}.`));
+  // An expanded element stays clear while anything drawn inside it is clear. The functional graph
+  // draws nothing inside an element, so there an address above the selection is no reason to stay clear.
+  const parents = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
+  const holds = (address: Address) => parents.has(address) && [...near].some((n) => n.startsWith(`${address}.`));
   const off = (edge: RenderEdge) => edge.dimmed || (focused && edge.from !== selected && edge.to !== selected);
   return {
     ...scene,

@@ -92,8 +92,9 @@ function FindingsBody({ spec, selection, select }: PanelBodyProps) {
 
 /** Every panel, in the order the Panels menu lists them. */
 export const PANELS: readonly PanelDefinition[] = [
+  // "How to read this" is the first tab a new user sees. Selecting an element shows the Entity tab.
+  { id: "legend", title: strings.panels.title.legend, zone: "right", open: true },
   { id: "entity", title: strings.panels.title.entity, zone: "right", open: true },
-  { id: "legend", title: strings.panels.title.legend, zone: "right", open: false },
   { id: "activity", title: strings.panels.title.activity, zone: "bottom", open: false },
   { id: "outline", title: strings.panels.title.outline, zone: "left", open: false },
   { id: "markdown", title: strings.panels.title.markdown, zone: "right", open: false },
