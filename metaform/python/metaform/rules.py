@@ -127,9 +127,10 @@ def _layer_values(map: Map, is_layer: Callable[[str], bool], verb: str, address:
         _layer_values(map, is_layer, verb, names.join(address, key), value)
 
 
-# The message of every grammar refusal. It is the only place an agent learns the rule, so it
-# states the whole rule and is the same in every form of Metaform.
-GRAMMAR_MESSAGE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
+# The rule text that ends the message of every grammar refusal. The message is the only place an
+# agent learns the rule, so it states the whole rule and is the same in every form of Metaform.
+# The faults of the refused want come before it (`grammar_fault`).
+GRAMMAR_RULE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
 
 # The text an agent must replace in the remediation of a grammar refusal.
 WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>"
@@ -200,16 +201,32 @@ def _has_lone_number(text: str) -> bool:
     return False
 
 
-def breaks_grammar(field: str, text: str) -> bool:
-    """Whether a `why` or a `how` breaks the grammar of its field (R-3.17, R-6.17). `field` is
-    `why` or `how`. The case of the first letter, one trailing full stop, length, and words
-    ending in `-ing` after the first word are not checked (`SPEC.md` D-14)."""
+def grammar_fault(field: str, text: str) -> str | None:
+    """The first fault of a `why` or a `how` against the grammar of its field (R-3.17, R-6.17),
+    in the words of the refusal message, or None when the text follows the rule. `field` is
+    `why` or `how`. The checks have a fixed order, the same in every form of Metaform. For a
+    `how` the subject check comes before the `-s` check, so `The router stores` is reported as a
+    subject. The case of the first letter, one trailing full stop, length, and words ending in
+    `-ing` after the first word are not checked (`SPEC.md` D-14)."""
     first = _first_word(text)
+    subject = first in SUBJECT_WORDS
     if field == "why":
-        verb_form = first == "to" or (first.endswith("ing") and first not in ING_BASE_VERBS)
+        if first == "to":
+            return "starts with 'to'"
+        if first.endswith("ing") and first not in ING_BASE_VERBS:
+            return "starts with an '-ing' verb"
+        if subject:
+            return "starts with a subject"
     else:
-        verb_form = not first.endswith("s")
-    return verb_form or first in SUBJECT_WORDS or _has_many_fragments(text) or _has_lone_number(text)
+        if subject:
+            return "starts with a subject"
+        if not first.endswith("s"):
+            return "does not start with a verb ending in -s"
+    if _has_many_fragments(text):
+        return "holds more than one fragment"
+    if _has_lone_number(text):
+        return "holds a value"
+    return None
 
 
 def check_want_grammar(
@@ -219,9 +236,10 @@ def check_want_grammar(
     command wrote; a part it did not write is not checked, so a stored want with older text still
     accepts an unrelated write. `elements` is the map as the command would leave it.
 
-    The refusal follows the documentation set, module 6.4. The tested sentence is the wants
-    sentence of R-6.17 with the texts as written, without their trailing full stop. The
-    remediation updates the want with a placeholder in each part that broke the rule. For a want
+    The refusal follows the documentation set, module 6.4. The message names each part that
+    broke the rule and its first fault, `why` before `how`, and then states the rule. The tested
+    sentence is the wants sentence of R-6.17 with the texts as written, without their trailing
+    full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
     that `before` holds, it has only those parts. For a want this command made, it has the whole
     want, because the refused command stored nothing and a want needs all of its fields (R-5.6)."""
     element = elements.get(holder)
@@ -234,9 +252,14 @@ def check_want_grammar(
         return value if isinstance(value, str) else ""
 
     broken: dict[str, Any] = {}
+    faults: list[str] = []
     for key, placeholder in (("why", WHY_PLACEHOLDER), ("how", HOW_PLACEHOLDER)):
-        if key in written and trim(text(key)) != "" and breaks_grammar(key, text(key)):
+        if key not in written or trim(text(key)) == "":
+            continue
+        fault = grammar_fault(key, text(key))
+        if fault is not None:
             broken[key] = placeholder
+            faults.append(f"{key} {fault}")
     if not broken:
         return
     earlier = before.element(holder)
@@ -253,7 +276,7 @@ def check_want_grammar(
 
     refused = Refusal(
         refusal.GRAMMAR_CONSTRAINT_VIOLATION,
-        GRAMMAR_MESSAGE,
+        f"{'; '.join(faults)}. {GRAMMAR_RULE}",
         {"update": {holder: {"wants": {other: parts}}}},
     )
     refused.sentence = f"{named(holder)} requires {named(other)} in order to {part('why')}, which {part('how')}."

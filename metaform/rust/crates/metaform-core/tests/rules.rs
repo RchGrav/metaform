@@ -182,7 +182,7 @@ fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
     write(&contract, &map, json!({"update": {GAME: {"sources": ["./docs/engine.md"]}}}));
 }
 
-const GRAMMAR_MESSAGE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
+const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 const WHY_PLACEHOLDER: &str = "<base verb phrase, as: drain raw frames from the network interface card>";
 const HOW_PLACEHOLDER: &str = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>";
 
@@ -209,7 +209,7 @@ fn a_written_why_or_how_follows_the_grammar() {
         refusal.to_json(),
         json!({
             "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-            "message": GRAMMAR_MESSAGE,
+            "message": format!("how starts with a subject. {GRAMMAR_RULE}"),
             "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to Receive player input and collision telemetry for frame simulation, which The router stores parameters.",
             "remediation": {"update": {GAME: {"wants": {router: {"how": HOW_PLACEHOLDER}}}}},
         })
@@ -227,6 +227,17 @@ fn a_written_why_or_how_follows_the_grammar() {
         refusal.to_json()["tested_sentence"],
         "code.engine.game (Quake core) requires code.engine.router in order to to drain frames, which holding pointers."
     );
+    // The message names each part and its first fault, `why` first, then states the rule.
+    assert_eq!(
+        refusal.to_json()["message"],
+        format!("why starts with 'to'; how does not start with a verb ending in -s. {GRAMMAR_RULE}")
+    );
+    // For a `how`, the subject check comes before the `-s` check and the value check.
+    let command = json!({"update": {GAME: {"wants": {router: {"why": "to drain frames", "how": "The router stores 5 items."}}}}});
+    assert_eq!(
+        refused(&contract, &map, command).to_json()["message"],
+        "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
+    );
 
     // The first want that breaks the rule is reported, in the order the command gives them, and
     // nothing of the command is stored. The want is new, so the remediation has the whole want:
@@ -243,6 +254,7 @@ fn a_written_why_or_how_follows_the_grammar() {
             "why": WHY_PLACEHOLDER, "how": "holds frames", "direction": "inbound",
         }}}}})
     );
+    assert_eq!(refusal.to_json()["message"], format!("why starts with an '-ing' verb. {GRAMMAR_RULE}"));
     assert!(map.element("code.engine.store").is_none());
 
     // An `add` is checked in the same way. Its sentence uses the names the command gives.

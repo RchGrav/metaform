@@ -12,12 +12,12 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from metaform.rules import breaks_grammar
+from metaform.rules import grammar_fault
 
 PACKAGE = Path(__file__).resolve().parents[1]
 GAME = "code.engine.game"
 ROUTER = "code.engine.router"
-MESSAGE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
+RULE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
 WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>"
 HOW_PLACEHOLDER = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>"
 
@@ -65,6 +65,21 @@ BREAKS = {
     ],
 }
 
+# A text, and the first fault the message names for it.
+FAULTS = [
+    ("why", "to keep 5 frames", "starts with 'to'"),
+    ("why", "keeping the frames. Store them", "starts with an '-ing' verb"),
+    ("why", "The router needs 5 parameters", "starts with a subject"),
+    ("why", "keep frames; store 5 of them", "holds more than one fragment"),
+    ("why", "retry 5", "holds a value"),
+    ("how", "The router stores 5 items.", "starts with a subject"),
+    ("how", "its parameters are stored", "starts with a subject"),
+    ("how", "hold 5 pointers. Free them", "does not start with a verb ending in -s"),
+    ("how", "holding descriptor pointers", "does not start with a verb ending in -s"),
+    ("how", "Stores parameters. Decodes 5 first.", "holds more than one fragment"),
+    ("how", "Returns 0 to 5 scores", "holds a value"),
+]
+
 
 class Grammar(unittest.TestCase):
     def setUp(self) -> None:
@@ -99,10 +114,16 @@ class Grammar(unittest.TestCase):
     def test_the_rule_on_texts(self) -> None:
         for field, texts in PASSES.items():
             for text in texts:
-                self.assertFalse(breaks_grammar(field, text), (field, text))
+                self.assertIsNone(grammar_fault(field, text), (field, text))
         for field, texts in BREAKS.items():
             for text in texts:
-                self.assertTrue(breaks_grammar(field, text), (field, text))
+                self.assertIsNotNone(grammar_fault(field, text), (field, text))
+
+    def test_the_first_fault_of_a_text_in_the_fixed_order_of_checks(self) -> None:
+        for field, text, fault in FAULTS:
+            self.assertEqual(grammar_fault(field, text), fault, (field, text))
+        self.assertIsNone(grammar_fault("why", "drain raw frames."))
+        self.assertIsNone(grammar_fault("how", "Stores frames."))
 
     def test_a_refusal_names_the_parts_that_broke_the_rule_and_stores_nothing(self) -> None:
         self.seed()
@@ -113,7 +134,7 @@ class Grammar(unittest.TestCase):
             **command,
             "status": "error",
             "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-            "message": MESSAGE,
+            "message": f"how starts with a subject. {RULE}",
             "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to Receive player input and collision telemetry for frame simulation, which The router stores parameters.",
             "remediation": {"update": {GAME: {"wants": {ROUTER: {"how": HOW_PLACEHOLDER}}}}},
         })
@@ -128,6 +149,14 @@ class Grammar(unittest.TestCase):
         self.assertEqual(answer["remediation"], {"update": {GAME: {"wants": {"code.engine.zeta": {"why": WHY_PLACEHOLDER, "how": HOW_PLACEHOLDER, "direction": "inbound"}}}}})
         self.assertEqual(list(answer["remediation"]["update"][GAME]["wants"]["code.engine.zeta"]), ["why", "how", "direction"])
         self.assertEqual(answer["tested_sentence"], "code.engine.game (Quake core) requires code.engine.zeta in order to to keep frames, which holding frames.")
+        # The message names each part and its first fault, `why` first, then states the rule.
+        self.assertEqual(answer["message"], f"why starts with 'to'; how does not start with a verb ending in -s. {RULE}")
+        # For a `how`, the subject check comes before the `-s` check and the value check.
+        both = self.call({"update": {GAME: {"wants": {ROUTER: {"why": "to drain frames", "how": "The router stores 5 items."}}}}})
+        self.assertEqual(
+            both["message"],
+            "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+        )
         self.assertEqual(self.call({GAME: {"wants": {}}})[GAME]["wants"][ROUTER]["how"], "Dispatches subscribed runtime event streams.")
         self.assertEqual(self.call({"code.engine.store": {}})["code"], "NOT_FOUND")
 
