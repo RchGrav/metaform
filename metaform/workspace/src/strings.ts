@@ -98,6 +98,8 @@ export const details = {
   branch: (n: number) =>
     `This address groups ${count(n, "element")}. The arrows drawn at it belong to them. Select one to see its wants.`,
   noWants: "It relies on no other element.",
+  // Shown in the Entity panel in place of the records of the review layer.
+  reviewLayer: "The Review panel lists these records.",
   notWanted: "No element relies on it.",
 } as const;
 
@@ -313,14 +315,14 @@ export const panels = {
   // Shown in the Entity panel while no element is selected.
   noProject: "No project is open.",
   noSelection: "Select an element in the graph to see its folder here.",
+  // Shown in the Evidence panel while no element is selected.
+  noSelectionEvidence: "Select an element in the graph to see its evidence here.",
   // Shown in the Activity panel while its list is empty.
   noActivity: "No activity yet. Changes to the map appear here.",
   // The body of a panel that is registered and not built yet.
   notBuilt: {
     outline: "This panel will show the specification as an outline of its elements. It is not built yet.",
     markdown: "This panel will show the specification as Markdown, ready to copy or download. It is not built yet.",
-    evidence: "This panel will show the source references for the selected element. It is not built yet.",
     findings: "This panel will show findings about the repository and its specification. It is not built yet.",
-    review: "This panel will show the proposals you accepted and the proposals you rejected. It is not built yet.",
   },
 } as const;

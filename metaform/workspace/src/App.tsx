@@ -2,6 +2,8 @@
 // dev/user_agent_interfaces-ux.md). The page is the top bar, the graph with the panels around it
 // (src/panels), and the bottom strip.
 
+import { createSimulatedAgent } from "./mock/agent";
+import { useSpecStore } from "./review/store";
 import { fromDump } from "./spec/model";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
@@ -387,13 +389,18 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   // What the page hands the body of every panel (src/panels/registry.tsx).
   const selection = view.selection;
   const select = useCallback((address: Address | null) => dispatch({ type: "select", address }), [dispatch]);
-  // The one specification every view reads (ARCHITECTURE.md section 1), built from the server's dump.
-  const spec = useMemo(
-    () => (current && state.project !== null ? fromDump(projects.find((p) => p.id === state.project)?.name ?? state.project, current.dump) : null),
-    [current, state.project, projects],
-  );
+  // The one specification every view reads (ARCHITECTURE.md section 1). `saved` is built from the
+  // server's dump. The store adds the changes the server has not confirmed (src/review/store.ts).
+  const openName = state.project === null ? "" : projectName(state.project);
+  const dump = current?.dump ?? null;
+  const saved = useMemo(() => (dump && state.project !== null ? fromDump(openName, dump) : null), [dump, state.project, openName]);
+  // SIMULATED: no agent service is reachable from the host, so the proposals come from the local generator.
+  const agent = useMemo(createSimulatedAgent, []);
+  const review = useSpecStore({ source, agent, project: state.project, projectName: openName, simulated }, saved);
+  const spec = review?.state.spec ?? saved;
   const panelBody: PanelBodyProps = {
     spec,
+    review,
     project: state.project,
     selection,
     simulated,

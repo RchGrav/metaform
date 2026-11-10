@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyChange } from "./changes";
 import type { Proposal } from "./changes";
-import { elementEvidence, fieldEvidence, layerEvidence, proposalEvidence, sourcePaths, wantEvidence } from "./evidence";
+import { asReviewRecord, elementEvidence, fieldEvidence, layerEvidence, proposalEvidence, recordedStatus, reviewRecords, sourcePaths, wantEvidence, whatOf } from "./evidence";
 import { handDump } from "./fixtures/hand-dump";
 import { elementAt, fromDump } from "./model";
 
@@ -63,5 +63,55 @@ describe("proposal evidence", () => {
     expect(proposalEvidence(proposal)).toEqual({ status: "agent-proposed", paths: ["./src/input.c"] });
     expect(proposalEvidence({ ...proposal, state: "accepted" }).status).toBe("accepted");
     expect(proposalEvidence({ ...proposal, state: "rejected" }).status).toBe("rejected");
+  });
+});
+
+describe("evidence from the review layer", () => {
+  const record = (what: string, by: string, state: string, at: string) => ({ what, by, state, at, rationale: "", simulated: false });
+  // The server has confirmed these changes: the specification has no mark, and the map holds the records.
+  const reviewed = applyChange(spec, {
+    id: "r", kind: "set-layer", address: "code.engine.game", layer: "review",
+    records: [
+      record("name", "agent", "accepted", "2026-11-10T10:00:00.000Z"),
+      record("name", "user", "accepted", "2026-11-10T11:00:00.000Z"),
+      record("want code.bus.data.event", "agent", "accepted", "2026-11-10T10:00:00.000Z"),
+      record("want upstream.code.engine.physics", "agent", "rejected", "2026-11-10T10:00:00.000Z"),
+      record("specification", "user", "accepted", "2026-11-10T10:00:00.000Z"),
+      { what: "role", by: "someone", state: "accepted", at: "2026-11-10T10:00:00.000Z" },
+    ],
+  });
+  const confirmed = { ...reviewed, marks: [] };
+
+  it("reads only records of the record's form", () => {
+    expect(reviewRecords(at("code.engine.game"))).toEqual([]);
+    const element = confirmed.elements.find((other) => other.address === "code.engine.game");
+    expect(element && reviewRecords(element)).toHaveLength(5);
+    expect(asReviewRecord({ what: "name", by: "user", state: "accepted", at: "t" })).toEqual({ what: "name", by: "user", state: "accepted", at: "t", rationale: "", simulated: false });
+    expect(asReviewRecord("name")).toBeNull();
+  });
+
+  it("names a part as a change names it", () => {
+    expect(whatOf({ id: "a", kind: "set-field", address: "x", field: "uri", value: null })).toBe("uri");
+    expect(whatOf({ id: "a", kind: "set-want", address: "x", to: "y.z", part: "why", value: "v" })).toBe("want y.z");
+    expect(whatOf({ id: "a", kind: "remove-want", address: "x", to: "y.z" })).toBe("want y.z");
+    expect(whatOf({ id: "a", kind: "set-layer", address: "x", layer: "specification", records: [] })).toBe("specification");
+  });
+
+  it("gives a part the status of its newest accepted record, after the server confirms the change", () => {
+    expect(fieldEvidence(confirmed, "code.engine.game", "name").status).toBe("user-authored");
+    expect(wantEvidence(confirmed, "code.engine.game", "code.bus.data.event").status).toBe("accepted");
+    expect(layerEvidence(confirmed, "code.engine.game", "specification")?.status).toBe("user-authored");
+  });
+
+  it("leaves a part with a rejected record, a malformed record or no record as the map gives it", () => {
+    expect(wantEvidence(confirmed, "code.engine.game", "upstream.code.engine.physics").status).toBe("inferred");
+    expect(fieldEvidence(confirmed, "code.engine.game", "role").status).toBe("inferred");
+    expect(fieldEvidence(confirmed, "code.engine.game", "uri").status).toBe("source-backed");
+    expect(recordedStatus(undefined, "name")).toBeNull();
+  });
+
+  it("gives a pending change's mark precedence over a record", () => {
+    const pending = applyChange(confirmed, { id: "p", kind: "set-field", address: "code.engine.game", field: "name", value: "Core" }, "agent");
+    expect(fieldEvidence(pending, "code.engine.game", "name").status).toBe("accepted");
   });
 });

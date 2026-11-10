@@ -3,12 +3,16 @@
 // panel's entry in BODIES; nothing else in the page names a panel's body.
 
 import type { ComponentProps, ComponentType } from "react";
+import type { Review as ReviewHandle } from "../review/store";
 import type { Address } from "../source";
 import * as strings from "../strings";
-import { ActivityList, Details, Legend } from "../views/Chrome";
+import { ActivityList, Legend } from "../views/Chrome";
+import { Entity, type EntityFolder } from "../views/Entity";
+import { Evidence } from "../views/Evidence";
 import type { Spec } from "../spec/model";
 import { MarkdownPreview } from "../views/MarkdownPreview";
 import { Outline } from "../views/Outline";
+import { Review } from "../views/Review";
 import type { Zone } from "./layout";
 
 /** The id of a registered panel. */
@@ -35,10 +39,12 @@ export interface PanelBodyProps {
   simulated: boolean;
   /** Selects an element in the graph, or clears the selection with null. */
   select: (address: Address | null) => void;
-  /** The selected element's folder, as the Details view takes it; null while nothing is selected. */
-  entity: ComponentProps<typeof Details> | null;
-  /** The project's specification as the page holds it now, or null before a project is read. */
+  /** The selected element's folder, as the Entity view takes it; null while nothing is selected. */
+  entity: EntityFolder | null;
+  /** The project's specification as the page shows it now: the saved one with the pending changes. Null before a project is read. */
   spec: Spec | null;
+  /** The store that takes edits and holds the proposals, with its state. Null before a project is open. */
+  review: ReviewHandle | null;
   /** The activity lines, as the ActivityList view takes them. */
   activity: ComponentProps<typeof ActivityList>;
 }
@@ -46,8 +52,8 @@ export interface PanelBodyProps {
 /** The component that renders a panel's body. */
 export type PanelBody = ComponentType<PanelBodyProps>;
 
-function EntityBody({ entity }: PanelBodyProps) {
-  return entity ? <Details {...entity} /> : <p className="panel-note">{strings.panels.noSelection}</p>;
+function EntityBody({ entity, spec, review }: PanelBodyProps) {
+  return entity ? <Entity {...entity} spec={spec} review={review} /> : <p className="panel-note">{strings.panels.noSelection}</p>;
 }
 
 function LegendBody({ simulated }: PanelBodyProps) {
@@ -62,9 +68,20 @@ function OutlineBody({ spec, selection, select }: PanelBodyProps) {
   return spec ? <Outline spec={spec} selected={selection} onSelect={select} /> : <p className="panel-note">{strings.panels.noProject}</p>;
 }
 
-function MarkdownBody({ spec, selection }: PanelBodyProps) {
-  // No proposal exists yet; the review step will pass the ones that are not accepted.
-  return spec ? <MarkdownPreview spec={spec} proposals={[]} scope={selection} /> : <p className="panel-note">{strings.panels.noProject}</p>;
+function MarkdownBody({ spec, selection, review }: PanelBodyProps) {
+  // The Markdown shows the proposals that are not accepted only in its one marked section.
+  const proposals = review?.state.proposals.filter((proposal) => proposal.state !== "accepted") ?? [];
+  return spec ? <MarkdownPreview spec={spec} proposals={proposals} scope={selection} /> : <p className="panel-note">{strings.panels.noProject}</p>;
+}
+
+function EvidenceBody({ spec, selection, select }: PanelBodyProps) {
+  if (!spec) return <p className="panel-note">{strings.panels.noProject}</p>;
+  if (selection === null) return <p className="panel-note">{strings.panels.noSelectionEvidence}</p>;
+  return <Evidence spec={spec} address={selection} onSelect={select} />;
+}
+
+function ReviewBody({ spec, selection, select, review }: PanelBodyProps) {
+  return spec && review ? <Review spec={spec} review={review} selection={selection} onSelect={select} /> : <p className="panel-note">{strings.panels.noProject}</p>;
 }
 
 /** The body of a panel that is registered and not built yet: one sentence that says what it will show. */
@@ -93,9 +110,9 @@ export const BODIES: Record<PanelId, PanelBody> = {
   activity: ActivityBody,
   outline: OutlineBody,
   markdown: MarkdownBody,
-  evidence: notBuilt("evidence"),
+  evidence: EvidenceBody,
   findings: notBuilt("findings"),
-  review: notBuilt("review"),
+  review: ReviewBody,
 };
 
 /** The body component of the panel with this id, or null when no panel has it. */

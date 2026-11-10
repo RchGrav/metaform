@@ -1,0 +1,75 @@
+/* Styles of the edit controls, the Evidence panel and the Review panel. The colours are the
+   page's own tokens (styles.css). Sizes are in em, so they follow the panel's text size. */
+
+.editable { display: inline; }
+.editable-value { overflow-wrap: anywhere; white-space: pre-wrap; }
+.edit-button, .edit-actions button, .review-ask button {
+  font: inherit; font-size: .857em; color: var(--text); background: none; border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 8px; margin-left: 6px; cursor: pointer;
+}
+.edit-actions button, .review-ask button { margin-left: 0; padding: 3px 10px; }
+.edit-button:hover:not(:disabled), .edit-actions button:hover:not(:disabled), .review-ask button:hover:not(:disabled) { border-color: var(--accent); }
+.edit-button:disabled, .edit-actions button:disabled, .review-ask button:disabled { color: var(--muted); cursor: not-allowed; border-style: dashed; }
+.edit-actions .edit-confirm { border-color: var(--accent); font-weight: 600; }
+.edit-form { display: grid; gap: 6px; margin: 4px 0; }
+.edit-form input, .edit-form textarea, .edit-form select, .block-form input, .block-form textarea, .block-form select, .proposal-after textarea, .proposal-after select {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 4px;
+  padding: 4px 6px; width: 100%; min-width: 0; resize: vertical;
+}
+.edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.details .fields > div { grid-template-columns: 10em minmax(0, 1fr); padding: 2px 0; }
+.details .fields .part-notes, .details .fields .part-note { display: block; }
+.details .fields .edit-actions { display: flex; }
+.writable-line { margin: 10px 0 4px; padding: 4px 8px; border-left: 3px solid var(--unseen); color: var(--muted); font-size: .929em; }
+.writable-line.writable-off { border-left-color: var(--divergent); color: var(--text); }
+.part-notes { margin: 4px 0; }
+.part-pending { margin: 2px 0; color: var(--muted); font-size: .857em; }
+.part-pending::before { content: "… "; }
+.part-note { border: 1px solid var(--divergent); border-radius: 4px; padding: 6px 8px; font-size: .929em; }
+.part-note p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.part-note-refused > p:first-child::before { content: "✕ "; color: var(--divergent); font-weight: 700; }
+.part-note-history { border-color: var(--unseen); }
+.part-note-history > p:first-child::before { content: "! "; font-weight: 700; }
+.part-remedy code { font-size: .857em; overflow-wrap: anywhere; }
+.block-row { margin: 6px 0; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.block-form { display: grid; gap: 6px; margin: 6px 0; padding: 8px; border: 1px solid var(--line); border-radius: 4px; }
+.block-form label { display: grid; gap: 2px; }
+.panel-hint { margin: 4px 0; color: var(--muted); font-size: .857em; line-height: 1.4; }
+
+.evidence, .review { padding: 12px 16px; line-height: 1.4; min-width: 0; }
+.evidence h3, .review h3 { font-size: .929em; border-top: 1px solid var(--line); padding-top: 10px; margin: 14px 0 6px; }
+.evidence-element { margin: 0 0 4px; overflow-wrap: anywhere; }
+.evidence-element code, .evidence-paths code { font-size: .857em; color: var(--muted); overflow-wrap: anywhere; }
+.evidence-paths { list-style: none; margin: 0; padding: 0; }
+.evidence-paths li { padding: 2px 0; }
+.evidence .term, .review .term { color: var(--muted); font-size: .857em; }
+.evidence-table { width: 100%; border-collapse: collapse; font-size: .929em; }
+.evidence-table th { width: 9em; text-align: left; font-weight: 400; color: var(--muted); vertical-align: top; padding: 3px 8px 3px 0; }
+.evidence-table td { vertical-align: top; padding: 3px 8px 3px 0; overflow-wrap: anywhere; }
+.evidence-table td:last-child { width: 1%; white-space: nowrap; padding-right: 0; }
+.evidence-table .link { color: var(--accent); padding: 0; text-align: left; }
+
+.review-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.review-asked { min-height: 1.4em; margin: 4px 0; font-size: .929em; }
+.proposals, .review-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.proposal { border: 1px dashed var(--line); border-left: 3px solid var(--unseen); border-radius: 4px; padding: 8px 10px; }
+.proposal-head { margin: 0; }
+.proposal-what { color: var(--accent); font-weight: 600; padding: 0; text-align: left; }
+.proposal-by { margin: 2px 0 6px; color: var(--muted); font-size: .857em; }
+.proposal-change { margin: 0 0 8px; display: grid; gap: 4px; }
+.proposal-change > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.proposal-change dt { color: var(--muted); font-size: .857em; }
+.proposal-change dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.proposal-before { text-decoration: line-through; color: var(--muted); }
+.proposal-after { font-weight: 600; }
+.proposal-evidence { margin: 0; padding-left: 1.1em; font-size: .929em; }
+.review-history { gap: 2px; }
+.history-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; width: 100%; padding: 4px 6px; text-align: left;
+  font: inherit; color: inherit; background: none; border: 0; border-left: 3px solid transparent; border-radius: 2px; cursor: pointer;
+}
+.history-line:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.history-line[aria-current="true"] { border-left-color: var(--accent); }
+.history-what { font-weight: 600; overflow-wrap: anywhere; }
+.history-who, .history-line time { color: var(--muted); font-size: .857em; }
+.history-rationale { flex-basis: 100%; color: var(--muted); font-size: .857em; }
