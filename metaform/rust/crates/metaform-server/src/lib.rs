@@ -38,6 +38,24 @@ pub fn socket_path(home: &Path) -> PathBuf {
     home.join("server.sock")
 }
 
+/// The longest path a Unix socket address holds, in bytes, on Linux. Other systems hold a little
+/// less; the system's own error then reports it.
+const SOCKET_PATH_LIMIT: usize = 107;
+
+/// Refuse a home whose socket path the system cannot hold, before any server is started, so the
+/// user reads one plain reason and not a start that fails and is tried again.
+pub(crate) fn check_socket_path(home: &Path) -> Result<(), String> {
+    let socket = socket_path(home);
+    let length = socket.as_os_str().len();
+    if length > SOCKET_PATH_LIMIT {
+        return Err(format!(
+            "the home's path is too long for its socket: {} is {length} bytes, and a socket path holds at most {SOCKET_PATH_LIMIT}. Use a shorter --home.",
+            socket.display()
+        ));
+    }
+    Ok(())
+}
+
 /// The home: `METAFORM_HOME` if set, otherwise `~/.metaform` (R-4.1).
 pub fn default_home() -> PathBuf {
     std::env::var_os("METAFORM_HOME")
@@ -50,6 +68,7 @@ pub fn default_home() -> PathBuf {
 /// Run the server for `home` until the process is ended. Fails at once if another server
 /// owns the home, or if the home holds data this store did not write.
 pub async fn serve(home: &Path) -> Result<(), String> {
+    check_socket_path(home)?;
     let store = open_store(home).await?;
     let store = Arc::new(store);
     let socket = socket_path(home);
@@ -262,6 +281,7 @@ pub(crate) async fn open_session(
 pub use relay::forward;
 
 pub(crate) async fn connect_or_start(home: &Path, server_exe: &Path) -> Result<UnixStream, String> {
+    check_socket_path(home)?;
     let socket = socket_path(home);
     if let Ok(stream) = UnixStream::connect(&socket).await {
         return Ok(stream);
@@ -299,4 +319,17 @@ pub(crate) async fn connect_or_start(home: &Path, server_exe: &Path) -> Result<U
             log().trim()
         ),
     })
+}
+
+#[cfg(test)]
+mod socket_path_tests {
+    use super::*;
+
+    #[test]
+    fn a_home_whose_socket_path_is_too_long_is_refused_with_the_reason() {
+        assert!(check_socket_path(Path::new("/tmp/home")).is_ok());
+        let long = PathBuf::from(format!("/tmp/{}", "x".repeat(120)));
+        let reason = check_socket_path(&long).unwrap_err();
+        assert!(reason.contains("too long for its socket") && reason.ends_with("Use a shorter --home."), "{reason}");
+    }
 }
