@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metaform · classic map</title>
+<link rel="stylesheet" href="/classic/app.css">
+<link rel="stylesheet" href="/classic/classic.css">
+<script src="/classic/theme.js"></script>
+</head>
+<body>
+<!-- The earlier Metaform page's 2D map, on the new Metaform server. Its parts are the earlier page's own, copied and
+     adapted, see app.js; this file keeps the earlier page's ids and classes, so its script and stylesheet apply. -->
+<!-- Shown at once while the page loads and lays itself out, `booting` in theme.js; gone when the page is shown. -->
+<div id="boot" role="status">Loading the map…</div>
+<div class="app">
+  <!-- The header: the project on the left, the search, what sets the view, and the way to the new workspace. -->
+  <header>
+    <div class="brand"><span>meta<b>form</b></span></div>
+    <div class="hfield proj"><label for="proj">Project</label><select id="proj"></select></div>
+    <button class="btn searchbtn" id="searchBtn" type="button" aria-keyshortcuts="/" aria-controls="search" title="Search the map (/)"><i class="i i-search" aria-hidden="true"></i><span class="lbl">Search the map</span><kbd aria-hidden="true">/</kbd></button>
+    <div class="hfield depthpick" role="group" aria-label="Depth of the map" title="How many levels of the map show, counted along the lines from the top (4 steps through them)">
+      <label>Depth</label>
+      <button class="btn sm" id="depthLess" type="button" title="One level fewer">Less</button>
+      <span class="now" id="depthNow" role="status"></span>
+      <button class="btn sm" id="depthMore" type="button" title="One level more">More</button>
+    </div>
+    <div class="hfield" title="The way the map runs: chosen for the pane, left to right, or top to bottom">
+      <label for="directionat">Direction</label>
+      <select id="directionat"><option value="auto">Auto</option><option value="across">Across</option><option value="down">Down</option></select>
+    </div>
+    <div class="settingspick pick">
+      <!-- The View menu: how this page draws the map, its colors and its keys. -->
+      <button class="btn quiet viewbtn" id="settingsBtn" type="button" aria-label="View settings" aria-expanded="false" aria-controls="settingsbox" title="View settings"><span class="lbl">View</span></button>
+      <div class="menu right" id="settingsbox" hidden role="dialog" aria-label="View settings" tabindex="-1">
+        <div class="label">Look</div>
+        <div class="menu-field themepick"><label for="theme">Colors</label>
+          <select id="theme">
+            <option value="space">Space</option>
+            <option value="black">Black</option><option value="midnight">Midnight</option>
+            <option value="graphite">Graphite</option>
+            <option value="plum">Plum</option>
+            <option value="forest">Forest</option>
+            <option value="ember">Ember</option>
+            <option value="paper">Paper</option>
+            <option value="mist">Mist</option>
+          </select>
+        </div>
+        <div class="menu-field themepick"><label for="textsize">Text size</label>
+          <select id="textsize"></select>
+        </div>
+        <div class="label">Map</div>
+        <div class="menu-field themepick" title="What the map says of what the pointer is on: the name where it cannot be read, and a card of its details"><label for="infoat">Info</label>
+          <select id="infoat"><option value="name+summary">Name and card</option><option value="name">Name</option><option value="summary">Card</option><option value="off">Off</option></select>
+        </div>
+        <div class="menu-field themepick" title="Which lines the dots flow along: none, those of the part under the pointer, the selection's, or all of them (2)"><label for="flowat">Flow</label>
+          <select id="flowat" aria-keyshortcuts="2"><option value="off">Off</option><option value="hover">Under the pointer</option><option value="selected">The selection's</option><option value="all">All lines</option></select>
+        </div>
+        <div class="sep" role="separator"></div>
+        <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
+      </div>
+    </div>
+    <button class="btn quiet helpbtn" id="helpBtn" type="button" aria-label="Help" aria-keyshortcuts="?" aria-controls="help" title="Help: every key the map and the page take (?)"><span class="lbl">Help</span></button>
+    <a class="tonew" href="/" title="The new graph workspace">New workspace</a>
+  </header>
+
+  <aside>
+    <section class="pane" id="p-object" aria-label="The selected part" tabindex="-1"><p class="loading">Reading the map…</p></section>
+  </aside>
+
+  <main>
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; Alt with Left or Right goes back or forward through the nodes selected; the wheel zooms at the pointer, 0 fits the whole map. Press ? for every key.">
+      <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
+      <div class="viewport" id="viewport"></div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+<!-- The page's own dialogs: a confirmation, the search of the map, and the keyboard shortcuts. -->
+<div id="confirm" class="window dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="body"></div>
+</div>
+<div id="search" class="window dialog search" hidden role="dialog" aria-modal="true" aria-label="Search the map">
+  <div class="searchbar"><i class="i i-search" aria-hidden="true"></i>
+    <input class="query" type="search" role="combobox" aria-expanded="true" aria-controls="searchResults" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Search parts, what they rely on and what the layers hold" aria-label="Search the map">
+    <kbd aria-hidden="true">Esc</kbd></div>
+  <div class="results" id="searchResults" role="listbox" aria-label="Results"></div>
+  <div class="searchfoot"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> go to it</span><span><kbd>Esc</kbd> close</span></div>
+</div>
+<div id="help" class="window dialog wide" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="bar"><span class="title">Keyboard shortcuts</span><button class="close btn icon sm quiet" type="button" aria-label="Close" title="Close (Escape)"><i class="i i-close" aria-hidden="true"></i></button></div>
+  <div class="body">
+    <!-- Drawn from the page's one key table, KEYS in keys/keys.js, which the keys run from too. -->
+    <div class="tabs helptabs" role="tablist" aria-label="Kinds of keys"></div>
+    <input class="keyfind" type="search" placeholder="Find a key by what it does" aria-label="Find a key by what it does" autocomplete="off">
+    <div class="keys"></div>
+  </div>
+</div>
+<div id="draw" aria-hidden="true"></div>
+<script src="/classic/vendor/mermaid.min.js"></script>
+<script type="module" src="/classic/app.js"></script>
+</body>
+</html>

@@ -46,6 +46,8 @@ export const topBar = {
   proposalsTip: "Proposals that wait for you to accept or reject them. The Review panel lists them.",
   mainElement: (name: string) => `Main element: ${name}`,
   mainElementTip: "The Definitive element: the one without which the project is not what it is. Select it to read what the project is.",
+  classic: "Earlier map page",
+  classicTip: "Open the earlier Metaform map page, brought over to this server",
   review: "Proposals",
   reviewTip: "Ask for proposals to improve the specification, and accept or reject each one",
   markdown: "Specification as Markdown",

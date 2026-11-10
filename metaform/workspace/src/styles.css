@@ -219,3 +219,4 @@ kbd { font: .857em/1.6 ui-monospace, monospace; background: var(--bg); border: 1
 .where-banner button { padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--text); cursor: pointer; white-space: nowrap; }
 .where-banner .where-all { border-color: var(--accent); font-weight: 600; }
 .where-banner button:hover { background: var(--bg); }
+.top-classic { flex: 0 0 auto; color: var(--accent); white-space: nowrap; }
