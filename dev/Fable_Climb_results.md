@@ -149,6 +149,17 @@ The owner rejected the first page and gave a specification, `dev/gui_specificati
   - Present mode, Element mode, the light theme and a 900-pixel window drew without overlap.
 - Three defects were found by looking at the page and fixed: a first view with a left panel was never fitted; keyboard focus on the selected element restarted the slide on every redraw; the graph was not fitted again when the pane changed size.
 
+First-time-user test, a Sonnet agent with no knowledge of the product, on the rmcp map:
+
+| Build | Tasks answered | Usable without a manual |
+|---|---|---|
+| The rejected page | 4 of 6 | No |
+| An intermediate build | 5 of 6 | No |
+| This page, before the wording fixes | 9 of 9, all sure | No: proposals sat in a closed panel, and several labels were unclear |
+| This page, as published on 2026-11-10 | 9 of 9, all sure | "Mostly yes" |
+
+The last test asked for proposals in 3 actions; the one before needed 7. It still could not tell the meaning of the role names, the category names and the bottom strip's Records without their tooltips, and it found labels too small to read at 44% zoom.
+
 Not established: the clipboard copy and the file download (the browser under test has no clipboard or downloads folder to inspect), behavior in Firefox or Safari, and maps above 200 elements in a browser.
 
 ## 8. Open for the owner
