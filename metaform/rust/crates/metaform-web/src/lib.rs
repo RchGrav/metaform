@@ -278,12 +278,20 @@ fn content_type(path: &std::path::Path) -> &'static str {
 /// Serves a built file. A path that names no file gets `index.html`, so the workspace's own
 /// routes load the app. Only plain segments are accepted, so no request reads outside `assets`.
 async fn file(State(state): State<AppState>, uri: axum::http::Uri) -> Response {
-    let relative = uri.path().trim_start_matches('/');
+    let whole = uri.path().trim_start_matches('/');
+    // A folder is asked for with or without a closing slash; the segments are checked without it.
+    let relative = whole.strip_suffix('/').unwrap_or(whole);
     let safe = relative
         .split('/')
         .all(|segment| !segment.is_empty() && segment != "." && segment != ".." && !segment.contains('\\'));
     let assets = &state.config.assets;
     let candidate = if safe { assets.join(relative) } else { assets.join("index.html") };
+    // A folder that holds its own page, such as `classic`, gets that page. Without the closing
+    // slash the browser is sent to the address with it, so the page's relative links resolve.
+    if safe && candidate.is_dir() && candidate.join("index.html").is_file() && !whole.ends_with('/') {
+        return axum::response::Redirect::permanent(&format!("/{relative}/")).into_response();
+    }
+    let candidate = if candidate.is_dir() { candidate.join("index.html") } else { candidate };
     let path = if candidate.is_file() { candidate } else { assets.join("index.html") };
     match tokio::fs::read(&path).await {
         Ok(bytes) if path.file_name().is_some_and(|name| name == "index.html") => {

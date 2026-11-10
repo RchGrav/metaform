@@ -132,7 +132,7 @@ export function TopBar(props: {
         {strings.topBar.zoom(zoom * 100)}
       </span>
       {props.menu}
-      <a className="top-classic" href="/classic/index.html" title={strings.topBar.classicTip}>{strings.topBar.classic}</a>
+      <a className="top-classic" href="/classic/" title={strings.topBar.classicTip}>{strings.topBar.classic}</a>
     </header>
   );
 }
