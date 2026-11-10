@@ -107,7 +107,8 @@ export function buildScene(state: ViewState, input: SceneInput, only?: readonly 
     const tooFar = reach !== null && !reach.has(address);
     return {
       address,
-      label: lastSegment(address),
+      // The project's own name for the element; an address that only groups shows its last segment.
+      label: typeof fields.name === "string" && fields.name.trim() !== "" ? fields.name : lastSegment(address),
       technicalName: typeof fields.technical_name === "string" ? fields.technical_name : null,
       parent: !only && parent !== view.container && visible.has(parent) ? parent : null,
       role,
@@ -184,4 +185,64 @@ export function elementScene(state: ViewState, input: SceneInput, at: Address): 
   const scene = buildScene(flat, { ...input, graph, fullAddresses: graphAddresses(input.graph) }, addresses);
   const wanters = edges.some(([, to]) => to === at);
   return { ...scene, top: wanters ? null : at };
+}
+
+/**
+ * Selection as focus. The selected element, the elements it wants and the elements that want it
+ * stay clear, with their wants flowing; everything else is quiet. Only flags change, so nothing
+ * moves. With no selection, nothing flows.
+ */
+export function focusOnSelection(scene: RenderScene, selected: Address | null): RenderScene {
+  const near = new Set<Address>();
+  if (selected !== null && scene.nodes.some((n) => n.address === selected)) {
+    near.add(selected);
+    for (const edge of scene.edges) {
+      if (edge.from === selected) near.add(edge.to);
+      if (edge.to === selected) near.add(edge.from);
+    }
+  }
+  const focused = near.size > 0;
+  // An expanded element stays clear while anything inside it is clear.
+  const holds = (address: Address) => [...near].some((n) => n.startsWith(`${address}.`));
+  const off = (edge: RenderEdge) => edge.dimmed || (focused && edge.from !== selected && edge.to !== selected);
+  return {
+    ...scene,
+    nodes: scene.nodes.map((node) => ({ ...node, dimmed: node.dimmed || (focused && !near.has(node.address) && !holds(node.address)) })),
+    // The lines of the selected element flow; with no selection the graph is still (the earlier
+    // map's default: motion marks what the person is looking at).
+    edges: scene.edges.map((edge) => ({ ...edge, dimmed: off(edge), flowing: focused && !off(edge) })),
+  };
+}
+
+/**
+ * The functional graph: every element in the container, and the wants between them, with no
+ * nesting. An address that only groups other addresses is not drawn; the namespace is in each
+ * element's address, not in the picture. An element is labelled with the project's own name
+ * for it. When an element is selected, it, the elements it wants and the elements that want
+ * it stay clear, and everything else recedes; only flags change, so nothing moves.
+ */
+export function functionalScene(state: ViewState, input: SceneInput): RenderScene {
+  const view = currentView(state);
+  const inScope = (address: Address) => view.container === TOP || address === view.container || isBeneath(address, view.container);
+  const isElement = (address: Address) => {
+    const fields = input.fields.get(address);
+    return fields !== undefined && ["technical_name", "name", "role"].some((key) => typeof fields[key] === "string");
+  };
+  const elements = graphAddresses(input.graph).filter((address) => inScope(address) && isElement(address));
+  const flat: ViewState = {
+    ...state,
+    views:
+      state.project === null
+        ? state.views
+        : { ...state.views, [state.project]: { ...view, container: TOP, expanded: [] } },
+  };
+  const scene = buildScene(flat, { ...input, fullAddresses: graphAddresses(input.graph) }, elements);
+  return focusOnSelection(
+    {
+      ...scene,
+      functional: true,
+      nodes: scene.nodes.map((node) => ({ ...node, beneath: 0, collapsed: false, outside: view.container === TOP ? 0 : node.outside })),
+    },
+    view.selection,
+  );
 }

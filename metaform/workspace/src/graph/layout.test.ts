@@ -50,14 +50,14 @@ describe("ELK layout of a scene", () => {
     }
   });
 
-  it("places upstream left of the project and downstream right of it", async () => {
+  it("places what the project serves above it and what it relies on beneath it", async () => {
+    // The layout is by purpose, top to bottom (2026-11-09). Before, the bands stood side by side.
     const scene = await sceneFor("metaform");
     const result = await layout(elk, scene);
-    const xs = (band: string) => scene.nodes.filter((n) => n.band === band).map((n) => result.boxes.get(n.address)!);
-    const project = xs("project");
-    for (const box of xs("upstream")) expect(box.x + box.width).toBeLessThan(Math.min(...project.map((b) => b.x)));
-    for (const box of xs("downstream")) expect(box.x).toBeGreaterThan(Math.max(...project.map((b) => b.x + b.width)));
-    expect(result.separators.map((s) => s.band)).toEqual(["upstream", "downstream"]);
+    const tops = (band: string) => scene.nodes.filter((n) => n.band === band && n.parent === null).map((n) => result.boxes.get(n.address)!);
+    const project = tops("project");
+    for (const box of tops("downstream")) expect(box.y + box.height).toBeLessThanOrEqual(Math.min(...project.map((b) => b.y)));
+    for (const box of tops("upstream")) expect(box.y).toBeGreaterThanOrEqual(Math.max(...project.map((b) => b.y + b.height)));
   });
 
   it("gives the same layout for the same scene", async () => {

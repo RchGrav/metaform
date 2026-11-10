@@ -19,27 +19,6 @@ export function SimulatedBadge() {
   );
 }
 
-/** The page's address with a control that copies it. The address stays selectable when the copy is refused. */
-export function PageAddress({ address }: { address: string }) {
-  const [result, setResult] = useState<"copied" | "notCopied" | null>(null);
-  const copy = () => {
-    const done = (next: "copied" | "notCopied") => {
-      setResult(next);
-      setTimeout(() => setResult(null), next === "copied" ? 2000 : 6000);
-    };
-    // The clipboard exists only in a secure context; 127.0.0.1 and localhost are secure contexts.
-    if (!navigator.clipboard) return done("notCopied");
-    navigator.clipboard.writeText(address).then(() => done("copied"), () => done("notCopied"));
-  };
-  return (
-    <span className="page-address" title={strings.pageAddress.label}>
-      <span className="visually-hidden">{strings.pageAddress.label}</span>
-      <code>{address}</code>
-      <button type="button" onClick={copy}>{strings.pageAddress.copy}</button>
-      <span role="status">{result === null ? "" : strings.pageAddress[result]}</span>
-    </span>
-  );
-}
 
 export function TopBar(props: {
   state: ViewState;
@@ -165,38 +144,74 @@ export function Rail(props: {
   );
 }
 
-const IFD = ["outbound", "inbound", "two-way"] as const;
+const DIRECTIONS = ["outbound", "inbound", "two-way"] as const;
 
-/**
- * One want in the intake's terms, as the earlier graph showed it (climb step 2): the receiving
- * element (RE) holds the want, the providing element (PE) is what it names, OP is its `why`, EF
- * its `how`, and IFD its `direction`, relative to the receiving element (R-3.6).
- */
-function WantCard(props: { re: Address; pe: Address; want: Want; here: Address; onSelect: (address: Address) => void }) {
-  const { re, pe, want, here } = props;
-  const direction = IFD.find((d) => d === want.direction);
-  const element = (address: Address) =>
-    address === here ? <code>{address}</code> : (
-      <button type="button" className="link" onClick={() => props.onSelect(address)}>{address}</button>
-    );
+/** One relationship, in the words of the map: the other element, why, how and the direction. */
+function Relationship(props: { other: Address; otherName: string; want: Want; holder: string; provider: string; onSelect: (address: Address) => void }) {
+  const { want } = props;
+  const direction = DIRECTIONS.find((d) => d === want.direction);
   return (
-    <li className="want-card">
-      <dl>
-        <div><dt>{strings.intake.re.long}</dt><dd>{element(re)}</dd></div>
-        <div><dt>{strings.intake.pe.long}</dt><dd>{element(pe)}</dd></div>
-        {typeof want.why === "string" && <div><dt>{strings.intake.op.long}</dt><dd>{want.why}</dd></div>}
-        {typeof want.how === "string" && <div><dt>{strings.intake.ef.long}</dt><dd>{want.how}</dd></div>}
-        {direction && <div><dt>{strings.intake.ifd.long}</dt><dd>{strings.intake.ifdValue(direction, re, pe)}</dd></div>}
-      </dl>
+    <li className="relationship">
+      <button type="button" className="link relationship-other" onClick={() => props.onSelect(props.other)} title={props.other}>
+        {props.otherName}
+      </button>
+      {typeof want.why === "string" && <p><span className="term">{strings.intake.op.long}</span> {want.why}</p>}
+      {typeof want.how === "string" && <p><span className="term">{strings.intake.ef.long}</span> {want.how}</p>}
+      {direction && <p className="direction"><span className="term">{strings.intake.ifd.long}</span> {strings.intake.ifdValue(direction, props.holder, props.provider)}</p>}
     </li>
   );
 }
 
+/** One record of a layer, as text a person can read. */
+function LayerRecord({ record }: { record: unknown }) {
+  if (typeof record === "string") {
+    return /^https?:\/\//.test(record) ? <a href={record} target="_blank" rel="noreferrer noopener">{record}</a> : <span>{record}</span>;
+  }
+  if (record === null || typeof record !== "object") return <span>{String(record)}</span>;
+  const fields = record as Record<string, unknown>;
+  // A block of prose: a heading at its level, then the text (R-6.25).
+  if (typeof fields.text === "string") {
+    const level = typeof fields.level === "number" ? fields.level : 0;
+    return (
+      <div className={`block block-${level}`}>
+        {typeof fields.title === "string" && (
+          <p className="block-title">
+            {fields.title}
+            {typeof fields.code === "string" && <code>{fields.code}</code>}
+          </p>
+        )}
+        {fields.text !== "" && <p className="block-text">{fields.text}</p>}
+      </div>
+    );
+  }
+  const head = fields.frontmatter && typeof fields.frontmatter === "object" ? (fields.frontmatter as Record<string, unknown>) : fields;
+  const name = typeof head.name === "string" ? head.name : null;
+  const rest = Object.entries(head).filter(([key, value]) => key !== "name" && (typeof value === "string" || Array.isArray(value)));
+  return (
+    <div className="block">
+      {name !== null && <p className="block-title">{name}</p>}
+      {rest.map(([key, value]) => (
+        <p className="block-text" key={key}>
+          <span className="term">{key}</span> {Array.isArray(value) ? value.map(String).join("; ") : String(value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The folder of one element: what it is, who it serves and why, what it relies on and how, and
+ * the knowledge kept there, as text. It is what `goto` hands an agent, laid out for a person.
+ */
 export function Details(props: {
   address: Address;
   sheet: SummarySheet | null;
   /** The addresses directly beneath this one. */
   beneath: Address[];
+  /** The records of each layer the element holds, once they are read; null while they load. */
+  records: Record<string, unknown[]> | null;
+  /** The project's own name for an element, or its last address segment. */
+  nameOf: (address: Address) => string;
   opensProject: boolean;
   /** Present when the element is outside the project and its own map can be read (seam gap 4). */
   onOpenMap?: () => void;
@@ -205,88 +220,99 @@ export function Details(props: {
   onOpenProject: () => void;
   onSelect: (address: Address) => void;
 }) {
-  const { address, sheet } = props;
+  const { address, sheet, nameOf } = props;
+  const element = sheet?.element ?? {};
+  const text = (key: string) => (typeof element[key] === "string" ? (element[key] as string) : null);
   const wants = Object.entries(sheet?.wants ?? {});
   const wantedBy = Object.entries(sheet?.wanted_by ?? {});
-  const layerEntries = Object.entries(sheet?.layers ?? {});
-  const fields = Object.entries(sheet?.element ?? {}).filter(([, v]) => typeof v !== "object");
-  // A branch is an address that only groups the elements beneath it: it has no fields and no
-  // wants of its own. The arrows the graph draws at it belong to those elements.
-  const branch = sheet !== null && props.beneath.length > 0 && fields.length === 0 && wants.length === 0 && wantedBy.length === 0;
+  const layerEntries = Object.entries(sheet?.layers ?? {}).filter(([, { records }]) => records > 0);
+  const known = new Set(["technical_name", "name", "role", "uri", "status"]);
+  const others = Object.entries(element).filter(([key, value]) => !known.has(key) && typeof value !== "object");
+  // A branch is an address that only groups the elements beneath it.
+  const branch = sheet !== null && props.beneath.length > 0 && text("technical_name") === null && text("name") === null && wants.length === 0 && wantedBy.length === 0;
+  const name = nameOf(address);
+  const uri = text("uri");
   return (
     <aside className="details" aria-label={address}>
       <header>
-        <h2>{address}</h2>
+        <div>
+          <h2>{name}</h2>
+          {text("technical_name") !== null && <p className="kind">{text("technical_name")}</p>}
+        </div>
         <button type="button" onClick={props.onClose} aria-label={strings.details.close}>×</button>
       </header>
-      <dl className="fields">
-        {fields.map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>
-              {key === "uri" && typeof value === "string" && /^https?:\/\//.test(value) ? (
-                // A chained map's uri names its upstream repository (SPEC R-4.15).
-                <a href={value} target="_blank" rel="noreferrer noopener">
-                  {value}
-                </a>
-              ) : (
-                String(value)
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <p className="chips">
+        {text("role") !== null && <span className={`chip role-${text("role")!.toLowerCase()}`}>{text("role")}</span>}
+        {text("status") === "un_built" && <span className="chip not-built">{strings.details.notBuilt}</span>}
+        <code className="chip address" title={strings.details.address}>{address}</code>
+      </p>
+      {uri !== null && (
+        <p className="source">
+          <span className="term">{strings.details.source}</span>{" "}
+          {/^https?:\/\//.test(uri) ? <a href={uri} target="_blank" rel="noreferrer noopener">{uri}</a> : <code>{uri}</code>}
+        </p>
+      )}
+      {others.length > 0 && (
+        <dl className="fields">
+          {others.map(([key, value]) => (
+            <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>
+          ))}
+        </dl>
+      )}
       <div className="actions">
         <button type="button" onClick={props.onFocus}>{strings.details.setAsFocus}</button>
-        {props.opensProject && (
-          <button type="button" onClick={props.onOpenProject}>{strings.details.openProject}</button>
-        )}
-        {props.onOpenMap && (
-          <button type="button" onClick={props.onOpenMap}>{strings.details.openItsMap}</button>
-        )}
+        {props.opensProject && <button type="button" onClick={props.onOpenProject}>{strings.details.openProject}</button>}
+        {props.onOpenMap && <button type="button" onClick={props.onOpenMap}>{strings.details.openItsMap}</button>}
       </div>
-      {branch && (
+      {layerEntries.map(([layer, { records }]) => (
+        <section key={layer} className="layer">
+          <h3>{strings.details.layer(layer, records)}</h3>
+          {props.records === null ? (
+            <p className="empty">{strings.details.loading}</p>
+          ) : (
+            (props.records[layer] ?? []).map((record, index) => <LayerRecord key={index} record={record} />)
+          )}
+        </section>
+      ))}
+      {sheet?.skills && Object.keys(sheet.skills).length > 0 && (
+        <section className="layer">
+          <h3>{strings.details.layer("skills", Object.keys(sheet.skills).length)}</h3>
+          {Object.values(sheet.skills).map((skill) => <LayerRecord key={skill.name} record={skill} />)}
+        </section>
+      )}
+      {branch ? (
         <>
           <p className="empty">{strings.details.branch(props.beneath.length)}</p>
           <ul className="beneath">
             {props.beneath.map((child) => (
               <li key={child}>
-                <button type="button" className="link" onClick={() => props.onSelect(child)}>{child}</button>
+                <button type="button" className="link" onClick={() => props.onSelect(child)} title={child}>{nameOf(child)}</button>
               </li>
             ))}
           </ul>
         </>
-      )}
-      {!branch && <h3>{strings.details.wants}</h3>}
-      {branch ? null : wants.length === 0 ? (
-        <p className="empty">{strings.details.noWants}</p>
       ) : (
-        <ul className="wants">
-          {wants.map(([other, want]) => (
-            <WantCard key={other} re={address} pe={other} want={want} here={address} onSelect={props.onSelect} />
-          ))}
-        </ul>
-      )}
-      {!branch && <h3>{strings.details.wantedBy}</h3>}
-      {branch ? null : wantedBy.length === 0 ? (
-        <p className="empty">{strings.details.notWanted}</p>
-      ) : (
-        <ul className="wants">
-          {wantedBy.map(([other, want]) => (
-            <WantCard key={other} re={other} pe={address} want={want} here={address} onSelect={props.onSelect} />
-          ))}
-        </ul>
-      )}
-      {layerEntries.length > 0 && (
         <>
-          <h3>{strings.details.layers}</h3>
-          <ul>
-            {layerEntries.map(([layer, { records }]) => (
-              <li key={layer}>
-                {layer} · {strings.layers.records(records)}
-              </li>
-            ))}
-          </ul>
+          <h3>{strings.details.serves(wantedBy.length)}</h3>
+          {wantedBy.length === 0 ? (
+            <p className="empty">{strings.details.notWanted}</p>
+          ) : (
+            <ul className="wants">
+              {wantedBy.map(([other, want]) => (
+                <Relationship key={other} other={other} otherName={nameOf(other)} want={want} holder={nameOf(other)} provider={name} onSelect={props.onSelect} />
+              ))}
+            </ul>
+          )}
+          <h3>{strings.details.reliesOn(wants.length)}</h3>
+          {wants.length === 0 ? (
+            <p className="empty">{strings.details.noWants}</p>
+          ) : (
+            <ul className="wants">
+              {wants.map(([other, want]) => (
+                <Relationship key={other} other={other} otherName={nameOf(other)} want={want} holder={name} provider={nameOf(other)} onSelect={props.onSelect} />
+              ))}
+            </ul>
+          )}
         </>
       )}
     </aside>
@@ -326,7 +352,6 @@ export function BottomStrip(props: {
   unseen: number;
   simulated: boolean;
   /** The page's origin, shown with a control that copies it. */
-  pageAddress: string;
   projectName: (id: string) => string;
   onOpenActivity: () => void;
   dispatch: (action: Action) => void;
@@ -382,7 +407,6 @@ export function BottomStrip(props: {
           {strings.activity.summary(props.unseen)}
         </button>
         {props.simulated && <SimulatedBadge />}
-        <PageAddress address={props.pageAddress} />
         {open && (
           <ol className="activity-list">
             {props.activity.map((line) => {

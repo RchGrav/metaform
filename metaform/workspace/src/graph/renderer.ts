@@ -99,6 +99,11 @@ export interface RenderScene {
   edges: RenderEdge[];
   /** The element the layered layout puts at the top, or null for the default (UX sections 10 and 13, UI-U4). */
   top: Address | null;
+  /**
+   * True for the functional graph: elements only, no nesting, laid out by their wants from the
+   * parties the project serves down to what it relies on (the earlier graph's arrangement).
+   */
+  functional?: boolean;
 }
 
 /** Zoom 1 is 100%. x and y are the canvas translation in screen pixels. */
@@ -156,6 +161,8 @@ export interface GraphRenderer {
   setViewport(viewport: Viewport, animate: boolean): void;
   /** Frames every node with a 48 px margin, after any pending layout, and resolves to the resulting viewport. */
   fit(animate: boolean): Promise<Viewport>;
+  /** Frames the given elements with room around them, never magnifying past `maxZoom`; all elements when none is given. */
+  frame(addresses: readonly Address[], animate: boolean, maxZoom?: number): Promise<Viewport>;
   /**
    * The given addresses whose box lies wholly outside the viewport shown now, mid-move included
    * (UX section 12a: the indicator of new elements outside the view). Added for climb step 6b.

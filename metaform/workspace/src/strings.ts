@@ -51,6 +51,8 @@ export const hints = {
 } as const;
 
 export const graph = {
+  // Written on an element whose status is un_built.
+  notBuilt: "not built",
   // Shown on the canvas when a project is registered and its map has no element.
   emptyMap: "This project's map has no elements yet. They appear here as an agent adds them.",
   // The visible badge on an element with elements beneath it.
@@ -83,11 +85,20 @@ export const details = {
   wants: "wants",
   wantedBy: "wanted by",
   layers: "layers",
+  // The folder of an element. "Serves" lists the elements that want this one; "relies on"
+  // lists the elements this one wants.
+  serves: (n: number) => (n === 1 ? "serves 1 element" : `serves ${n} elements`),
+  reliesOn: (n: number) => (n === 1 ? "relies on 1 element" : `relies on ${n} elements`),
+  notBuilt: "not built",
+  source: "source",
+  address: "The element's address in the map",
+  layer: (layer: string, n: number) => `${layer} (${n === 1 ? "1 record" : `${n} records`})`,
+  loading: "Reading…",
   // Shown for an address that only groups the elements beneath it.
   branch: (n: number) =>
     `This address groups ${count(n, "element")}. The arrows drawn at it belong to them. Select one to see its wants.`,
-  noWants: "No wants.",
-  notWanted: "No element wants this one.",
+  noWants: "It relies on no other element.",
+  notWanted: "No element relies on it.",
 } as const;
 
 export const focus = {
@@ -135,15 +146,6 @@ export const presence = {
 export const simulated = {
   badge: "Simulated",
   tooltip: "Simulated: not connected to a Metaform server.",
-} as const;
-
-export const pageAddress = {
-  // The page's own address (its origin), so a user can confirm the page and pass the address on.
-  label: "This page's address",
-  copy: "Copy address",
-  copied: "Copied",
-  // The browser can refuse access to the clipboard; the address stays on screen to select.
-  notCopied: "Not copied. Select the address and copy it.",
 } as const;
 
 export const connection = {
@@ -221,25 +223,26 @@ export const keyboard = {
  * (context/brain/digital-typology-hhgg-graph-fixed.html).
  */
 export const intake = {
-  re: { short: "RE", long: "Receiving element (RE)" },
-  pe: { short: "PE", long: "Providing element (PE)" },
-  op: { short: "OP", long: "Operative purpose (OP)" },
-  ef: { short: "EF", long: "Encounter function (EF)" },
-  ifd: { short: "IFD", long: "Information flow direction (IFD)" },
-  // What the receiving element seeks, and what the provider supplies, as shown on a want.
-  opLine: (why: string) => `OP: ${why}`,
-  efLine: (how: string) => `EF: ${how}`,
-  // IFD is relative to the element that holds the want, never to the project, and the request
-  // is never the direction (R-3.6). `ifdValue` is the value alone, for a place that already
-  // shows the IFD label (the Details panel); `ifdLine` carries the label (an arrow's tooltip).
+  // The parts of a want, in the words the tool and the specification use (R-3.4 to R-3.6).
+  re: { short: "holder", long: "held by" },
+  pe: { short: "provider", long: "provided by" },
+  op: { short: "why", long: "why" },
+  ef: { short: "how", long: "how" },
+  ifd: { short: "direction", long: "direction" },
+  // What the holder seeks, and what the provider supplies, as shown on a want.
+  opLine: (why: string) => `why: ${why}`,
+  efLine: (how: string) => `how: ${how}`,
+  // The direction is relative to the element that holds the want, never to the project, and the
+  // request is never the direction (R-3.6). `ifdValue` is the value alone, for a place that
+  // already shows the label (the Details panel); `ifdLine` carries the label (a line's tooltip).
   ifdValue: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
     direction === "outbound"
-      ? `outbound, from ${re} to ${pe}`
+      ? `outbound: ${re} sends to ${pe}`
       : direction === "inbound"
-        ? `inbound, from ${pe} to ${re}`
-        : `two-way, between ${re} and ${pe}`,
+        ? `inbound: ${re} receives from ${pe}`
+        : `two-way: ${re} and ${pe} send to each other`,
   ifdLine: (direction: "inbound" | "outbound" | "two-way", re: string, pe: string) =>
-    `IFD: ${intake.ifdValue(direction, re, pe)}`,
+    `direction: ${intake.ifdValue(direction, re, pe)}`,
 } as const;
 
 /**
@@ -262,7 +265,7 @@ export const legend = {
   agentIdle: "Outlined ring: the agent is idle",
   unseen: "Dot at the corner: activity here you have not looked at yet",
   projectLink: "Link mark: this element opens another project",
-  arrow: "Arrow: a want, from the receiving element (RE) to the providing element (PE)",
+  arrow: "Line: a want, between the element that holds it and the element that provides. The arrowhead is where the substance arrives: at the holder (inbound), at the provider (outbound) or at both ends (two-way)",
   arrowCount: "Number on an arrow: several wants drawn as one line",
   band: "Dashed line: the project boundary, with upstream on the left and downstream on the right",
 } as const;

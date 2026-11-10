@@ -5,7 +5,7 @@ import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { CAMERA_MS, MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
-import { buildScene, elementScene, type SceneInput } from "./state/scene";
+import { elementScene, functionalScene, type SceneInput } from "./state/scene";
 import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
@@ -23,7 +23,6 @@ export interface AppProps {
   /** The command that started this page's server, shown in onboarding (UI-U1). */
   startCommand: string;
   /** The page's own address (its origin), shown in the bottom strip with a control that copies it. */
-  pageAddress: string;
 }
 
 /** metaform://map/project/<id>/<map>#<address> (seam gap 3): the project, and the element named after #. */
@@ -33,7 +32,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 }
 
-export function App({ source, events, renderer, simulated, startCommand, pageAddress }: AppProps) {
+export function App({ source, events, renderer, simulated, startCommand }: AppProps) {
   const ws = useWorkspace(source, events, simulated);
   const { state, dispatch, current } = ws;
   const view = currentView(state);
@@ -123,6 +122,31 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
     };
   }, [current, state.project, ws.agents, linkedProject]);
 
+  // The project's own name for an element, or the last segment of its address.
+  const nameOf = useCallback(
+    (address: Address): string => {
+      const name = sceneInput?.fields.get(address)?.name;
+      return typeof name === "string" && name.trim() !== "" ? name : address.slice(address.lastIndexOf(".") + 1);
+    },
+    [sceneInput],
+  );
+  // The records of every layer the selected element holds, read when its sheet arrives.
+  const [records, setRecords] = useState<Record<string, unknown[]> | null>(null);
+  useEffect(() => {
+    let live = true;
+    setRecords(null);
+    const project = state.project;
+    const at = sheet?.at;
+    if (!sheet || project === null || at === undefined) return;
+    const layers = Object.entries(sheet.layers).filter(([, { records: n }]) => n > 0).map(([layer]) => layer);
+    void Promise.all(layers.map(async (layer) => [layer, await source.layerRecords(project, at, layer).catch(() => [])] as const)).then(
+      (read) => live && setRecords(Object.fromEntries(read)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [sheet, state.project, source]);
+
   // The selected element's sheet, for Details and Element mode.
   const focusTarget = state.mode === "element" ? view.selection ?? current?.graph.definitive ?? null : view.selection;
   useEffect(() => {
@@ -160,7 +184,7 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
   const scene = useMemo(() => {
     if (!sceneInput) return { nodes: [], edges: [], top: null };
     if (state.mode === "element" && focusTarget !== null) return elementScene(state, sceneInput, focusTarget);
-    return buildScene(state, sceneInput);
+    return functionalScene(state, sceneInput);
   }, [state, sceneInput, focusTarget]);
 
   const viewportKey = state.mode === "element" ? `element:${focusTarget ?? ""}` : view.container;
@@ -270,6 +294,16 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
     [followLink, beneath],
   );
 
+  // "Go up" at a member of an open group closes the group, so the members fold back into one
+  // stacked element. Anywhere else it leaves the container, as before.
+  const up = useCallback(
+    (address: Address): Action => {
+      const parent = address.includes(".") ? address.slice(0, address.lastIndexOf(".")) : null;
+      return parent !== null && view.expanded.includes(parent) ? { type: "toggle-expanded", address: parent } : { type: "up" };
+    },
+    [view.expanded],
+  );
+
   // The keyboard map (UX sections 3 to 11). Every action also has a pointer route.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -345,6 +379,8 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
   }, [renderer, view.selection]);
+
+
 
   const layerTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -423,6 +459,7 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
             viewport={storedViewport}
             placeKey={`${state.project ?? ""}|${viewportKey}|${visibleCount > 0 ? "ready" : "empty"}`}
             open={open}
+            up={up}
             onViewport={onViewport}
             ready={!firstView || state.mode === "element"}
             onSize={onCanvasSize}
@@ -447,6 +484,8 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
           <Details
             address={view.selection}
             sheet={sheet}
+            records={records}
+            nameOf={nameOf}
             beneath={addresses.filter((a) => a.startsWith(`${view.selection}.`) && !a.slice(String(view.selection).length + 1).includes("."))}
             opensProject={linkedProject(view.selection) !== null}
             onClose={() => dispatch({ type: "select", address: null })}
@@ -477,7 +516,6 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
           agents={ws.agents}
           unseen={ws.unseenActivity}
           simulated={simulated}
-          pageAddress={pageAddress}
           projectName={projectName}
           onOpenActivity={ws.markActivitySeen}
           legendOpen={legendOpen}

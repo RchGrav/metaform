@@ -14,12 +14,12 @@ const root = document.getElementById("root");
 if (root) {
   let app: JSX.Element;
   if (chooseSource(location.search, hostMark) === "host") {
-    app = <App source={new MetaformSource()} events={new MetaformEvents()} renderer={renderer} simulated={false} startCommand="metaform gui" pageAddress={location.origin} />;
+    app = <App source={new MetaformSource()} events={new MetaformEvents()} renderer={renderer} simulated={false} startCommand="metaform gui" />;
   } else {
     // `?first-run` starts with no projects, so onboarding and the simulated intake show (UX section 12).
     const mock = createMockSource({ firstRun: new URLSearchParams(location.search).has("first-run") });
     // The host's own start command when the host serves the mock (`?mock`).
-    app = <App source={mock} events={mock} renderer={renderer} simulated={mock.simulated} startCommand={hostMark ? "metaform gui" : "npm run dev"} pageAddress={location.origin} />;
+    app = <App source={mock} events={mock} renderer={renderer} simulated={mock.simulated} startCommand={hostMark ? "metaform gui" : "npm run dev"} />;
   }
   createRoot(root).render(<StrictMode>{app}</StrictMode>);
 }

@@ -54,6 +54,8 @@ export interface Layout {
   boxes: Map<Address, Box>;
   /** Polyline points for every edge, absolute. */
   routes: Map<string, Point[]>;
+  /** True when each route is a spline: its start, then control points in threes, as ELK gives them. */
+  curved?: boolean;
   /** The dashed separators between bands, as x positions with the band to their left/right. */
   separators: { x: number; band: Band }[];
   bounds: Box;
@@ -68,21 +70,36 @@ const LABEL_CHAR = 7.8;
 const SMALL_CHAR = 6.4;
 /** Room above an expanded element's children for its own label. */
 export const HEADER = 36;
-const BAND_GAP = 96;
-const BANDS: Band[] = ["upstream", "project", "downstream"];
 
+/**
+ * One layout for the whole view, top to bottom, by purpose. A want runs from the element that
+ * holds it down to the element that provides, so the parties the project serves are at the top,
+ * each element is beneath what it serves, and what the project relies on is at the bottom. The
+ * three bands are partitions, in that order. Every want, including one that crosses a band or
+ * enters an expanded element, is routed by ELK around the elements between its ends. (Until
+ * 2026-11-09 each band was laid out alone and a want between bands was drawn straight across
+ * whatever lay between.)
+ */
 const ROOT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "DOWN",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.edgeRouting": "ORTHOGONAL",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "56",
-  "elk.spacing.nodeNode": "32",
-  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+  "elk.edgeRouting": "SPLINES",
+  "elk.partitioning.activate": "true",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "84",
+  "elk.spacing.nodeNode": "28",
+  "elk.spacing.edgeNode": "18",
+  "elk.spacing.edgeEdge": "10",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "18",
+  "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+  "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+  "elk.layered.thoroughness": "40",
   // Absolute coordinates for nested nodes and edges (checked with elkjs 0.12.1).
   "elk.json.shapeCoords": "ROOT",
   "elk.json.edgeCoords": "ROOT",
 };
+/** Top to bottom: who the project serves, the project, what the project relies on. */
+const PARTITION: Record<Band, number> = { downstream: 0, project: 1, upstream: 2 };
 const COMPOUND_OPTIONS: Record<string, string> = {
   "elk.padding": `[top=${HEADER},left=16,bottom=16,right=16]`,
 };
@@ -115,7 +132,7 @@ export function nodeWidth(node: Pick<RenderNode, "label" | "beneath" | "layers" 
 export function layoutKey(scene: RenderScene, widths: ReadonlyMap<Address, number>): string {
   const nodes = scene.nodes.map((n) => `${n.address}|${n.parent ?? ""}|${n.band}|${widths.get(n.address) ?? 0}`);
   const edges = scene.edges.map((e) => e.id).sort();
-  return JSON.stringify([nodes, edges, scene.top]);
+  return JSON.stringify([nodes, edges, scene.top, scene.functional === true]);
 }
 
 /** The band of each node's outermost container, so a nested node lays out with its parent. */
@@ -129,15 +146,12 @@ function bandOf(node: RenderNode, byAddress: Map<Address, RenderNode>): Band {
   return current.band;
 }
 
-/** Builds one ELK graph per band. Nodes keep the scene's order (sorted by address). */
-export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>, headers: ReadonlyMap<Address, number> = new Map()): Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }> {
+/** Builds the one ELK graph of a scene. Nodes keep the scene's order (sorted by address). */
+export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>, headers: ReadonlyMap<Address, number> = new Map()): ElkGraph {
   const byAddress = new Map(scene.nodes.map((n) => [n.address, n]));
   const hasChildren = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
   const elkNodes = new Map<Address, ElkGraph>();
-  const bands = new Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }>();
-  for (const band of BANDS) {
-    bands.set(band, { graph: { id: `band:${band}`, layoutOptions: { ...ROOT_OPTIONS }, children: [], edges: [] }, crossing: [] });
-  }
+  const root: ElkGraph = { id: "view", layoutOptions: { ...ROOT_OPTIONS }, children: [], edges: [] };
   for (const node of scene.nodes) {
     const elkNode: ElkGraph = hasChildren.has(node.address)
       ? {
@@ -153,29 +167,22 @@ export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>, 
         children: [],
       }
       : { id: node.address, width: widths.get(node.address) ?? MIN_WIDTH, height: NODE_HEIGHT };
+    const parent = node.parent === null ? undefined : elkNodes.get(node.parent);
+    if (!parent) {
+      elkNode.layoutOptions = { ...elkNode.layoutOptions, "elk.partitioning.partition": String(PARTITION[bandOf(node, byAddress)]) };
+    }
     if (node.address === scene.top) {
       elkNode.layoutOptions = { ...elkNode.layoutOptions, "elk.layered.layering.layerConstraint": "FIRST" };
     }
     elkNodes.set(node.address, elkNode);
-    const parent = node.parent === null ? undefined : elkNodes.get(node.parent);
-    const container = parent ?? bands.get(bandOf(node, byAddress))?.graph;
-    container?.children?.push(elkNode);
+    (parent ?? root).children?.push(elkNode);
   }
   for (const edge of scene.edges) {
-    const from = byAddress.get(edge.from);
-    const to = byAddress.get(edge.to);
-    if (!from || !to) continue;
-    const fromBand = bandOf(from, byAddress);
-    const entry = bands.get(fromBand);
-    if (!entry) continue;
-    if (fromBand === bandOf(to, byAddress)) {
-      entry.graph.edges?.push({ id: edge.id, sources: [edge.from], targets: [edge.to] });
-    } else {
-      entry.crossing.push(edge);
-    }
+    if (!byAddress.has(edge.from) || !byAddress.has(edge.to)) continue;
+    root.edges?.push({ id: edge.id, sources: [edge.from], targets: [edge.to] });
   }
-  wrapLooseChildren(scene, byAddress, bands, widths);
-  return bands;
+  wrapLooseChildren(scene, byAddress, root, widths);
+  return root;
 }
 
 /** Width over height that a wrapped block of children aims for (climb step 3a). */
@@ -190,7 +197,7 @@ const WRAP_ASPECT = 1.6;
 function wrapLooseChildren(
   scene: RenderScene,
   byAddress: Map<Address, RenderNode>,
-  bands: Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }>,
+  root: ElkGraph,
   widths: ReadonlyMap<Address, number>,
 ): void {
   const childOf = (address: Address, container: Address): Address | null => {
@@ -216,10 +223,8 @@ function wrapLooseChildren(
     // Columns c and rows r = k / c with c * (width + gap) ≈ WRAP_ASPECT * r * (height + gap).
     const cell = { w: width + 32, h: NODE_HEIGHT + 56 };
     const columns = Math.max(2, Math.round(Math.sqrt((WRAP_ASPECT * loose.length * cell.h) / cell.w)));
-    const node = byAddress.get(container);
-    const graph = node ? bands.get(bandOf(node, byAddress))?.graph : undefined;
     for (let i = 0; i + columns < loose.length; i++) {
-      graph?.edges?.push({ id: `wrap:${loose[i]}->${loose[i + columns]}`, sources: [loose[i]!], targets: [loose[i + columns]!] });
+      root.edges?.push({ id: `wrap:${loose[i]}->${loose[i + columns]}`, sources: [loose[i]!], targets: [loose[i + columns]!] });
     }
   }
 }
@@ -236,61 +241,32 @@ function collectBoxes(node: ElkGraph, dx: number, out: Map<Address, Box>): void 
   }
 }
 
-/** Runs ELK for each non-empty band and places the bands side by side. */
+/**
+ * The points of every routed edge. A spline is its start, then control points in threes; an
+ * edge that ELK routes in several sections is joined at the points the sections share.
+ */
+function collectRoutes(node: ElkGraph, out: Map<string, Point[]>): void {
+  for (const edge of node.edges ?? []) {
+    const points: Point[] = [];
+    for (const section of edge.sections ?? []) {
+      const part = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint];
+      const last = points[points.length - 1];
+      const joined = last !== undefined && part[0] !== undefined && last.x === part[0].x && last.y === part[0].y;
+      points.push(...(joined ? part.slice(1) : part).map((p) => ({ x: p.x, y: p.y })));
+    }
+    if (points.length >= 2) out.set(edge.id, points);
+  }
+  for (const child of node.children ?? []) collectRoutes(child, out);
+}
+
+/** Runs ELK once for the whole scene and reads the boxes and the routes. */
 export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<Address, number>, headers: ReadonlyMap<Address, number> = new Map()): Promise<Layout> {
   const key = layoutKey(scene, widths);
   const boxes = new Map<Address, Box>();
   const routes = new Map<string, Point[]>();
-  const separators: Layout["separators"] = [];
-  const crossing: RenderEdge[] = [];
-  // Lay out each band, then place them. The project band is anchored at x = 0, so a band
-  // appearing on the left (upstream) grows into negative x instead of shifting every project
-  // element right (climb step 6a2; viewer plan: positions stay stable). Downstream follows the
-  // project band, or upstream when there is no project band.
-  const laid = new Map<Band, ElkGraph>();
-  for (const [band, { graph, crossing: across }] of toElk(scene, widths, headers)) {
-    crossing.push(...across);
-    if ((graph.children ?? []).length > 0) laid.set(band, await elk.layout(graph));
-  }
-  const widthOf = (band: Band) => laid.get(band)?.width ?? 0;
-  const origin = new Map<Band, number>();
-  const up = laid.has("upstream");
-  const project = laid.has("project");
-  if (project) origin.set("project", 0);
-  if (up) origin.set("upstream", project ? -(widthOf("upstream") + BAND_GAP) : 0);
-  if (laid.has("downstream")) {
-    const after = project ? widthOf("project") : up ? widthOf("upstream") : -BAND_GAP;
-    origin.set("downstream", after + BAND_GAP);
-  }
-  if (up && (project || laid.has("downstream"))) {
-    const at = (project ? 0 : origin.get("downstream")!) - BAND_GAP / 2;
-    separators.push({ x: at, band: "upstream" });
-  }
-  if (laid.has("downstream") && (project || up)) {
-    separators.push({ x: origin.get("downstream")! - BAND_GAP / 2, band: "downstream" });
-  }
-  let height = 0;
-  for (const [band, result] of laid) {
-    const x = origin.get(band) ?? 0;
-    collectBoxes(result, x, boxes);
-    for (const edge of result.edges ?? []) {
-      const section = edge.sections?.[0];
-      if (!section) continue;
-      const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint];
-      routes.set(edge.id, points.map((p) => ({ x: p.x + x, y: p.y })));
-    }
-    height = Math.max(height, result.height ?? 0);
-  }
-  const left = Math.min(0, ...[...origin.values()]);
-  const right = Math.max(0, ...[...laid.keys()].map((band) => (origin.get(band) ?? 0) + widthOf(band)));
-  for (const edge of crossing) {
-    const from = boxes.get(edge.from);
-    const to = boxes.get(edge.to);
-    if (!from || !to) continue;
-    const rightward = from.x < to.x;
-    const start = { x: rightward ? from.x + from.width : from.x, y: from.y + from.height / 2 };
-    const end = { x: rightward ? to.x : to.x + to.width, y: to.y + to.height / 2 };
-    routes.set(edge.id, [start, end]);
-  }
-  return { key, boxes, routes, separators, bounds: { x: left, y: 0, width: right - left, height } };
+  if (scene.nodes.length === 0) return { key, boxes, routes, separators: [], curved: true, bounds: { x: 0, y: 0, width: 0, height: 0 } };
+  const result = await elk.layout(toElk(scene, widths, headers));
+  collectBoxes(result, 0, boxes);
+  collectRoutes(result, routes);
+  return { key, boxes, routes, separators: [], curved: true, bounds: { x: 0, y: 0, width: result.width ?? 0, height: result.height ?? 0 } };
 }

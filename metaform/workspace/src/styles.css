@@ -1,8 +1,8 @@
 /* Measurable criteria (UX section 13, UI-05, proposed): one accent colour, four role colours,
    text contrast at least 4.5:1 and controls at least 3:1, animations at most 200 ms. */
 :root, .theme-dark {
-  --bg: #0f1115; --panel: #161a21; --line: #2a303b; --text: #e6e9ef; --muted: #9aa3b2;
-  --accent: #6ea8fe;
+  --bg: #020408; --panel: #080d13; --line: #1f2a37; --text: #f5f7fa; --muted: #9aa2ad;
+  --accent: #53a0ff;
   --definitive: #f2c66d; --supportive: #8fb3d9; --notable: #b39ddb; --divergent: #e57373;
   --layer-0: #4dd0e1; --layer-1: #aed581; --layer-2: #ffb74d; --layer-3: #f48fb1; --layer-4: #90a4ae; --layer-5: #ce93d8;
   --unseen: #ffd54f;
@@ -80,9 +80,6 @@ button, select { font: inherit; color: inherit; }
 .activity-list li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
 .badge { font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; color: var(--muted); }
 .badge.simulated { border-color: var(--unseen); color: var(--unseen); }
-.page-address { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.page-address code { font-size: 12px; user-select: all; }
-.page-address button { background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
 .onboarding .no-project { font-weight: 600; margin: 8px 0 0; }
 .side { width: 320px; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
 .side .details { width: auto; border-left: 0; flex: 1 1 auto; min-height: 0; }
@@ -122,3 +119,23 @@ kbd { font: 12px/1.6 ui-monospace, monospace; background: var(--bg); border: 1px
 }
 .details .beneath .link { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; padding: 3px 0; }
 .empty-map { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); pointer-events: none; }
+.details { width: 400px; }
+.details h2 { font-size: 18px; word-break: normal; }
+.details .kind { margin: 2px 0 0; color: var(--muted); }
+.details .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.details .chip { border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.details .chip.address { font-family: ui-monospace, monospace; color: var(--muted); }
+.details .chip.not-built { border-color: var(--divergent); color: var(--divergent); }
+.details .chip.role-definitive { border-color: var(--accent); color: var(--accent); }
+.details .term { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.details .source { margin: 4px 0; font-size: 13px; }
+.details h3 { text-transform: none; font-size: 13px; color: var(--text); border-top: 1px solid var(--line); padding-top: 12px; margin: 16px 0 8px; }
+.relationship { border-left: 2px solid var(--line); padding: 2px 0 2px 10px; }
+.relationship p { margin: 3px 0; font-size: 13px; line-height: 1.4; }
+.relationship .direction { color: var(--muted); }
+.relationship-other { color: var(--accent); font-weight: 600; padding: 0; }
+.details .layer .block { margin: 8px 0; }
+.details .block-title { font-weight: 600; margin: 0 0 2px; }
+.details .block-title code { margin-left: 8px; font-weight: 400; color: var(--muted); font-size: 12px; }
+.details .block-text { margin: 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.details .block-2 { margin-left: 10px; } .details .block-3 { margin-left: 20px; } .details .block-4 { margin-left: 30px; }

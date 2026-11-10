@@ -20,13 +20,15 @@ export interface CanvasProps {
   onSize: (width: number, height: number) => void;
   /** The action a double-click or Enter on an element performs. */
   open: (address: string) => Action;
+  /** What "go up" does at an element; without it, the view leaves the container. */
+  up?: (address: string) => Action;
   dispatch: (action: Action) => void;
 }
 
-export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, open, onViewport, dispatch }: CanvasProps) {
+export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, open, up, onViewport, dispatch }: CanvasProps) {
   const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ open, dispatch, viewport, onViewport, onSize });
-  latest.current = { open, dispatch, viewport, onViewport, onSize };
+  const latest = useRef({ open, up, dispatch, viewport, onViewport, onSize });
+  latest.current = { open, up, dispatch, viewport, onViewport, onSize };
 
   useEffect(() => {
     const element = host.current;
@@ -44,7 +46,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, ope
     if (!element) return;
     renderer.mount(element, {
       nodeClick: (address, modifiers) => {
-        if (modifiers.up) latest.current.dispatch({ type: "up" });
+        if (modifiers.up) latest.current.dispatch(latest.current.up?.(address) ?? { type: "up" });
         else latest.current.dispatch({ type: "select", address });
       },
       nodeDoubleClick: (address) => latest.current.dispatch(latest.current.open(address)),

@@ -23,11 +23,11 @@ import { GRAPH_CSS } from "./style";
 const SVG = "http://www.w3.org/2000/svg";
 const FIT_MARGIN = 48;
 /** From this zoom, single wants show their OP and EF lines (climb step 7; UX section 12a). */
-const DETAIL_ZOOM = 1.2;
+
 /** A detail line is cut to this many characters; the edge's title holds the whole text. */
 const DETAIL_CHARS = 48;
 /** Estimated advance of one 10 px detail character, for the backing plate. */
-const DETAIL_CHAR = 5.6;
+
 /** How long after the last wheel or drag a viewport change counts as settled. */
 const SETTLE_MS = 150;
 /** Layer mark shapes, by style index, so marks do not depend on colour alone. */
@@ -78,7 +78,28 @@ const CORNER = 8;
  * The SVG path for a route. ELK routes edges orthogonally, so a route with bend points is drawn
  * as straight segments with rounded corners. A two-point route between bands is an S-curve.
  */
-function pathFor(points: Point[]): string {
+/**
+ * The path of a spline route from ELK: the start point, then cubic segments of two control
+ * points and an end point. A route whose points do not divide into such segments is drawn
+ * through its points, so a line is never dropped.
+ */
+function splineFor(points: Point[]): string {
+  const [first] = points;
+  if (!first || points.length < 2) return "";
+  let d = `M${first.x},${first.y}`;
+  if ((points.length - 1) % 3 !== 0) {
+    for (const p of points.slice(1)) d += ` L${p.x},${p.y}`;
+    return d;
+  }
+  for (let i = 1; i + 2 < points.length; i += 3) {
+    const [a, b, c] = [points[i]!, points[i + 1]!, points[i + 2]!];
+    d += ` C${a.x},${a.y} ${b.x},${b.y} ${c.x},${c.y}`;
+  }
+  return d;
+}
+
+function pathFor(points: Point[], curved = false): string {
+  if (curved && points.length > 2) return splineFor(points);
   const [first, second] = points;
   if (!first || !second) return "";
   if (points.length === 2) {
@@ -141,6 +162,10 @@ export class ElkRenderer implements GraphRenderer {
   private readonly cleanup: (() => void)[] = [];
   private readonly flow = new Flow();
   private readonly glide = new Glide();
+  /** Whether the layout being drawn gives its routes as splines. */
+  private curved = false;
+  /** Whether the scene being drawn is the functional graph. */
+  private functional = false;
   /** Wants with OP or EF to show when zoomed close, collected while edges are drawn. */
   private details: { edge: RenderEdge; at: Point }[] = [];
 
@@ -225,6 +250,29 @@ export class ElkRenderer implements GraphRenderer {
     return { ...this.viewport };
   }
 
+  /**
+   * Frames the given elements, after any pending layout: the camera eases to show all of them
+   * with room around, and never magnifies past `maxZoom`. With no address it frames everything.
+   */
+  async frame(addresses: readonly Address[], animate: boolean, maxZoom = 1.25): Promise<Viewport> {
+    await this.pending;
+    const size = this.host?.getBoundingClientRect();
+    const boxes = addresses.map((a) => this.current?.boxes.get(a)).filter((b): b is Box => b !== undefined);
+    if (!size || boxes.length === 0) return this.fit(animate);
+    const left = Math.min(...boxes.map((b) => b.x));
+    const top = Math.min(...boxes.map((b) => b.y));
+    const width = Math.max(...boxes.map((b) => b.x + b.width)) - left;
+    const height = Math.max(...boxes.map((b) => b.y + b.height)) - top;
+    const margin = FIT_MARGIN * 1.6;
+    const zoom = clampZoom(Math.min(maxZoom, (size.width - 2 * margin) / width, (size.height - 2 * margin) / height));
+    this.setViewport({
+      x: (size.width - width * zoom) / 2 - left * zoom,
+      y: (size.height - height * zoom) / 2 - top * zoom,
+      zoom,
+    }, animate);
+    return { ...this.viewport };
+  }
+
   /** The addresses whose box lies wholly outside the viewport on screen now, mid-move included. */
   outsideView(addresses: readonly Address[]): Address[] {
     const size = this.host?.getBoundingClientRect();
@@ -288,6 +336,9 @@ export class ElkRenderer implements GraphRenderer {
     this.flow.setLayer(flowLayer);
     const nodes = el("g", { class: "mf-nodes" }, canvas);
     const parents = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
+    this.curved = next.curved === true;
+    this.functional = scene.functional === true;
+    this.svg?.classList.toggle("mf-focused", scene.nodes.some((n) => n.selected));
     const glides: GlideItem[] = [];
     for (const node of scene.nodes) {
       const box = next.boxes.get(node.address);
@@ -316,6 +367,8 @@ export class ElkRenderer implements GraphRenderer {
 
   private drawNode(node: RenderNode, box: Box, container: boolean, parent: SVGGElement): SVGGElement {
     const classes = ["mf-node", `mf-band-${node.band}`, `mf-role-${(node.role ?? "none").toLowerCase()}`];
+    if (this.functional) classes.push("mf-flat");
+    if (node.status === "un_built") classes.push("mf-unbuilt");
     if (container) classes.push("mf-container");
     if (node.selected) classes.push("mf-selected");
     if (node.focus) classes.push("mf-focus");
@@ -338,7 +391,15 @@ export class ElkRenderer implements GraphRenderer {
     const row1 = container ? HEADER / 2 + 5 : 23;
     const row2 = container ? HEADER / 2 + 5 : 43;
     const label = el("text", { class: "mf-label", x: 16, y: row1 }, g);
-    label.textContent = node.label;
+    // Functionality that is intended and not built yet is drawn faint, with the words on it
+    // (the earlier interface drew a missing node ghostly, at 70%).
+    if (node.status === "un_built" && !container) {
+      el("text", { class: "mf-status", x: box.width - 12, y: 43, "text-anchor": "end" }, g).textContent = text.notBuilt;
+    }
+    // A name longer than its box is cut with an ellipsis; the whole name is in the tooltip.
+    const room = Math.max(4, Math.floor((box.width - 32) / 7.4));
+    label.textContent = node.label.length > room ? `${node.label.slice(0, room - 1).trimEnd()}…` : node.label;
+    if (node.label.length > room) tip(label, node.label);
     let right = box.width - 16;
     if (node.beneath > 0) {
       const chevron = el("g", {
@@ -414,13 +475,34 @@ export class ElkRenderer implements GraphRenderer {
     const dimmedEnds = [edge.from, edge.to].filter((a) => scene.nodes.find((n) => n.address === a)?.dimmed).length;
     const fade = edge.dimmed || dimmedEnds === 2 ? " mf-dimmed" : dimmedEnds === 1 ? " mf-half" : "";
     const g = el("g", { class: `mf-edge${fade}`, "data-edge": edge.id }, parent);
-    const path = el("path", { d: pathFor(route), "marker-end": "url(#mf-arrow)" }, g);
     const direction = edge.direction;
+    // An arrowhead is where the substance of the want arrives (R-3.6). A route runs from the
+    // holder to the provider, so an inbound want has its head at the start, an outbound want at
+    // the end, and a two-way want at both. A line with no recorded direction has no head.
+    const heads: Record<string, string> = {};
+    if (direction === "inbound" || direction === "two-way" || direction === "mixed") heads["marker-start"] = "url(#mf-arrow)";
+    if (direction === "outbound" || direction === "two-way" || direction === "mixed") heads["marker-end"] = "url(#mf-arrow)";
+    const path = el("path", { d: pathFor(route, this.curved), ...heads }, g);
+    // A wide, unseen line over the want makes it easy to point at. While the pointer is on it,
+    // the want is lit and its OP and EF are shown.
+    el("path", { d: pathFor(route, this.curved), class: "mf-edge-hit" }, g);
+    const plate = () => this.svg?.querySelector(`.mf-want-detail[data-edge="${CSS.escape(edge.id)}"]`);
+    g.addEventListener("pointerenter", () => {
+      g.classList.add("mf-lit");
+      plate()?.classList.add("mf-show");
+    });
+    g.addEventListener("pointerleave", () => {
+      g.classList.remove("mf-lit");
+      plate()?.classList.remove("mf-show");
+    });
     if (direction === "outbound" || direction === "inbound" || direction === "two-way") {
       const label = (address: Address) => scene.nodes.find((n) => n.address === address)?.label ?? address;
       tip(g, intake.ifdLine(direction, label(edge.from), label(edge.to)));
       // UX section 12a: the flow runs where it helps; the scene marks those wants `flowing`.
-      if (!fade.includes("mf-dimmed") && edge.flowing) this.flow.add(edge.id, path, direction);
+      if (!fade.includes("mf-dimmed") && edge.flowing) {
+        const provider = scene.nodes.find((n) => n.address === edge.to);
+        this.flow.add(edge.id, path, direction, edge.from, edge.to, (provider?.role ?? "none").toLowerCase());
+      }
     } else {
       tip(g, legend.arrow);
     }
@@ -434,9 +516,8 @@ export class ElkRenderer implements GraphRenderer {
   }
 
   /**
-   * Places the OP and EF plates, hidden below DETAIL_ZOOM by CSS. Positions never depend on zoom,
-   * so placing once per draw is enough. The selected element's wants go first; a plate that would
-   * cover an element or another plate is left out, and its want's title still carries the text.
+   * Places the OP and EF plate of every want, hidden. A plate appears only while the pointer is on
+   * its want's line. The page never puts this text on the graph by itself: it would cover the lines.
    */
   private placeDetails(scene: RenderScene, layout: Layout, parent: SVGGElement): void {
     const selected = new Set(scene.nodes.filter((n) => n.selected).map((n) => n.address));
@@ -445,24 +526,43 @@ export class ElkRenderer implements GraphRenderer {
     );
     const taken: Box[] = [...layout.boxes.values()];
     const clear = (r: Box) => taken.every((t) => r.x >= t.x + t.width || t.x >= r.x + r.width || r.y >= t.y + t.height || t.y >= r.y + r.height);
+    // A plate is shown only while the pointer is on its want's line (see drawEdge), one at a
+    // time, so every want gets one and none is left out for lack of room.
+    void clear;
     for (const { edge, at } of order) {
-      const plate = this.drawDetail(parent, at, edge.why, edge.how, (box) => clear(box));
-      if (plate) taken.push(plate);
+      this.drawDetail(parent, at, edge.why, edge.how, () => true)
+      parent.lastElementChild?.setAttribute("data-edge", edge.id);
     }
   }
 
-  /** OP and EF of one want, on a plate at the line's middle, if `fits` accepts its box. */
+  /**
+   * The why and how of one want, on a plate beside the line's middle. The plate keeps its size on
+   * screen at any zoom (`--mf-unzoom`), so the text can always be read, and long text is wrapped,
+   * not cut.
+   */
   private drawDetail(parent: SVGGElement, at: Point, why: string | null, how: string | null, fits: (box: Box) => boolean): Box | null {
-    const cut = (t: string) => (t.length > DETAIL_CHARS ? `${t.slice(0, DETAIL_CHARS - 1).trimEnd()}…` : t);
-    const lines = [why ? intake.opLine(cut(why)) : null, how ? intake.efLine(cut(how)) : null].filter((l): l is string => l !== null);
-    const width = Math.max(...lines.map((l) => l.length)) * DETAIL_CHAR + 12;
-    const height = lines.length * 13 + 6;
-    const box = { x: at.x - width / 2, y: at.y + 6, width, height };
+    const wrap = (text: string): string[] => {
+      const lines: string[] = [];
+      let line = "";
+      for (const word of text.split(/\s+/)) {
+        if (line !== "" && (line + " " + word).length > DETAIL_CHARS) {
+          lines.push(line);
+          line = "   " + word;
+        } else line = line === "" ? word : `${line} ${word}`;
+      }
+      if (line !== "") lines.push(line);
+      return lines;
+    };
+    const lines = [...(why ? wrap(intake.opLine(why)) : []), ...(how ? wrap(intake.efLine(how)) : [])];
+    const width = Math.max(...lines.map((l) => l.length)) * 6.6 + 16;
+    const height = lines.length * 16 + 10;
+    const box = { x: at.x + 14, y: at.y + 10, width, height };
     if (!fits(box)) return null;
     const g = el("g", { class: "mf-want-detail", transform: `translate(${box.x},${box.y})` }, parent);
-    el("rect", { class: "mf-want-plate", width, height, rx: 4 }, g);
+    const inner = el("g", { class: "mf-want-inner" }, g);
+    el("rect", { class: "mf-want-plate", width, height, rx: 5 }, inner);
     lines.forEach((line, i) => {
-      el("text", { class: "mf-want-line", x: 6, y: 14 + i * 13 }, g).textContent = line;
+      el("text", { class: "mf-want-line", x: 8, y: 18 + i * 16, "xml:space": "preserve" }, inner).textContent = line;
     });
     return box;
   }
@@ -474,8 +574,8 @@ export class ElkRenderer implements GraphRenderer {
     if (!this.canvas) return;
     this.canvas.style.transition = "";
     this.canvas.style.transform = `translate(${shown.x}px, ${shown.y}px) scale(${shown.zoom})`;
-    // Want detail shows only when zoomed close; positions never change with zoom.
-    this.svg?.classList.toggle("mf-close", shown.zoom >= DETAIL_ZOOM);
+    // A want's plate keeps its size on screen: it is scaled by the inverse of the zoom.
+    this.svg?.style.setProperty("--mf-unzoom", String(1 / Math.max(shown.zoom, 0.05)));
   }
 
   private settled(): void {
