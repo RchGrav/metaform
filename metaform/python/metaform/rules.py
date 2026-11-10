@@ -130,7 +130,11 @@ def _layer_values(map: Map, is_layer: Callable[[str], bool], verb: str, address:
 # The rule text that ends the message of every grammar refusal. The message is the only place an
 # agent learns the rule, so it states the whole rule and is the same in every form of Metaform.
 # The faults of the refused want come before it (`grammar_fault`).
-GRAMMAR_RULE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
+GRAMMAR_RULE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer."
+
+# The most words a `why` or a `how` may have. A word is a run of characters that are not white
+# space. An engineering decision of 2026-11-10 that the owner may adjust (`SPEC.md` R-5.24).
+GRAMMAR_WORD_LIMIT = 14
 
 # The text an agent must replace in the remediation of a grammar refusal.
 WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>"
@@ -206,8 +210,8 @@ def grammar_fault(field: str, text: str) -> str | None:
     in the words of the refusal message, or None when the text follows the rule. `field` is
     `why` or `how`. The checks have a fixed order, the same in every form of Metaform. For a
     `how` the subject check comes before the `-s` check, so `The router stores` is reported as a
-    subject. The case of the first letter, one trailing full stop, length, and words ending in
-    `-ing` after the first word are not checked (`SPEC.md` D-14)."""
+    subject. The length check is the last one. The case of the first letter, one trailing full
+    stop, and words ending in `-ing` after the first word are not checked (`SPEC.md` D-14)."""
     first = _first_word(text)
     subject = first in SUBJECT_WORDS
     if field == "why":
@@ -226,6 +230,8 @@ def grammar_fault(field: str, text: str) -> str | None:
         return "holds more than one fragment"
     if _has_lone_number(text):
         return "holds a value"
+    if len(split_whitespace(text)) > GRAMMAR_WORD_LIMIT:
+        return "is longer than 14 words"
     return None
 
 

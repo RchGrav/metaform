@@ -153,7 +153,13 @@ function layerValues(
  * Metaform. The faults of the refused want come before it (`grammarFault`).
  */
 export const GRAMMAR_RULE =
-  "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
+  "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.";
+
+/**
+ * The most words a `why` or a `how` may have. A word is a run of characters that are not white
+ * space. An engineering decision of 2026-11-10 that the owner may adjust (`SPEC.md` R-5.24).
+ */
+export const GRAMMAR_WORD_LIMIT = 14;
 
 /** The text an agent must replace in the remediation of a grammar refusal. */
 const WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>";
@@ -249,8 +255,8 @@ function hasLoneNumber(text: string): boolean {
  * the words of the refusal message, or `undefined` when the text follows the rule. `field` is
  * `why` or `how`. The checks have a fixed order, the same in every form of Metaform. For a `how`
  * the subject check comes before the `-s` check, so `The router stores` is reported as a
- * subject. The case of the first letter, one trailing full stop, length, and words ending in
- * `-ing` after the first word are not checked (`SPEC.md` D-14).
+ * subject. The length check is the last one. The case of the first letter, one trailing full
+ * stop, and words ending in `-ing` after the first word are not checked (`SPEC.md` D-14).
  */
 export function grammarFault(field: string, text: string): string | undefined {
   const first = firstWord(text);
@@ -278,6 +284,9 @@ export function grammarFault(field: string, text: string): string | undefined {
   }
   if (hasLoneNumber(text)) {
     return "holds a value";
+  }
+  if (words(text).length > GRAMMAR_WORD_LIMIT) {
+    return "is longer than 14 words";
   }
   return undefined;
 }

@@ -10511,7 +10511,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "why starts with 'to'. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "why starts with 'to'. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to to drain raw frames from the network interface card, which Holds descriptor pointers.",
      "remediation": {
       "update": {
@@ -10557,7 +10557,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "why starts with an '-ing' verb. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "why starts with an '-ing' verb. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to draining raw frames from the network interface card, which Holds descriptor pointers.",
      "remediation": {
       "update": {
@@ -10618,7 +10618,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to string the route segments into one path, which hold descriptor pointers across contiguous memory segments.",
      "remediation": {
       "update": {
@@ -10658,7 +10658,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "how holds more than one fragment. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "how holds more than one fragment. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to string the route segments into one path, which Stores decoded parameters in the request extensions. Deserializes them into a tuple.",
      "remediation": {
       "update": {
@@ -10698,7 +10698,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to string the route segments into one path, which The router stores parameters.",
      "remediation": {
       "update": {
@@ -10742,7 +10742,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "how holds a value. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "how holds a value. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.model.score in order to rank candidate answers, which Returns yes/no confidences and 0 to 5 scores from the JEV model.",
      "remediation": {
       "update": {
@@ -10849,7 +10849,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "why starts with 'to'; how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "why starts with 'to'; how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.pipeline.ingest.network (Packet Intake Engine) requires code.buffer.ring.packet in order to to draining raw frames from the network interface card, which holding descriptor pointers across contiguous memory segments.",
      "remediation": {
       "update": {
@@ -10903,7 +10903,7 @@
      },
      "status": "error",
      "code": "GRAMMAR_CONSTRAINT_VIOLATION",
-     "message": "how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
+     "message": "how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to string the route segments into one path, which storing parameters.",
      "remediation": {
       "update": {
@@ -10986,6 +10986,63 @@
       ]
      ],
      "definitive": "code.engine.game"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.engine.game": {
+       "wants": {
+        "code.engine.router": {
+         "how": "Dispatches inbound messages to the service and gives each caller a peer for outbound requests"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "update": {
+      "code.engine.game": {
+       "wants": {
+        "code.engine.router": {
+         "how": "Dispatches inbound messages to the service and gives each caller a peer for outbound requests"
+        }
+       }
+      }
+     },
+     "status": "error",
+     "code": "GRAMMAR_CONSTRAINT_VIOLATION",
+     "message": "how is longer than 14 words. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
+     "tested_sentence": "code.engine.game (Quake core) requires code.engine.router in order to string the route segments into one path, which Dispatches inbound messages to the service and gives each caller a peer for outbound requests.",
+     "remediation": {
+      "update": {
+       "code.engine.game": {
+        "wants": {
+         "code.engine.router": {
+          "how": "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>"
+         }
+        }
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "update": {
+      "code.engine.game": {
+       "wants": {
+        "code.engine.router": {
+         "how": "Dispatches inbound messages to the service and gives each caller a peer for requests"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
     },
     "refused": false
    }

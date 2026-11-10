@@ -182,7 +182,7 @@ fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
     write(&contract, &map, json!({"update": {GAME: {"sources": ["./docs/engine.md"]}}}));
 }
 
-const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
+const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.";
 const WHY_PLACEHOLDER: &str = "<base verb phrase, as: drain raw frames from the network interface card>";
 const HOW_PLACEHOLDER: &str = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>";
 
@@ -236,7 +236,7 @@ fn a_written_why_or_how_follows_the_grammar() {
     let command = json!({"update": {GAME: {"wants": {router: {"why": "to drain frames", "how": "The router stores 5 items."}}}}});
     assert_eq!(
         refused(&contract, &map, command).to_json()["message"],
-        "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
+        "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer."
     );
 
     // The first want that breaks the rule is reported, in the order the command gives them, and
@@ -256,6 +256,21 @@ fn a_written_why_or_how_follows_the_grammar() {
     );
     assert_eq!(refusal.to_json()["message"], format!("why starts with an '-ing' verb. {GRAMMAR_RULE}"));
     assert!(map.element("code.engine.store").is_none());
+
+    // A part of 15 words is refused, and the same part with 14 words is accepted.
+    let long = "Dispatches inbound messages to the service and gives each caller a peer for outbound requests";
+    let command = json!({"update": {GAME: {"wants": {router: {"how": long}}}}});
+    let refusal = refused(&contract, &map, command);
+    assert_eq!(refusal.to_json()["message"], format!("how is longer than 14 words. {GRAMMAR_RULE}"));
+    assert_eq!(refusal.to_json()["remediation"], json!({"update": {GAME: {"wants": {router: {"how": HOW_PLACEHOLDER}}}}}));
+    let long = "receive each inbound message from the transport and pass it on to the service loop";
+    let command = json!({"update": {GAME: {"wants": {router: {"why": long}}}}});
+    assert_eq!(
+        refused(&contract, &map, command).to_json()["message"],
+        format!("why is longer than 14 words. {GRAMMAR_RULE}")
+    );
+    let short = "Dispatches inbound messages to the service and gives each caller a peer for requests";
+    write(&contract, &map, json!({"update": {GAME: {"wants": {router: {"how": short}}}}}));
 
     // An `add` is checked in the same way. Its sentence uses the names the command gives.
     let command = json!({"add": {"code.engine.cache": {
