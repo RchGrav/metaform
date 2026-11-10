@@ -5,7 +5,7 @@
 import { diff, type ActivityItem } from "./activity/stream";
 import { useSpecStore } from "./review/store";
 import type { AgentService } from "./source/agent";
-import { fromDump, type Spec } from "./spec/model";
+import { definitiveOf, fromDump, labelOf, type Spec } from "./spec/model";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { CAMERA_MS, MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
@@ -489,6 +489,7 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
           },
     [spec, review, state.notice, simulated],
   );
+  const mainElement = useMemo(() => (spec ? definitiveOf(spec) ?? null : null), [spec]);
   const panelBody: PanelBodyProps = {
     spec,
     review,
@@ -553,6 +554,7 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
           menu={<PanelsMenu layout={layout} actions={panelActions} panels={PANELS} narrow={narrow} />}
           status={topStatus}
           selected={selection === null ? null : nameOf(selection)}
+          main={mainElement ? { name: labelOf(mainElement), onSelect: () => select(mainElement.address) } : null}
           markdownOpen={placeOf(layout, "markdown") !== null}
           onMarkdown={() => panelActions.toggle("markdown")}
           reviewOpen={placeOf(layout, "review") !== null}

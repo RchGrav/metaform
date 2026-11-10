@@ -261,6 +261,7 @@ export function Entity(props: EntityProps) {
         {field("status") === "un_built" && <span className="chip not-built">{strings.details.notBuilt}</span>}
         <code className="chip address" title={strings.details.address}>{address}</code>
       </p>
+      {strings.details.roleMeaning[field("role").toLowerCase()] !== undefined && <p className="role-meaning">{strings.details.roleMeaning[field("role").toLowerCase()]}</p>}
       <div className="actions">
         <button type="button" title={strings.details.setAsFocusTip} onClick={props.onFocus}>{strings.details.setAsFocus}</button>
         {props.opensProject && <button type="button" onClick={props.onOpenProject}>{strings.details.openProject}</button>}

@@ -26,22 +26,22 @@ export const categoryState = {
 
 /** The names of the categories: the first segment of an element's address. */
 const CATEGORY_NAMES: Record<string, string> = {
-  downstream: "Downstream",
+  downstream: "Served parties",
   code: "Code",
   document: "Document",
   data: "Data",
   media: "Media",
-  upstream: "Upstream",
+  upstream: "Dependencies",
 };
 
 /** What each category holds, for its tooltip. */
 const CATEGORY_MEANINGS: Record<string, string> = {
-  downstream: "the outside parties the project serves",
+  downstream: "the outside parties the project serves (addresses under downstream)",
   code: "the project's own code",
   document: "the project's own documents",
   data: "the project's own data",
   media: "the project's own media",
-  upstream: "what the project relies on outside itself",
+  upstream: "what the project relies on outside itself (addresses under upstream)",
 };
 
 /** The graph controls. Each control has a short label and a tooltip that says what it does. */

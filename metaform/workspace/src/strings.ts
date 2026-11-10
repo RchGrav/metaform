@@ -44,6 +44,8 @@ export const topBar = {
   pendingTip: "Edits the server has not confirmed. The Review panel lists them.",
   proposals: (n: number) => `${count(n, "proposal")} to review`,
   proposalsTip: "Proposals that wait for you to accept or reject them. The Review panel lists them.",
+  mainElement: (name: string) => `Main element: ${name}`,
+  mainElementTip: "The Definitive element: the one without which the project is not what it is. Select it to read what the project is.",
   review: "Proposals",
   reviewTip: "Ask for proposals to improve the specification, and accept or reject each one",
   markdown: "Specification as Markdown",
@@ -140,7 +142,8 @@ export const focus = {
 } as const;
 
 export const layers = {
-  group: "Records",
+  group: "Knowledge layers",
+  chip: (layer: string, n: number) => `${layer}: ${count(n, "record")}`,
   groupTip: "A layer holds records of one kind, such as sources. An element that holds records of a layer carries that layer's mark.",
   show: (layer: string) => `Show the ${layer} marks on the elements that hold ${layer} records`,
   hide: (layer: string) => `Hide the ${layer} marks on the elements`,

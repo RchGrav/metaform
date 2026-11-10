@@ -50,16 +50,16 @@ export function drawNode(node: RenderNode, box: Box, container: boolean, parent:
   tip(el("rect", { class: "mf-role-bar", width: 4, height: container ? HEADER : box.height, rx: 2 }, g), legend.roleBar);
   // Row 1: the label, and the chevron at the right. Row 2: layer marks at the left; the wants
   // that leave the container and the count beneath at the right (nodeWidth sizes both rows).
-  const row1 = container ? HEADER / 2 + 5 : 23;
-  const row2 = container ? HEADER / 2 + 5 : 43;
+  const row1 = container ? HEADER / 2 + 5 : 22;
+  const row2 = container ? HEADER / 2 + 5 : 41;
   const label = el("text", { class: "mf-label", x: 16, y: row1 }, g);
   // Functionality that is intended and not built yet is drawn faint, with the words on it
   // (the earlier interface drew a missing node ghostly, at 70%).
   if (node.status === "un_built" && !container) {
-    el("text", { class: "mf-status", x: box.width - 12, y: 43, "text-anchor": "end" }, g).textContent = text.notBuilt;
+    el("text", { class: "mf-status", x: box.width - 12, y: 41, "text-anchor": "end" }, g).textContent = text.notBuilt;
   }
   // A name longer than its box is cut with an ellipsis; the whole name is in the tooltip.
-  const room = Math.max(4, Math.floor((box.width - 32) / 8.6));
+  const room = Math.max(4, Math.floor((box.width - 32) / 9.8));
   label.textContent = node.label.length > room ? `${node.label.slice(0, room - 1).trimEnd()}…` : node.label;
   if (node.label.length > room) tip(label, node.label);
   let right = box.width - 16;

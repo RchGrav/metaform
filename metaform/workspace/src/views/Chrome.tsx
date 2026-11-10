@@ -47,6 +47,8 @@ export function TopBar(props: {
   status: TopBarStatus | null;
   /** The name of the selected element, or null. */
   selected: string | null;
+  /** The project's Definitive element, and the action that selects it; null when the map has none. */
+  main: { name: string; onSelect: () => void } | null;
   /** Whether the Markdown panel is open, and the action that opens or closes it. */
   markdownOpen: boolean;
   onMarkdown: () => void;
@@ -91,6 +93,11 @@ export function TopBar(props: {
           );
         })}
       </nav>
+      {props.main && (
+        <button type="button" className="top-main" title={strings.topBar.mainElementTip} onClick={props.main.onSelect}>
+          {strings.topBar.mainElement(props.main.name)}
+        </button>
+      )}
       {props.selected !== null && <span className="top-selected">{strings.topBar.selected(props.selected)}</span>}
       {status && (
         <span className="top-status" role="status">
@@ -284,7 +291,7 @@ export function BottomStrip(props: {
                 onClick={() => dispatch({ type: "layer", layer, visibility: shown && state.isolated === null ? "hidden" : "visible" })}
               >
                 <span className="swatch" aria-hidden="true" />
-                {layer} <span className="count">{props.counts[layer] ?? 0}</span>
+                {strings.layers.chip(layer, props.counts[layer] ?? 0)}
               </button>
               <button
                 type="button"

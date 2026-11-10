@@ -76,12 +76,12 @@ export interface Layout {
   bounds: Box;
 }
 
-export const NODE_HEIGHT = 56;
+export const NODE_HEIGHT = 52;
 const PAD = 16;
 const MIN_WIDTH = 132;
-const MAX_WIDTH = 300;
-/** Estimated advance of one character: bold 15 px labels, regular 11 px badges. */
-const LABEL_CHAR = 9;
+const MAX_WIDTH = 340;
+/** Estimated advance of one character: bold 17 px labels, regular 11 px badges. */
+const LABEL_CHAR = 10.4;
 const SMALL_CHAR = 6.4;
 /** Room above an expanded element's children for its own label. */
 export const HEADER = 36;
@@ -101,7 +101,7 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   "elk.edgeRouting": "SPLINES",
   "elk.partitioning.activate": "true",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "52",
   "elk.spacing.nodeNode": "28",
   "elk.spacing.edgeNode": "18",
   "elk.spacing.edgeEdge": "10",
