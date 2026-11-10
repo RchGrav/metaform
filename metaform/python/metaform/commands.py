@@ -76,6 +76,10 @@ class Work:
         self.elements: dict[str, Element] = dict(before.raw())
         self.touched: set[str] = set()
         self.own: set[str] = set()
+        # The wants this command wrote, in the order it wrote them: the holder, the other
+        # element, and which of `why` and `how` the command supplied. `finish` checks their
+        # grammar.
+        self.written_wants: list[tuple[str, str, list[str]]] = []
 
     def ensure(self, address: str) -> None:
         """Create the address and every missing branch above it (R-5.4)."""
@@ -97,7 +101,9 @@ class Work:
         """Write a want. Supplied fields change the current record; the result needs every field
         (R-5.6). The element the want names is created if it is not there (R-5.4)."""
         record: dict[str, Any] = copy(self.elements[holder].wants.get(other, {}))
+        written: list[str] = []
         if isinstance(change, dict):
+            written = [key for key in ("why", "how") if key in change]
             record.update(copy(change))
         missing = [
             key
@@ -115,6 +121,7 @@ class Work:
             )
         self.ensure(other)
         self.element_mut(holder).wants[other] = record
+        self.written_wants.append((holder, other, written))
 
     def write_wants(self, holder: str, wants: dict[str, Any]) -> None:
         for other, change in wants.items():
@@ -229,6 +236,11 @@ class Work:
             rules.check(self.before, address, element)
             self.check_collisions(address, element)
         self.check_definitive()
+        # The grammar of `why` and `how` is checked last, so every earlier refusal stays as it
+        # was. The first want that breaks the rule, in the order the command wrote them, is
+        # reported.
+        for holder, other, written in self.written_wants:
+            rules.check_want_grammar(self.before, self.elements, holder, other, written)
         effect = Effect()
         for address in touched:
             after = self.elements.get(address)

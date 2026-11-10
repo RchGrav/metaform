@@ -66,6 +66,7 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
                 before: map,
                 elements: map.raw().clone(),
                 touched: BTreeSet::new(),
+                written_wants: Vec::new(),
             };
             match verb {
                 "add" => work.add(selector, supplied)?,
@@ -103,6 +104,9 @@ struct Work<'a> {
     before: &'a Map,
     elements: BTreeMap<String, Element>,
     touched: BTreeSet<String>,
+    /// The wants this command wrote, in the order it wrote them: the holder, the other element,
+    /// and which of `why` and `how` the command supplied. `finish` checks their grammar.
+    written_wants: Vec<(String, String, Vec<&'static str>)>,
 }
 
 impl Work<'_> {
@@ -131,7 +135,9 @@ impl Work<'_> {
             .get(other)
             .cloned()
             .unwrap_or_default();
+        let mut written = Vec::new();
         if let Value::Object(change) = change {
+            written.extend(["why", "how"].into_iter().filter(|key| change.contains_key(*key)));
             record.extend(change.clone());
         }
         let filled = |key: &str| {
@@ -162,6 +168,7 @@ impl Work<'_> {
         self.element_mut(holder)
             .wants
             .insert(other.to_string(), record);
+        self.written_wants.push((holder.to_string(), other.to_string(), written));
         Ok(())
     }
 
@@ -330,6 +337,12 @@ impl Work<'_> {
             self.contract.check_element(address, &element.view())?;
         }
         self.check_definitive()?;
+        // The grammar of `why` and `how` is checked last, so every earlier refusal stays as it
+        // was. The first want that breaks the rule, in the order the command wrote them, is
+        // reported.
+        for (holder, other, written) in &self.written_wants {
+            rules::check_want_grammar(self.before, &self.elements, holder, other, written)?;
+        }
         let mut effect = Effect::default();
         for address in &self.touched {
             let after = self.elements.get(address);

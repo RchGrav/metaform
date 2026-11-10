@@ -74,7 +74,7 @@ impl Code {
                 "R-3.13: a role is Definitive, Supportive, Notable or Divergent, and a map has exactly one Definitive element."
             }
             Code::GrammarConstraintViolation => {
-                "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
+                "R-3.17, R-6.17, module 6.4: why is one fragment that starts with a base verb, and how is one fragment that starts with a verb ending in -s. Neither starts with to, a subject or an -ing verb, holds a second fragment, or holds a number that stands alone. Checked for the parts of a want that an add or update writes. Words ending in -ing after the first word are not checked (D-14)."
             }
             Code::FieldMismatch => {
                 "The command must match the project-map input schema, and every element must match the stored-document schema."

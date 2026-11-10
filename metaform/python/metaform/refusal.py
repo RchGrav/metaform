@@ -32,7 +32,7 @@ RULES: dict[str, str] = {
     TECHNICAL_NAME_ALIGNMENT_FAILURE: "R-3.11: technical_name is the same number of leading words of the reversed, space-separated address.",
     CANONICAL_NAME_COLLISION_FAILURE: "R-3.12: name must not equal technical_name.",
     ROLE_TAXONOMY_FAILURE: "R-3.13: a role is Definitive, Supportive, Notable or Divergent, and a map has exactly one Definitive element.",
-    GRAMMAR_CONSTRAINT_VIOLATION: "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14).",
+    GRAMMAR_CONSTRAINT_VIOLATION: "R-3.17, R-6.17, module 6.4: why is one fragment that starts with a base verb, and how is one fragment that starts with a verb ending in -s. Neither starts with to, a subject or an -ing verb, holds a second fragment, or holds a number that stands alone. Checked for the parts of a want that an add or update writes. Words ending in -ing after the first word are not checked (D-14).",
     FIELD_MISMATCH: "The command must match the project-map input schema, and every element must match the stored-document schema.",
     ROOT_SCOPE_NOT_ALLOWED: "R-3.3: a top-level element is in one of the root scopes.",
     FIELD_ELEMENT_COLLISION: "A word on an element is either a field or the name of an element beneath it, not both.",

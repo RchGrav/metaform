@@ -60,12 +60,21 @@ fn tool_examples_give_the_documented_results() {
     // R-5.23: orphaned returns a bare dictionary keyed by address, as the fixture shows.
     let orphans = examples["orphan_result_example"].clone();
 
-    // The add is a separate example, not a replay against the populated map.
-    let added = write(&contract, &Map::new(), requests[0].clone());
+    // The add is a separate example, not a replay against the populated map. Its `how`,
+    // "Prepared mash data packets.", does not start with a verb ending in -s, so the grammar
+    // check (R-3.17, R-6.17) refuses the example as the fixture gives it. The fixture is the
+    // owner's text and stays as it is; the conflict is recorded in `SPEC.md` beside D-14. The
+    // write is tested with the verb in the form the rule asks for.
+    let as_documented = refused(&contract, &Map::new(), &requests[0]);
+    assert_eq!(as_documented.code, Code::GrammarConstraintViolation);
+    let mut add = requests[0].clone();
+    add["add"]["code.protocol.network.tracker.cs"]["wants"]["code.masher.widget"]["how"] =
+        json!("Prepares mash data packets.");
+    let added = write(&contract, &Map::new(), add.clone());
     let holder = added.element("code.protocol.network.tracker.cs").unwrap();
     assert_eq!(
         holder.wants_json(),
-        requests[0]["add"]["code.protocol.network.tracker.cs"]["wants"]
+        add["add"]["code.protocol.network.tracker.cs"]["wants"]
     );
     assert!(
         added.element("code.masher.widget").is_some(),
