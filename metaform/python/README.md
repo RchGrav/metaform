@@ -50,7 +50,7 @@ Each file names the Rust module it ports, so a reader can compare the forms file
 |---|---|---|
 | `shape.py` | `metaform-core/src/shape.rs` | The check of a command's shape |
 | `names.py` | `metaform-core/src/names.rs` | Address rules, snake_case and camelCase |
-| `rules.py` | `metaform-core/src/rules.rs` | The `technical_name`, `name`, `role` and layer-value rules |
+| `rules.py` | `metaform-core/src/rules.rs` | The `technical_name`, `role` and layer-value rules |
 | `model.py` | `metaform-core/src/model.rs` | The map, an element and an effect |
 | `commands.py` | `metaform-core/src/commands.rs` | `add`, `update`, `delete` and the order of checks |
 | `reads.py` | `metaform-core/src/reads.rs` | Addressed reads, raw dumps, `map`, `orphaned`, `goto` |
@@ -72,6 +72,7 @@ These differences from the Rust form come from section 2 of the design.
 - **No fair queue.** SQLite's line for the write lock is not first come, first served. A command that waits more than five seconds for the database answers `INTERNAL_ERROR` and says that nothing was stored.
 - **No change announcements (R-4.10).** The server does not offer the `resources` capability. A process cannot learn of another process's commit without polling, and polling is ruled out.
 - **No graph workspace.** `metaform gui` needs change announcements.
+- **No `instructions` in the `initialize` answer.** The Rust form's text there tells an agent about `metaform gui`, which this form does not have.
 - **No specification export or import (R-6.28) yet.** They are CLI commands, not part of the agents' tool.
 - **No JSON Schema check.** The hand-written shape check gives every message an agent reads.
 - **No `serve`, `settings`, `set`, `unset` or `--map`.** The design's command line has `mcp`, `call` and `projects` only.

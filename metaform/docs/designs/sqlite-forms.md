@@ -112,7 +112,7 @@ A write is one transaction:
 1. `BEGIN IMMEDIATE`. This takes the write lock before anything is read, so no other process can write between this form's read and its write.
 2. Load the map if `data_version` shows it changed.
 3. Perform the command on a copy. A refusal ends here with `ROLLBACK`, and nothing is stored (R-5.8).
-4. Store the effect as a difference: only the elements the command touched, and for each one only the fields, wants and layer rows that changed.
+4. Store the effect as a difference: only the elements the command touched, and for each one only the fields, wants and layer rows that changed. Rows are removed in an order the foreign keys allow: first the `wants` rows of every element the command removed, then the element rows. One command can remove an element together with an empty element it wanted (R-5.36), and the second row cannot go while the first element's want still names it.
 5. `COMMIT`, then answer. A write is acknowledged only after it commits (R-4.7).
 
 A read is one read transaction, so it sees one committed state.

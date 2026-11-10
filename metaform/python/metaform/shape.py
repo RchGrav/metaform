@@ -23,7 +23,7 @@ in the command's order, then the fields that are missing. In `delete`, the items
 checked in the command's order; for each item: it is text, it is not the root, it is an
 address, it is not a repeat.
 
-The inventory of rules (C1 to W7) is in the module text of `shape.rs`.
+The inventory of rules (C1 to W8) is in the module text of `shape.rs`.
 """
 from typing import Any
 
@@ -166,6 +166,12 @@ class Check:
         if level == BENEATH and not holds_records:
             self.fields(value, names.join(holder, "wants"), path, BENEATH)
             return
+        if not value:
+            # W8: an empty `wants` would be read as an element named "wants" beneath the holder.
+            raise refuse(
+                f"wants at '{holder}' holds no want record",
+                replaced(self.command, path, {"<address>": want_placeholder()}),
+            )
         for other, record in value.items():
             if other == ROOT:
                 raise refuse("the root cannot be wanted")

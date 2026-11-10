@@ -50,9 +50,10 @@ def execute(map: Map, command: Any) -> Outcome:
         else:
             work.delete(selector, supplied)
         after, effect = work.finish()
-        result = dict(command)
-        result["status"] = "ok"
-        return Outcome(result, after, effect)
+        # A successful write answers with its status alone. It does not repeat the command: the
+        # agent sent it and has it. A refusal still repeats the command, so the agent sees what
+        # was refused beside the reason.
+        return Outcome({"status": "ok"}, after, effect)
     if verb.startswith("."):
         return Outcome(reads.raw(map, verb))
     return Outcome(reads.read(map, verb, body))
@@ -162,6 +163,7 @@ class Work:
             for other in wants:
                 if isinstance(other, str) and other in self.elements[address].wants:
                     del self.element_mut(address).wants[other]
+                    self.prune(other)
             return
         receivers = model.receivers(self.elements, address)
         if receivers:
@@ -183,9 +185,20 @@ class Work:
                 f"cannot delete, '{address}', has elements beneath it",
                 {"delete": {deepest: {}}},
             )
+        wanted = list(self.elements[address].wants)
         self.remove(address)
-        # Remove the branches the deletion left with nothing in them.
-        branch = names.parent(address)
+        parent = names.parent(address)
+        if parent is not None:
+            self.prune(parent)
+        for other in wanted:
+            self.prune(other)
+
+    def prune(self, address: str) -> None:
+        """Remove an element that a deletion left with nothing in it, and then each branch above
+        it that is left the same way: no fields, no wants, nothing beneath it and nothing that
+        wants it. A write creates the element a want names (R-5.4); when the last want that names
+        it is gone and it was never filled in, it goes too, so no empty address stays in the map."""
+        branch: str | None = address
         while branch is not None and branch != ROOT:
             element = self.elements.get(branch)
             empty = element is not None and element.is_empty()
@@ -357,8 +370,19 @@ class Work:
             return
         existing = next((address for address in definitive if address not in self.touched), definitive[0])
         added = next((address for address in definitive if address != existing), definitive[1])
+        # The remediation gives the new element another role. It never removes the role of the
+        # element that is Definitive already: an agent that followed it would lose the one
+        # element that says what the project is.
+        other_role = "<Supportive, Notable or Divergent>"
+        element = self.elements.get(added)
+        if self.before.element(added) is None and element is not None:
+            view = copy(element.view())
+            view["role"] = other_role
+            remediation = {"add": {added: view}}
+        else:
+            remediation = {"update": {added: {"role": other_role}}}
         raise Refusal(
             refusal.ROLE_TAXONOMY_FAILURE,
             f"'{added}' cannot be Definitive: '{existing}' already is, and a map has one Definitive element",
-            {"update": {existing: {"role": None}}},
+            remediation,
         )

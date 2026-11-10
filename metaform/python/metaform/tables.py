@@ -192,7 +192,8 @@ class Writer:
 
     def persist(self, before: Map, effect: Effect) -> None:
         """Elements first, parents before children. Then fields, layers and wants, so every want
-        finds its provider. Then removals, children before parents."""
+        finds its provider. Then removals: the removed elements' wants, then the elements, children
+        before parents."""
         run = self.connection.execute
         run("INSERT OR IGNORE INTO map (id) VALUES (?)", (self.map_id,))
         written = [address for address in sorted(effect.elements) if effect.elements[address] is not None]
@@ -206,8 +207,12 @@ class Writer:
             old = before.element(address) or empty
             self.write_fields(self.key(address), old, after)
             self.write_wants(self.key(address), old, after)
-        for address in sorted(removed, key=depth, reverse=True):
-            key = self.key(address)
+        # One command can remove an element and the empty element it wanted (`commands.prune`).
+        # The wants rows of every removed element go first, so no removed provider is still named.
+        keys = [self.key(address) for address in sorted(removed, key=depth, reverse=True)]
+        for key in keys:
+            run("DELETE FROM wants WHERE element = ?", (key,))
+        for key in keys:
             if key is not None:
                 run("DELETE FROM element WHERE key = ?", (key,))
 

@@ -8,18 +8,36 @@ from . import names, refusal, specification
 from .model import Element, Map
 from .names import ROOT
 from .refusal import Refusal
-from .values import copy, split_whitespace, trim
+from .values import copy, same, split_whitespace
 
 # The four roles (R-3.13), spelled as a write must spell them.
 ROLES = ("Definitive", "Supportive", "Notable", "Divergent")
 
 
 def check(before: Map, address: str, element: Element) -> None:
-    """Check one touched element: `technical_name` (R-3.11), then `name` (R-3.12), then `role`
-    (R-3.13). `before` is the map before the write."""
+    """Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the
+    map before the write.
+
+    R-3.12 (`name` must not equal `technical_name`) is not checked. The intake procedure lets
+    `name` be the standard term when the project has no name of its own for the element. The
+    conflict between R-3.12 and the procedure is the owner's to settle (`SPEC.md` D-19)."""
     check_technical_name(before, address, element)
-    check_name(before, address, element)
     check_role(before, address, element)
+    check_system_layers(before, address, element)
+
+
+def check_system_layers(before: Map, address: str, element: Element) -> None:
+    """A system layer (`skills`, `memory`, `sources`) holds a list of records (R-6.15). A value
+    this write set that is not a list is refused, with the value as one record in the
+    remediation."""
+    earlier = before.element(address)
+    for layer in specification.SYSTEM_LAYERS:
+        if layer not in element.fields:
+            continue
+        value = element.fields[layer]
+        unchanged = earlier is not None and layer in earlier.fields and same(earlier.fields[layer], value)
+        if not isinstance(value, list) and not unchanged:
+            raise specification.not_a_list("update", layer, address, value)
 
 
 def correction(before: Map, address: str, element: Element, field: str, value: str) -> dict[str, Any]:
@@ -62,21 +80,6 @@ def check_technical_name(before: Map, address: str, element: Element) -> None:
         refusal.TECHNICAL_NAME_ALIGNMENT_FAILURE,
         f"'{address}': technical_name \"{technical}\" is not the leading words of \"{' '.join(reversed_words)}\"",
         correction(before, address, element, "technical_name", suggested),
-    )
-
-
-def check_name(before: Map, address: str, element: Element) -> None:
-    """`name` is the project's own name for the element, so it must not equal `technical_name`
-    (R-3.12). The two are compared trimmed, ignoring case."""
-    name, technical = _text(element, "name"), _text(element, "technical_name")
-    if name is None or technical is None:
-        return
-    if trim(name).lower() != trim(technical).lower():
-        return
-    raise Refusal(
-        refusal.CANONICAL_NAME_COLLISION_FAILURE,
-        f"'{address}': name \"{name}\" is the same as technical_name; name is the project's own name for the element",
-        correction(before, address, element, "name", "<the project's own name for it>"),
     )
 
 

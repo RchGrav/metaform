@@ -152,11 +152,12 @@ def goto(map: Map, address: str) -> dict[str, Any]:
     }
     if skills:
         sheet["skills"] = skills
-    # How to write the layers listed here. The server delivers this part once for each context,
-    # not once for each address (R-6.27), so each entry says where to read it again (R-5.30).
+    # Where the rules for writing each listed layer are. The sheet names the place and does not
+    # carry the rules: an agent that arrives here may never write the layer. The server delivers
+    # this part once for each context (R-6.27).
     if defined:
         sheet["instructions"] = {
-            d.layer: f"{d.guidance()}\ngoto {d.address} to see this again." for d in defined
+            d.layer: f"Before you write {d.layer}, goto {d.address} for its rules." for d in defined
         }
     # At a layer's definition element, the sheet always carries that layer's guidance, so an
     # agent whose context was reset can read it again (R-5.30).
