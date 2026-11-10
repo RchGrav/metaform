@@ -234,7 +234,9 @@ class Writer:
                 "INSERT INTO element (map, address, parent) VALUES (?, ?, ?)", (self.map_id, stored, parent_key)
             )
             row = (cursor.lastrowid,)
-        key = int(row[0])
+        key = row[0]
+        if not isinstance(key, int):
+            raise Corrupt("an element has no key")
         self.keys[address] = key
         return key
 
