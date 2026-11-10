@@ -269,12 +269,18 @@ pub fn grammar_fault(field: &str, text: &str) -> Option<&'static str> {
 /// full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
 /// that `before` holds, it has only those parts. For a want this command made, it has the whole
 /// want, because the refused command stored nothing and a want needs all of its fields (R-5.6).
+///
+/// `add` is the selector and the body of the refused command when the command is an `add`. When
+/// `before` does not hold the element `holder`, an `update` of it cannot work, because the
+/// refused `add` stored nothing. The remediation is then the refused `add` itself, whole, with a
+/// placeholder in each part that broke the rule.
 pub(crate) fn check_want_grammar(
     before: &Map,
     elements: &BTreeMap<String, Element>,
     holder: &str,
     other: &str,
     written: &[&'static str],
+    add: Option<(&str, &Value)>,
 ) -> Result<(), Refusal> {
     let Some(record) = elements.get(holder).and_then(|element| element.wants.get(other)) else {
         return Ok(());
@@ -294,13 +300,25 @@ pub(crate) fn check_want_grammar(
     if broken.is_empty() {
         return Ok(());
     }
-    let stored = before.element(holder).is_some_and(|element| element.wants.contains_key(other));
-    let parts = if stored {
-        broken
-    } else {
-        let mut whole = record.clone();
-        whole.extend(broken);
-        whole
+    let remediation = match add {
+        Some((selector, supplied)) if before.element(holder).is_none() => {
+            let mut supplied = supplied.clone();
+            if let Value::Object(node) = &mut supplied {
+                place_in_add(node, selector, holder, other, &broken);
+            }
+            json!({"add": {selector: supplied}})
+        }
+        _ => {
+            let stored = before.element(holder).is_some_and(|element| element.wants.contains_key(other));
+            let parts = if stored {
+                broken
+            } else {
+                let mut whole = record.clone();
+                whole.extend(broken);
+                whole
+            };
+            json!({"update": {holder: {"wants": {other: parts}}}})
+        }
     };
     let named = |address: &str| {
         let name = elements.get(address).and_then(|element| element.fields.get("name")).and_then(Value::as_str);
@@ -313,7 +331,7 @@ pub(crate) fn check_want_grammar(
     let mut refusal = Refusal::new(
         Code::GrammarConstraintViolation,
         format!("{}. {GRAMMAR_RULE}", faults.join("; ")),
-        Some(json!({"update": {holder: {"wants": {other: parts}}}})),
+        Some(remediation),
     );
     refusal.sentence = Some(format!(
         "{} requires {} in order to {}, which {}.",
@@ -323,6 +341,43 @@ pub(crate) fn check_want_grammar(
         part("how")
     ));
     Err(refusal)
+}
+
+/// Put the placeholders of `broken` into the want that the body of an `add` command gives for
+/// `other` at the element `holder`. `node` is the part of the body at `address`. The walk follows
+/// `model::flatten`: an object value is the element one segment beneath. `wants` is one
+/// dictionary keyed by the other address, or an older list of such dictionaries, in which the
+/// last one that names `other` is the one the command writes. Key order stays as the command gave
+/// it. Returns whether the want was found.
+fn place_in_add(
+    node: &mut JsonMap<String, Value>,
+    address: &str,
+    holder: &str,
+    other: &str,
+    broken: &JsonMap<String, Value>,
+) -> bool {
+    if address == holder {
+        let record = match node.get_mut("wants") {
+            Some(Value::Object(wants)) => wants.get_mut(other),
+            Some(Value::Array(groups)) => groups.iter_mut().rev().find_map(|group| group.get_mut(other)),
+            _ => None,
+        };
+        let Some(Value::Object(record)) = record else {
+            return false;
+        };
+        for (key, placeholder) in broken {
+            record.insert(key.clone(), placeholder.clone());
+        }
+        return true;
+    }
+    for (key, value) in node.iter_mut() {
+        if let Value::Object(child) = value
+            && place_in_add(child, &crate::names::join(address, key), holder, other, broken)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

@@ -44,6 +44,7 @@ def execute(map: Map, command: Any) -> Outcome:
             rules.check_layer_values(map, verb, selector, supplied)
         work = Work(map)
         if verb == "add":
+            work.add_command = (selector, supplied)
             work.add(selector, supplied)
         elif verb == "update":
             work.update(selector, supplied)
@@ -80,6 +81,9 @@ class Work:
         # element, and which of `why` and `how` the command supplied. `finish` checks their
         # grammar.
         self.written_wants: list[tuple[str, str, list[str]]] = []
+        # The selector and the body of the command when it is an `add`. A grammar refusal for a
+        # want of an element the command made gives the command back as its remediation.
+        self.add_command: tuple[str, dict[str, Any]] | None = None
 
     def ensure(self, address: str) -> None:
         """Create the address and every missing branch above it (R-5.4)."""
@@ -240,7 +244,7 @@ class Work:
         # was. The first want that breaks the rule, in the order the command wrote them, is
         # reported.
         for holder, other, written in self.written_wants:
-            rules.check_want_grammar(self.before, self.elements, holder, other, written)
+            rules.check_want_grammar(self.before, self.elements, holder, other, written, self.add_command)
         effect = Effect()
         for address in touched:
             after = self.elements.get(address)

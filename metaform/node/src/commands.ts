@@ -53,6 +53,7 @@ export function execute(map: MapModel, command: Json): Outcome {
     }
     const work = new Work(map);
     if (verb === "add") {
+      work.addCommand = [selector, supplied as JsonObject];
       work.add(selector, supplied as JsonObject);
     } else if (verb === "update") {
       work.update(selector, supplied as JsonObject);
@@ -88,6 +89,11 @@ class Work {
    * which of `why` and `how` the command supplied. `finish` checks their grammar.
    */
   private writtenWants: [string, string, string[]][] = [];
+  /**
+   * The selector and the body of the command when it is an `add`. A grammar refusal for a want
+   * of an element the command made gives the command back as its remediation.
+   */
+  addCommand?: [string, JsonObject];
 
   constructor(before: MapModel) {
     this.before = before;
@@ -312,7 +318,7 @@ class Work {
     // The grammar of `why` and `how` is checked last, so every earlier refusal stays as it was.
     // The first want that breaks the rule, in the order the command wrote them, is reported.
     for (const [holder, other, written] of this.writtenWants) {
-      rules.checkWantGrammar(this.before, this.elements, holder, other, written);
+      rules.checkWantGrammar(this.before, this.elements, holder, other, written, this.addCommand);
     }
     const effect: Effect = new Sorted();
     for (const address of touched) {

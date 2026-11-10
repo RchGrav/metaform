@@ -10465,7 +10465,7 @@
  },
  {
   "name": "wants-grammar",
-  "about": "A why or a how that an add or update writes is one fragment in the grammar of its field (R-3.17, R-6.17; documentation set, module 6.4). The refusal reports the first want that broke the rule and puts a placeholder in each part that broke it; a part the command does not write is not checked.",
+  "about": "A why or a how that an add or update writes is one fragment in the grammar of its field (R-3.17, R-6.17; documentation set, module 6.4). The refusal reports the first want that broke the rule and puts a placeholder in each part that broke it; a part the command does not write is not checked. When the refused command is an add that makes the element that holds the reported want, the remediation is that add, whole, with the placeholders in it; the remediation with valid text in their place is accepted.",
   "steps": [
    {
     "call": {
@@ -10852,8 +10852,11 @@
      "message": "why starts with 'to'; how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
      "tested_sentence": "code.pipeline.ingest.network (Packet Intake Engine) requires code.buffer.ring.packet in order to to draining raw frames from the network interface card, which holding descriptor pointers across contiguous memory segments.",
      "remediation": {
-      "update": {
+      "add": {
        "code.pipeline.ingest.network": {
+        "technical_name": "network ingest pipeline",
+        "name": "Packet Intake Engine",
+        "role": "Supportive",
         "wants": {
          "code.buffer.ring.packet": {
           "why": "<base verb phrase, as: drain raw frames from the network interface card>",
@@ -11043,6 +11046,146 @@
     },
     "answer": {
      "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "add": {
+      "code.pipeline": {
+       "export": {
+        "frame": {
+         "wants": {
+          "code.buffer.ring.packet": {
+           "direction": "inbound",
+           "how": "holds descriptor pointers",
+           "why": "drain raw frames"
+          },
+          "code.engine.game": {
+           "how": "Serving frames to the game",
+           "direction": "outbound",
+           "why": "serve frames"
+          }
+         },
+         "role": "Supportive",
+         "name": "Frame Exporter",
+         "technical_name": "frame export pipeline"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "add": {
+      "code.pipeline": {
+       "export": {
+        "frame": {
+         "wants": {
+          "code.buffer.ring.packet": {
+           "direction": "inbound",
+           "how": "holds descriptor pointers",
+           "why": "drain raw frames"
+          },
+          "code.engine.game": {
+           "how": "Serving frames to the game",
+           "direction": "outbound",
+           "why": "serve frames"
+          }
+         },
+         "role": "Supportive",
+         "name": "Frame Exporter",
+         "technical_name": "frame export pipeline"
+        }
+       }
+      }
+     },
+     "status": "error",
+     "code": "GRAMMAR_CONSTRAINT_VIOLATION",
+     "message": "how does not start with a verb ending in -s. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
+     "tested_sentence": "code.pipeline.export.frame (Frame Exporter) requires code.engine.game (Quake core) in order to serve frames, which Serving frames to the game.",
+     "remediation": {
+      "add": {
+       "code.pipeline": {
+        "export": {
+         "frame": {
+          "wants": {
+           "code.buffer.ring.packet": {
+            "direction": "inbound",
+            "how": "holds descriptor pointers",
+            "why": "drain raw frames"
+           },
+           "code.engine.game": {
+            "how": "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>",
+            "direction": "outbound",
+            "why": "serve frames"
+           }
+          },
+          "role": "Supportive",
+          "name": "Frame Exporter",
+          "technical_name": "frame export pipeline"
+         }
+        }
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "add": {
+      "code.pipeline": {
+       "export": {
+        "frame": {
+         "wants": {
+          "code.buffer.ring.packet": {
+           "direction": "inbound",
+           "how": "holds descriptor pointers",
+           "why": "drain raw frames"
+          },
+          "code.engine.game": {
+           "how": "Serves frames to the game",
+           "direction": "outbound",
+           "why": "serve frames"
+          }
+         },
+         "role": "Supportive",
+         "name": "Frame Exporter",
+         "technical_name": "frame export pipeline"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "code.pipeline.export.frame": {
+      "wants": {}
+     }
+    },
+    "answer": {
+     "code.pipeline.export.frame": {
+      "technical_name": "frame export pipeline",
+      "name": "Frame Exporter",
+      "role": "Supportive",
+      "wants": {
+       "code.buffer.ring.packet": {
+        "why": "drain raw frames",
+        "how": "holds descriptor pointers",
+        "direction": "inbound"
+       },
+       "code.engine.game": {
+        "why": "serve frames",
+        "how": "Serves frames to the game",
+        "direction": "outbound"
+       }
+      }
+     }
     },
     "refused": false
    }
