@@ -13,12 +13,12 @@ import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } 
 import * as strings from "./strings";
 import { initialDepth, maxDepth, shownDepth, visibleSet } from "./state/depth";
 import { categoriesOf, elementScene, functionalElements, functionalLevels, functionalScene, type SceneInput } from "./state/scene";
-import { bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
+import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
 import { canUndoDepth, categoryShown, currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
 import { GraphControls, type CategoryControl } from "./views/GraphControls";
 import { Dock, PANELS, PanelsMenu, bodyOf, placeOf, useLayout, useNarrow, type PanelBodyProps } from "./panels";
-import { BottomStrip, FocusBanner, KeyboardHelp, NoticeBar, Rail, TopBar, platform, type TopBarStatus } from "./views/Chrome";
+import { BottomStrip, KeyboardHelp, WhereBanner, NoticeBar, Rail, TopBar, platform, type TopBarStatus } from "./views/Chrome";
 import { elementEvidence } from "./spec/evidence";
 import { Onboarding } from "./views/Onboarding";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
@@ -497,6 +497,14 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
           },
     [spec, review, state.notice, simulated],
   );
+  const whereText =
+    state.mode === "element" && focusTarget !== null
+      ? strings.where.element(nameOf(focusTarget))
+      : view.focus !== null
+        ? strings.where.focus(nameOf(view.focus))
+        : view.container !== TOP
+          ? strings.where.inside(nameOf(view.container))
+          : null;
   const mainElement = useMemo(() => (spec ? definitiveOf(spec) ?? null : null), [spec]);
   const panelBody: PanelBodyProps = {
     spec,
@@ -571,8 +579,18 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
         />
       )}
       {state.notice && <NoticeBar notice={state.notice} onDismiss={() => dispatch({ type: "dismiss-notice" })} />}
-      {view.focus !== null && state.mode === "graph" && (
-        <FocusBanner address={view.focus} onClear={() => dispatch({ type: "clear-focus" })} />
+      {whereText !== null && !present && (
+        <WhereBanner
+          text={whereText}
+          canStep={state.history.length > 0}
+          onStep={() => dispatch({ type: "back" })}
+          onAll={() => {
+            // Every way of narrowing the view is undone: the mode, the focus and the container.
+            if (state.mode !== "graph") dispatch({ type: "mode", mode: "graph" });
+            if (view.focus !== null) dispatch({ type: "clear-focus" });
+            if (view.container !== TOP) dispatch({ type: "open", address: TOP, beneath: 1 });
+          }}
+        />
       )}
       {/* The panels show beside the graph, except in Present and before the home has a project. */}
       <Dock

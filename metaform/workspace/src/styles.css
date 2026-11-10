@@ -214,3 +214,8 @@ kbd { font: .857em/1.6 ui-monospace, monospace; background: var(--bg); border: 1
 .top-main { flex-shrink: 2; }
 .top-selected { flex-shrink: 6; }
 .top-status { flex-shrink: 0; flex-wrap: nowrap; }
+.where-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--panel); }
+.where-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.where-banner button { padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--text); cursor: pointer; white-space: nowrap; }
+.where-banner .where-all { border-color: var(--accent); font-weight: 600; }
+.where-banner button:hover { background: var(--bg); }

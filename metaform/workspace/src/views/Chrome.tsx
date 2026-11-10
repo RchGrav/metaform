@@ -212,6 +212,19 @@ export function NoticeBar({ notice, onDismiss }: { notice: Notice; onDismiss: ()
 }
 
 /** The bar that names the focus element while the graph shows only what is near it. */
+/** Says where the view is whenever it is not the whole graph, and offers the way back. */
+export function WhereBanner({ text, canStep, onStep, onAll }: { text: string; canStep: boolean; onStep: () => void; onAll: () => void }) {
+  return (
+    <div className="where-banner" role="status">
+      <span>{text}</span>
+      <span className="where-actions">
+        {canStep && <button type="button" onClick={onStep}>{strings.where.backStep}</button>}
+        <button type="button" className="where-all" onClick={onAll}>{strings.where.backAll}</button>
+      </span>
+    </div>
+  );
+}
+
 export function FocusBanner({ address, onClear }: { address: Address; onClear: () => void }) {
   return (
     <div className="focus-banner" role="status">

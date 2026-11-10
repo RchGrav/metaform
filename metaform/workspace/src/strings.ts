@@ -70,8 +70,8 @@ export const hints = {
   // Shown once, near the first selected element, until the user opens or goes up.
   openOrGoUp: (platform: Platform) =>
     platform === "mac"
-      ? "Double-click to open. ⌘-click to go up."
-      : "Double-click to open. Ctrl-click to go up.",
+      ? "Click an element to read it. Double-click to look inside it. A bar above the graph brings you back."
+      : "Click an element to read it. Double-click to look inside it. A bar above the graph brings you back.",
 } as const;
 
 export const graph = {
@@ -189,6 +189,15 @@ export const connection = {
   notConnected: (reason: string) => `Not connected: ${reason}`,
   // A refusal from the Metaform server: its message and code, unchanged (R-5.24).
   refused: (message: string, code: string) => `The server refused the command: ${message} (${code})`,
+} as const;
+
+/** The bar above the graph that says where the view is whenever it is not the whole graph, with the way back. */
+export const where = {
+  element: (name: string) => `You are looking at one element, ${name}, with the elements joined to it.`,
+  inside: (name: string) => `You are inside ${name}: the graph shows only the elements under it.`,
+  focus: (name: string) => `The graph shows only ${name} and the elements near it.`,
+  backAll: "← Back to the whole graph",
+  backStep: "← Back one step",
 } as const;
 
 export const navigation = {
