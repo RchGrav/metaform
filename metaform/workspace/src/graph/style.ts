@@ -70,7 +70,7 @@ export const GRAPH_CSS = `
 .mf-role-supportive > .mf-role-bar { fill: var(--mf-supportive); }
 .mf-role-notable > .mf-role-bar { fill: var(--mf-notable); }
 .mf-role-divergent > .mf-role-bar { fill: var(--mf-divergent); }
-.mf-label { fill: var(--mf-ink); font-weight: 600; }
+.mf-label { fill: var(--mf-ink); font-size: 15px; font-weight: 600; }
 .mf-beneath, .mf-outside, .mf-layer-count, .mf-band-label, .mf-edge-count { fill: var(--mf-muted); font-size: 11px; }
 /* A want count sits on its line; a halo in the canvas color keeps other lines from striking through it. */
 .mf-edge-count { paint-order: stroke; stroke: var(--mf-canvas); stroke-width: 4px; stroke-linejoin: round; }

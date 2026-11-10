@@ -5,6 +5,7 @@
 
 import type { Address } from "../source";
 import type { Viewport } from "../graph/renderer";
+import { applyDepth, type DepthAction, type DepthRecord } from "./depth";
 import { TOP, isBeneath, parentOf } from "./structure";
 
 export type Mode = "graph" | "element" | "present";
@@ -28,6 +29,8 @@ export interface ProjectView {
   unseen: Address[];
   /** Containers already shown once; a first view expands to fill the screen (UX section 12a). */
   visited: Address[];
+  /** The depth the functional graph shows, with the states undo restores; null before any depth action (state/depth.ts). */
+  depth: DepthRecord | null;
 }
 
 /** A place in the workspace that Back returns to. */
@@ -51,6 +54,10 @@ export interface ViewState {
   layers: Record<string, LayerVisibility>;
   /** The isolated layer, or null. Isolation keeps `layers` so leaving it restores the visible set. */
   isolated: string | null;
+  /** Visibility by category, the first segment of an address, shared by every project. Unknown categories are visible. */
+  categories: Record<string, LayerVisibility>;
+  /** The isolated category, or null. Isolation keeps `categories`, so it never alters what is shown or hidden. */
+  isolatedCategory: string | null;
   history: Place[];
   /** The project and place a cross-project move came from, for the return chip (UX section 7). */
   returnTo: Place | null;
@@ -77,6 +84,16 @@ export type Action =
   | { type: "layer"; layer: string; visibility: LayerVisibility }
   | { type: "isolate"; layer: string | null }
   | { type: "all-layers"; layers: string[]; visibility: LayerVisibility }
+  /** Depth in the functional graph: collapse all, expand all, set a depth, one level more or less, one element, undo. */
+  | DepthAction
+  /** Shows a shown category's elements no more, or shows a hidden category's elements again. */
+  | { type: "category-toggle"; category: string }
+  | { type: "categories-show-all" }
+  | { type: "categories-hide-all"; categories: string[] }
+  /** Quiets every category but this one; null ends the isolation. */
+  | { type: "category-isolate"; category: string | null }
+  /** Ends the isolation and shows every category. */
+  | { type: "categories-restore" }
   | { type: "viewport"; viewport: Viewport }
   | { type: "map-changed"; project: string; addresses: Address[] }
   | { type: "activity"; project: string; address: Address }
@@ -95,6 +112,8 @@ export function initialState(): ViewState {
     views: {},
     layers: {},
     isolated: null,
+    categories: {},
+    isolatedCategory: null,
     history: [],
     returnTo: null,
     notice: null,
@@ -103,12 +122,22 @@ export function initialState(): ViewState {
 }
 
 export function emptyView(): ProjectView {
-  return { container: TOP, selection: null, focus: null, expanded: [], viewports: {}, unseen: [], visited: [] };
+  return { container: TOP, selection: null, focus: null, expanded: [], viewports: {}, unseen: [], visited: [], depth: null };
 }
 
 /** The current project's view; an empty one before any project is open. */
 export function currentView(state: ViewState): ProjectView {
   return (state.project !== null ? state.views[state.project] : undefined) ?? emptyView();
+}
+
+/** True when the category's elements are drawn. */
+export function categoryShown(state: ViewState, category: string): boolean {
+  return state.categories[category] !== "hidden";
+}
+
+/** True when undo has a depth state to restore. */
+export function canUndoDepth(state: ViewState): boolean {
+  return (currentView(state).depth?.undo.length ?? 0) > 0;
 }
 
 export function layerShown(state: ViewState, layer: string): boolean {
@@ -161,6 +190,9 @@ export function reduce(state: ViewState, action: Action): ViewState {
       };
     }
     case "select":
+      // Selecting what is selected already alters nothing, so nothing is drawn again. Keyboard
+      // focus returning to the selected element after a redraw sends this action.
+      if (action.address === view.selection && (action.address === null || !view.unseen.includes(action.address))) return state;
       return withView(state, {
         selection: action.address,
         unseen: action.address === null ? view.unseen : view.unseen.filter((a) => a !== action.address),
@@ -234,6 +266,27 @@ export function reduce(state: ViewState, action: Action): ViewState {
         isolated: null,
         layers: Object.fromEntries(action.layers.map((layer) => [layer, action.visibility])),
       };
+    case "depth-collapse-all":
+    case "depth-expand-all":
+    case "depth-set":
+    case "depth-expand-level":
+    case "depth-collapse-level":
+    case "depth-toggle":
+    case "depth-undo": {
+      // Only the depth record changes: the selection, the viewport and the history stay.
+      const depth = applyDepth(view.depth, action);
+      return depth === view.depth ? state : withView(state, { depth });
+    }
+    case "category-toggle":
+      return { ...state, categories: { ...state.categories, [action.category]: categoryShown(state, action.category) ? "hidden" : "visible" } };
+    case "categories-show-all":
+      return { ...state, categories: {} };
+    case "categories-hide-all":
+      return { ...state, categories: Object.fromEntries(action.categories.map((category) => [category, "hidden" as const])) };
+    case "category-isolate":
+      return { ...state, isolatedCategory: action.category };
+    case "categories-restore":
+      return { ...state, categories: {}, isolatedCategory: null };
     case "viewport":
       return withView(state, { viewports: { ...view.viewports, [view.container]: action.viewport } });
     case "map-changed": {

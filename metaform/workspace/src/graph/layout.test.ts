@@ -6,7 +6,7 @@ import { layerCounts, layerNames } from "../state/structure";
 import { initialState, reduce, type Action } from "../state/view";
 import { graph as text } from "../strings";
 import ELK from "elkjs/lib/elk.bundled.js";
-import { type Box, type Elk, HEADER, layout as run, layoutKey, nodeWidth } from "./layout";
+import { aspectBucket, type Box, clearLayoutCache, type Elk, fitScale, HEADER, layout as run, layoutKey, nodeWidth } from "./layout";
 import type { RenderScene } from "./renderer";
 
 const widthsOf = (scene: RenderScene) =>
@@ -131,5 +131,77 @@ describe("ELK layout of a scene", () => {
     const ms = performance.now() - start;
     console.info(`roundtable/code: ${scene.nodes.length} nodes, ${scene.edges.length} edges, ${ms.toFixed(0)} ms`);
     expect(ms).toBeLessThan(500);
+  });
+});
+
+describe("a layout that uses the pane", () => {
+  const node = (address: string) => ({ address, label: address, parent: null, band: "project", beneath: 0, layers: [], outside: 0 }) as unknown as RenderScene["nodes"][number];
+  const edge = (from: string, to: string) => ({ id: `${from}->${to}`, from, to }) as RenderScene["edges"][number];
+  /** A chain of five elements: tall when it runs downward, wide when it runs across. */
+  const chain: RenderScene = { nodes: ["a", "b", "c", "d", "e"].map(node), edges: [edge("a", "b"), edge("b", "c"), edge("c", "d"), edge("d", "e")], top: null, functional: true };
+  /** One element that relies on twelve: one long layer. */
+  const fan: RenderScene = {
+    nodes: ["top", ...Array.from({ length: 12 }, (_, i) => `leaf${String(i).padStart(2, "0")}`)].map(node),
+    edges: Array.from({ length: 12 }, (_, i) => edge("top", `leaf${String(i).padStart(2, "0")}`)),
+    top: null,
+    functional: true,
+  };
+  const wide = { width: 1600, height: 500 };
+  const tall = { width: 500, height: 1600 };
+
+  it("gives a wide pane and a tall pane different directions for the same scene", async () => {
+    clearLayoutCache();
+    const inWide = await run(elk, chain, widthsOf(chain), new Map(), wide);
+    const inTall = await run(elk, chain, widthsOf(chain), new Map(), tall);
+    expect(inWide.direction).toBe("across");
+    expect(inTall.direction).toBe("down");
+    expect(inWide.key).toBe(inTall.key);
+    // Each is the larger of the two in its own pane.
+    expect(fitScale(inWide.bounds, wide)).toBeGreaterThan(fitScale(inTall.bounds, wide));
+    expect(fitScale(inTall.bounds, tall)).toBeGreaterThan(fitScale(inWide.bounds, tall));
+  });
+
+  it("cuts a long layer into rows when that shows the graph larger", async () => {
+    clearLayoutCache();
+    const square = { width: 900, height: 900 };
+    const plain = await run(elk, fan, widthsOf(fan));
+    const kept = await run(elk, fan, widthsOf(fan), new Map(), square);
+    expect(kept.wrapped).toBe(true);
+    expect(fitScale(kept.bounds, square)).toBeGreaterThan(fitScale(plain.bounds, square));
+    const boxes = fan.nodes.map((n) => kept.boxes.get(n.address)!);
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(overlaps(boxes[i]!, boxes[j]!)).toBe(false);
+    for (const e of fan.edges) expect(kept.routes.has(e.id)).toBe(true);
+  });
+
+  it("keeps a layout through a small resize, and lays out again for another shape or scene", async () => {
+    clearLayoutCache();
+    let runs = 0;
+    const counting: Elk = { layout: (graph) => (runs++, elk.layout(graph)) };
+    const first = await run(counting, chain, widthsOf(chain), new Map(), { width: 1600, height: 900 });
+    const after = runs;
+    expect(after).toBeGreaterThanOrEqual(2);
+    // 1600 by 900 and 1650 by 900 are in one step of 25%.
+    expect(aspectBucket({ width: 1650, height: 900 })).toBe(aspectBucket({ width: 1600, height: 900 }));
+    expect(await run(counting, chain, widthsOf(chain), new Map(), { width: 1650, height: 900 })).toBe(first);
+    expect(runs).toBe(after);
+    await run(counting, chain, widthsOf(chain), new Map(), tall);
+    expect(runs).toBeGreaterThan(after);
+    const again = runs;
+    await run(counting, fan, widthsOf(fan), new Map(), { width: 1600, height: 900 });
+    expect(runs).toBeGreaterThan(again);
+  });
+
+  it("keeps the last 24 layouts", async () => {
+    clearLayoutCache();
+    let runs = 0;
+    const counting: Elk = { layout: (graph) => (runs++, elk.layout(graph)) };
+    const one: RenderScene = { nodes: [node("a")], edges: [], top: null, functional: true };
+    const paneAt = (step: number) => ({ width: 1000 * 1.25 ** step, height: 1000 });
+    for (let step = 0; step < 25; step++) await run(counting, one, widthsOf(one), new Map(), paneAt(step));
+    const made = runs;
+    await run(counting, one, widthsOf(one), new Map(), paneAt(24));
+    expect(runs).toBe(made);
+    await run(counting, one, widthsOf(one), new Map(), paneAt(0));
+    expect(runs).toBeGreaterThan(made);
   });
 });

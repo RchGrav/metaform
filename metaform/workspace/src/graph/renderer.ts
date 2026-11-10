@@ -46,7 +46,11 @@ export interface RenderNode {
   role: Role | null;
   status: string | null;
   band: Band;
-  /** How many elements are beneath it in the map; 0 for a leaf. Leafs show no chevron. */
+  /**
+   * How many elements are beneath it in the map; 0 for a leaf. Leafs show no chevron. In the
+   * functional graph it is the number of hidden elements the element holds when `collapsed`, and
+   * otherwise the number of elements of its next level on screen.
+   */
   beneath: number;
   /** True when its elements beneath are hidden (drawn as a stack); false when expanded. Ignored when beneath is 0. */
   collapsed: boolean;
@@ -104,6 +108,19 @@ export interface RenderScene {
    * parties the project serves down to what it relies on (the earlier graph's arrangement).
    */
   functional?: boolean;
+  /**
+   * The elements `fitScope` frames, when they are fewer than the elements drawn: the elements of
+   * an isolated category. Left out, the scope is every element.
+   */
+  scope?: Address[];
+}
+
+/** The parts of the pane that something covers, in pixels from each edge. A fit keeps the graph clear of them. */
+export interface Insets {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
 }
 
 /** Zoom 1 is 100%. x and y are the canvas translation in screen pixels. */
@@ -119,8 +136,10 @@ export const MAX_ZOOM = 4;
 export const MAX_ANIMATION_MS = 200;
 /** Camera moves: pan, zoom, fit and open, eased and interruptible (UX section 12a). */
 export const CAMERA_MS = 320;
-/** Layout motion: elements glide to new positions, new ones fade in, wants follow (UX section 12a). */
-export const LAYOUT_MS = 500;
+/** A fit: the camera eases to the new frame, as the earlier map did. */
+export const FIT_MS = 700;
+/** Layout motion: elements slide to new positions, new ones grow in, removed ones fade out, wants follow. */
+export const LAYOUT_MS = 520;
 /** The easing for camera and layout motion, as the earlier map viewer used. */
 export const EASING = "cubic-bezier(.25, .8, .3, 1)";
 /** Fit may frame a small graph up to this zoom, so a start-up view fills the screen (UX section 12a). */
@@ -147,10 +166,13 @@ export interface RendererEvents {
  * 1. Layout runs only when the set of node addresses or edge ids changes. A scene that changes
  *    only marks, dimming, selection, focus flags or unseen flags redraws in place, so isolating a
  *    layer or receiving activity never moves an element (UX sections 8 and 9).
- * 2. The renderer never changes the viewport by itself, except when `setViewport` or `fit` is called.
+ * 2. The renderer never changes the viewport by itself, except when `setViewport` or a fit is
+ *    called. One exception: when the pane's shape changes so much that the layout takes another
+ *    direction, the renderer fits the scope and reports the viewport, because the old viewport
+ *    no longer shows the graph.
  * 3. Every node is focusable and has an accessible name: "<label>, <role>, <beneath> beneath".
- * 4. Feedback lasts at most MAX_ANIMATION_MS, camera moves CAMERA_MS and layout motion LAYOUT_MS,
- *    eased with EASING and interruptible; nothing moves under prefers-reduced-motion.
+ * 4. Feedback lasts at most MAX_ANIMATION_MS, camera moves CAMERA_MS, a fit FIT_MS and layout
+ *    motion LAYOUT_MS, eased and interruptible; nothing moves under prefers-reduced-motion.
  * 5. Every node's element carries `data-address="<address>"`, so the shell can find a node on screen
  *    (arrow-key navigation, UX section 12a).
  */
@@ -159,8 +181,19 @@ export interface GraphRenderer {
   /** Resolves once the scene is laid out and drawn; layout may run in a worker. A newer render supersedes an older one, which then resolves without drawing. */
   render(scene: RenderScene): Promise<void>;
   setViewport(viewport: Viewport, animate: boolean): void;
-  /** Frames every node with a 48 px margin, after any pending layout, and resolves to the resulting viewport. */
+  /** Says what covers the pane. Every fit after this keeps the graph inside the part that is clear. */
+  setInsets(insets: Partial<Insets>): void;
+  /** Fit graph: frames the whole graph with a 48 px margin, after any pending layout, and resolves to the resulting viewport. */
   fit(animate: boolean): Promise<Viewport>;
+  /**
+   * Fit selection: frames the element and the elements joined to it by a want. The element is
+   * `address`, or the selected element of the scene. With neither, the viewport stays.
+   */
+  fitSelection(animate: boolean, address?: Address): Promise<Viewport>;
+  /** Fit branch: frames the element and everything reached from it along its wants. The element is chosen as in `fitSelection`. */
+  fitBranch(animate: boolean, address?: Address): Promise<Viewport>;
+  /** Fit visible scope: frames the scene's `scope`, or every element drawn. Call it after a depth or category change. */
+  fitScope(animate: boolean): Promise<Viewport>;
   /** Frames the given elements with room around them, never magnifying past `maxZoom`; all elements when none is given. */
   frame(addresses: readonly Address[], animate: boolean, maxZoom?: number): Promise<Viewport>;
   /**

@@ -2,18 +2,21 @@
 // dev/user_agent_interfaces-ux.md). The page is the top bar, the graph with the panels around it
 // (src/panels), and the bottom strip.
 
-import { createSimulatedAgent } from "./mock/agent";
+import { diff, type ActivityItem } from "./activity/stream";
 import { useSpecStore } from "./review/store";
-import { fromDump } from "./spec/model";
+import type { AgentService } from "./source/agent";
+import { fromDump, type Spec } from "./spec/model";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { CAMERA_MS, MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
 import * as strings from "./strings";
-import { elementScene, functionalScene, type SceneInput } from "./state/scene";
-import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
-import { currentView, type Action } from "./state/view";
+import { initialDepth, maxDepth, shownDepth, visibleSet } from "./state/depth";
+import { categoriesOf, elementScene, functionalElements, functionalLevels, functionalScene, type SceneInput } from "./state/scene";
+import { bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
+import { canUndoDepth, categoryShown, currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
+import { GraphControls, type CategoryControl } from "./views/GraphControls";
 import { Dock, PANELS, PanelsMenu, bodyOf, placeOf, useLayout, useNarrow, type PanelBodyProps } from "./panels";
 import { BottomStrip, FocusBanner, KeyboardHelp, NoticeBar, Rail, TopBar, platform } from "./views/Chrome";
 import { Onboarding } from "./views/Onboarding";
@@ -28,7 +31,8 @@ export interface AppProps {
   simulated: boolean;
   /** The command that started this page's server, shown in onboarding (UI-U1). */
   startCommand: string;
-  /** The page's own address (its origin), shown in the bottom strip with a control that copies it. */
+  /** The service that proposes changes to the specification. The page labels a simulated one. */
+  agent: AgentService;
 }
 
 /** metaform://map/project/<id>/<map>#<address> (seam gap 3): the project, and the element named after #. */
@@ -39,7 +43,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /** The page: it joins the workspace state, the graph, the panels and the chrome. */
-export function App({ source, events, renderer, simulated, startCommand }: AppProps) {
+export function App({ source, events, renderer, simulated, startCommand, agent }: AppProps) {
   const ws = useWorkspace(source, events, simulated);
   const { state, dispatch, current } = ws;
   const view = currentView(state);
@@ -208,14 +212,49 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     [renderer, onViewport, dispatch],
   );
   const zoomBy = useCallback((factor: number) => zoomTo((shown.current?.zoom ?? 1) * factor), [zoomTo]);
-  const fit = useCallback(
-    () =>
-      void renderer.fit(true).then((v) => {
-        onViewport(v);
-        dispatch({ type: "viewport", viewport: v });
-      }),
-    [renderer, onViewport, dispatch],
+  /** Keeps the viewport a fit settled on, as a zoom does. */
+  const keepFit = useCallback(
+    (viewport: Viewport) => {
+      onViewport(viewport);
+      dispatch({ type: "viewport", viewport });
+    },
+    [onViewport, dispatch],
   );
+  const fit = useCallback(() => void renderer.fit(true).then(keepFit), [renderer, keepFit]);
+
+  // Depth and categories of the functional graph (state/depth.ts). Every depth action carries the levels.
+  const graphMode = state.mode !== "element";
+  const levels = useMemo(() => (sceneInput && graphMode ? functionalLevels(state, sceneInput) : null), [state, sceneInput, graphMode]);
+  const depthNow = view.depth?.now ?? null;
+  const visible = useMemo(() => (levels ? visibleSet(levels, depthNow ?? initialDepth()) : new Set<Address>()), [levels, depthNow]);
+  const categories = useMemo(
+    (): CategoryControl[] =>
+      sceneInput && graphMode
+        ? categoriesOf(functionalElements(state, sceneInput)).map(({ category, elements }) => ({
+            category,
+            elements,
+            state: !categoryShown(state, category) ? "hidden" : state.isolatedCategory === category ? "isolated" : "shown",
+          }))
+        : [],
+    [state, sceneInput, graphMode],
+  );
+  const toggleDepth = useCallback(
+    (address: Address): Action => (levels ? { type: "depth-toggle", levels, address } : { type: "select", address }),
+    [levels],
+  );
+
+  // A depth action or a category the user shows or hides alters what is on screen, so the camera
+  // eases to the new scope. A selection, an isolation and a change from an agent never move it.
+  const scopeKey = `${JSON.stringify(depthNow)}|${JSON.stringify(state.categories)}`;
+  const fittedScope = useRef<{ place: string; scope: string } | null>(null);
+  useEffect(() => {
+    const place = `${state.project ?? ""}|${view.container}|${state.mode}`;
+    const last = fittedScope.current;
+    fittedScope.current = { place, scope: scopeKey };
+    if (!last || last.place !== place || last.scope === scopeKey) return;
+    void renderer.fitScope(true).then(keepFit);
+  }, [renderer, keepFit, scopeKey, state.project, view.container, state.mode]);
+
 
   // Climb step 6b: elements with new activity outside the view, counted at the canvas edge. The
   // view never moves by itself; activating the chip moves it, because the user asked.
@@ -335,9 +374,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
         case e.key === "Enter" && e.shiftKey:
           dispatch({ type: "up" });
           break;
-        case e.key === " " && selection !== null && beneath(selection ?? "") > 0:
+        case e.key === " " && selection !== null:
           e.preventDefault();
-          if (selection) dispatch({ type: "toggle-expanded", address: selection });
+          if (selection) dispatch(toggleDepth(selection));
           break;
         case (e.key === "f" || e.key === "F") && selection !== null:
           if (selection) dispatch({ type: "set-focus", address: selection });
@@ -366,7 +405,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch, view, state.mode, state.notice, zoomBy, zoomTo, fit, beneath, open, linkedProject, openLinked, sheet, zoom, showKeys, scene, renderer]);
+  }, [dispatch, view, state.mode, state.notice, zoomBy, zoomTo, fit, toggleDepth, open, linkedProject, openLinked, sheet, zoom, showKeys, scene, renderer]);
 
   useEffect(() => {
     if (view.selection) renderer.focusNode(view.selection);
@@ -386,6 +425,22 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const visibleCount = current ? visibleIn(addresses, view.container, new Set(view.expanded)).size : 0;
 
+  // The controls lie over the top of the graph, and the menu over its left edge. Every fit keeps the graph clear of both.
+  const controlsShown = !present && !firstRun && !showKeys && !showGuide && levels !== null && graphMode;
+  const controlsBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = controlsBox.current;
+    if (!box) return;
+    const report = () => renderer.setInsets({ top: box.offsetHeight + 16, left: 56 });
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(box);
+    return () => {
+      observer.disconnect();
+      renderer.setInsets({});
+    };
+  }, [renderer, controlsShown]);
+
   // What the page hands the body of every panel (src/panels/registry.tsx).
   const selection = view.selection;
   const select = useCallback((address: Address | null) => dispatch({ type: "select", address }), [dispatch]);
@@ -394,10 +449,32 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const openName = state.project === null ? "" : projectName(state.project);
   const dump = current?.dump ?? null;
   const saved = useMemo(() => (dump && state.project !== null ? fromDump(openName, dump) : null), [dump, state.project, openName]);
-  // SIMULATED: no agent service is reachable from the host, so the proposals come from the local generator.
-  const agent = useMemo(createSimulatedAgent, []);
   const review = useSpecStore({ source, agent, project: state.project, projectName: openName, simulated }, saved);
   const spec = review?.state.spec ?? saved;
+
+  // The activity stream: what each change the server announced did to the specification. An item
+  // is made by comparing the specification before the change with the one after it.
+  const [items, setItems] = useState<ActivityItem[]>([]);
+  const lastSaved = useRef<{ project: string; spec: Spec } | null>(null);
+  useEffect(() => {
+    if (!saved || state.project === null) return;
+    const last = lastSaved.current;
+    lastSaved.current = { project: state.project, spec: saved };
+    if (!last || last.spec === saved) return;
+    if (last.project !== state.project) {
+      setItems([]);
+      return;
+    }
+    const found = diff(last.spec, saved, new Date(), simulated);
+    if (found.length > 0) setItems((all) => [...all, ...found].slice(-500));
+  }, [saved, state.project, simulated]);
+  /** The selection before the user chose an activity item, so "Back to where I was" restores it. */
+  const beforeActivity = useRef<Address | null | undefined>(undefined);
+  const activityOpen = placeOf(layout, "activity") !== null;
+  const { markActivitySeen } = ws;
+  useEffect(() => {
+    if (activityOpen) markActivitySeen();
+  }, [activityOpen, items, markActivitySeen]);
   const panelBody: PanelBodyProps = {
     spec,
     review,
@@ -429,13 +506,17 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onSelect: select,
           },
     activity: {
-      activity: ws.activity,
-      projectName,
-      onSelect: (project, address) => {
-        if (project !== state.project) dispatch({ type: "open-project", project });
-        dispatch({ type: "select", address });
+      items,
+      connection: state.notice?.kind === "not-connected" ? "not-connected" : simulated ? "simulated" : "connected",
+      selected: selection,
+      onSelect: (address) => {
+        if (beforeActivity.current === undefined) beforeActivity.current = selection;
+        select(address);
       },
-      onSeen: ws.markActivitySeen,
+      onReturn: () => {
+        if (beforeActivity.current !== undefined) select(beforeActivity.current);
+        beforeActivity.current = undefined;
+      },
     },
   };
   const renderPanel = (id: string) => {
@@ -481,8 +562,6 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onZoom={zoomBy}
             onResetZoom={() => zoomTo(1)}
             onBack={() => dispatch({ type: "back" })}
-            onCollapseAll={() => dispatch({ type: "collapse-all" })}
-            onExpandAll={() => dispatch({ type: "expand-all", addresses: addresses.filter((a) => (counts.get(a) ?? 0) > 0 && (view.container === TOP || a.startsWith(`${view.container}.`))) })}
             onTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
             onHelp={() => setShowKeys(true)}
             onGettingStarted={() => setShowGuide(true)}
@@ -527,11 +606,36 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             placeKey={`${state.project ?? ""}|${viewportKey}|${visibleCount > 0 ? "ready" : "empty"}`}
             open={open}
             up={up}
+            toggle={toggleDepth}
             onViewport={onViewport}
             ready={!firstView || state.mode === "element"}
             onSize={onCanvasSize}
             dispatch={dispatch}
           />
+        )}
+        {controlsShown && levels && (
+          <div className="graph-controls-place" ref={controlsBox}>
+            <GraphControls
+              hasSelection={selection !== null}
+              depth={shownDepth(levels, visible)}
+              maxDepth={maxDepth(levels)}
+              canUndo={canUndoDepth(state)}
+              categories={categories}
+              onFitGraph={fit}
+              onFitSelection={() => void renderer.fitSelection(true).then(keepFit)}
+              onFitBranch={() => void renderer.fitBranch(true).then(keepFit)}
+              onCollapseLevel={() => dispatch({ type: "depth-collapse-level", levels })}
+              onExpandLevel={() => dispatch({ type: "depth-expand-level", levels })}
+              onExpandAll={() => dispatch({ type: "depth-expand-all", levels })}
+              onCollapseAll={() => dispatch({ type: "depth-collapse-all", levels })}
+              onUndo={() => dispatch({ type: "depth-undo" })}
+              onToggleCategory={(category) => dispatch({ type: "category-toggle", category })}
+              onIsolateCategory={(category) => dispatch({ type: "category-isolate", category })}
+              onShowAllCategories={() => dispatch({ type: "categories-show-all" })}
+              onHideAllCategories={() => dispatch({ type: "categories-hide-all", categories: categories.map((c) => c.category) })}
+              onRestoreCategories={() => dispatch({ type: "categories-restore" })}
+            />
+          </div>
         )}
         {current && addresses.length === 0 && !firstRun && (
           // A registered project whose map has no element yet: say so, in place of a blank canvas.
@@ -556,7 +660,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           simulated={simulated}
           legendOpen={placeOf(layout, "legend") !== null}
           onToggleLegend={() => panelActions.toggle("legend")}
-          activityOpen={placeOf(layout, "activity") !== null}
+          activityOpen={activityOpen}
           onToggleActivity={() => panelActions.toggle("activity")}
           dispatch={dispatch}
         />

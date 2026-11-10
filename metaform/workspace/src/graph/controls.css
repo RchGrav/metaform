@@ -1,0 +1,22 @@
+/* The graph controls (views/GraphControls.tsx). Colours come from the page's tokens (styles.css). */
+.graph-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 4px 8px; font-size: 0.857em; line-height: 1.2; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.gc-group { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.gc-title { margin-right: 4px; color: var(--muted); }
+.gc-button { display: inline-flex; align-items: baseline; gap: 4px; min-height: 24px; padding: 2px 7px; font: inherit; color: var(--text); background: none; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.gc-button:hover:not(:disabled) { background: var(--bg); border-color: var(--muted); }
+.gc-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gc-button:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
+.gc-button[aria-pressed="true"] { border-color: var(--muted); }
+.gc-depth { min-width: 1.6em; padding: 2px 4px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.gc-category { display: inline-flex; margin-right: 4px; }
+.gc-category > .gc-button:first-child { border-radius: 4px 0 0 4px; }
+.gc-category > .gc-button:last-child { margin-left: -1px; border-radius: 0 4px 4px 0; color: var(--muted); }
+.gc-category > .gc-button:focus-visible { position: relative; z-index: 1; }
+.gc-mark { display: inline-block; width: 1em; text-align: center; }
+.gc-state { color: var(--muted); font-size: 0.917em; }
+.gc-hidden > .gc-button:first-child { color: var(--muted); border-style: dashed; }
+.gc-isolated > .gc-button { border-color: var(--accent); }
+.gc-isolated > .gc-button:last-child { color: var(--text); }
+
+.graph-controls-place { position: absolute; left: 56px; right: 8px; top: 8px; z-index: 2; display: flex; pointer-events: none; }
+.graph-controls-place > .graph-controls { pointer-events: auto; }

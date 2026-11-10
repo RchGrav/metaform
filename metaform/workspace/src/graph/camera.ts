@@ -2,8 +2,12 @@
 // viewport it is showing now. A move eases from there to its target over CAMERA_MS with the
 // shared EASING curve. A new move, a drag or a wheel turn during a move starts from what is shown
 // at that moment, so nothing jumps. Under prefers-reduced-motion every move is immediate.
+//
+// A fit is a longer move, FIT_MS, as in the earlier map: the point of the graph at the centre of
+// the pane moves in a straight line, and the size changes in log space, so the graph does not
+// swing aside while it grows or shrinks.
 
-import { CAMERA_MS, EASING, type Viewport } from "./renderer";
+import { CAMERA_MS, EASING, FIT_MS, type Viewport } from "./renderer";
 import { reducedMotion } from "./flow";
 
 /** A CSS cubic-bezier(x1, y1, x2, y2) as a function of progress 0..1. */
@@ -40,6 +44,20 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t:
 const [x1 = 0.25, y1 = 0.8, x2 = 0.3, y2 = 1] = (EASING.match(/-?[\d.]+/g) ?? []).map(Number);
 export const ease = cubicBezier(x1, y1, x2, y2);
 
+/**
+ * The viewport at progress `k` (0 to 1) of a fit from `from` to `to`. `pivot` is the centre of
+ * the clear part of the pane, in screen pixels. The graph point under the pivot moves linearly
+ * and the zoom moves in log space.
+ */
+export function between(from: Viewport, to: Viewport, k: number, pivot: { x: number; y: number }): Viewport {
+  const centre = (v: Viewport) => ({ x: (pivot.x - v.x) / v.zoom, y: (pivot.y - v.y) / v.zoom });
+  const a = centre(from);
+  const b = centre(to);
+  const zoom = Math.exp(Math.log(from.zoom) + (Math.log(to.zoom) - Math.log(from.zoom)) * k);
+  return { x: pivot.x - (a.x + (b.x - a.x) * k) * zoom, y: pivot.y - (a.y + (b.y - a.y) * k) * zoom, zoom };
+}
+
+/** The camera of one graph: it knows the viewport on screen and eases to each new one. */
 export class Camera {
   private shown: Viewport = { x: 0, y: 0, zoom: 1 };
   private frame = 0;
@@ -59,13 +77,33 @@ export class Camera {
       return;
     }
     const from = { ...this.shown };
+    // Zoom eases in log space, so zooming in and out feel the same.
+    this.run(CAMERA_MS, (k) => ({
+      x: from.x + (target.x - from.x) * k,
+      y: from.y + (target.y - from.y) * k,
+      zoom: Math.exp(Math.log(from.zoom) + (Math.log(target.zoom) - Math.log(from.zoom)) * k),
+    }));
+  }
+
+  /**
+   * Eases to a fit over FIT_MS, from what is shown now, or at once. `pivot` is the centre of the
+   * clear part of the pane (see `between`). Cancels any running move.
+   */
+  fitTo(target: Viewport, pivot: { x: number; y: number }, animate: boolean): void {
+    this.stop();
+    if (!animate || reducedMotion()) {
+      this.show(target);
+      return;
+    }
+    const from = { ...this.shown };
+    this.run(FIT_MS, (k) => between(from, target, k, pivot));
+  }
+
+  private run(ms: number, at: (k: number) => Viewport): void {
     const start = performance.now();
     const step = (now: number) => {
-      const p = Math.min(1, (now - start) / CAMERA_MS);
-      const k = ease(p);
-      // Zoom eases in log space, so zooming in and out feel the same.
-      const zoom = Math.exp(Math.log(from.zoom) + (Math.log(target.zoom) - Math.log(from.zoom)) * k);
-      this.show({ x: from.x + (target.x - from.x) * k, y: from.y + (target.y - from.y) * k, zoom });
+      const p = Math.min(1, (now - start) / ms);
+      this.show(at(ease(p)));
       this.frame = p < 1 ? requestAnimationFrame(step) : 0;
     };
     this.frame = requestAnimationFrame(step);

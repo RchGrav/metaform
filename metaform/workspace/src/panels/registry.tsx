@@ -2,11 +2,13 @@
 // line to PANELS, and add one line to BODIES. To mount a view in a registered panel, replace that
 // panel's entry in BODIES; nothing else in the page names a panel's body.
 
-import type { ComponentProps, ComponentType } from "react";
+import type { ComponentType } from "react";
 import type { Review as ReviewHandle } from "../review/store";
 import type { Address } from "../source";
 import * as strings from "../strings";
-import { ActivityList, Legend } from "../views/Chrome";
+import { Activity, type ActivityProps } from "../views/Activity";
+import { Legend } from "../views/Chrome";
+import { Findings } from "../views/Findings";
 import { Entity, type EntityFolder } from "../views/Entity";
 import { Evidence } from "../views/Evidence";
 import type { Spec } from "../spec/model";
@@ -45,8 +47,8 @@ export interface PanelBodyProps {
   spec: Spec | null;
   /** The store that takes edits and holds the proposals, with its state. Null before a project is open. */
   review: ReviewHandle | null;
-  /** The activity lines, as the ActivityList view takes them. */
-  activity: ComponentProps<typeof ActivityList>;
+  /** The activity stream, as the Activity view takes it. */
+  activity: ActivityProps;
 }
 
 /** The component that renders a panel's body. */
@@ -61,7 +63,7 @@ function LegendBody({ simulated }: PanelBodyProps) {
 }
 
 function ActivityBody({ activity }: PanelBodyProps) {
-  return <ActivityList {...activity} />;
+  return <Activity {...activity} />;
 }
 
 function OutlineBody({ spec, selection, select }: PanelBodyProps) {
@@ -84,11 +86,8 @@ function ReviewBody({ spec, selection, select, review }: PanelBodyProps) {
   return spec && review ? <Review spec={spec} review={review} selection={selection} onSelect={select} /> : <p className="panel-note">{strings.panels.noProject}</p>;
 }
 
-/** The body of a panel that is registered and not built yet: one sentence that says what it will show. */
-function notBuilt(id: keyof typeof strings.panels.notBuilt): PanelBody {
-  return function NotBuilt() {
-    return <p className="panel-note">{strings.panels.notBuilt[id]}</p>;
-  };
+function FindingsBody({ spec, selection, select }: PanelBodyProps) {
+  return spec ? <Findings spec={spec} selected={selection} onSelect={select} /> : <p className="panel-note">{strings.panels.noProject}</p>;
 }
 
 /** Every panel, in the order the Panels menu lists them. */
@@ -111,7 +110,7 @@ export const BODIES: Record<PanelId, PanelBody> = {
   outline: OutlineBody,
   markdown: MarkdownBody,
   evidence: EvidenceBody,
-  findings: notBuilt("findings"),
+  findings: FindingsBody,
   review: ReviewBody,
 };
 

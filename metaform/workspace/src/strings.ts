@@ -33,8 +33,6 @@ export const rail = {
   resetZoom: "Zoom to 100%",
   back: "Back",
   more: "More",
-  collapseAll: "Collapse all",
-  expandAll: "Expand all",
   theme: "Theme",
   keyboardHelp: "Keyboard shortcuts",
   gettingStarted: "Getting started",
@@ -320,9 +318,4 @@ export const panels = {
   // Shown in the Activity panel while its list is empty.
   noActivity: "No activity yet. Changes to the map appear here.",
   // The body of a panel that is registered and not built yet.
-  notBuilt: {
-    outline: "This panel will show the specification as an outline of its elements. It is not built yet.",
-    markdown: "This panel will show the specification as Markdown, ready to copy or download. It is not built yet.",
-    findings: "This panel will show findings about the repository and its specification. It is not built yet.",
-  },
 } as const;

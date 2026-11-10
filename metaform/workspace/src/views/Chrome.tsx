@@ -95,8 +95,6 @@ export function Rail(props: {
   onZoom: (factor: number) => void;
   onResetZoom: () => void;
   onBack: () => void;
-  onCollapseAll: () => void;
-  onExpandAll: () => void;
   onTheme: () => void;
   onHelp: () => void;
   onGettingStarted: () => void;
@@ -140,8 +138,6 @@ export function Rail(props: {
         {more && (
           // Choosing an item closes the menu, so the menu never stays over what the item shows.
           <div className="rail-more" role="menu" onClick={() => setMore(false)}>
-            <button type="button" role="menuitem" onClick={props.onCollapseAll}>{strings.rail.collapseAll}</button>
-            <button type="button" role="menuitem" onClick={props.onExpandAll}>{strings.rail.expandAll}</button>
             <button type="button" role="menuitem" onClick={props.onTheme}>{strings.rail.theme}</button>
             <button type="button" role="menuitem" onClick={props.onHelp}>{strings.rail.keyboardHelp}</button>
             <button type="button" role="menuitem" onClick={props.onGettingStarted}>{strings.rail.gettingStarted}</button>

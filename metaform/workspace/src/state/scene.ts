@@ -3,7 +3,8 @@
 
 import type { Address, Role, ShallowGraph, SummarySheet } from "../source";
 import type { AgentMark, RenderEdge, RenderNode, RenderScene } from "../graph/renderer";
-import { FOCUS_REACH, currentView, layerShown, type ViewState } from "./view";
+import { hiddenCounts, initialDepth, levelsOf, visibleSet, type Levels } from "./depth";
+import { FOCUS_REACH, categoryShown, currentView, layerShown, type ViewState } from "./view";
 import {
   TOP,
   inLayerScope,
@@ -214,21 +215,76 @@ export function focusOnSelection(scene: RenderScene, selected: Address | null): 
   };
 }
 
-/**
- * The functional graph: every element in the container, and the wants between them, with no
- * nesting. An address that only groups other addresses is not drawn; the namespace is in each
- * element's address, not in the picture. An element is labelled with the project's own name
- * for it. When an element is selected, it, the elements it wants and the elements that want
- * it stay clear, and everything else recedes; only flags change, so nothing moves.
- */
-export function functionalScene(state: ViewState, input: SceneInput): RenderScene {
-  const view = currentView(state);
-  const inScope = (address: Address) => view.container === TOP || address === view.container || isBeneath(address, view.container);
+/** The categories in the order the page lists them: who the project serves, the project's own, what it relies on. */
+const CATEGORY_ORDER = ["downstream", "code", "document", "data", "media", "upstream"];
+
+/** An element's category: the first segment of its address (code, document, data, media, upstream, downstream). */
+export function categoryOf(address: Address): string {
+  const cut = address.indexOf(".");
+  return cut < 0 ? address : address.slice(0, cut);
+}
+
+/** The categories that hold elements, with how many each holds; known categories first, in the page's order. */
+export function categoriesOf(addresses: readonly Address[]): { category: string; elements: number }[] {
+  const counts = new Map<string, number>();
+  for (const address of addresses) counts.set(categoryOf(address), (counts.get(categoryOf(address)) ?? 0) + 1);
+  const place = (category: string) => (CATEGORY_ORDER.includes(category) ? CATEGORY_ORDER.indexOf(category) : CATEGORY_ORDER.length);
+  return [...counts]
+    .map(([category, elements]) => ({ category, elements }))
+    .sort((a, b) => place(a.category) - place(b.category) || (a.category < b.category ? -1 : 1));
+}
+
+/** The elements the functional graph can show: those in the container that carry a name or a role. */
+export function functionalElements(state: ViewState, input: SceneInput): Address[] {
+  const { container } = currentView(state);
+  const inScope = (address: Address) => container === TOP || address === container || isBeneath(address, container);
   const isElement = (address: Address) => {
     const fields = input.fields.get(address);
     return fields !== undefined && ["technical_name", "name", "role"].some((key) => typeof fields[key] === "string");
   };
-  const elements = graphAddresses(input.graph).filter((address) => inScope(address) && isElement(address));
+  return graphAddresses(input.graph).filter((address) => inScope(address) && isElement(address));
+}
+
+/** Levels already counted, by the reads they came from and the container, so a selection does not count them again. */
+const levelCache = new WeakMap<object, WeakMap<object, Map<Address, Levels>>>();
+
+/**
+ * The levels of the functional graph in the current container (state/depth.ts). Every depth
+ * action carries them. The same reads and container give the same object.
+ */
+export function functionalLevels(state: ViewState, input: SceneInput): Levels {
+  const { container } = currentView(state);
+  const byFields = levelCache.get(input.graph) ?? new WeakMap<object, Map<Address, Levels>>();
+  levelCache.set(input.graph, byFields);
+  const byContainer = byFields.get(input.fields) ?? new Map<Address, Levels>();
+  byFields.set(input.fields, byContainer);
+  const known = byContainer.get(container);
+  if (known) return known;
+  const elements = functionalElements(state, input);
+  // A want held by an address that is not an element counts for the element above it, as the scene draws it.
+  const { edges } = sceneEdges(input.graph, new Set(elements));
+  const levels = levelsOf(elements, edges.map((edge) => [edge.from, edge.to] as const));
+  byContainer.set(container, levels);
+  return levels;
+}
+
+/**
+ * The functional graph: the elements in the container, and the wants between them, with no
+ * nesting. An address that only groups other addresses is not drawn; the namespace is in each
+ * element's address, not in the picture. An element is labelled with the project's own name
+ * for it.
+ *
+ * Depth decides which elements show (state/depth.ts). An element that holds hidden elements is
+ * drawn collapsed, with their count; an element whose next level shows can be closed. A hidden
+ * category's elements and their wants are left out. While a category is isolated, the other
+ * categories are quiet and stay in place.
+ *
+ * When an element is selected, it, the elements it wants and the elements that want it stay
+ * clear, and everything else recedes; only flags change, so nothing moves.
+ */
+export function functionalScene(state: ViewState, input: SceneInput): RenderScene {
+  const view = currentView(state);
+  const elements = functionalElements(state, input);
   const flat: ViewState = {
     ...state,
     views:
@@ -237,12 +293,30 @@ export function functionalScene(state: ViewState, input: SceneInput): RenderScen
         : { ...state.views, [state.project]: { ...view, container: TOP, expanded: [] } },
   };
   const scene = buildScene(flat, { ...input, fullAddresses: graphAddresses(input.graph) }, elements);
-  return focusOnSelection(
-    {
-      ...scene,
-      functional: true,
-      nodes: scene.nodes.map((node) => ({ ...node, beneath: 0, collapsed: false, outside: view.container === TOP ? 0 : node.outside })),
-    },
-    view.selection,
-  );
+  const levels = functionalLevels(state, input);
+  const visible = visibleSet(levels, view.depth?.now ?? initialDepth());
+  const shown = (address: Address) => categoryShown(state, categoryOf(address));
+  const drawn = (address: Address) => visible.has(address) && shown(address);
+  const hidden = hiddenCounts(levels, visible, shown);
+  const quiet = (address: Address) => state.isolatedCategory !== null && categoryOf(address) !== state.isolatedCategory;
+  const nodes = scene.nodes.filter((node) => drawn(node.address)).map((node) => {
+    const held = hidden.get(node.address) ?? 0;
+    // With nothing hidden, the count is the next level on screen, so the element can be closed.
+    const open = (levels.children.get(node.address) ?? []).filter(drawn).length;
+    return {
+      ...node,
+      beneath: held > 0 ? held : open,
+      collapsed: held > 0,
+      dimmed: node.dimmed || quiet(node.address),
+      outside: view.container === TOP ? 0 : node.outside,
+    };
+  });
+  const functional: RenderScene = {
+    ...scene,
+    functional: true,
+    nodes,
+    edges: scene.edges.filter((edge) => drawn(edge.from) && drawn(edge.to)),
+  };
+  if (state.isolatedCategory !== null) functional.scope = nodes.filter((node) => !quiet(node.address)).map((node) => node.address);
+  return focusOnSelection(functional, view.selection);
 }

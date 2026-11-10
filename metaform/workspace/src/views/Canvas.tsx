@@ -22,13 +22,15 @@ export interface CanvasProps {
   open: (address: string) => Action;
   /** What "go up" does at an element; without it, the view leaves the container. */
   up?: (address: string) => Action;
+  /** The action the chevron on an element performs: show or hide the elements it holds. */
+  toggle: (address: string) => Action;
   dispatch: (action: Action) => void;
 }
 
-export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, open, up, onViewport, dispatch }: CanvasProps) {
+export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, open, up, toggle, onViewport, dispatch }: CanvasProps) {
   const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ open, up, dispatch, viewport, onViewport, onSize });
-  latest.current = { open, up, dispatch, viewport, onViewport, onSize };
+  const latest = useRef({ open, up, toggle, dispatch, viewport, onViewport, onSize });
+  latest.current = { open, up, toggle, dispatch, viewport, onViewport, onSize };
 
   useEffect(() => {
     const element = host.current;
@@ -50,7 +52,7 @@ export function Canvas({ renderer, scene, viewport, placeKey, ready, onSize, ope
         else latest.current.dispatch({ type: "select", address });
       },
       nodeDoubleClick: (address) => latest.current.dispatch(latest.current.open(address)),
-      chevronClick: (address) => latest.current.dispatch({ type: "toggle-expanded", address }),
+      chevronClick: (address) => latest.current.dispatch(latest.current.toggle(address)),
       backgroundClick: () => latest.current.dispatch({ type: "select", address: null }),
       viewportChange: (next) => {
         latest.current.onViewport(next);
