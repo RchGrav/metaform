@@ -234,8 +234,9 @@ class Writer:
                 "INSERT INTO element (map, address, parent) VALUES (?, ?, ?)", (self.map_id, stored, parent_key)
             )
             row = (cursor.lastrowid,)
-        self.keys[address] = row[0]
-        return row[0]
+        key = int(row[0])
+        self.keys[address] = key
+        return key
 
     def write_fields(self, key: int, old: Element, after: Element) -> None:
         run = self.connection.execute

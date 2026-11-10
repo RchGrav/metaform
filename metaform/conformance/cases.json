@@ -1398,7 +1398,6 @@
       "role": "Supportive",
       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
       "format": "markdown_blocks",
-      "instruction": "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.",
       "template": "{title}: {text}"
      },
      "wants": {},
@@ -6901,8 +6900,7 @@
      "element": {
       "technical_name": "cpp code layer",
       "name": "C++ notes",
-      "role": "Supportive",
-      "instruction": "Record what the C++ realization of this element requires."
+      "role": "Supportive"
      },
      "wants": {},
      "wanted_by": {},
@@ -9509,7 +9507,6 @@
       "role": "Supportive",
       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
       "format": "markdown_blocks",
-      "instruction": "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.",
       "template": "{title}: {text}"
      },
      "wants": {},
@@ -9828,7 +9825,6 @@
       "role": "Supportive",
       "description": "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
       "format": "markdown_blocks",
-      "instruction": "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.",
       "template": "{title}: {text}"
      },
      "wants": {},

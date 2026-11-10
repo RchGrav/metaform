@@ -215,6 +215,9 @@ export function goto(map: MapModel, address: string): Json {
   const here = specification.definitions(map).find((d) => d.address === address);
   if (here !== undefined) {
     sheet.set("guidance", here.guidance());
+    // The guidance holds the definition's instruction, so the sheet's `element` part leaves it
+    // out: the same text does not arrive twice. An addressed read still returns it.
+    (sheet.get("element") as Map<string, unknown>).delete("instruction");
   }
   return sheet;
 }

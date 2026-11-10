@@ -49,7 +49,8 @@ class Presence:
         context was reset can tell "nothing here" from "already delivered" and read them again."""
         if not isinstance(sheet, dict):
             return sheet
-        at = sheet.get("at") if isinstance(sheet.get("at"), str) else ""
+        found = sheet.get("at")
+        at: str = found if isinstance(found, str) else ""
         seen = self.delivered.setdefault(at, {})
         out: dict[str, Any] = {"at": at}
         unchanged: list[str] = []

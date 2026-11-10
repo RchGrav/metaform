@@ -236,6 +236,11 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
         .find(|d| d.address == address)
     {
         sheet["guidance"] = Value::String(definition.guidance());
+        // The guidance holds the definition's instruction, so the sheet's `element` part leaves
+        // it out: the same text does not arrive twice. An addressed read still returns it.
+        if let Some(Value::Object(element)) = sheet.get_mut("element") {
+            element.remove("instruction");
+        }
     }
     Ok(sheet)
 }

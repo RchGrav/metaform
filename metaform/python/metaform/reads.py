@@ -164,4 +164,7 @@ def goto(map: Map, address: str) -> dict[str, Any]:
     definition = next((d for d in specification.definitions(map) if d.address == address), None)
     if definition is not None:
         sheet["guidance"] = definition.guidance()
+        # The guidance holds the definition's instruction, so the sheet's `element` part leaves
+        # it out: the same text does not arrive twice. An addressed read still returns it.
+        sheet["element"].pop("instruction", None)
     return copy(sheet)

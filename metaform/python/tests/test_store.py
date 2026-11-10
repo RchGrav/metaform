@@ -177,10 +177,12 @@ class StoreTests(unittest.TestCase):
         def feed() -> None:
             # The commands go into the pipe faster than the process performs them, so the
             # process is writing when it is ended. The pipe breaks when the process ends.
+            pipe = server.stdin
+            assert pipe is not None
             try:
                 for number in range(writes):
-                    server.stdin.write(request(number, {"add": dict([element(number)])}))
-                server.stdin.flush()
+                    pipe.write(request(number, {"add": dict([element(number)])}))
+                pipe.flush()
             except OSError:
                 pass
 
