@@ -58,7 +58,7 @@ The map does not record a status field today. The first three are derived from w
 
 ## 5. The graph
 
-- It draws elements and wants only. There are no address boxes. Layout is by purpose: who the project serves comes first and what it relies on comes last. The renderer chooses the direction for the shape of the pane: downward in a tall pane, across in a wide and short one. A layer that is too long for the pane wraps.
+- It draws elements and wants only. There are no address boxes. A want is a line of straight runs with right-angle turns and rounded corners, as in the Topogee map viewer (owner, 2026-11-10: the curved lines could not be read). Layout is by purpose: who the project serves comes first and what it relies on comes last. The renderer chooses the direction for the shape of the pane: downward in a tall pane, across in a wide and short one. A layer that is too long for the pane wraps.
 - Depth follows the earlier Metaform map: levels are counted along the wants from the elements nothing relies on. A map of up to 200 elements is shown whole. A closed element shows how many hidden elements it holds. Controls: collapse all, expand all, one level more or less, open or close one element, and undo.
 - Categories are the first segment of an address (downstream, code, document, data, media, upstream). Each can be shown, hidden or isolated. Isolation makes the other categories recede and moves nothing.
 - Fit graph, fit selection, fit branch and fit visible scope keep the graph clear of the controls that lie over the pane.

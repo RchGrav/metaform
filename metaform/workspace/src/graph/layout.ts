@@ -99,7 +99,7 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "DOWN",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.edgeRouting": "SPLINES",
+  "elk.edgeRouting": "ORTHOGONAL",
   "elk.partitioning.activate": "true",
   "elk.layered.spacing.nodeNodeBetweenLayers": "52",
   "elk.spacing.nodeNode": "28",
@@ -382,7 +382,7 @@ async function layoutOne(
   collectBoxes(result, 0, boxes);
   collectRoutes(result, routes);
   const bounds = { x: 0, y: 0, width: result.width ?? 0, height: result.height ?? 0 };
-  return { key, direction, wrapped: partitions !== undefined, aspect: pane ? aspectBucket(pane) : null, boxes, routes, separators: [], curved: true, bounds };
+  return { key, direction, wrapped: partitions !== undefined, aspect: pane ? aspectBucket(pane) : null, boxes, routes, separators: [], curved: false, bounds };
 }
 
 /**
@@ -403,7 +403,7 @@ export async function layout(
   const key = layoutKey(scene, widths);
   const usable = pane !== undefined && pane.width > 0 && pane.height > 0 ? pane : undefined;
   if (scene.nodes.length === 0) {
-    return { key, direction: "down", wrapped: false, aspect: usable ? aspectBucket(usable) : null, boxes: new Map(), routes: new Map(), separators: [], curved: true, bounds: { x: 0, y: 0, width: 0, height: 0 } };
+    return { key, direction: "down", wrapped: false, aspect: usable ? aspectBucket(usable) : null, boxes: new Map(), routes: new Map(), separators: [], curved: false, bounds: { x: 0, y: 0, width: 0, height: 0 } };
   }
   if (!usable) return layoutOne(elk, scene, widths, headers, key, "down", undefined);
   const cacheKey = `${aspectBucket(usable)}|${key}`;

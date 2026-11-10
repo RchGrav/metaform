@@ -3,7 +3,7 @@
 import type { Point } from "./layout";
 
 /** Corner radius of a routed edge's bends. */
-const CORNER = 8;
+const CORNER = 10;
 
 /**
  * The path of a spline route from ELK: the start point, then cubic segments of two control
