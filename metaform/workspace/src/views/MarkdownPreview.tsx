@@ -51,7 +51,8 @@ function download(name: string, text: string): void {
  */
 export function MarkdownPreview({ spec, proposals, scope }: MarkdownPreviewProps) {
   const [sections, setSections] = useState<Record<SectionKey, boolean>>(DEFAULT_SECTIONS);
-  const [wholeProject, setWholeProject] = useState(scope === null);
+  // The document covers the whole project unless the user chooses the selected element.
+  const [wholeProject, setWholeProject] = useState(true);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
   const usedScope = wholeProject ? null : scope;

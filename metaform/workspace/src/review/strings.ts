@@ -121,6 +121,8 @@ export const review = {
   history: (n: number) => `Review history (${n})`,
   historyNote: "From the records of the review layer in the map, newest first.",
   noHistory: "The map holds no review record yet.",
+  rejected: (n: number) => `Rejected (${n})`,
+  rejectedNote: "A rejected proposal alters nothing in the map, so the map holds no record of it. This list lasts until the page is loaded again.",
   byUser: "user",
   byAgent: "agent",
   what: (what: string) => what,

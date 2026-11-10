@@ -47,7 +47,7 @@ export const statusMeanings: Record<EvidenceStatus, string> = {
   "source-backed": "The element has a source reference or a path in its sources layer.",
   inferred: "The map records this with no source reference of its own.",
   unverified: "The element has no source reference.",
-  "user-authored": "Written or changed in this page. The server has not confirmed it yet.",
+  "user-authored": "Written or changed in this page by a user. The map's review layer records it once the server has stored it.",
   "agent-proposed": "An agent proposed this. No one has reviewed it.",
   accepted: "A proposal that was accepted. It is part of the specification.",
   rejected: "A proposal that was rejected. It is not part of the specification.",
@@ -125,8 +125,9 @@ export const markdown = {
   evidenceNote:
     "The map records no status field. Each status here is derived from what the map holds: " +
     "an element is source-backed when it has a source reference or a path in its `sources` layer, " +
-    "and unverified when it has neither. Every want is inferred, because the map records no source " +
-    "reference for a want.",
+    "and unverified when it has neither. A want is inferred, because the map records no source " +
+    "reference for a want. A part that a user wrote in the page, or a proposal that a user accepted, " +
+    "has the status the map's `review` layer records for it.",
   evidenceColumns: ["Element", "Address", "Status", "Source paths"],
   pendingTitle: "Changes the server has not confirmed",
   pendingField: (field: string) => `the field \`${field}\``,

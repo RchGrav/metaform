@@ -59,10 +59,10 @@ describe("MarkdownPreview", () => {
     expect(html).not.toContain('type="radio"');
   });
 
-  it("starts at the scope it is given and offers the whole project", () => {
+  it("starts at the whole project and offers the scope it is given", () => {
     const html = renderToStaticMarkup(<MarkdownPreview spec={spec} proposals={[]} scope="code.engine" />);
     const shown = textOf(html.slice(html.indexOf("<pre"), html.indexOf("</pre>")));
-    expect(shown).toBe(toMarkdown(spec, { scope: "code.engine" }));
+    expect(shown).toBe(toMarkdown(spec, { scope: null }));
     expect(html.match(/type="radio"/g)).toHaveLength(2);
   });
 });

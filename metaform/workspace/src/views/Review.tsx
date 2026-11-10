@@ -167,6 +167,7 @@ export function Review({ spec, review, selection, onSelect }: ReviewProps) {
   const { store, state } = review;
   const waiting = state.proposals.filter((proposal) => proposal.state === "proposed");
   const history = historyOf(spec);
+  const rejected = state.proposals.filter((proposal) => proposal.state === "rejected");
   const line = writableLine(state.writable);
   const ask = (scope: ProposalScope) => void store.ask(scope);
   return (
@@ -220,6 +221,28 @@ export function Review({ spec, review, selection, onSelect }: ReviewProps) {
             </li>
           ))}
         </ol>
+      )}
+      {rejected.length > 0 && (
+        <>
+          <h3>{words.rejected(rejected.length)}</h3>
+          <p className="panel-hint">{words.rejectedNote}</p>
+          <ol className="review-history">
+            {rejected.map((proposal) => (
+              <li key={proposal.change.id}>
+                <button type="button" className="history-line" aria-current={proposal.change.address === selection ? "true" : undefined} title={proposal.change.address} onClick={() => onSelect(proposal.change.address)}>
+                  <span className="history-what">{describe(spec, proposal.change).what}</span>
+                  <span className="spec-status spec-status-rejected">
+                    <span className="spec-status-mark" aria-hidden="true">{statusMarks.rejected}</span>
+                    <span className="spec-status-word">{statusWords.rejected}</span>
+                  </span>
+                  <span className="history-who">{proposal.proposedBy}</span>
+                  {proposal.simulated && <SimulatedMark />}
+                  <span className="history-rationale">{proposal.rationale}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </>
       )}
     </section>
   );

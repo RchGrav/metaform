@@ -24,6 +24,26 @@ export const topBar = {
   // The accessible name of the breadcrumb navigation: one breadcrumb per address segment.
   address: "Address",
   zoom: (percent: number) => `Zoom ${Math.round(percent)}%`,
+  // The first breadcrumb while the graph shows the whole project.
+  wholeProject: "Whole project",
+  selected: (name: string) => `Selected: ${name}`,
+  connection: { connected: "Live", simulated: "Sample data", "not-connected": "Not connected" },
+  connectionMark: { connected: "●", simulated: "◆", "not-connected": "○" },
+  connectionTip: {
+    connected: "The page reads this project's map from the Metaform server and follows every change.",
+    simulated: "The page shows sample data. No Metaform server is read.",
+    "not-connected": "The page lost the Metaform server. It shows the map as it was last read.",
+  },
+  elements: (n: number) => count(n, "element"),
+  elementsTip: "How many elements the specification holds",
+  unverified: (n: number) => `${n} unverified`,
+  unverifiedTip: "Elements with no source reference. The Findings panel lists them.",
+  pending: (n: number) => `${count(n, "edit")} not saved yet`,
+  pendingTip: "Edits the server has not confirmed. The Review panel lists them.",
+  proposals: (n: number) => `${count(n, "proposal")} to review`,
+  proposalsTip: "Proposals that wait for you to accept or reject them. The Review panel lists them.",
+  markdown: "Specification as Markdown",
+  markdownTip: "Show the specification on screen as a Markdown document, to copy or download",
 } as const;
 
 export const rail = {
@@ -108,12 +128,13 @@ export const focus = {
 } as const;
 
 export const layers = {
-  showAll: "Show all layers",
-  hideAll: "Hide all layers",
-  show: (layer: string) => `Show ${layer}`,
-  hide: (layer: string) => `Hide ${layer}`,
-  isolate: "Isolate",
-  isolated: "Isolated",
+  group: "Records",
+  groupTip: "A layer holds records of one kind, such as sources. An element that holds records of a layer carries that layer's mark.",
+  show: (layer: string) => `Show the ${layer} marks on the elements that hold ${layer} records`,
+  hide: (layer: string) => `Hide the ${layer} marks on the elements`,
+  only: "Only",
+  onlyTip: (layer: string) => `Keep clear only the elements that hold ${layer} records. The other elements recede and stay in place.`,
+  endOnly: (layer: string) => `Make every element clear again, with or without ${layer} records.`,
   records: (n: number) => count(n, "record"),
   // The tooltip on a layer's mark at an element.
   mark: (layer: string, n: number) => `${layer}: ${count(n, "record")}`,
@@ -255,9 +276,9 @@ export const legend = {
   hide: "Hide legend",
   roleBar: "Coloured bar: the element's role, Definitive, Supportive, Notable or Divergent",
   definitive: "Inner ring: the Definitive element, the one without which the project is not what it is",
-  stack: "Stacked outline: a collapsed element; its elements beneath are hidden",
-  chevron: "Chevron: collapse or expand the elements beneath",
-  beneath: "Number at the right: how many elements are beneath this one",
+  stack: "Stacked outline: this element holds hidden elements",
+  chevron: "Chevron: show or hide the next level of elements this element holds",
+  beneath: "\"N hidden\": how many hidden elements this element holds. They are reached through it along the wants",
   outside: "\"N wants outside\": wants to or from elements outside this view",
   layerMark: "Small shape with a number: a layer's records at this element",
   agent: "Circle with initials: an agent at this address (simulated)",
@@ -267,7 +288,8 @@ export const legend = {
   projectLink: "Link mark: this element opens another project",
   arrow: "Line: a want, between the element that holds it and the element that provides. The arrowhead is where the substance arrives: at the holder (inbound), at the provider (outbound) or at both ends (two-way)",
   arrowCount: "Number on an arrow: several wants drawn as one line",
-  band: "Dashed line: the project boundary, with upstream on the left and downstream on the right",
+  // Drawn only by a layout that has bands; the functional graph has none.
+  band: "Dashed line: the project boundary",
 } as const;
 
 /**

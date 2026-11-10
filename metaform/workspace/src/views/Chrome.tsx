@@ -23,7 +23,19 @@ export function SimulatedBadge() {
   );
 }
 
-/** The top bar: the project, the breadcrumbs, the modes, the zoom level and the Panels menu. */
+/** What the top bar says about the data and the specification. */
+export interface TopBarStatus {
+  connection: "connected" | "simulated" | "not-connected";
+  /** How many elements the specification holds, and how many of them have no source reference. */
+  elements: number;
+  unverified: number;
+  /** Edits the server has not confirmed yet. */
+  pending: number;
+  /** Proposals that wait for a review. */
+  proposals: number;
+}
+
+/** The top bar: the project, the breadcrumbs, the selection, the status, the Markdown action, the modes, the zoom level and the Panels menu. */
 export function TopBar(props: {
   state: ViewState;
   projects: ProjectRef[];
@@ -31,9 +43,16 @@ export function TopBar(props: {
   zoom: number;
   /** The Panels menu (src/panels/PanelsMenu.tsx). */
   menu: React.ReactNode;
+  /** Where the data comes from, and what the specification holds now; null before a project is read. */
+  status: TopBarStatus | null;
+  /** The name of the selected element, or null. */
+  selected: string | null;
+  /** Whether the Markdown panel is open, and the action that opens or closes it. */
+  markdownOpen: boolean;
+  onMarkdown: () => void;
   dispatch: (action: Action) => void;
 }) {
-  const { state, projects, container, zoom, dispatch } = props;
+  const { state, projects, container, zoom, dispatch, status } = props;
   const segments = container === TOP ? [] : container.split(".");
   const project = projects.find((p) => p.id === state.project);
   const modes: Mode[] = ["graph", "element", "present"];
@@ -54,7 +73,7 @@ export function TopBar(props: {
       </label>
       <nav className="breadcrumbs" aria-label={strings.topBar.address}>
         <button type="button" onClick={() => segments.length > 0 && dispatch({ type: "open", address: TOP, beneath: 1 })}>
-          {project?.name ?? ""}
+          {segments.length === 0 ? strings.topBar.wholeProject : project?.name ?? ""}
         </button>
         {segments.map((segment, i) => {
           const address = segments.slice(0, i + 1).join(".");
@@ -69,11 +88,26 @@ export function TopBar(props: {
           );
         })}
       </nav>
+      {props.selected !== null && <span className="top-selected">{strings.topBar.selected(props.selected)}</span>}
+      {status && (
+        <span className="top-status" role="status">
+          <span className={`top-connection top-${status.connection}`} title={strings.topBar.connectionTip[status.connection]}>
+            <span aria-hidden="true">{strings.topBar.connectionMark[status.connection]}</span> {strings.topBar.connection[status.connection]}
+          </span>
+          <span title={strings.topBar.elementsTip}>{strings.topBar.elements(status.elements)}</span>
+          {status.unverified > 0 && <span title={strings.topBar.unverifiedTip}>{strings.topBar.unverified(status.unverified)}</span>}
+          {status.pending > 0 && <span title={strings.topBar.pendingTip}>{strings.topBar.pending(status.pending)}</span>}
+          {status.proposals > 0 && <span title={strings.topBar.proposalsTip}>{strings.topBar.proposals(status.proposals)}</span>}
+        </span>
+      )}
       {state.returnTo && (
         <button type="button" className="chip return" onClick={() => dispatch({ type: "back" })}>
           {strings.navigation.backTo(projects.find((p) => p.id === state.returnTo?.project)?.name ?? state.returnTo.project, state.returnTo.container)}
         </button>
       )}
+      <button type="button" className="top-markdown" aria-pressed={props.markdownOpen} title={strings.topBar.markdownTip} onClick={props.onMarkdown}>
+        {strings.topBar.markdown}
+      </button>
       <div className="modes" role="tablist">
         {modes.map((mode, i) => (
           <button key={mode} type="button" role="tab" aria-selected={state.mode === mode} title={`${i + 1}`} onClick={() => dispatch({ type: "mode", mode })}>
@@ -226,8 +260,11 @@ export function BottomStrip(props: {
   const { state, layers, dispatch } = props;
   return (
     <footer className="bottom-strip">
-      <div className="layers" role="group" aria-label={strings.details.layers}>
+      <div className="layers" role="group" aria-label={strings.layers.group}>
+        {layers.some((layer) => (props.counts[layer] ?? 0) > 0) && <span className="layers-title" title={strings.layers.groupTip}>{strings.layers.group}</span>}
         {layers.map((layer, style) => {
+          // A layer with no record draws no mark, so it has nothing to show or hide.
+          if ((props.counts[layer] ?? 0) === 0) return null;
           const isolated = state.isolated === layer;
           const shown = layerShown(state, layer);
           const hidden = state.isolated === null && !shown;
@@ -237,23 +274,25 @@ export function BottomStrip(props: {
                 type="button"
                 aria-pressed={shown}
                 title={shown ? strings.layers.hide(layer) : strings.layers.show(layer)}
+                aria-label={shown ? strings.layers.hide(layer) : strings.layers.show(layer)}
                 onClick={() => dispatch({ type: "layer", layer, visibility: shown && state.isolated === null ? "hidden" : "visible" })}
               >
                 <span className="swatch" aria-hidden="true" />
                 {layer} <span className="count">{props.counts[layer] ?? 0}</span>
               </button>
-              <button type="button" className="isolate" aria-pressed={isolated} onClick={() => dispatch({ type: "isolate", layer: isolated ? null : layer })}>
-                {isolated ? strings.layers.isolated : strings.layers.isolate}
+              <button
+                type="button"
+                className="isolate"
+                aria-pressed={isolated}
+                title={isolated ? strings.layers.endOnly(layer) : strings.layers.onlyTip(layer)}
+                aria-label={isolated ? strings.layers.endOnly(layer) : strings.layers.onlyTip(layer)}
+                onClick={() => dispatch({ type: "isolate", layer: isolated ? null : layer })}
+              >
+                {strings.layers.only}
               </button>
             </span>
           );
         })}
-        {layers.length > 0 && (
-          <>
-            <button type="button" className="link" onClick={() => dispatch({ type: "all-layers", layers, visibility: "visible" })}>{strings.layers.showAll}</button>
-            <button type="button" className="link" onClick={() => dispatch({ type: "all-layers", layers, visibility: "hidden" })}>{strings.layers.hideAll}</button>
-          </>
-        )}
       </div>
       <div className="activity">
         <button type="button" className="link" aria-pressed={props.legendOpen} onClick={props.onToggleLegend}>
@@ -271,7 +310,7 @@ export function BottomStrip(props: {
 /** Every mark the graph draws, with its meaning (climb step 1). The renderer gives each mark the same text as its tooltip. */
 const LEGEND_ENTRIES = [
   "roleBar", "definitive", "stack", "chevron", "beneath", "outside", "layerMark",
-  "agent", "agentActive", "agentIdle", "unseen", "projectLink", "arrow", "arrowCount", "band",
+  "agent", "agentActive", "agentIdle", "unseen", "projectLink", "arrow", "arrowCount",
 ] as const;
 
 /**
@@ -285,7 +324,7 @@ function Swatch({ entry }: { entry: (typeof LEGEND_ENTRIES)[number] }) {
     definitive: <g>{box}<rect className="mf-definitive-ring" x={4} y={5} width={30} height={12} rx={2} /></g>,
     stack: <g><rect className="mf-stack" x={6} y={6} width={34} height={14} rx={3} />{box}</g>,
     chevron: <path className="mf-chevron-mark" d="M17,6 L23,11 L17,16" />,
-    beneath: <text className="mf-beneath" x={4} y={15}>89</text>,
+    beneath: <text className="mf-beneath" x={4} y={15}>4 hidden</text>,
     outside: <text className="mf-outside" x={4} y={15}>{strings.graph.wantsOutside(2)}</text>,
     layerMark: <g className="mf-layer mf-layer-0" transform="translate(8,11)"><rect x={0} y={-3.5} width={7} height={7} /><text className="mf-layer-count" x={11} y={4}>3</text></g>,
     agent: <g className="mf-agent" transform="translate(20,11)"><circle r={9} /><text textAnchor="middle" y={3.5}>MA</text></g>,
@@ -295,10 +334,9 @@ function Swatch({ entry }: { entry: (typeof LEGEND_ENTRIES)[number] }) {
     projectLink: <g className="mf-project-link" transform="translate(14,5)"><path d="M2,10 L10,2 M5,2 L10,2 L10,7" /></g>,
     arrow: <g className="mf-edge"><path d="M4,11 L30,11" /><path className="mf-arrowhead" d="M30,7 L37,11 L30,15 z" /></g>,
     arrowCount: <g className="mf-edge"><path d="M4,15 L30,15" /><path className="mf-arrowhead" d="M30,11 L37,15 L30,19 z" /><text className="mf-edge-count" x={14} y={10}>3</text></g>,
-    band: <line className="mf-separator" x1={20} y1={1} x2={20} y2={21} />,
   };
   // The outside count is words in the graph, so its swatch is as wide as the words.
-  const width = entry === "outside" ? 96 : 42;
+  const width = entry === "outside" ? 96 : entry === "beneath" ? 56 : 42;
   return (
     <svg className="mf-graph legend-swatch" width={width} height={22} viewBox={`0 0 ${width} 22`} aria-hidden="true">
       {marks[entry]}

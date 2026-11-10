@@ -18,7 +18,8 @@ import { canUndoDepth, categoryShown, currentView, type Action } from "./state/v
 import { Canvas } from "./views/Canvas";
 import { GraphControls, type CategoryControl } from "./views/GraphControls";
 import { Dock, PANELS, PanelsMenu, bodyOf, placeOf, useLayout, useNarrow, type PanelBodyProps } from "./panels";
-import { BottomStrip, FocusBanner, KeyboardHelp, NoticeBar, Rail, TopBar, platform } from "./views/Chrome";
+import { BottomStrip, FocusBanner, KeyboardHelp, NoticeBar, Rail, TopBar, platform, type TopBarStatus } from "./views/Chrome";
+import { elementEvidence } from "./spec/evidence";
 import { Onboarding } from "./views/Onboarding";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
 import { connected, isArrow, nearestInDirection, nodeCentres } from "./views/navigate";
@@ -475,6 +476,19 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
   useEffect(() => {
     if (activityOpen) markActivitySeen();
   }, [activityOpen, items, markActivitySeen]);
+  const topStatus = useMemo(
+    (): TopBarStatus | null =>
+      spec === null
+        ? null
+        : {
+            connection: state.notice?.kind === "not-connected" ? "not-connected" : simulated ? "simulated" : "connected",
+            elements: spec.elements.length,
+            unverified: spec.elements.filter((element) => elementEvidence(element).status === "unverified").length,
+            pending: review?.state.pending.length ?? 0,
+            proposals: review?.state.proposals.filter((proposal) => proposal.state === "proposed").length ?? 0,
+          },
+    [spec, review, state.notice, simulated],
+  );
   const panelBody: PanelBodyProps = {
     spec,
     review,
@@ -537,6 +551,10 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
           container={view.container}
           zoom={zoom}
           menu={<PanelsMenu layout={layout} actions={panelActions} panels={PANELS} narrow={narrow} />}
+          status={topStatus}
+          selected={selection === null ? null : nameOf(selection)}
+          markdownOpen={placeOf(layout, "markdown") !== null}
+          onMarkdown={() => panelActions.toggle("markdown")}
           dispatch={dispatch}
         />
       )}
