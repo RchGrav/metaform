@@ -9,7 +9,8 @@ import { buildScene, elementScene, type SceneInput } from "./state/scene";
 import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
-import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Onboarding, Rail, TopBar, platform } from "./views/Chrome";
+import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Rail, TopBar, platform } from "./views/Chrome";
+import { Onboarding } from "./views/Onboarding";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
 import { connected, isArrow, nearestInDirection, nodeCentres } from "./views/navigate";
 
@@ -19,8 +20,10 @@ export interface AppProps {
   renderer: GraphRenderer;
   /** True while the data is simulated; the views then show the Simulated badge. */
   simulated: boolean;
-  /** The command that started this prototype, shown in onboarding (UI-U1). */
+  /** The command that started this page's server, shown in onboarding (UI-U1). */
   startCommand: string;
+  /** The page's own address (its origin), shown in the bottom strip with a control that copies it. */
+  pageAddress: string;
 }
 
 /** metaform://map/project/<id>/<map>#<address> (seam gap 3): the project, and the element named after #. */
@@ -30,7 +33,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 }
 
-export function App({ source, events, renderer, simulated, startCommand }: AppProps) {
+export function App({ source, events, renderer, simulated, startCommand, pageAddress }: AppProps) {
   const ws = useWorkspace(source, events, simulated);
   const { state, dispatch, current } = ws;
   const view = currentView(state);
@@ -386,7 +389,16 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           <KeyboardHelp onClose={() => setShowKeys(false)} />
         ) : firstRun || showGuide ? (
           <Onboarding
+            simulated={simulated}
+            empty={firstRun}
             startCommand={startCommand}
+            onCheckAgain={async () => {
+              // A project registered after the page loaded: open the first one, as at start-up.
+              const list = await ws.reloadProjects();
+              const first = list?.[0];
+              if (first) dispatch({ type: "open-project", project: first.id });
+              return list?.length ?? null;
+            }}
             onSimulateIntake={() => {
               setShowGuide(false);
               // The mock can register a sample project and fill it while the user watches. It is
@@ -447,7 +459,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
             onSelect={(address) => dispatch({ type: "select", address })}
           />
         )}
-        {legendOpen && !firstRun && <Legend onClose={toggleLegend} />}
+        {legendOpen && !firstRun && <Legend onClose={toggleLegend} simulated={simulated} />}
           </div>
         )}
       </main>
@@ -460,6 +472,7 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
           agents={ws.agents}
           unseen={ws.unseenActivity}
           simulated={simulated}
+          pageAddress={pageAddress}
           projectName={projectName}
           onOpenActivity={ws.markActivitySeen}
           legendOpen={legendOpen}

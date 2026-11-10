@@ -19,6 +19,28 @@ export function SimulatedBadge() {
   );
 }
 
+/** The page's address with a control that copies it. The address stays selectable when the copy is refused. */
+export function PageAddress({ address }: { address: string }) {
+  const [result, setResult] = useState<"copied" | "notCopied" | null>(null);
+  const copy = () => {
+    const done = (next: "copied" | "notCopied") => {
+      setResult(next);
+      setTimeout(() => setResult(null), next === "copied" ? 2000 : 6000);
+    };
+    // The clipboard exists only in a secure context; 127.0.0.1 and localhost are secure contexts.
+    if (!navigator.clipboard) return done("notCopied");
+    navigator.clipboard.writeText(address).then(() => done("copied"), () => done("notCopied"));
+  };
+  return (
+    <span className="page-address" title={strings.pageAddress.label}>
+      <span className="visually-hidden">{strings.pageAddress.label}</span>
+      <code>{address}</code>
+      <button type="button" onClick={copy}>{strings.pageAddress.copy}</button>
+      <span role="status">{result === null ? "" : strings.pageAddress[result]}</span>
+    </span>
+  );
+}
+
 export function TopBar(props: {
   state: ViewState;
   projects: ProjectRef[];
@@ -286,6 +308,8 @@ export function BottomStrip(props: {
   agents: AgentState[];
   unseen: number;
   simulated: boolean;
+  /** The page's origin, shown with a control that copies it. */
+  pageAddress: string;
   projectName: (id: string) => string;
   onOpenActivity: () => void;
   dispatch: (action: Action) => void;
@@ -341,6 +365,7 @@ export function BottomStrip(props: {
           {strings.activity.summary(props.unseen)}
         </button>
         {props.simulated && <SimulatedBadge />}
+        <PageAddress address={props.pageAddress} />
         {open && (
           <ol className="activity-list">
             {props.activity.map((line) => {
@@ -403,7 +428,10 @@ function Swatch({ entry }: { entry: (typeof LEGEND_ENTRIES)[number] }) {
   );
 }
 
-export function Legend({ onClose }: { onClose: () => void }) {
+/** The marks that only simulated data draws: Metaform has no source of agent presence (seam gap 2). */
+const SIMULATED_ENTRIES: readonly string[] = ["agent", "agentActive", "agentIdle"];
+
+export function Legend({ onClose, simulated }: { onClose: () => void; simulated: boolean }) {
   return (
     <aside className="legend" aria-labelledby="legend-title">
       <header>
@@ -411,7 +439,7 @@ export function Legend({ onClose }: { onClose: () => void }) {
         <button type="button" onClick={onClose} aria-label={strings.legend.hide} title={strings.legend.hide}>×</button>
       </header>
       <ul>
-        {LEGEND_ENTRIES.map((key) => (
+        {LEGEND_ENTRIES.filter((key) => simulated || !SIMULATED_ENTRIES.includes(key)).map((key) => (
           <li key={key}>
             <Swatch entry={key} />
             <span>{strings.legend[key]}</span>
@@ -438,39 +466,6 @@ export function KeyboardHelp({ onClose }: { onClose: () => void }) {
         ))}
       </dl>
       <button type="button" className="close" onClick={onClose} aria-label={strings.details.close}>×</button>
-    </section>
-  );
-}
-
-export function Onboarding(props: { onSimulateIntake: () => void; startCommand: string; onClose?: () => void }) {
-  const o = strings.onboarding;
-  return (
-    <section className="onboarding" aria-labelledby="onboarding-title">
-      <h2 id="onboarding-title">{o.title}</h2>
-      <ol>
-        <li>
-          <h3>{o.register.title}</h3>
-          <p>{o.register.body}</p>
-          <code>{o.register.command}</code>
-          <p>
-            <span className="badge">{o.register.plannedLabel}</span> <code>{o.register.plannedCommand}</code>
-          </p>
-        </li>
-        <li>
-          <h3>{o.intake.title}</h3>
-          <p>{o.intake.body}</p>
-          <button type="button" onClick={props.onSimulateIntake}>{o.intake.button}</button> <SimulatedBadge />
-        </li>
-        <li>
-          <h3>{o.reopen.title}</h3>
-          <p>{o.reopen.body}</p>
-          <code>{o.reopen.command}</code>
-          {props.startCommand !== o.reopen.command && <p>{o.reopen.prototypeCommand(props.startCommand)}</p>}
-        </li>
-      </ol>
-      {props.onClose && (
-        <button type="button" className="close" onClick={props.onClose} aria-label={strings.details.close}>×</button>
-      )}
     </section>
   );
 }

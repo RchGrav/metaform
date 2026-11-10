@@ -19,7 +19,11 @@ export interface LayerMark {
   style: number;
 }
 
-/** One agent shown at an element (UX section 9). Always simulated in this prototype. */
+/**
+ * One agent shown at an element (UX section 9). Agents come from the source's `agent-presence`
+ * events. Only the simulated source sends them: Metaform has no source of presence (seam gap 2),
+ * so a real project shows no agent.
+ */
 export interface AgentMark {
   id: string;
   /** The agent's name, for the mark's tooltip (presence.at), so "MA" says who it is. */

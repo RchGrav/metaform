@@ -108,6 +108,13 @@ export type WorkspaceEvent =
 
 /** Named WorkspaceEvents, not EventSource, so it does not shadow the browser's EventSource. */
 export interface WorkspaceEvents {
+  /**
+   * True when each subscription holds one connection to the host. The view then subscribes only to
+   * the open project, and reads a project again when it opens again. The reason: a browser allows
+   * about six HTTP/1.1 connections to one host, so one stream per project leaves none for reads
+   * in a home with six projects or more.
+   */
+  readonly openProjectOnly?: boolean;
   /** Returns a function that unsubscribes. */
   subscribe(project: string, listener: (event: WorkspaceEvent) => void): () => void;
 }

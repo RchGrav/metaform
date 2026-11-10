@@ -18,7 +18,7 @@ import {
   wantDistances,
 } from "./structure";
 
-/** What the scene needs that the state does not hold: the project's reads and the simulated agents. */
+/** What the scene needs that the state does not hold: the project's reads and the agents the source reports (only the simulated source reports any). */
 export interface SceneInput {
   graph: ShallowGraph;
   /** The whole map's addresses, for beneath counts when `graph` is a part of it (Element mode). */

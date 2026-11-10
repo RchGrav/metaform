@@ -11,6 +11,9 @@
 //!   refused with 403: the workspace only reads, so a web page cannot change the map here.
 //! - `GET /api/projects/<id>/events`: Server-Sent Events; one `map-changed` event per commit.
 //!
+//! The host adds one `meta` element (`HOST_MARK`) to the page it serves. The page reads it to know
+//! that the host serves it, and then uses these routes and never its simulated data.
+//!
 //! Every request must name this server in `Host`, and in `Origin` when one is sent, so another
 //! web page cannot reach the map through DNS rebinding. The server binds to 127.0.0.1 only.
 
@@ -30,6 +33,13 @@ use futures_util::Stream;
 use metaform_server::Target;
 use metaform_server::call::{Answer, call};
 use serde_json::{Value, json};
+
+/// The port the host uses when none is given, so `metaform gui` has the same address each time.
+pub const DEFAULT_PORT: u16 = 4170;
+
+/// The element the host adds to `index.html`. The workspace page looks for it by its name
+/// (`metaform/workspace/src/main.tsx`), so the two must stay the same.
+pub const HOST_MARK: &str = r#"<meta name="metaform-host" content="metaform-web">"#;
 
 /// One registered project, as the server lists it. `id` is the server's, and opaque.
 #[derive(Clone, Debug)]
@@ -209,8 +219,32 @@ async fn file(State(state): State<AppState>, uri: axum::http::Uri) -> Response {
     let candidate = if safe { assets.join(relative) } else { assets.join("index.html") };
     let path = if candidate.is_file() { candidate } else { assets.join("index.html") };
     match tokio::fs::read(&path).await {
+        Ok(bytes) if path.file_name().is_some_and(|name| name == "index.html") => {
+            ([(header::CONTENT_TYPE, content_type(&path))], mark_page(bytes)).into_response()
+        }
         Ok(bytes) => ([(header::CONTENT_TYPE, content_type(&path))], bytes).into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "not built: run npm run build in metaform/workspace").into_response(),
+    }
+}
+
+/// Adds `HOST_MARK` to the page: before `</head>`, or at the end when the page has no `</head>`.
+/// The page finds the element in either place.
+pub fn mark_page(mut page: Vec<u8>) -> Vec<u8> {
+    let at = page.windows(7).position(|w| w.eq_ignore_ascii_case(b"</head>")).unwrap_or(page.len());
+    page.splice(at..at, HOST_MARK.bytes());
+    page
+}
+
+/// Listens on 127.0.0.1. A requested port must be free. With no requested port, the host uses
+/// `default`, or any free port when `default` is in use.
+pub async fn listen(requested: Option<u16>, default: u16) -> std::io::Result<tokio::net::TcpListener> {
+    use tokio::net::TcpListener;
+    match requested {
+        Some(port) => TcpListener::bind(("127.0.0.1", port)).await,
+        None => match TcpListener::bind(("127.0.0.1", default)).await {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => TcpListener::bind(("127.0.0.1", 0)).await,
+            other => other,
+        },
     }
 }
 
@@ -227,6 +261,27 @@ pub async fn serve(config: Config, listener: tokio::net::TcpListener) -> std::io
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn listen_uses_the_default_port_or_a_free_one() {
+        // A port the system chose is free once its listener is dropped, so the test needs no fixed port.
+        let free = listen(Some(0), 0).await.unwrap();
+        let default = free.local_addr().unwrap().port();
+        drop(free);
+        let first = listen(None, default).await.unwrap();
+        assert_eq!(first.local_addr().unwrap().port(), default, "the default port when it is free");
+        let second = listen(None, default).await.unwrap();
+        assert_ne!(second.local_addr().unwrap().port(), default, "another port when the default is in use");
+        assert!(listen(Some(default), default).await.is_err(), "a requested port is never replaced");
+    }
+
+    #[test]
+    fn the_page_gets_the_host_mark() {
+        let page = String::from_utf8(mark_page(b"<html><head><title>x</title></HEAD><body></body></html>".to_vec())).unwrap();
+        assert_eq!(page, format!("<html><head><title>x</title>{HOST_MARK}</HEAD><body></body></html>"));
+        let bare = String::from_utf8(mark_page(b"<p>x</p>".to_vec())).unwrap();
+        assert_eq!(bare, format!("<p>x</p>{HOST_MARK}"));
+    }
 
     #[test]
     fn reads_pass_and_writes_do_not() {

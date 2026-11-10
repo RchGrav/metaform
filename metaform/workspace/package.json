@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The Metaform graph workspace prototype (dev/user_agent_interfaces.md). Runs on simulated data until the host routes exist.",
+  "description": "The Metaform graph workspace prototype (dev/user_agent_interfaces.md). The metaform-web host serves the built page with a home's registered projects; npm run dev shows simulated data.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

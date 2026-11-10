@@ -2,13 +2,13 @@
 //!
 //! Serves the graph workspace on http://127.0.0.1:<port>/ for every project registered in the
 //! home. A project is registered when an agent first connects from its folder.
-//! The command that users type to open the workspace is not decided (an owner decision in
-//! dev/graph_workspace_graph.md); until then this binary is the host.
+//! Without `--port` the port is 4170, or any free port when 4170 is in use. The host prints the
+//! address it serves. Users start this binary with `metaform gui` (owner decision, 2026-11-09).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use metaform_web::{Config, serve};
+use metaform_web::{Config, DEFAULT_PORT, listen, serve};
 
 fn usage(problem: &str) -> ExitCode {
     eprintln!("metaform-web: {problem}");
@@ -21,13 +21,13 @@ async fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     let mut home = metaform_server::default_home();
     let mut assets: Option<PathBuf> = None;
-    let mut port: u16 = 0;
+    let mut port: Option<u16> = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--home") => match args.next() { Some(v) => home = v.into(), None => return usage("--home needs a folder") },
             Some("--assets") => match args.next() { Some(v) => assets = Some(v.into()), None => return usage("--assets needs a folder") },
             Some("--port") => match args.next().and_then(|v| v.to_str()?.parse().ok()) {
-                Some(p) => port = p,
+                Some(p) => port = Some(p),
                 None => return usage("--port needs a number"),
             },
             _ => return usage(&format!("unexpected argument {}", PathBuf::from(&arg).display())),
@@ -51,9 +51,9 @@ async fn main() -> ExitCode {
         Ok(exe) => exe.with_file_name("metaform"),
         Err(e) => return usage(&e.to_string()),
     };
-    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+    let listener = match listen(port, DEFAULT_PORT).await {
         Ok(l) => l,
-        Err(e) => return usage(&format!("cannot listen on 127.0.0.1:{port}: {e}")),
+        Err(e) => return usage(&format!("cannot listen on 127.0.0.1:{}: {e}", port.unwrap_or(DEFAULT_PORT))),
     };
     if let Ok(addr) = listener.local_addr() {
         println!("Graph workspace: http://{addr}/");

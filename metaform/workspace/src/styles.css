@@ -80,6 +80,10 @@ button, select { font: inherit; color: inherit; }
 .activity-list li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
 .badge { font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; color: var(--muted); }
 .badge.simulated { border-color: var(--unseen); color: var(--unseen); }
+.page-address { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.page-address code { font-size: 12px; user-select: all; }
+.page-address button { background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.onboarding .no-project { font-weight: 600; margin: 8px 0 0; }
 .side { width: 320px; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); min-height: 0; }
 .side .details { width: auto; border-left: 0; flex: 1 1 auto; min-height: 0; }
 .legend { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; overflow: auto; flex: 0 1 auto; max-height: 50%; }

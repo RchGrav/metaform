@@ -60,6 +60,8 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
   const lineId = useRef(0);
   const stateRef = useRef<ViewState>(state);
   stateRef.current = state;
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   const dispatch = useCallback((action: Action) => dispatchRaw(action), []);
 
@@ -111,10 +113,16 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
     if (state.project !== null && data[state.project] === undefined) void load(state.project);
   }, [state.project, data, load]);
 
-  // One subscription per known project, so activity in other projects is counted too.
+  // One subscription per known project, so activity in other projects is counted too. A source
+  // whose subscriptions each hold a connection gets one subscription, for the open project.
+  const openOnly = events.openProjectOnly === true;
+  const watchedId = openOnly ? state.project : null;
   useEffect(() => {
     if (!projects) return;
-    const stops = projects.map((project) => {
+    const watched = openOnly ? projects.filter((project) => project.id === watchedId) : projects;
+    const stops = watched.map((project) => {
+      // The map can have changed while the project was not subscribed, so read it again.
+      if (openOnly && dataRef.current[project.id] !== undefined) void load(project.id);
       // Presence the source announces while subscribing is where agents already are: state, not
       // new activity. Only events after that count as activity.
       let announcing = true;
@@ -145,7 +153,7 @@ export function useWorkspace(source: GraphSource, events: WorkspaceEvents, simul
       return stop;
     });
     return () => stops.forEach((stop) => stop());
-  }, [projects, events, load]);
+  }, [projects, events, load, openOnly, watchedId]);
 
   const sheet = useCallback(
     async (address: Address): Promise<SummarySheet | null> => {

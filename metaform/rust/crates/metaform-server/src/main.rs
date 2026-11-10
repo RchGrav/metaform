@@ -8,6 +8,8 @@
 //!                                              one tool command; `-` reads it from stdin.
 //!                                              Exit 0 ok, 1 refused, 2 usage or connection error.
 //! metaform projects [--home DIR]                every registered project: id, name, folder
+//! metaform gui   [--home DIR] [--port N]       serve the graph workspace on 127.0.0.1; the port
+//!                                              is 4170, or a free port when 4170 is in use
 //! metaform settings [--home DIR] [--project DIR]          every setting, its value and its source
 //! metaform set   [--home DIR] [--project DIR] KEY VALUE   set a setting (VALUE is JSON, or text)
 //! metaform unset [--home DIR] [--project DIR] KEY         remove it, so the next level applies
@@ -34,6 +36,7 @@ async fn main() -> ExitCode {
     let mut project: Option<PathBuf> = None;
     let mut map: Option<String> = None;
     let mut positional: Vec<String> = Vec::new();
+    let mut port: Option<String> = None;
     let mut check = false;
     let mut rest = args.iter().skip(1);
     while let Some(arg) = rest.next() {
@@ -50,6 +53,7 @@ async fn main() -> ExitCode {
             ("--home", Some(v)) => home = v,
             ("--project", Some(v)) => project = Some(v),
             ("--map", Some(v)) => map = Some(v.to_string_lossy().to_string()),
+            ("--port", Some(v)) if args.first().is_some_and(|c| c == "gui") => port = Some(v.to_string_lossy().to_string()),
             _ => return usage(&format!("unknown or incomplete option {arg}")),
         }
     }
@@ -79,7 +83,7 @@ async fn main() -> ExitCode {
         if !positional.is_empty() {
             return usage("gui takes no arguments");
         }
-        return gui(&home);
+        return gui(&home, port.as_deref());
     }
     if command == Some("specification") {
         return specification(&home, &target, &positional, check).await;
@@ -320,12 +324,19 @@ async fn import(home: &std::path::Path, exe: &std::path::Path, mut body: serde_j
 /// `metaform gui` opens the graph workspace for every project in the home (owner decision,
 /// 2026-11-09). It runs the `metaform-web` host installed beside this binary, which serves the
 /// built workspace and asks this home's server for its projects; it runs until Ctrl-C.
-fn gui(home: &std::path::Path) -> ExitCode {
+/// The host serves port 4170, or any free port when 4170 is in use, and prints its address.
+/// `--port` goes to the host unchanged, and the host checks it.
+fn gui(home: &std::path::Path, port: Option<&str>) -> ExitCode {
     let host = match std::env::current_exe() {
         Ok(exe) => exe.with_file_name("metaform-web"),
         Err(e) => return usage(&e.to_string()),
     };
-    match std::process::Command::new(&host).arg("--home").arg(home).status() {
+    let mut command = std::process::Command::new(&host);
+    command.arg("--home").arg(home);
+    if let Some(port) = port {
+        command.arg("--port").arg(port);
+    }
+    match command.status() {
         Ok(status) if status.success() => ExitCode::SUCCESS,
         Ok(status) => ExitCode::from(status.code().map_or(1, |c| c.clamp(1, 255) as u8)),
         Err(e) => {
@@ -337,7 +348,7 @@ fn gui(home: &std::path::Path) -> ExitCode {
 
 fn usage(problem: &str) -> ExitCode {
     eprintln!(
-        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform gui [--home DIR]\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]\n       metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -"
+        "metaform: {problem}\nusage: metaform serve [--home DIR]\n       metaform mcp  [--home DIR] [--project DIR | --map NAME]\n       metaform call [--home DIR] [--project DIR | --map NAME] '<json command>' | -\n       metaform settings [--home DIR] [--project DIR]\n       metaform set [--home DIR] [--project DIR] KEY VALUE\n       metaform unset [--home DIR] [--project DIR] KEY\n       metaform gui [--home DIR] [--port N]\n       metaform specification export [--home DIR] [--project DIR | --map NAME] [--check]\n       metaform specification import [--home DIR] [--project DIR | --map NAME] FILE | -"
     );
     ExitCode::from(2)
 }

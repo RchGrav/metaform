@@ -132,6 +132,15 @@ export const simulated = {
   tooltip: "Simulated: not connected to a Metaform server.",
 } as const;
 
+export const pageAddress = {
+  // The page's own address (its origin), so a user can confirm the page and pass the address on.
+  label: "This page's address",
+  copy: "Copy address",
+  copied: "Copied",
+  // The browser can refuse access to the clipboard; the address stays on screen to select.
+  notCopied: "Not copied. Select the address and copy it.",
+} as const;
+
 export const connection = {
   // `reason` is the host's or the server's text, shown unchanged.
   notConnected: (reason: string) => `Not connected: ${reason}`,
@@ -145,10 +154,19 @@ export const navigation = {
 
 export const onboarding = {
   title: "Getting started",
+  // Shown when the host answers with an empty project list. Never shown when the host fails.
+  noProject: "No project is registered in this home yet.",
+  // The button that reads the project list again, and its result when the list is still empty.
+  checkAgain: "Check for projects",
+  stillNoProject: "The home still has no project.",
   register: {
     title: "Register a project",
     body: "Connect an agent from the project's folder. Its first connection registers the folder.",
     command: "metaform mcp --project <folder>",
+    // Any connection from a folder registers it (`open_project`); one read from a terminal is enough.
+    terminalBody:
+      "Or register a folder from a terminal with one read of its map. If you gave --home to metaform gui, give the same --home here.",
+    terminalCommand: "metaform call --project <folder> '{\"map\": {}}'",
     // From the owner's prompt; not in the CLI at 61ef6dc.
     plannedLabel: "Planned command",
     plannedCommand: "metaform register <project_name>",

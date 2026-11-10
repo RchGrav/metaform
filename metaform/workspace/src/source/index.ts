@@ -1,3 +1,4 @@
 export * from "./types";
 export * from "./errors";
-export { CONNECTED, MetaformEvents, MetaformSource } from "./metaform";
+export { MetaformEvents, MetaformSource } from "./metaform";
+export { HOST_MARK, chooseSource } from "./choose";

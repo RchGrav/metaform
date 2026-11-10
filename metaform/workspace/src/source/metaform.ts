@@ -1,6 +1,6 @@
-// The Metaform adapter: GraphSource and WorkspaceEvents over the host's HTTP routes.
-// NOT CONNECTED: the host routes are Proposed (dev/graph_workspace_seam.md, "Host routes") and
-// not built. The prototype runs on the mock until the seam's verification checks pass.
+// The Metaform adapter: GraphSource and WorkspaceEvents over the host's HTTP routes
+// (dev/graph_workspace_seam.md, "Host routes"; the host is metaform/rust/crates/metaform-web).
+// The page uses it when the host serves the page (src/source/choose.ts).
 
 import { RefusalError, TransportError, isRefusal } from "./errors";
 import type {
@@ -14,7 +14,16 @@ import type {
   WorkspaceEvents,
 } from "./types";
 
-export const CONNECTED = false;
+/** The host's own failure text (`{"error": "<reason>"}`), when its answer carries one. */
+function hostReason(body: unknown): string | null {
+  const reason = typeof body === "object" && body !== null ? (body as { error?: unknown }).error : undefined;
+  return typeof reason === "string" ? reason : null;
+}
+
+function hostFailure(status: number, body: unknown): TransportError {
+  const reason = hostReason(body);
+  return new TransportError(reason === null ? `the host answered ${status} without a result` : `the host answered ${status}: ${reason}`);
+}
 
 function projectPath(base: string, project: string): string {
   return `${base}/projects/${encodeURIComponent(project)}`;
@@ -37,9 +46,7 @@ export class MetaformSource implements GraphSource {
     }
     const body: unknown = await response.json().catch(() => undefined);
     if (isRefusal(body)) throw new RefusalError(body);
-    if (!response.ok || body === undefined) {
-      throw new TransportError(`the host answered ${response.status} without a result`);
-    }
+    if (!response.ok || body === undefined) throw hostFailure(response.status, body);
     return body;
   }
 
@@ -47,8 +54,9 @@ export class MetaformSource implements GraphSource {
     const response = await fetch(`${this.base}/projects`).catch((error: unknown) => {
       throw new TransportError(`the host did not answer: ${String(error)}`);
     });
-    if (!response.ok) throw new TransportError(`the host answered ${response.status}`);
-    return (await response.json()) as ProjectRef[];
+    const body: unknown = await response.json().catch(() => undefined);
+    if (!response.ok || !Array.isArray(body)) throw hostFailure(response.status, body);
+    return body as ProjectRef[];
   }
 
   async map(project: string): Promise<ShallowGraph> {
@@ -80,6 +88,9 @@ export class MetaformSource implements GraphSource {
 
 /** Relays the host's server-sent events. The browser's EventSource reconnects on its own. */
 export class MetaformEvents implements WorkspaceEvents {
+  /** Each subscription is one EventSource, and so one connection to the host (see WorkspaceEvents). */
+  readonly openProjectOnly = true;
+
   constructor(private readonly base = "/api") {}
 
   subscribe(project: string, listener: (event: WorkspaceEvent) => void): () => void {
