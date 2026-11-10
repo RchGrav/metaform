@@ -1,9 +1,13 @@
-/* The hover readout across the top of the map's window, what it says for a node, an edge or a figure, and the detail
- * card at the lower left. */
-import '/classic/app/graph/data.js';  // the part before runs first, so the parts run in the page's order
+/* The hover readout across the top of the map's window, what it says for a node or an edge, and the detail card at
+ * the lower left. From the earlier page's map3d/readout.js; what it said of an agent's figure and of a memory is not
+ * part of this page. */
+import '/classic/app/map3d/pick3d.js';  // the part before runs first, so the parts run in the page's order
 import {$, reduced, h, fill} from '/classic/app/core/dom.js';
 import {S} from '/classic/app/core/reads.js';
 import {joinOf} from '/classic/app/graph/data.js';
+import {hovered, TIP} from '/classic/app/map3d/pick3d.js';
+import {LABEL, tags, LABELS, signRect} from '/classic/app/map3d/labels.js';
+import {MEET} from '/classic/app/camera/fly3d.js';
 import {VIEW} from '/classic/app/views/settings.js';
 import {M} from '/classic/app/map2d/build.js';
 import {labelOf} from '/classic/app/map2d/inside.js';
@@ -22,6 +26,7 @@ import {directionWord} from '/classic/app/adapter.js';
  * motion, ultra's quality steps and a sign's occlusion changing under a still pointer never toggle it. */
 const READOUT = {timers: {}, now: {}, want: {}, settle: 120, stay: 400};
 export function readoutBox(which) {
+  if (which === '3d') return $('#tip3d');
   let box = $('#tip2d');
   if (!box) {
     box = h('div', {id: 'tip2d', class: 'readout', role: 'status', 'aria-live': 'polite', hidden: true});
@@ -38,7 +43,7 @@ export function readout(which, info) {
   const box = readoutBox(which);
   if (!box) return;
   box.classList.add('readout');
-  const host = $('#viewport');
+  const host = which === '3d' ? $('#stage') : $('#viewport');
   host?.classList.toggle('pickable', hovering);
   const key = parts ? JSON.stringify(parts.map(part => part?.textContent ?? part)) : null;  // a part left out is null
   if (key === READOUT.want[which]) return;  // the same as asked already: its timer runs on
@@ -75,6 +80,16 @@ function showReadout(which, box, parts, key) {
   void box.offsetWidth;  // from where it stands away, so it eases in
   box.classList.add('on');
 }
+/* The 3D map's readout decided again once the camera rests, a wheel's zoom or a flight done, for the node or edge the
+ * pointer is still on: its sign may now be read, or no longer. */
+function rested3d() {
+  if (TIP.out) return;
+  if (hovered) readout('3d', readoutOf(hovered));
+}
+export function rehover3d() {  // on every camera change: one timer re-armed, no new function made each time
+  clearTimeout(READOUT.rest3d);
+  READOUT.rest3d = setTimeout(rested3d, 250);
+}
 /* What the readout says, the name alone, and only where the map shows no name that can be read: for an edge, which
  * has no label of its own, the names it joins, receiver → provider; for a node, only while its own label is drawn
  * smaller than READABLE CSS pixels on the screen, as a far one is, perspective alone sizing it, or not drawn at all,
@@ -82,13 +97,30 @@ function showReadout(which, box, parts, key) {
  * figure, its agent's name. A node whose name can be read gets the finger and its highlight, and no readout. */
 const READABLE = 11;
 function labelReadable(id, which) {
-  return readable2d(id);
+  return which === '2d' ? readable2d(id) : readable3d(id);
 }
 /* A 2D label drawn and shown, its text at least READABLE pixels tall on the screen. */
 function readable2d(id) {
   const g = M.nodes.get(id)?.g, label = g?.querySelector('.nodeLabel, text');
   if (!label || !label.getBoundingClientRect().height || getComputedStyle(label).visibility === 'hidden') return false;
   return parseFloat(getComputedStyle(label).fontSize) * Math.abs(g.getScreenCTM()?.a || 0) >= READABLE;
+}
+function readable3d(id) {
+  const tag = tags.get(id);
+  if (!tag || tag.hidden) return false;
+  if (MEET.on && MEET.back?.id === id) return true;  // the met name, drawn over the map
+  if (tag.under || !tag.sprite.visible || !LABELS.on || (tag.sprite.material.opacity ?? 1) < 0.35) return false;
+  // its letters as drawn on the screen: the sign's four corners projected as the scene draws them, `signRect`, so an
+  // outward sign seen at a slant is measured as small as it reads; on the screen at all, and tall enough to read
+  const rect = signRect(id), area = $('#stage').getBoundingClientRect();
+  if (!rect || !tag.height) return false;
+  const middle = {x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2};
+  if (middle.x < area.left || middle.x > area.right || middle.y < area.top || middle.y > area.bottom) return false;
+  // the lesser of its height and its width as drawn against its own, so a sign turned edge on, its letters squeezed
+  // thin, does not count as read
+  const across = tag.width ? (rect.right - rect.left) / tag.width : Infinity;
+  const scale = Math.min((rect.bottom - rect.top) / tag.height, across);
+  return scale * (tag.lookNow?.size ?? LABEL.size) >= READABLE;
 }
 /* The readout of a node of either map, by its id, or of a 3D graph node: null where its own name can be read. */
 export function readoutOf(node, which = '3d') {
@@ -98,6 +130,11 @@ export function readoutOf(node, which = '3d') {
   if (join) return edgeWords(join);
   const entry = S.elements.get(id);
   if (entry) return elementWords(id, entry.element, labelReadable(id, which));
+  if (given && node.t === 'item') {
+    return {top: [h('b', {}, short(node.text || '', 120))],
+      card: {title: short(node.text || '', 80), kind: `item · ${node.layer}`, text: node.text}};
+  }
+
   const name = (given && node.name) || id;
   return {top: [h('b', {}, name)], card: {title: name, kind: 'node'}};
 }
@@ -118,6 +155,7 @@ export function edgeWords(join) {
   return {top: [h('b', {}, ends)], card: {title: ends, kind: ['relies on', directionWord(join)].filter(Boolean).join(' · '),
     address: join.receiver_address || '', text: join.purpose || '', more: join.ef || ''}};
 }
+
 /* The detail card at the lower left of the map's window, in the legend's corner, the legend easing out while it shows:
  * the name as its title, a quiet line of its kind and role, the address in mono, its purpose or EF in a line or two,
  * for an edge the join's purpose, and for an agent what it works on and its status. It eases in for anything hovered
@@ -125,11 +163,11 @@ export function edgeWords(join) {
  * pane is its title and one line. */
 const CARD = {timers: {}, now: {}};
 function cardBox(which) {
-  const id = 'card2d';
+  const id = which === '3d' ? 'card3d' : 'card2d';
   let box = document.getElementById(id);
   if (!box) {
     box = h('div', {id, class: 'hovercard', role: 'status', 'aria-live': 'polite', hidden: true});
-    $('#map2d')?.append(box);
+    (which === '3d' ? $('#big3d .view3d') : $('#map2d'))?.append(box);
   }
   return box;
 }
@@ -165,27 +203,3 @@ function cardBody(card) {
 /* The readout stands across the top of the map's window, not at the node, so nothing follows the node each frame. */
 export function placeTip() {}
 export const short = (text, most) => text.length > most ? text.slice(0, most - 1) + '…' : text;
-/* A node's reach, from the earlier page's map3d/pick3d.js: around its centre a node takes half the distance to the
- * nearest node's centre, at most REACH.most CSS pixels, so a node alone does not take the empty space around it. Where
- * reaches overlap, the node whose centre is nearest the pointer takes it; an edge is picked only where no node
- * reaches, `edgeAt2d`. A neighbour farther than twice the most a reach can be never shortens it, so each node looks
- * only at the cells of a grid around it. */
-export const REACH = {most: 60, d2: null};
-export function reachOf(list) {  // list: {x, y, r} in CSS pixels, r the node as drawn; sets each one's `reach`
-  const cell = 2 * REACH.most, grid = new Map(), at = (x, y) => `${x},${y}`;
-  for (const one of list) {
-    const key = at(Math.floor(one.x / cell), Math.floor(one.y / cell));
-    (grid.get(key) || grid.set(key, []).get(key)).push(one);
-  }
-  for (const one of list) {
-    const cx = Math.floor(one.x / cell), cy = Math.floor(one.y / cell);
-    let nearest = Infinity;
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const other of grid.get(at(cx + dx, cy + dy)) || []) {
-        if (other !== one) nearest = Math.min(nearest, Math.hypot(other.x - one.x, other.y - one.y));
-      }
-    }
-    one.reach = Math.max(one.r, Math.min(nearest / 2, REACH.most));
-  }
-  return list;
-}

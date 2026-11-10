@@ -2,14 +2,21 @@
 import '/classic/app/keys/walk.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/classic/app/core/dom.js';
 import {S, MEM} from '/classic/app/core/reads.js';
-import {stepFlow} from '/classic/app/views/bar.js';
+import {G, touched, pauseLayout, relayout} from '/classic/app/map3d/graph3d.js';
+import {PLAIN, setTheme} from '/classic/app/map3d/draw3d.js';
+import {fit3d, swapMaps} from '/classic/app/camera/flight.js';
+import {small3d} from '/classic/app/camera/fly3d.js';
+import {LENS, LENSES, LENS_WORDS} from '/classic/app/views/settings.js';
+import {chooseLens} from '/classic/app/views/lens.js';
+import {stepFlow, PHYS, PHYSICS, choosePhysics} from '/classic/app/views/bar.js';
 import {M} from '/classic/app/map2d/build.js';
 import {entryOf} from '/classic/app/map2d/fit.js';
 import {IN} from '/classic/app/map2d/inside.js';
 import {MAC, resetZoom} from '/classic/app/map2d/camera.js';
 import {deselect, step} from '/classic/app/map2d/wire.js';
+import {note2d} from '/classic/app/map2d/hover.js';
 import {across, below, besideDrawn, besideOnLevel, childrenOf, parentOf, roots, goInside, levelUp, mapKeys,
-  stepDepth} from '/classic/app/keys/walk.js';
+  zoomKey, stepDepth} from '/classic/app/keys/walk.js';
 import {select} from '/classic/app/selection/select.js';
 import {openSearch} from '/classic/app/search/search.js';
 
@@ -28,13 +35,35 @@ const KEYS = [
     run: () => step(-1)},
   {group: 'Maps', keys: [MAC ? '⌥' : 'Alt', '→'], what: 'Forward again', match: ['Alt+ArrowRight'],
     run: () => step(1)},
-  // each digit cycles one setting, and each press says its new value at the map's corner; the map is fit-all, zooming
-  // by the wheel at any time, VIEW-041
-  {group: 'Zoom', keys: ['0'], what: 'Full fit', match: ['0', 'Home'], run: () => resetZoom()},
+  {group: 'Maps', keys: ['S'], what: 'Swap the two maps', match: ['s', 'S'], run: () => swapMaps()},
+  // each digit cycles one setting, and each press says its new value at the 2D map's corner; the 2D map is fit-all,
+  // zooming by the wheel at any time, VIEW-041
+  {group: 'Zoom', keys: ['1'], what: '3D camera: the selection met, zoom 1/4, 1/2, 3/4', match: ['1'], run: zoomKey},
+  {group: 'Zoom', keys: ['0'], what: 'Full fit, both maps', match: ['0', 'Home'], run: () => resetZoom()},
+  {group: 'Zoom', keys: ['F'], what: 'Fit once (3D)', match: ['f', 'F'],
+    run: () => { if (G && !small3d()) fit3d(); }},
+  {group: 'Zoom', keys: ['7'], what: 'Lens: natural, wide, fisheye', match: ['7'], run: stepLens},
   {group: 'Looks', keys: ['2'], what: 'Flow: off, hover, selection, all, then each with edges hidden',
     match: ['2'], run: () => stepFlow()},
+  {group: 'Looks', keys: ['3'], what: 'Layout: Organic or Flat', match: ['3'], run: stepLayout},
   {group: 'Looks', keys: ['4'], what: "Depth: the map's own levels, from the first that draws a line, or all", match: ['4'], run: () => stepDepth()},
+  {group: 'Looks', keys: ['P'], what: 'Pause or resume the 3D layout', match: ['p', 'P'], run: () => pauseLayout()},
+  {group: 'Looks', keys: ['R'], what: 'Re-run the 3D layout from new places', match: ['r', 'R'],
+    run: () => relayout()},
+  {group: 'Looks', keys: ['U'], what: 'Space theme on/off', match: ['u', 'U'],  // the space theme or the last plain one
+    run: () => setTheme(document.documentElement.dataset.theme === 'space' ? PLAIN.last : 'space')},
 ];
+/* 7: the next lens, natural, wide and fisheye, kept in web_lens as the View menu keeps it. */
+function stepLens() {
+  const names = Object.keys(LENSES), next = names[(names.indexOf(LENS.name) + 1) % names.length];
+  chooseLens(next);
+  note2d(`Lens: ${LENS_WORDS[next]}`);
+}
+function stepLayout() {
+  const name = PHYS.name === 'flat' ? 'organic' : 'flat';
+  choosePhysics(name);
+  note2d(`Layout: ${PHYSICS.find(([one]) => one === name)[1]}`);
+}
 const KEY_RUN = new Map(KEYS.filter(entry => entry.run).flatMap(entry => entry.match.map(key => [key, entry])));
 /* The reference, drawn from `KEYS`, centered over the page: its tabs, the everyday keys first, then the developer's,
  * then the looks and the zoom; each group a card of what a key does with its keys beside it; and a search that keeps
@@ -79,6 +108,7 @@ function keyCard(group, rows) {
  * does; Escape and Shift+Enter; and the arrows and Enter, which walk the map. */
 function mapKey(event) {
   if (!mapKeys(event)) return;
+  touched();  // a map key counts as the person's hand on the maps, `TOUCHED`
   // The keys of the key table, `KEYS`, each run by its entry, so the reference `?` opens says what each does.
   const entry = KEY_RUN.get(event.altKey ? `Alt+${event.key}` : event.key);
   if (entry) { event.preventDefault(); entry.run(event.key); return; }

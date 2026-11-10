@@ -1,9 +1,9 @@
 /* The 2D map drawn by Mermaid with ELK: its state, its labels and shapes, and build2D. */
-import '/classic/app/views/bar.js';  // the part before runs first, so the parts run in the page's order
+import '/classic/app/views/lens.js';  // the part before runs first, so the parts run in the page's order
 import {$, css, h, fill, reduced} from '/classic/app/core/dom.js';
 import {S, MEM} from '/classic/app/core/reads.js';
 import {underHiddenRoot} from '/classic/app/header/layers.js';
-import {typeOf} from '/classic/app/map2d/looks.js';
+import {typeOf} from '/classic/app/map3d/light.js';
 import {shape2d, vertical2d, fitPin2d, fitPick2d, drawnAt, settle2D, mountSvg, placeIn, measureIn, boundsOf,
   showBase} from '/classic/app/map2d/fit.js';
 import {IN, labelOf, drawInside, renderCrumbs} from '/classic/app/map2d/inside.js';
@@ -85,7 +85,8 @@ export async function build2D(keep = true, branch = false) {
   }
   if (S.elements.size > MAP2D) {
     M.svg = null; M.nodes = new Map(); M.edges = [];
-    return emptyIn(host, `The map lays out at most ${MAP2D} elements; this map has ${S.elements.size}.`);
+    return emptyIn(host, `The 2D map lays out at most ${MAP2D} elements; this map has ${S.elements.size}. `
+      + 'The 3D map shows them all.');
   }
   let picked = null, layout = 'elk';
   try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation, branch)); }

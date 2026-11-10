@@ -1,19 +1,33 @@
 /* The person's view the page follows, from the earlier page's views/settings.js: the flow mode, the map's depth and
- * direction, the edges shown and the hover information. The earlier page kept them on its server behind /api/view;
- * the new server has no such route, so this page keeps them in this browser, under the same keys. */
-import '/classic/app/camera/flight.js';  // the part before runs first, so the parts run in the page's order
+ * direction, the edges shown, the hover information, and the 3D map's signs, lens, layout and node zoom. The earlier
+ * page kept them on its server behind /api/view; the new server has no such route, so this page keeps them in this
+ * browser, under the same keys. Whether the 3D map is shown at all, web_map3d, is this page's own. */
+import '/classic/app/camera/fly3d.js';  // the part before runs first, so the parts run in the page's order
+// The Space theme, web_theme: the 3D map in outer space, drawn by its own module through the hooks marked ULTRA.
+import * as ULTRA from '/classic/ultra.js';
 import {$} from '/classic/app/core/dom.js';
 import {toast} from '/classic/app/core/controls.js';
-import {readout} from '/classic/app/map2d/readout.js';
+import {readout} from '/classic/app/map3d/readout.js';
 import {flowMode} from '/classic/app/flow/flow.js';
-import {showEdges, showFlow} from '/classic/app/views/bar.js';
+import {showEdges, showFlow, PHYS, applyPhysics, showSigns} from '/classic/app/views/bar.js';
+import {showNodeZoom, showLens, lens3d, show3d} from '/classic/app/views/lens.js';
 import {flows2d} from '/classic/app/map2d/flow2d.js';
 import {fitDirection2d} from '/classic/app/map2d/fit.js';
 import {DEPTH, setDepth} from '/classic/app/keys/walk.js';
 
-export const VIEW = {read: null, reading: null};
+export const VIEW = {read: null, reading: null, signs: 'facing', map3d: true};
 // declared before the view is read, which shows it: the flow mode
 export const FLOWSET = {name: null};
+export const LENS = {name: 'natural', frame: 0};
+/* The signs, web_signs: facing, the default, each name turned to the eye that sees it; or outward, each of the map's
+ * names a sign standing in the scene out from the map's middle. The View menu switches them. */
+/* The 3D map's field of view in degrees, top to bottom, `resize`: it opens at the lens's widest, and a shorter pane
+ * narrows it no further than `least`, so near things stay large and far things small, a view with depth, and never a
+ * long lens that flattens the map. Widened 2026-10-17 at Rich's request (from 30 to 55, opening at three.js's 50),
+ * for scale and depth. */
+export const FOV3D = {least: 45, most: 60};
+export const LENSES = {natural: 60, wide: 80, fisheye: 120};  // web_lens: the widest the view opens
+export const LENS_WORDS = {natural: 'Natural', wide: 'Wide', fisheye: 'Fisheye'};
 /* The view kept in this browser, one JSON object of key and value. */
 const STORE = 'classic.view';
 function kept() {
@@ -36,14 +50,25 @@ export function readView() {
   VIEW.reading = Promise.resolve();
   PEEK.direction = String(viewValue('web_map_direction', 'auto'));
   if ($('#directionat')) $('#directionat').value = PEEK.direction;
+  VIEW.signs = String(viewValue('web_signs', 'facing'));
+  showSigns();
+  LENS.name = String(viewValue('web_lens', 'natural'));
+  lens3d(LENS.name);
+  showLens();
+  ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides the look
+  const physics = String(viewValue('web_physics', 'organic'));
+  if (physics !== PHYS.name) applyPhysics(physics);
   const flow = String(viewValue('web_flow_mode', 'selected'));
   flowMode(flow);
   showFlow(flow);
   // no depth kept: auto, the map collapsed when it is large, walk.js `AUTO_WHOLE`
   if (String(viewValue('web_map_depth', 'auto')) !== DEPTH.level) setDepth(String(viewValue('web_map_depth', 'auto')), false);
   showEdges(viewValue('web_flow_edges', true) !== false);
+  VIEW.nodeZoom = viewValue('web_node_zoom', true) !== false;
+  showNodeZoom();
   VIEW.hoverInfo = String(viewValue('web_hover_info', 'name+summary'));
   showInfo();
+  show3d(viewValue('web_map3d', true) !== false, false);  // the 3D map is started here, unless it is turned off
   return VIEW.reading;
 }
 /* What the page keeps of the view as it last read it: the map's direction, web_map_direction, `fitPin2d`. */
@@ -81,7 +106,7 @@ export const HOVER_INFO = [
 export function chooseInfo(name) {
   VIEW.hoverInfo = name;
   showInfo();
-  readout('2d', null);
+  readout('3d', null); readout('2d', null);
   saveView('web_hover_info', name);
 }
 function showInfo() {

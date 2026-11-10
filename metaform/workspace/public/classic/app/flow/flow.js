@@ -1,9 +1,11 @@
 /* What travels the map, VIEW-005: each join's cycle, which joins flow, who asks whom, and what agents really did
  * read from the event stream. */
-import '/classic/app/map2d/readout.js';  // the part before runs first, so the parts run in the page's order
+import '/classic/app/map3d/labels.js';  // the part before runs first, so the parts run in the page's order
 import {S} from '/classic/app/core/reads.js';
 import {HOVER2D} from '/classic/app/map2d/hover.js';
-import {wake2d, flows2d} from '/classic/app/map2d/flow2d.js';
+import {flows2d} from '/classic/app/map2d/flow2d.js';
+import {wake3d} from '/classic/app/map3d/graph3d.js';
+import {hovered} from '/classic/app/map3d/pick3d.js';
 import {viewValue} from '/classic/app/views/settings.js';
 
 /* What travels the map, VIEW-005, drawn so the map reads as a working system: who asks whom, which way the data goes,
@@ -94,7 +96,7 @@ export const FLOW_MODE_LIST = [{name: 'off', label: 'Off', help: 'No dots flow.'
   {name: 'selected', label: 'Selection', help: "Dots flow along the selected node's joins."},
   {name: 'all', label: 'All', help: 'Dots flow along every join.'}];
 // the node the pointer is on, in the 3D map or the 2D one, for the hover flow
-const hoveredNow = () => HOVER2D.on ?? null;
+const hoveredNow = () => hovered?.id ?? HOVER2D.on ?? null;
 export function flowModeNow() {
   if (FLOW.mode) return FLOW.mode;
   const kept = viewValue('web_flow_mode');
@@ -104,7 +106,7 @@ export function flowMode(name) {
   if (FLOW_MODE_LIST.some(one => one.name === name) && name !== FLOW.mode) {
     FLOW.mode = name;
     flows2d();  // the 2D map's flowing edges are the new mode's, not the old one's until the next selection
-    wake2d();
+    wake3d(1500);
   }
   return flowModeNow();
 }

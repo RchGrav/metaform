@@ -7,9 +7,12 @@
 <link rel="stylesheet" href="/classic/app.css">
 <link rel="stylesheet" href="/classic/classic.css">
 <script src="/classic/theme.js"></script>
+<!-- The 3D map's libraries, each named as its own files import it and found in this page's vendor folder, in the form
+     the earlier page's index.html has. -->
+<script type="importmap">{"imports": {"three": "/classic/vendor/three.module.min.js", "three/addons/": "/classic/vendor/three-addons/", "three/examples/jsm/": "/classic/vendor/three-addons/", "3d-force-graph": "/classic/vendor/3d-force-graph/dist/3d-force-graph.mjs", "three-forcegraph": "/classic/vendor/three-forcegraph/dist/three-forcegraph.mjs", "d3-force-3d": "/classic/vendor/d3-force-3d/src/index.js", "d3-binarytree": "/classic/vendor/d3-binarytree/src/index.js", "d3-quadtree": "/classic/vendor/d3-quadtree/src/index.js", "d3-octree": "/classic/vendor/d3-octree/src/index.js", "d3-dispatch": "/classic/vendor/d3-dispatch/src/index.js", "d3-timer": "/classic/vendor/d3-timer/src/index.js", "ngraph.graph": "/classic/ngraph.graph.js", "ngraph.forcelayout": "/classic/ngraph.forcelayout.js", "kapsule": "/classic/vendor/kapsule/dist/kapsule.mjs", "lodash-es/debounce.js": "/classic/vendor/lodash-es/debounce.js", "accessor-fn": "/classic/vendor/accessor-fn/dist/accessor-fn.mjs", "d3-array": "/classic/vendor/d3-array/src/index.js", "internmap": "/classic/vendor/internmap/src/index.js", "data-joint": "/classic/vendor/data-joint/dist/data-joint.mjs", "index-array-by": "/classic/vendor/index-array-by/dist/index-array-by.mjs", "d3-scale": "/classic/vendor/d3-scale/src/index.js", "d3-interpolate": "/classic/vendor/d3-interpolate/src/index.js", "d3-color": "/classic/vendor/d3-color/src/index.js", "d3-format": "/classic/vendor/d3-format/src/index.js", "d3-time": "/classic/vendor/d3-time/src/index.js", "d3-time-format": "/classic/vendor/d3-time-format/src/index.js", "d3-scale-chromatic": "/classic/vendor/d3-scale-chromatic/src/index.js", "tinycolor2": "/classic/vendor/tinycolor2/esm/tinycolor.js", "three-render-objects": "/classic/vendor/three-render-objects/dist/three-render-objects.mjs", "polished": "/classic/vendor/polished/dist/polished.esm.js", "@babel/runtime/helpers/esm/extends": "/classic/vendor/@babel/runtime/helpers/esm/extends.js", "@babel/runtime/helpers/esm/assertThisInitialized": "/classic/vendor/@babel/runtime/helpers/esm/assertThisInitialized.js", "@babel/runtime/helpers/esm/inheritsLoose": "/classic/vendor/@babel/runtime/helpers/esm/inheritsLoose.js", "@babel/runtime/helpers/esm/wrapNativeSuper": "/classic/vendor/@babel/runtime/helpers/esm/wrapNativeSuper.js", "@babel/runtime/helpers/esm/taggedTemplateLiteralLoose": "/classic/vendor/@babel/runtime/helpers/esm/taggedTemplateLiteralLoose.js", "@tweenjs/tween.js": "/classic/vendor/@tweenjs/tween.js/dist/tween.esm.js"}}</script>
 </head>
 <body>
-<!-- The earlier Metaform page's 2D map, on the new Metaform server. Its parts are the earlier page's own, copied and
+<!-- The earlier Metaform page's two maps, on the new Metaform server. Its parts are the earlier page's own, copied and
      adapted, see app.js; this file keeps the earlier page's ids and classes, so its script and stylesheet apply. -->
 <!-- Shown at once while the page loads and lays itself out, `booting` in theme.js; gone when the page is shown. -->
 <div id="boot" role="status">Loading the map…</div>
@@ -30,6 +33,7 @@
         </div>
       </div>
     </div>
+    <button class="btn quiet swapbtn" id="swapBtn" type="button" aria-keyshortcuts="S" aria-pressed="false" title="Swap the two maps: the 3D map takes the large area and the 2D map the side column, and back (S)"><span class="lbl">Swap</span></button>
     <button class="btn searchbtn" id="searchBtn" type="button" aria-keyshortcuts="/" aria-controls="search" title="Search the map (/)"><i class="i i-search" aria-hidden="true"></i><span class="lbl">Search the map</span><kbd aria-hidden="true">/</kbd></button>
     <div class="hmore">
     <div class="hfield depthpick" role="group" aria-label="Depth of the map" title="How many levels of the map show, counted along the lines from the top (4 steps through them)">
@@ -70,8 +74,20 @@
           <select id="textsize"></select>
         </div>
         <div class="label">Map</div>
+        <div class="menu-field themepick" title="The 3D map at the top of the side column, keeping the whole project in view; off, the side column holds the tabs alone"><label for="map3dat">3D map</label>
+          <input id="map3dat" type="checkbox" role="switch" checked>
+        </div>
+        <div class="menu-field themepick" title="The 3D map's names: facing you, or outward from its middle"><label for="signsat">Signs</label>
+          <select id="signsat"><option value="facing">Facing</option><option value="outward">Outward</option></select>
+        </div>
+        <div class="menu-field themepick" title="How far the 3D map's view opens as its pane grows tall (7)"><label for="lensat">Lens</label>
+          <select id="lensat" aria-keyshortcuts="7"><option value="natural">Natural</option><option value="wide">Wide</option><option value="fisheye">Fisheye</option></select>
+        </div>
         <div class="menu-field themepick" title="What the map says of what the pointer is on: the name where it cannot be read, and a card of its details"><label for="infoat">Info</label>
           <select id="infoat"><option value="name+summary">Name and card</option><option value="name">Name</option><option value="summary">Card</option><option value="off">Off</option></select>
+        </div>
+        <div class="menu-field themepick" title="Fly the 3D camera to each element selected, framed with its neighbours"><label for="nodezoomat">Node zoom</label>
+          <input id="nodezoomat" type="checkbox" role="switch" checked>
         </div>
         <div class="menu-field themepick" title="Which lines the dots flow along: none, those of the part under the pointer, the selection's, or all of them (2)"><label for="flowat">Flow</label>
           <select id="flowat" aria-keyshortcuts="2"><option value="off">Off</option><option value="hover">Under the pointer</option><option value="selected">The selection's</option><option value="all">All lines</option></select>
@@ -87,6 +103,16 @@
   </header>
 
   <aside>
+    <!-- The small area: the map that keeps the whole in view over the tabs. The page opens with the 3D map here and
+         the 2D map in the large area, `openSwapped`; Swap exchanges them. -->
+    <div class="small" id="small">
+    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; Alt with Left or Right goes back or forward through the nodes selected; the wheel zooms at the pointer, 0 fits the whole map, S swaps the two maps. Press ? for every key.">
+      <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
+      <div class="viewport" id="viewport"></div>
+    </div>
+    </div>
+    <div class="splitter split" id="smallSplit" role="separator" aria-orientation="horizontal"
+         aria-label="The split between the small map and the panes" title="Drag to resize; double-click to reset"></div>
     <div class="tabs" role="tablist" aria-label="The selected object">
       <button role="tab" id="t-object" type="button" aria-selected="true" aria-controls="p-object">Object</button>
       <button role="tab" id="t-brief" type="button" aria-selected="false" aria-controls="p-brief" tabindex="-1" title="What an agent reads about the selected element">Brief</button>
@@ -99,9 +125,13 @@
   </aside>
 
   <main>
-    <div class="map2d" id="map2d" tabindex="0" aria-label="The whole map. Down goes deeper, Up back to the parent, Left and Right across; Enter goes inside, Escape lets go of the selection, then out; Alt with Left or Right goes back or forward through the nodes selected; the wheel zooms at the pointer, 0 fits the whole map. Press ? for every key.">
-      <nav class="crumbs" id="crumbs" hidden aria-label="Where you are inside the map"></nav>
-      <div class="viewport" id="viewport"></div>
+    <div id="big3d">
+    <div class="view3d">
+    <div id="stage" aria-label="3D map of the project" tabindex="0"></div>
+    <div class="tip3d" id="tip3d" hidden></div>
+    <div class="legend" id="legend"></div>
+    <div class="count" id="count"></div>
+    </div>
     </div>
   </main>
 </div>

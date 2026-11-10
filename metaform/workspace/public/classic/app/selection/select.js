@@ -5,7 +5,9 @@ import {$, h} from '/classic/app/core/dom.js';
 import {shown, overlayHolds} from '/classic/app/core/overlays.js';
 import {S, MEM} from '/classic/app/core/reads.js';
 import {largeView} from '/classic/app/header/menus.js';
-import {joinOf} from '/classic/app/graph/data.js';
+import {joinOf, nodeIn} from '/classic/app/graph/data.js';
+import {G} from '/classic/app/map3d/graph3d.js';
+import {follow3d} from '/classic/app/views/lens.js';
 import {revealDepth} from '/classic/app/keys/walk.js';
 import {IN, samePath, renderThing} from '/classic/app/map2d/inside.js';
 import {focus2D} from '/classic/app/map2d/flow2d.js';
@@ -55,6 +57,11 @@ function selectNow(id, fly, keepTrail, stepping, again) {
     return;
   }
   S.neighbors = neighborsOf(id, join);
+  if (G) {
+    G.nodeColor(G.nodeColor());
+    const node = nodeIn(G.graphData(), id);
+    if (fly && node) follow3d(id);
+  }
   focus2D(id, frame);
   // The brief stays on view while the person walks the map from it, and on this page the provenance too, which is
   // the selected element's own; a selection made as the map is read again draws the tab on view again.

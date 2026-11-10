@@ -51,6 +51,7 @@ export function opened(box) {
   const opener = had ? had.opener : active && active !== document.body && !box.contains(active) ? active
     : [...OVERLAY.trail].reverse().find(one => one.isConnected && !box.contains(one)) || null;
   OVERLAY.stack.push({...known, opener});
+  $('#tip3d').hidden = true;  // a node's name shown under the pointer does not stay over what opens
   if (box.classList.contains('window') && !had) place(box);
   if (opener?.getAttribute?.('aria-controls') === box.id) opener.setAttribute('aria-expanded', 'true');
   restack();

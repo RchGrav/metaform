@@ -1,13 +1,13 @@
-/* What this page adds to the earlier page's stylesheet, app.css, which is copied whole: the map in the large area,
- * the side column with the selected part alone, and the header's own controls. */
-main > .map2d{position:absolute;inset:0}
-aside > .pane{border-top:0}
+/* What this page adds to the earlier page's stylesheet, app.css, which is copied whole: the header's own controls,
+ * and the side column without the 3D map while the View menu has it turned off. */
+.app.no3d #small,.app.no3d #smallSplit{display:none}
+.app.no3d aside > .pane{border-top:0}
 .depthpick{display:flex;align-items:center;gap:var(--s1)}
 .depthpick .now{min-width:6.5em;text-align:center;font:500 var(--t-sm)/1 var(--sans);color:var(--text)}
 header .tonew{margin-left:auto;color:var(--signal);text-decoration:none;white-space:nowrap;font:500 var(--t-sm)/1 var(--sans)}
 header .tonew:hover{text-decoration:underline}
 .pane .recordtitle{display:block;color:var(--text);font-weight:600;margin-bottom:2px}
 .pane .recordtext{margin:0}
-/* The way back out of a part, larger than on the earlier page, where the map was the small pane. */
-.map2d .crumbs{font-size:var(--t-sm);padding:var(--s1) var(--s3)}
-.map2d .crumbs a:first-child::before{content:"← "}
+/* The way back out of a part, larger in the large area than on the earlier page. */
+main .map2d .crumbs{font-size:var(--t-sm);padding:var(--s1) var(--s3)}
+main .map2d .crumbs a:first-child::before{content:"← "}

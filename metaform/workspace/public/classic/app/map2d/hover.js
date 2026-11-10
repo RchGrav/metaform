@@ -1,7 +1,8 @@
 /* The 2D map's notes and modes, hover, the edges and nodes a click takes, and unmarking. */
 import '/classic/app/map2d/camera.js';  // the part before runs first, so the parts run in the page's order
 import {$, SVG, h} from '/classic/app/core/dom.js';
-import {REACH, reachOf, readout, readoutOf, edgeWords} from '/classic/app/map2d/readout.js';
+import {REACH, reachOf} from '/classic/app/map3d/pick3d.js';
+import {readout, readoutOf, edgeWords} from '/classic/app/map3d/readout.js';
 import {flowModeNow} from '/classic/app/flow/flow.js';
 import {MODE} from '/classic/app/camera/flight.js';
 import {M} from '/classic/app/map2d/build.js';

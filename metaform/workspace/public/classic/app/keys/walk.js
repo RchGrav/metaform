@@ -3,12 +3,18 @@ import '/classic/app/map2d/wire.js';  // the part before runs first, so the part
 import {overlayHolds} from '/classic/app/core/overlays.js';
 import {S, MEM} from '/classic/app/core/reads.js';
 import {joinOf} from '/classic/app/graph/data.js';
+import {NAME, small3d} from '/classic/app/camera/fly3d.js';
+import {setMode3d} from '/classic/app/views/bar.js';
 import {M, build2D} from '/classic/app/map2d/build.js';
 import {IN, enter, goTo} from '/classic/app/map2d/inside.js';
 import {note2d} from '/classic/app/map2d/hover.js';
 import {fullFit2d} from '/classic/app/map2d/camera.js';
 import {saveView} from '/classic/app/views/settings.js';
 import {underHiddenRoot} from '/classic/app/header/layers.js';
+import {GROW, draw3D} from '/classic/app/map3d/draw3d.js';
+import {G} from '/classic/app/map3d/graph3d.js';
+import {V3, fit3d} from '/classic/app/camera/flight.js';
+import {renderLegend} from '/classic/app/views/lens.js';
 
 /* The keys walk the join tree, Down goes deeper, to the providers of the node's joins and then to
  * the nodes inside it; Up goes back to the parent; Left and Right move between the nodes connected to the parent.
@@ -129,6 +135,21 @@ export function mapKeys(event) {
   if (event.key.startsWith('Arrow') && target.closest(ARROWS_OWN)) return false;
   return true;
 }
+/* 1, VIEW-005: the large 3D map's camera, round from Work, the map met as each selection asks, to the zoom on the
+ * selection with its name a quarter, a half or three quarters of the view's width, and back to Work. The small area
+ * takes no 3D zoom: it always meets a node at four fifths. */
+export function zoomKey() {
+  if (!G) return note2d('The 3D map is off: the View menu turns it on');
+  if (small3d()) return note2d("3D zoom is the large 3D map's: S swaps the maps");
+  if (V3.mode === 'zoom' && NAME.level === 3) {
+    setMode3d('work');
+    return note2d('3D camera: the selection met');
+  }
+  const level = V3.mode === 'zoom' ? NAME.level + 1 : 1;
+  setMode3d('zoom', level);
+  note2d(`3D zoom: ${['1/4', '1/2', '3/4'][level - 1]}`);
+}
+
 /* 4, web_map_depth, VIEW-051: how many levels of the map show, counted along the joins from the tops, `levels`, what
  * the viewer sees with nothing above it at level 1, what serves them at 2, and so on. A part's level is its shortest
  * way down from a top, so a part serving two receivers shows when either does. A part deeper than the depth stays
@@ -305,8 +326,16 @@ export function setFocus(kind, value) {
   if (sig === FOCUS.sig) return false;
   FOCUS.sig = sig;
   if (S.loading) return false;  // the load draws both maps once it has read the rest
+  drawBranch();
   build2D(true, true);
   return true;
+}
+/* A branch opened or closed in the 3D map at once: the parts it opens grow out of their receiver, and what is drawn
+ * stays where it is, draw3d.js GROW. The 2D map follows in the way it is drawn now, `build2D`'s `branch`. */
+function drawBranch() {
+  GROW.beside = true;
+  try { draw3D(); } finally { GROW.beside = false; }
+  renderLegend();
 }
 /* The parts drawn now, as text to compare, so a branch said again that opens nothing new draws nothing: empty while
  * every level shows. */
@@ -318,5 +347,7 @@ function focusSig() {
  * click, `branch`, is a branch: it opens in place as the branches of `FOCUS` do, `drawBranch`. */
 function redrawDepth(branch = false) {
   FOCUS.sig = focusSig();  // what is drawn now opens these, so the next branch said is compared with them
+  if (branch) drawBranch(); else { draw3D(); renderLegend(); }
+  if (G && !small3d()) { V3.auto = true; fit3d(); }
   build2D(true, branch).then(fullFit2d);
 }

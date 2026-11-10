@@ -3,6 +3,8 @@
 import '/classic/app/map2d/flow2d.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/classic/app/core/dom.js';
 import {S} from '/classic/app/core/reads.js';
+import {G, wake3d} from '/classic/app/map3d/graph3d.js';
+import {meetEnds} from '/classic/app/camera/fly3d.js';
 import {M} from '/classic/app/map2d/build.js';
 import {showBase} from '/classic/app/map2d/fit.js';
 import {IN, samePath, drawInside} from '/classic/app/map2d/inside.js';
@@ -20,13 +22,14 @@ export function deselect() {
   if (!S.selected) return;
   Object.assign(S, {selected: null, cleared: true, panelFor: null, trail: [], neighbors: new Set()});
   unmark2D();
+  if (G) { G.nodeColor(G.nodeColor()); meetEnds(); wake3d(); }
   noneSelected();  // the 2D view stays where it is, VIEW-041
   showTab(tabNow());  // the Brief and the Provenance tabs say nothing is selected too
   revealDepth(null);  // the branch the selection opened closes, walk.js FOCUS
 }
 export function noneSelected() {
   fill($('#p-object'), h('p', {class: 'empty'},
-    "Nothing is selected. Click a part on the map, or press an arrow key to start from the map's entry."));
+    "Nothing is selected. Click a part on either map, or press an arrow key to start from the map's entry."));
 }
 /* A drag under way on the 2D map, and whether the last press was a drag, so its release is no click. */
 const PAN = {drag: null, dragged: false};

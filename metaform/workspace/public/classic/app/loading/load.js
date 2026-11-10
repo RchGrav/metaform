@@ -1,12 +1,16 @@
 /* Loading: the projects, a project's map read and drawn, the map followed as it changes, and the header's own
- * controls. It does the work of the earlier page's loading/load.js and workspace/workspace.js `main` for this page;
- * the reads are adapter.js's. */
+ * controls, for both maps. It does the work of the earlier page's loading/load.js and workspace/workspace.js `main`
+ * for this page; the reads are adapter.js's. */
 import '/classic/app/header/export.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/classic/app/core/dom.js';
 import {toast} from '/classic/app/core/controls.js';
 import {S} from '/classic/app/core/reads.js';
 import {listProjects, readMap, follow} from '/classic/app/adapter.js';
-import {M, build2D, build2DSoon, setMermaidReady} from '/classic/app/map2d/build.js';
+import {G} from '/classic/app/map3d/graph3d.js';
+import {draw3D} from '/classic/app/map3d/draw3d.js';
+import {V3, fit3d} from '/classic/app/camera/flight.js';
+import {renderLegend} from '/classic/app/views/lens.js';
+import {M, build2D, build2DSoon} from '/classic/app/map2d/build.js';
 import {entryOf} from '/classic/app/map2d/fit.js';
 import {IN, renderCrumbs} from '/classic/app/map2d/inside.js';
 import {deselect, noneSelected} from '/classic/app/map2d/wire.js';
@@ -14,7 +18,7 @@ import {DEPTH, FOCUS, nudgeDepth, depthWords} from '/classic/app/keys/walk.js';
 import {select} from '/classic/app/selection/select.js';
 import {readView} from '/classic/app/views/settings.js';
 import {renderChips} from '/classic/app/header/layers.js';
-import {foldHeader} from '/classic/app/header/menus.js';
+import {foldHeader, largeView} from '/classic/app/header/menus.js';
 
 const LOAD = {unfollow: null, reading: null, again: false};
 const PROJECT_KEY = 'classic.project';
@@ -54,8 +58,13 @@ export async function loadProject(id) {
   S.loading++;  // the selection opens its branch without a drawing of its own; the build below draws it
   try {
     const start = S.elements.size ? entryOf() : null;
+    // the whole map fitted once it has spread, unless a selection has flown the camera to its node meanwhile
+    if (start) setTimeout(() => { if (G && !V3.focus && S.selected === start) fit3d(800, 60); }, 2200);
     if (start) await select(start, false, false, false, true); else noneSelected();
   } finally { S.loading--; }
+  Object.assign(V3, {auto: true, asked: false});  // a new map opens whole, framed as its layout spreads
+  draw3D();
+  renderLegend();
   await build2D(false);
   showDepth();
   LOAD.unfollow = follow(id, mapChanged);
@@ -73,6 +82,8 @@ async function mapChanged() {
       if (S.selected && !kept) deselect();
       S.loading++;
       try { if (kept) await select(S.selected, false, true, true, true); } finally { S.loading--; }
+      draw3D();
+      renderLegend();
       await build2DSoon();
       showDepth();
     } while (LOAD.again);
@@ -84,14 +95,6 @@ function showDepth() { $('#depthNow').textContent = depthWords(); }
 document.addEventListener('classic:depth', showDepth);
 $('#depthLess').onclick = () => nudgeDepth(-1);
 $('#depthMore').onclick = () => nudgeDepth(1);
-/* The page's colours, kept in this browser as the earlier page kept them; the map is drawn again in them. */
-$('#theme').value = document.documentElement.dataset.theme || 'space';
-$('#theme').onchange = event => {
-  document.documentElement.dataset.theme = event.target.value;
-  try { localStorage.setItem('metaform.theme', event.target.value); } catch { /* storage can be blocked */ }
-  setMermaidReady(false);
-  if (S.elements.size) build2D(false);
-};
 export async function main() {
   readView();
   const select2 = $('#proj');
@@ -102,7 +105,7 @@ export async function main() {
   }
   fill(select2, S.projects.map(project => h('option', {value: project.id, title: project.folder || ''}, project.name)));
   foldHeader();  // the project's name is in the header now
-  select2.onchange = () => { loadProject(select2.value); $('#map2d').focus({preventScroll: true}); };
+  select2.onchange = () => { loadProject(select2.value); largeView().focus({preventScroll: true}); };
   let wanted = new URLSearchParams(location.search).get('project');
   try { wanted ||= localStorage.getItem(PROJECT_KEY); } catch { /* storage can be blocked */ }
   const first = S.projects.find(project => project.id === wanted || project.name === wanted) || S.projects[0];
@@ -113,5 +116,5 @@ export async function main() {
   }
   select2.value = first.id;
   try { await loadProject(first.id); } finally { revealed(); }
-  $('#map2d').focus({preventScroll: true});
+  largeView().focus({preventScroll: true});
 }

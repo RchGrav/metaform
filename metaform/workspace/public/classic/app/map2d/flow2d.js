@@ -4,7 +4,8 @@ import '/classic/app/map2d/hover.js';  // the part before runs first, so the par
 import {$, css, reduced, SVG} from '/classic/app/core/dom.js';
 import {S, MEM} from '/classic/app/core/reads.js';
 import {joinOf} from '/classic/app/graph/data.js';
-import {colorOf} from '/classic/app/map2d/looks.js';
+import {colorOf} from '/classic/app/map3d/light.js';
+import {FRAMES} from '/classic/app/map3d/graph3d.js';
 import {FLOW, flowModeNow, flowAt, flowTick} from '/classic/app/flow/flow.js';
 import {M} from '/classic/app/map2d/build.js';
 import {IN} from '/classic/app/map2d/inside.js';
@@ -12,10 +13,6 @@ import {MAC, aim2d, autoZoom2d, fullFit2d} from '/classic/app/map2d/camera.js';
 import {HOVER2D} from '/classic/app/map2d/hover.js';
 import {goInside, levelUp, toggleDepth} from '/classic/app/keys/walk.js';
 import {select} from '/classic/app/selection/select.js';
-
-/* When the flow may rest, from the earlier page's map3d/graph3d.js: `rest` null, its default, keeps the map
- * running; the setting that let it rest after `idle` ms is not part of this page. */
-const FRAMES = {active: 0, idle: 30000, rest: null};
 
 /* A join's information flow direction, its ifd, MAP-020, as the receiver has it: it sends to the elements that serve
  * it, receives from them, or both. The 2D map's arrows and flow and the 3D map's dots go the way the information goes.
@@ -92,10 +89,11 @@ class Edge2d {
 }
 // where a frame puts the point it looks up, `place`: one object, read before the next look-up
 const POINT = {x: 0, y: 0};
-// an element's own colour, for what comes from it, `colorOf`
+// an element's own colour on the map, as the 3D map draws it, for what comes from it. Changed from the earlier page,
+// which read it from the 3D map's node: here it is read from the element, so it is the same with the 3D map off.
 function color2d(id) {
   const entry = S.elements.get(id);
-  return entry ? colorOf(entry.element) : css('--signal');
+  return entry ? colorOf({...entry.element, t: 'el'}) : css('--signal');
 }
 export function flows2d() {
   for (const old of M.svg?.querySelectorAll('g.flows2d') || []) old.remove();

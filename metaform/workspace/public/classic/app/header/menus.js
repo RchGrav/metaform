@@ -100,5 +100,6 @@ function unfoldHeader() {
   $('#moreBtn').setAttribute('aria-expanded', String(open));
 }
 $('#moreBtn').onclick = unfoldHeader;
-/* The map is the page's large view. */
-export const largeView = () => $('#map2d');
+export const largeView = () => $('.app').classList.contains('swapped') ? $('#map2d') : $('#stage');
+// The pointer leaving the 3D map takes the name it showed there with it.
+$('#stage').addEventListener('pointerleave', () => { $('#tip3d').hidden = true; });
