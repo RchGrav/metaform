@@ -235,7 +235,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"add": {"code.relay": {"role": "Definitive"}}}),
             Code::RoleTaxonomyFailure,
-            Some(json!({"update": {"code.protocol.network.tracker.cs": {"role": null}}})),
+            Some(json!({"add": {"code.relay": {"role": "<Supportive, Notable or Divergent>"}}})),
         ),
         (
             json!({"delete": {"code.protocol": {}}}),

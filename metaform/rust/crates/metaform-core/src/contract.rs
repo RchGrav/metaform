@@ -240,8 +240,14 @@ mod tests {
             let by_schema = contract.input.is_valid(command);
             let text = command.to_string();
             let blank_role = text.contains("\"role\":\"\"") || text.contains("\"role\":\" \u{a0}\"");
+            // The shape check is stricter than the schema in two places: a blank role, and an
+            // empty `wants` at the command's own element (shape.rs, W8).
+            let empty_wants = ["add", "update"].iter().any(|verb| {
+                command[verb]["code.x"]["wants"].as_object().is_some_and(|w| w.is_empty())
+                    || command[verb]["."]["wants"].as_object().is_some_and(|w| w.is_empty())
+            });
             assert!(
-                by_hand == by_schema || (blank_role && by_schema),
+                by_hand == by_schema || ((blank_role || empty_wants) && by_schema),
                 "{command}: the shape check {by_hand}, the schema {by_schema}"
             );
         }

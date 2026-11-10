@@ -73,12 +73,14 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
                 _ => work.delete(selector, supplied)?,
             }
             let (map, effect) = work.finish()?;
-            let mut result = command.as_object().cloned().unwrap_or_default();
-            result.insert("status".into(), json!("ok"));
+            // A successful write answers with its status alone. It does not repeat the command:
+            // the agent sent it and has it, and in four recorded intakes the repeat was about
+            // 30% of everything the tool delivered (metaform/conformance/replay.py). A refusal
+            // still repeats the command, so the agent sees what was refused beside the reason.
             Ok(Outcome::Write(Write {
                 map,
                 effect,
-                result: Value::Object(result),
+                result: json!({"status": "ok"}),
             }))
         }
         path if path.starts_with('.') => reads::raw(map, path).map(Outcome::Read),
@@ -235,6 +237,7 @@ impl Work<'_> {
             for other in wants.iter().filter_map(Value::as_str) {
                 if self.elements[address].wants.contains_key(other) {
                     self.element_mut(address).wants.remove(other);
+                    self.prune(other);
                 }
             }
             return Ok(());
@@ -269,9 +272,23 @@ impl Work<'_> {
                 Some(json!({"delete": {deepest.as_str(): {}}})),
             ));
         }
+        let wanted: Vec<String> = self.elements[address].wants.keys().cloned().collect();
         self.remove(address);
-        // Remove the branches the deletion left with nothing in them.
-        let mut branch = names::parent(address).map(str::to_string);
+        if let Some(parent) = names::parent(address) {
+            self.prune(parent);
+        }
+        for other in wanted {
+            self.prune(&other);
+        }
+        Ok(())
+    }
+
+    /// Remove an element that a deletion left with nothing in it, and then each branch above it
+    /// that is left the same way: no fields, no wants, nothing beneath it and nothing that wants
+    /// it. A write creates the element a want names (R-5.4); when the last want that names it is
+    /// gone and it was never filled in, it goes too, so no empty address stays in the map.
+    fn prune(&mut self, address: &str) {
+        let mut branch = Some(address.to_string());
         while let Some(at) = branch.filter(|at| at != ROOT) {
             let empty = self.elements.get(&at).is_some_and(Element::is_empty);
             let has_children = self
@@ -284,7 +301,6 @@ impl Work<'_> {
             self.remove(&at);
             branch = names::parent(&at).map(str::to_string);
         }
-        Ok(())
     }
 
     fn remove(&mut self, address: &str) {
@@ -493,14 +509,24 @@ impl Work<'_> {
             .iter()
             .find(|address| *address != existing)
             .unwrap_or(&definitive[1]);
-        let mut fix = JsonMap::new();
-        fix.insert((*existing).clone(), json!({"role": null}));
+        // The remediation gives the new element another role. It never removes the role of the
+        // element that is Definitive already: an agent that followed it would lose the one
+        // element that says what the project is.
+        let other_role = "<Supportive, Notable or Divergent>";
+        let remediation = match (self.before.element(added), self.elements.get(*added)) {
+            (None, Some(element)) => {
+                let mut view = element.view();
+                view["role"] = json!(other_role);
+                json!({"add": {added.as_str(): view}})
+            }
+            _ => json!({"update": {added.as_str(): {"role": other_role}}}),
+        };
         Err(Refusal::new(
             Code::RoleTaxonomyFailure,
             format!(
                 "'{added}' cannot be Definitive: '{existing}' already is, and a map has one Definitive element"
             ),
-            Some(json!({"update": Value::Object(fix)})),
+            Some(remediation),
         ))
     }
 }

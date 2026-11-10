@@ -28,7 +28,8 @@ METAFORM = HERE.parent
 CASES = HERE / "cases.json"
 
 FORMS = {
-    "rust": [str(METAFORM / "rust/target/release/metaform")],
+    # METAFORM_RUST_BIN names another build of the Rust form, to compare two builds.
+    "rust": [os.environ.get("METAFORM_RUST_BIN") or str(METAFORM / "rust/target/release/metaform")],
     "node": ["node", str(METAFORM / "node/src/main.ts")],
     "python": [sys.executable, "-m", "metaform"],
 }

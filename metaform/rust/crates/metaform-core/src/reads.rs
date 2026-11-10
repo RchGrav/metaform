@@ -214,14 +214,16 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     if !skills.is_empty() {
         sheet["skills"] = Value::Object(skills);
     }
-    // How to write the layers listed here. The server delivers this part once per context, not
-    // once per address (R-6.27), so each entry says where to read it again (R-5.30).
+    // Where the rules for writing each listed layer are. The sheet names the place and does not
+    // carry the rules: an agent that arrives here may never write the layer, and in four
+    // recorded intakes the rules reached every agent before it could use them
+    // (metaform/conformance/replay.py). The server delivers this part once per context (R-6.27).
     if !defined.is_empty() {
         sheet["instructions"] = Value::Object(
             defined
                 .iter()
                 .map(|d| {
-                    let text = format!("{}\ngoto {} to see this again.", d.guidance(), d.address);
+                    let text = format!("Before you write {}, goto {} for its rules.", d.layer, d.address);
                     (d.layer.clone(), Value::String(text))
                 })
                 .collect(),

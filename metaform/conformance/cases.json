@@ -1239,14 +1239,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1437,14 +1429,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1467,20 +1451,6 @@
      }
     },
     "answer": {
-     "add": {
-      "downstream.developer.game": {
-       "technical_name": "game developer",
-       "name": "Studio developer",
-       "role": "Notable",
-       "wants": {
-        "code.engine.game": {
-         "why": "build a playable game",
-         "how": "provides the loop that draws and simulates each frame",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1606,7 +1576,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -1798,20 +1768,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.loop.main": {
-       "technical_name": "main loop",
-       "name": "Frame pump",
-       "role": "Definitive",
-       "wants": {
-        "code.registry.tool": {
-         "why": "resolve a tool by name",
-         "how": "returns the registered tool schema",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1932,14 +1888,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1953,11 +1901,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "status": "un_built"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -1986,11 +1929,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "status": null
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2020,13 +1958,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "sources": [
-        "./docs/engine.md"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2042,13 +1973,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "sources": [
-        "./docs/loop.md"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2084,13 +2008,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "sources": [
-        "./docs/only.md"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2123,11 +2040,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "name": "Quake engine"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2159,15 +2071,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine": {
-       "physics": {
-        "technical_name": "physics engine",
-        "name": "Havok shim",
-        "role": "Supportive"
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2200,17 +2103,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code": {
-       "cache": {
-        "response": {
-         "technical_name": "response cache",
-         "name": "Reply store",
-         "role": "Notable"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2237,11 +2129,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "sources": null
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2294,14 +2181,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2318,14 +2197,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2429,17 +2300,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "wants": {
-        "code.bus.data.event": {
-         "why": "receive player input for each frame",
-         "how": "dispatches subscribed event streams",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2457,15 +2317,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "wants": {
-        "code.bus.data.event": {
-         "direction": "two-way"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -2670,7 +2521,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -3056,6 +2907,95 @@
      }
     },
     "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.engine.game": {
+       "wants": {}
+      }
+     }
+    },
+    "answer": {
+     "update": {
+      "code.engine.game": {
+       "wants": {}
+      }
+     },
+     "status": "error",
+     "code": "FIELD_MISMATCH",
+     "message": "wants at 'code.engine.game' holds no want record",
+     "remediation": {
+      "update": {
+       "code.engine.game": {
+        "wants": {
+         "<address>": {
+          "why": "<why>",
+          "how": "<how>",
+          "direction": "<direction>"
+         }
+        }
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "add": {
+      "code.engine.game": {
+       "wants": {}
+      }
+     }
+    },
+    "answer": {
+     "add": {
+      "code.engine.game": {
+       "wants": {}
+      }
+     },
+     "status": "error",
+     "code": "FIELD_MISMATCH",
+     "message": "wants at 'code.engine.game' holds no want record",
+     "remediation": {
+      "add": {
+       "code.engine.game": {
+        "wants": {
+         "<address>": {
+          "why": "<why>",
+          "how": "<how>",
+          "direction": "<direction>"
+         }
+        }
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "code.engine.game": {
+      "wants": {}
+     }
+    },
+    "answer": {
+     "code.engine.game": {
+      "technical_name": "game engine",
+      "name": "Quake core",
+      "role": "Definitive",
+      "uri": "./src/engine.c",
+      "wants": {
+       "code.bus.data.event": {
+        "why": "receive player input for each frame",
+        "how": "dispatches subscribed event streams",
+        "direction": "two-way"
+       }
+      }
+     }
+    },
+    "refused": false
    }
   ]
  },
@@ -3075,14 +3015,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3099,14 +3031,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3126,17 +3050,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "wants": {
-        "code.bus.data.event": {
-         "why": "receive player input for each frame",
-         "how": "dispatches subscribed event streams",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3159,20 +3072,6 @@
      }
     },
     "answer": {
-     "add": {
-      "downstream.developer.game": {
-       "technical_name": "game developer",
-       "name": "Studio developer",
-       "role": "Notable",
-       "wants": {
-        "code.engine.game": {
-         "why": "build a playable game",
-         "how": "provides the loop that draws and simulates each frame",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3213,13 +3112,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.engine.game": {
-       "wants": [
-        "code.bus.data.event"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3250,9 +3142,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.bus.data.event": {}
-     },
      "status": "ok"
     },
     "refused": false
@@ -3290,9 +3179,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.bus.data.event": {}
-     },
      "status": "ok"
     },
     "refused": false
@@ -3304,9 +3190,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.nothing.here": {}
-     },
      "status": "ok"
     },
     "refused": false
@@ -3322,13 +3205,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.engine.game": {
-       "wants": [
-        "code.not.wanted"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3411,13 +3287,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "downstream.developer.game": {
-       "wants": [
-        "code.engine.game"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3429,9 +3298,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "code.engine.game": {}
-     },
      "status": "ok"
     },
     "refused": false
@@ -3485,6 +3351,215 @@
      }
     },
     "refused": false
+   },
+   {
+    "call": {
+     "add": {
+      "code.loop.main": {
+       "technical_name": "main loop",
+       "name": "Frame pump",
+       "role": "Definitive",
+       "wants": {
+        "code.registry.tool": {
+         "why": "resolve a tool by name",
+         "how": "returns the registered tool schema",
+         "direction": "inbound"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "map": {}
+    },
+    "answer": {
+     "addresses": [
+      "code",
+      "code.loop",
+      "code.loop.main",
+      "code.registry",
+      "code.registry.tool",
+      "downstream",
+      "downstream.developer",
+      "downstream.developer.game",
+      "layer",
+      "layer.document",
+      "layer.document.specification"
+     ],
+     "edges": [
+      [
+       "code.loop.main",
+       "code.registry.tool"
+      ]
+     ],
+     "definitive": "code.loop.main"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "delete": {
+      "code.loop.main": {
+       "wants": [
+        "code.registry.tool"
+       ]
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "map": {}
+    },
+    "answer": {
+     "addresses": [
+      "code",
+      "code.loop",
+      "code.loop.main",
+      "downstream",
+      "downstream.developer",
+      "downstream.developer.game",
+      "layer",
+      "layer.document",
+      "layer.document.specification"
+     ],
+     "edges": [],
+     "definitive": "code.loop.main"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.loop.main": {
+       "wants": {
+        "code.registry.tool": {
+         "why": "resolve a tool by name",
+         "how": "returns the registered tool schema",
+         "direction": "inbound"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.registry.tool": {
+       "technical_name": "tool registry",
+       "name": "Tool table",
+       "role": "Supportive"
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "delete": {
+      "code.loop.main": {
+       "wants": [
+        "code.registry.tool"
+       ]
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "map": {}
+    },
+    "answer": {
+     "addresses": [
+      "code",
+      "code.loop",
+      "code.loop.main",
+      "code.registry",
+      "code.registry.tool",
+      "downstream",
+      "downstream.developer",
+      "downstream.developer.game",
+      "layer",
+      "layer.document",
+      "layer.document.specification"
+     ],
+     "edges": [],
+     "definitive": "code.loop.main"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.loop.main": {
+       "wants": {
+        "code.cache.response": {
+         "why": "reuse an answer",
+         "how": "returns a stored answer",
+         "direction": "inbound"
+        }
+       }
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "delete": {
+      "code.loop.main": {}
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "map": {}
+    },
+    "answer": {
+     "addresses": [
+      "code",
+      "code.registry",
+      "code.registry.tool",
+      "downstream",
+      "downstream.developer",
+      "downstream.developer.game",
+      "layer",
+      "layer.document",
+      "layer.document.specification"
+     ],
+     "edges": [],
+     "definitive": null
+    },
+    "refused": false
    }
   ]
  },
@@ -3504,14 +3579,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3528,14 +3595,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3555,17 +3614,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "wants": {
-        "code.bus.data.event": {
-         "why": "receive player input for each frame",
-         "how": "dispatches subscribed event streams",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3588,20 +3636,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.loop.main": {
-       "technical_name": "main loop",
-       "name": "Frame pump",
-       "role": "Supportive",
-       "wants": {
-        "code.bus.data.event": {
-         "why": "read timer ticks",
-         "how": "delivers tick events",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3817,14 +3851,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.queue.dead_letter": {
-       "technical_name": "dead letter queue",
-       "name": "Morgue",
-       "role": "Notable",
-       "retry_policy": "three attempts"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3973,13 +3999,6 @@
      }
     },
     "answer": {
-     "add": {
-      "collection.workspace.shared": {
-       "technical_name": "shared workspace",
-       "name": "Table folder",
-       "role": "Notable"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -3996,14 +4015,6 @@
      }
     },
     "answer": {
-     "add": {
-      "upstream.code.engine.physics": {
-       "technical_name": "physics engine",
-       "name": "Bullet",
-       "role": "Supportive",
-       "uri": "https://example.org/bullet"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4072,13 +4083,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.buffer.ring.packet": {
-       "technical_name": "packet ring buffer",
-       "name": "Wire ring",
-       "role": "Notable"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4119,11 +4123,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.buffer.ring.packet": {
-       "technical_name": "packet ring buffer code"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4177,11 +4176,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.buffer.ring.packet": {
-       "technical_name": "packet"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4222,23 +4216,9 @@
      }
     },
     "answer": {
-     "update": {
-      "code.buffer.ring.packet": {
-       "name": "packet"
-      }
-     },
-     "status": "error",
-     "code": "CANONICAL_NAME_COLLISION_FAILURE",
-     "message": "'code.buffer.ring.packet': name \"packet\" is the same as technical_name; name is the project's own name for the element",
-     "remediation": {
-      "update": {
-       "code.buffer.ring.packet": {
-        "name": "<the project's own name for it>"
-       }
-      }
-     }
+     "status": "ok"
     },
-    "refused": true
+    "refused": false
    },
    {
     "call": {
@@ -4251,27 +4231,9 @@
      }
     },
     "answer": {
-     "add": {
-      "code.queue.dead_letter": {
-       "technical_name": "dead letter queue",
-       "name": "dead letter queue",
-       "role": "Notable"
-      }
-     },
-     "status": "error",
-     "code": "CANONICAL_NAME_COLLISION_FAILURE",
-     "message": "'code.queue.dead_letter': name \"dead letter queue\" is the same as technical_name; name is the project's own name for the element",
-     "remediation": {
-      "add": {
-       "code.queue.dead_letter": {
-        "technical_name": "dead letter queue",
-        "name": "<the project's own name for it>",
-        "role": "Notable"
-       }
-      }
-     }
+     "status": "ok"
     },
-    "refused": true
+    "refused": false
    },
    {
     "call": {
@@ -4295,11 +4257,9 @@
      "code": "TECHNICAL_NAME_ALIGNMENT_FAILURE",
      "message": "'code.queue.dead_letter': technical_name \"dead_letter queue\" is not the leading words of \"dead letter queue code\"",
      "remediation": {
-      "add": {
+      "update": {
        "code.queue.dead_letter": {
-        "technical_name": "dead letter queue",
-        "name": "Morgue",
-        "role": "Notable"
+        "technical_name": "dead letter queue"
        }
       }
      }
@@ -4328,11 +4288,9 @@
      "code": "TECHNICAL_NAME_ALIGNMENT_FAILURE",
      "message": "'code.queue.dead_letter': technical_name \"Dead Letter Queue\" is not the leading words of \"dead letter queue code\"",
      "remediation": {
-      "add": {
+      "update": {
        "code.queue.dead_letter": {
-        "technical_name": "dead letter queue",
-        "name": "Morgue",
-        "role": "Notable"
+        "technical_name": "dead letter queue"
        }
       }
      }
@@ -4350,13 +4308,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.queue.dead_letter": {
-       "technical_name": "dead letter queue",
-       "name": "Morgue",
-       "role": "Notable"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4397,11 +4348,6 @@
      }
     },
     "answer": {
-     "update": {
-      ".": {
-       "technical_name": null
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4415,23 +4361,9 @@
      }
     },
     "answer": {
-     "update": {
-      "code.buffer.ring.packet": {
-       "name": " PACKET "
-      }
-     },
-     "status": "error",
-     "code": "CANONICAL_NAME_COLLISION_FAILURE",
-     "message": "'code.buffer.ring.packet': name \" PACKET \" is the same as technical_name; name is the project's own name for the element",
-     "remediation": {
-      "update": {
-       "code.buffer.ring.packet": {
-        "name": "<the project's own name for it>"
-       }
-      }
-     }
+     "status": "ok"
     },
-    "refused": true
+    "refused": false
    },
    {
     "call": {
@@ -4440,7 +4372,7 @@
     "answer": {
      "code.buffer.ring.packet": {
       "technical_name": "packet",
-      "name": "Wire ring",
+      "name": " PACKET ",
       "role": "Notable"
      }
     },
@@ -4464,14 +4396,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4498,9 +4422,11 @@
      "code": "ROLE_TAXONOMY_FAILURE",
      "message": "'code.loop.main' cannot be Definitive: 'code.engine.game' already is, and a map has one Definitive element",
      "remediation": {
-      "update": {
-       "code.engine.game": {
-        "role": null
+      "add": {
+       "code.loop.main": {
+        "technical_name": "main loop",
+        "name": "Frame pump",
+        "role": "<Supportive, Notable or Divergent>"
        }
       }
      }
@@ -4518,13 +4444,6 @@
      }
     },
     "answer": {
-     "add": {
-      "upstream.code.engine.physics": {
-       "technical_name": "physics engine",
-       "name": "Bullet",
-       "role": "Definitive"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4560,11 +4479,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "role": null
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4729,13 +4643,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.loop.main": {
-       "technical_name": "main loop",
-       "name": "Frame pump",
-       "role": "Definitive"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4759,8 +4666,8 @@
      "message": "'code.engine.game' cannot be Definitive: 'code.loop.main' already is, and a map has one Definitive element",
      "remediation": {
       "update": {
-       "code.loop.main": {
-        "role": null
+       "code.engine.game": {
+        "role": "<Supportive, Notable or Divergent>"
        }
       }
      }
@@ -4830,11 +4737,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "role": "Divergent"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4911,14 +4813,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -4959,11 +4853,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "renderer": "forward"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -5032,14 +4921,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -5134,11 +5015,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "status": "un_built"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -5254,11 +5130,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "status": null
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6467,14 +6338,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6523,19 +6386,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "skills": [
-        {
-         "frontmatter": {
-          "name": "port-renderer",
-          "description": "Port the renderer to a new graphics API."
-         },
-         "uri": "skill://port-renderer"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6556,18 +6406,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "memory": [
-        {
-         "name": "frame budget",
-         "observations": [
-          "16 ms at 60 Hz"
-         ]
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6583,13 +6421,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "sources": [
-        "./docs/engine.md"
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6679,7 +6510,7 @@
       }
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -6734,18 +6565,6 @@
      }
     },
     "answer": {
-     "update": {
-      ".": {
-       "skills": [
-        {
-         "frontmatter": {
-          "name": "metaform",
-          "description": "Use the map."
-         }
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6806,11 +6625,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "sources": []
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6923,6 +6737,92 @@
      }
     },
     "refused": false
+   },
+   {
+    "call": {
+     "update": {
+      "code.engine.game": {
+       "sources": "./docs/engine.md"
+      }
+     }
+    },
+    "answer": {
+     "update": {
+      "code.engine.game": {
+       "sources": "./docs/engine.md"
+      }
+     },
+     "status": "error",
+     "code": "FIELD_MISMATCH",
+     "message": "'code.engine.game': sources: a layer's value must be a list of records",
+     "remediation": {
+      "update": {
+       "code.engine.game": {
+        "sources": [
+         "./docs/engine.md"
+        ]
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "update": {
+      "code.engine.game": {
+       "memory": 7
+      }
+     }
+    },
+    "answer": {
+     "update": {
+      "code.engine.game": {
+       "memory": 7
+      }
+     },
+     "status": "error",
+     "code": "FIELD_MISMATCH",
+     "message": "'code.engine.game': memory: a layer's value must be a list of records",
+     "remediation": {
+      "update": {
+       "code.engine.game": {
+        "memory": [
+         7
+        ]
+       }
+      }
+     }
+    },
+    "refused": true
+   },
+   {
+    "call": {
+     "add": {
+      "code.pool.memory": {
+       "technical_name": "memory pool",
+       "name": "Arena",
+       "role": "Supportive"
+      }
+     }
+    },
+    "answer": {
+     "status": "ok"
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "code.pool.memory": {}
+    },
+    "answer": {
+     "code.pool.memory": {
+      "technical_name": "memory pool",
+      "name": "Arena",
+      "role": "Supportive"
+     }
+    },
+    "refused": false
    }
   ]
  },
@@ -6942,14 +6842,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6966,14 +6858,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -6990,14 +6874,6 @@
      }
     },
     "answer": {
-     "add": {
-      "layer.code.cpp": {
-       "technical_name": "cpp code layer",
-       "name": "C++ notes",
-       "role": "Supportive",
-       "instruction": "Record what the C++ realization of this element requires."
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7051,15 +6927,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "cpp": [
-        {
-         "note": "owns the frame allocator"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7077,15 +6944,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "cpp": [
-        {
-         "note": "single translation unit"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7168,8 +7026,8 @@
       "records": 0
      },
      "instructions": {
-      "cpp": "Record what the C++ realization of this element requires.\ngoto layer.code.cpp to see this again.",
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "cpp": "Before you write cpp, goto layer.code.cpp for its rules.",
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -7319,15 +7177,6 @@
      }
     },
     "answer": {
-     "update": {
-      ".": {
-       "cpp": [
-        {
-         "note": "root"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7469,13 +7318,6 @@
      }
     },
     "answer": {
-     "add": {
-      "layer.code.rust": {
-       "technical_name": "rust code layer",
-       "name": "Rust notes",
-       "role": "Supportive"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7520,11 +7362,6 @@
      }
     },
     "answer": {
-     "update": {
-      "layer.code.rust": {
-       "instruction": "Record what the Rust realization requires."
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7542,15 +7379,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "rust": [
-        {
-         "note": "now defined"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7564,11 +7392,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "cpp": []
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7647,9 +7470,6 @@
      }
     },
     "answer": {
-     "delete": {
-      "layer.code.cpp": {}
-     },
      "status": "ok"
     },
     "refused": false
@@ -7724,15 +7544,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "rust": [
-        {
-         "note": "an object"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7750,15 +7561,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "memory": [
-        {
-         "note": "kept"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7850,15 +7652,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.pool": {
-       "memory": {
-        "technical_name": "memory pool",
-        "name": "Arena",
-        "role": "Supportive"
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -7940,14 +7733,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -8042,14 +7827,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -8078,26 +7855,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "specification": [
-        {
-         "text": "  The engine draws and simulates.\r\n"
-        },
-        {
-         "level": 1,
-         "title": " Frame loop ",
-         "text": "One pass per frame."
-        },
-        {
-         "level": 2,
-         "code": "R-1.2",
-         "title": "Timing",
-         "text": "A frame takes 16 ms."
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -8171,7 +7928,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -8191,17 +7948,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "specification": [
-        {
-         "level": 2,
-         "title": "Input",
-         "text": "Read once per frame."
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -8666,17 +8412,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "specification": [
-        {
-         "level": 1,
-         "title": "A",
-         "text": "```\n# a comment in code\n```\n#tag and #42"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9497,18 +9232,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "specification": [
-        {
-         "level": 1,
-         "title": "A",
-         "text": "x",
-         "code": "R-1"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9525,14 +9248,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9600,18 +9315,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.bus.data.event": {
-       "specification": [
-        {
-         "level": 1,
-         "title": "Routes",
-         "text": "y",
-         "code": "R-2"
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9629,15 +9332,6 @@
      }
     },
     "answer": {
-     "update": {
-      ".": {
-       "specification": [
-        {
-         "text": "A game engine project."
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9738,11 +9432,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "specification": []
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9967,14 +9656,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -9991,14 +9672,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10018,17 +9691,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "wants": {
-        "code.bus.data.event": {
-         "why": "receive player input for each frame",
-         "how": "dispatches subscribed event streams",
-         "direction": "inbound"
-        }
-       }
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10062,7 +9724,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -10127,11 +9789,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "status": "un_built"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10234,7 +9891,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -10277,17 +9934,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "zeta": "last",
-       "role": "Definitive",
-       "alpha": "first",
-       "name": "Quake core",
-       "uri": "./src/engine.c",
-       "technical_name": "game engine",
-       "status": "un_built"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10304,14 +9950,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.bus.data.event": {
-       "technical_name": "event data bus",
-       "name": "Pulsar router",
-       "role": "Supportive",
-       "uri": "./src/bus.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10382,21 +10020,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "specification": [
-        {
-         "text": "Intro."
-        },
-        {
-         "level": 1,
-         "code": "R-9",
-         "title": "Loop",
-         "text": "Body."
-        }
-       ]
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10416,17 +10039,6 @@
      }
     },
     "answer": {
-     "update": {
-      "code.engine.game": {
-       "sources": [
-        "./b.md",
-        "./a.md"
-       ],
-       "count": 3,
-       "ratio": 0.5,
-       "ready": true
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10721,7 +10333,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "The specification field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"specification\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Definitive element.\nWrite each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.\n- Start with what the element does or holds. Then give the detail that explains it.\n- Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.\n- Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.\n- Write one claim per sentence. Aim for 25 words or fewer per sentence and six sentences or fewer per paragraph. Never cut a condition, an exception or a reason to meet a length target.\n- Use lowercase must, should, may, can and might with their TASTE meanings. Do not write SHALL or capitalized MUST.\n- Say whether something is built, proposed or planned. Do not describe planned behavior as if it exists.\n- Replace words such as simple, robust or fast with the behavior or a measurement.\n- Define an abbreviation at its first use. Keep noun clusters to three nouns.\n- Leave out openings such as \"This section describes\", repeated points, analogies and promotion.\n- Prefer start, use, adjust, perform and end over kick off/launch/begin, utilize/leverage, modify/change/alter, execute/run and terminate/stop/abort, when the meaning stays the same.\n- Do not put Markdown heading lines in the text. Set the block's level and title instead.\ngoto layer.document.specification to see this again."
+      "specification": "Before you write specification, goto layer.document.specification for its rules."
      }
     },
     "refused": false
@@ -10744,14 +10356,6 @@
      }
     },
     "answer": {
-     "add": {
-      "code.engine.game": {
-       "technical_name": "game engine",
-       "name": "Quake core",
-       "role": "Definitive",
-       "uri": "./src/engine.c"
-      }
-     },
      "status": "ok"
     },
     "refused": false
@@ -10792,9 +10396,18 @@
      "code": "ROLE_TAXONOMY_FAILURE",
      "message": "'code.loop.main' cannot be Definitive: 'code.engine.game' already is, and a map has one Definitive element",
      "remediation": {
-      "update": {
-       "code.engine.game": {
-        "role": null
+      "add": {
+       "code.loop.main": {
+        "technical_name": "main loop",
+        "name": "Frame pump",
+        "role": "<Supportive, Notable or Divergent>",
+        "wants": {
+         "code.bus.data.event": {
+          "why": "read ticks",
+          "how": "delivers tick events",
+          "direction": "inbound"
+         }
+        }
        }
       }
      }

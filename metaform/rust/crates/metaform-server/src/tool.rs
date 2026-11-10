@@ -55,6 +55,10 @@ const ONCE_PER_CONTEXT: [&str; 1] = ["instructions"];
 /// definition element, which is where an agent reads the guidance again after a reset (R-5.30).
 const ALWAYS: [&str; 1] = ["guidance"];
 
+/// What the server tells a client when it connects. It is one short paragraph, because every
+/// agent on the server receives it: where a person can see the map, so the agent can say so.
+pub const INSTRUCTIONS: &str = "A person can see this map as a graph in a browser. The command `metaform gui` opens the graph workspace and prints its address, which is http://127.0.0.1:4170/ unless that port is in use. When you finish an intake, or change the map for a user, tell the user that address.";
+
 impl Presence {
     /// Record an arrival and return only the parts of the sheet not yet delivered unchanged in
     /// this context (R-5.30: "goto only dumps new info IF the info changes"). The parts held back
@@ -155,6 +159,7 @@ impl ServerHandler for MapTool {
             .enable_resources_subscribe()
             .build();
         info.server_info = Implementation::new("metaform", env!("CARGO_PKG_VERSION"));
+        info.instructions = Some(INSTRUCTIONS.to_string());
         info
     }
 

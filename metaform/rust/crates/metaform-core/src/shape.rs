@@ -68,6 +68,7 @@
 //! | W5 | `direction` is `inbound`, `outbound` or `two-way`. |
 //! | W6 | A want record outside `update`'s own element has all three fields (WANT_INCOMPLETE). |
 //! | W7 | A want record at `update`'s own element has at least one field. |
+//! | W8 | `wants` at the command's own element holds at least one want record. |
 
 use serde_json::{Map as JsonMap, Value, json};
 
@@ -234,6 +235,13 @@ impl Check<'_> {
         });
         if level == Level::Beneath && !holds_records {
             return self.fields(wants, &names::join(holder, "wants"), path, Level::Beneath);
+        }
+        if wants.is_empty() {
+            // W8: an empty `wants` would be read as an element named "wants" beneath the holder.
+            return Err(refuse(
+                format!("wants at '{holder}' holds no want record"),
+                Some(replaced(self.command, path, Some(json!({"<address>": want_placeholder()})))),
+            ));
         }
         for (other, record) in wants {
             if other == ROOT {

@@ -40,31 +40,56 @@ fn the_root_has_no_technical_name() {
 }
 
 #[test]
-fn name_must_differ_from_technical_name() {
+fn name_may_equal_technical_name() {
+    // R-3.12 is not enforced: the intake procedure lets `name` be the standard term when the
+    // project has no name of its own for the element, and a refusal there made agents invent
+    // names (SPEC.md D-19).
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let update = refused(&contract, &map, json!({"update": {GAME: {"name": " Game Engine "}}}));
-    assert_eq!(update.code, Code::CanonicalNameCollisionFailure);
-    assert_eq!(
-        update.reason,
-        "'code.engine.game': name \" Game Engine \" is the same as technical_name; name is the project's own name for the element"
-    );
-    assert_eq!(
-        update.to_json()["remediation"],
-        json!({"update": {GAME: {"name": "<the project's own name for it>"}}})
-    );
-    // An element the write creates is added again with the name corrected.
-    let add = refused(
+    write(&contract, &map, json!({"update": {GAME: {"name": "game engine"}}}));
+    write(
         &contract,
         &map,
-        json!({"add": {"code.queue.dead_letter": {"technical_name": "dead letter queue", "name": "dead letter queue", "role": "Notable"}}}),
+        json!({"add": {"downstream.reader": {"technical_name": "reader", "name": "reader", "role": "Notable"}}}),
     );
-    assert_eq!(add.code, Code::CanonicalNameCollisionFailure);
+}
+
+#[test]
+fn a_deletion_leaves_no_empty_element() {
+    // A want creates the element it names (R-5.4). When the want is removed and the element was
+    // never filled in, the element and its empty branches go too.
+    let contract = Contract::bundled().unwrap();
+    let map = seeded(&contract);
+    let want = json!({"update": {GAME: {"wants": {"code.nothing.here": {"why": "a", "how": "b", "direction": "inbound"}}}}});
+    let with_stub = write(&contract, &map, want.clone());
+    assert!(with_stub.element("code.nothing.here").is_some());
+    let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
+    assert!(removed.element("code.nothing.here").is_none());
+    assert!(removed.element("code.nothing").is_none());
+    // An element that was filled in stays when the last want that names it goes.
+    let filled = write(
+        &contract,
+        &with_stub,
+        json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "Notable"}}}),
+    );
+    let kept = write(&contract, &filled, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
+    assert!(kept.element("code.nothing.here").is_some());
+}
+
+#[test]
+fn a_second_definitive_is_refused_without_touching_the_first() {
+    let contract = Contract::bundled().unwrap();
+    let map = seeded(&contract);
+    let refusal = refused(
+        &contract,
+        &map,
+        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "Definitive"}}}),
+    );
+    assert_eq!(refusal.code, Code::RoleTaxonomyFailure);
     assert_eq!(
-        add.to_json()["remediation"],
-        json!({"add": {"code.queue.dead_letter": {"technical_name": "dead letter queue", "name": "<the project's own name for it>", "role": "Notable"}}})
+        refusal.to_json()["remediation"],
+        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "<Supportive, Notable or Divergent>"}}})
     );
-    write(&contract, &map, json!({"update": {GAME: {"name": "Game core"}}}));
 }
 
 #[test]
@@ -139,4 +164,20 @@ fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
     // Where the element holds no records of the layer, an object is still an element beneath.
     let beneath = write(&contract, &map, json!({"add": {"code.pool": {"memory": {"technical_name": "memory pool", "name": "Arena", "role": "Supportive"}}}}));
     assert!(beneath.element("code.pool.memory").is_some());
+}
+
+#[test]
+fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
+    let contract = Contract::bundled().unwrap();
+    let map = seeded(&contract);
+    let empty = refused(&contract, &map, json!({"update": {GAME: {"wants": {}}}}));
+    assert_eq!(empty.code, Code::FieldMismatch);
+    assert_eq!(empty.reason, "wants at 'code.engine.game' holds no want record");
+    let text = refused(&contract, &map, json!({"update": {GAME: {"sources": "./docs/engine.md"}}}));
+    assert_eq!(text.code, Code::FieldMismatch);
+    assert_eq!(
+        text.to_json()["remediation"],
+        json!({"update": {GAME: {"sources": ["./docs/engine.md"]}}})
+    );
+    write(&contract, &map, json!({"update": {GAME: {"sources": ["./docs/engine.md"]}}}));
 }

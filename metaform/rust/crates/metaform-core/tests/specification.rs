@@ -318,7 +318,13 @@ fn the_layer_is_readable_and_listed_by_goto() {
         json!({"packing": {"name": "packing", "description": "How widgets are packed.", "uri": "skills/packing/SKILL.md"}}),
         "only the address's skills, frontmatter only: {here}"
     );
-    let instruction = sheet["instructions"]["specification"].as_str().unwrap();
+    // The sheet names where the rules are; the definition element carries them.
+    assert_eq!(
+        sheet["instructions"]["specification"],
+        json!("Before you write specification, goto layer.document.specification for its rules.")
+    );
+    let (_, definition) = run(&contract, &map, json!({"goto": "layer.document.specification"})).unwrap();
+    let instruction = definition["guidance"].as_str().unwrap();
     assert!(instruction.contains("TASTE") && instruction.contains("\"level\": 1-4"));
     // The read form the instruction teaches must be one the contract accepts.
     let taught = instruction
@@ -390,10 +396,13 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
     assert_eq!(sheet["layers"]["features"], json!({"records": 2}));
     assert_eq!(
         sheet["instructions"]["features"],
-        json!("Tag the element with each feature it belongs to.\ngoto layer.knowledge.features to see this again.")
+        json!("Before you write features, goto layer.knowledge.features for its rules.")
     );
+    let (_, definition) = run(&contract, &map, json!({"goto": "layer.knowledge.features"})).unwrap();
+    assert_eq!(definition["guidance"], json!("Tag the element with each feature it belongs to."));
+    let (_, definition) = run(&contract, &map, json!({"goto": "layer.document.specification"})).unwrap();
     assert!(
-        sheet["instructions"]["specification"]
+        definition["guidance"]
             .as_str()
             .unwrap()
             .starts_with("The specification field is a list of blocks")

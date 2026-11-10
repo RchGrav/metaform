@@ -607,7 +607,10 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     assert!(!refused, "{answer}");
 
     let (_, first) = agent.call(json!({"goto": "code.engine"}));
-    assert!(first["instructions"]["specification"].as_str().unwrap().contains("TASTE"));
+    assert_eq!(
+        first["instructions"]["specification"],
+        json!("Before you write specification, goto layer.document.specification for its rules.")
+    );
     assert_eq!(first["layers"]["specification"], json!({"records": 3}));
     let (_, second) = agent.call(json!({"goto": "code.render"}));
     assert_eq!(second["layers"]["specification"], json!({"records": 0}));
@@ -710,7 +713,7 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
 
     let (_, first) = agent.call(json!({"goto": "code.engine"}));
     let guidance = first["instructions"]["specification"].as_str().unwrap();
-    assert!(guidance.ends_with(&format!("goto {definition} to see this again.")), "{guidance}");
+    assert!(guidance.ends_with(&format!("goto {definition} for its rules.")), "{guidance}");
     assert!(first.get("unchanged").is_none(), "nothing is held back on a first arrival: {first}");
 
     let (_, again) = agent.call(json!({"goto": "code.engine"}));

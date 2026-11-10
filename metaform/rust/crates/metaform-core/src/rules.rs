@@ -11,12 +11,33 @@ use crate::specification;
 /// The four roles (R-3.13), spelled as a write must spell them.
 pub const ROLES: [&str; 4] = ["Definitive", "Supportive", "Notable", "Divergent"];
 
-/// Check one touched element: `technical_name` (R-3.11), then `name` (R-3.12), then `role`
-/// (R-3.13). `before` is the map before the write.
+/// Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the
+/// map before the write.
+///
+/// R-3.12 (`name` must not equal `technical_name`) is not checked. The intake procedure lets
+/// `name` be the standard term when the project has no name of its own for the element. Four
+/// test intakes (2026-11-09) were refused there, and each agent then invented a name, which the
+/// procedure forbids. The conflict between R-3.12 and the procedure is the owner's to settle
+/// (`SPEC.md` D-19).
 pub(crate) fn check(before: &Map, address: &str, element: &Element) -> Result<(), Refusal> {
     check_technical_name(before, address, element)?;
-    check_name(before, address, element)?;
-    check_role(before, address, element)
+    check_role(before, address, element)?;
+    check_system_layers(before, address, element)
+}
+
+/// A system layer (`skills`, `memory`, `sources`) holds a list of records (R-6.15). A value this
+/// write set that is not a list is refused, with the value as one record in the remediation.
+fn check_system_layers(before: &Map, address: &str, element: &Element) -> Result<(), Refusal> {
+    for layer in specification::SYSTEM_LAYERS {
+        let Some(value) = element.fields.get(layer) else {
+            continue;
+        };
+        let stored = before.element(address).and_then(|e| e.fields.get(layer));
+        if !value.is_array() && stored != Some(value) {
+            return Err(specification::not_a_list("update", layer, address, value));
+        }
+    }
+    Ok(())
 }
 
 /// The command that corrects one field. An element this write created is added again with the
@@ -61,23 +82,6 @@ fn check_technical_name(before: &Map, address: &str, element: &Element) -> Resul
             reversed.join(" ")
         ),
         Some(correction(before, address, element, "technical_name", &suggested)),
-    ))
-}
-
-/// `name` is the project's own name for the element, so it must not equal `technical_name`
-/// (R-3.12). The two are compared trimmed, ignoring case.
-fn check_name(before: &Map, address: &str, element: &Element) -> Result<(), Refusal> {
-    let text = |field: &str| element.fields.get(field).and_then(Value::as_str);
-    let (Some(name), Some(technical)) = (text("name"), text("technical_name")) else {
-        return Ok(());
-    };
-    if name.trim().to_lowercase() != technical.trim().to_lowercase() {
-        return Ok(());
-    }
-    Err(Refusal::new(
-        Code::CanonicalNameCollisionFailure,
-        format!("'{address}': name \"{name}\" is the same as technical_name; name is the project's own name for the element"),
-        Some(correction(before, address, element, "name", "<the project's own name for it>")),
     ))
 }
 
