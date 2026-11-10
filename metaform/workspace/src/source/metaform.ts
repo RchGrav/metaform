@@ -12,6 +12,7 @@ import type {
   SummarySheet,
   WorkspaceEvent,
   WorkspaceEvents,
+  WriteCommand,
 } from "./types";
 
 /** The host's own failure text (`{"error": "<reason>"}`), when its answer carries one. */
@@ -29,14 +30,18 @@ function projectPath(base: string, project: string): string {
   return `${base}/projects/${encodeURIComponent(project)}`;
 }
 
+/** GraphSource over the host's routes: reads through `/call`, writes through `/write`. */
 export class MetaformSource implements GraphSource {
   constructor(private readonly base = "/api") {}
 
-  /** Sends one command of the Metaform tool and returns its result unchanged. */
-  private async call(project: string, command: object): Promise<unknown> {
+  /**
+   * Sends one command of the Metaform tool to a route of the host (`call` for a read, `write`
+   * for a write) and returns its result unchanged.
+   */
+  private async call(project: string, command: object, route: "call" | "write" = "call"): Promise<unknown> {
     let response: Response;
     try {
-      response = await fetch(`${projectPath(this.base, project)}/call`, {
+      response = await fetch(`${projectPath(this.base, project)}/${route}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(command),
@@ -69,6 +74,23 @@ export class MetaformSource implements GraphSource {
 
   async goto(project: string, at: Address): Promise<SummarySheet> {
     return (await this.call(project, { goto: at })) as SummarySheet;
+  }
+
+  /**
+   * Stores one edit through the host's write route. The browser adds the page's own `Origin` to
+   * the request, and the host accepts a write only with that `Origin`.
+   */
+  async write(project: string, command: WriteCommand): Promise<void> {
+    await this.call(project, command, "write");
+  }
+
+  /** Asks the host (`GET /api/host`). A host that has no such route cannot store an edit. */
+  async canWrite(): Promise<boolean> {
+    const response = await fetch(`${this.base}/host`).catch((error: unknown) => {
+      throw new TransportError(`the host did not answer: ${String(error)}`);
+    });
+    const body: unknown = await response.json().catch(() => undefined);
+    return response.ok && typeof body === "object" && body !== null && (body as { writes?: unknown }).writes === true;
   }
 
   /** Not connected: the server has no request for an outside project's map yet (seam gap 4). */

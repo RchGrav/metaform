@@ -2,13 +2,20 @@
 //! dev/graph_workspace_seam.md, "Host routes").
 //!
 //! A separate process and an MCP client of the home's server, like `metaform call`. It serves
-//! the built web files and three routes:
+//! the built web files and five routes:
 //! - `GET /api/projects`: every project registered in the home, from the server's admin request
 //!   `projects`. The host never opens the store itself (D-10), and it opens only registered
 //!   projects, because a connection from a new folder would register it.
 //! - `POST /api/projects/<id>/call`: forwards one read command to the server and returns the
-//!   result unchanged. A refusal comes back with HTTP 200, as the refusal JSON. Writes are
-//!   refused with 403: the workspace only reads, so a web page cannot change the map here.
+//!   result unchanged. A refusal comes back with HTTP 200, as the refusal JSON. A write is
+//!   refused with 403: writes have their own route, which checks who sends them.
+//! - `POST /api/projects/<id>/write`: forwards one `add`, `update` or `delete` command to the
+//!   server and returns the tool's answer with HTTP 200: `{"status": "ok"}`, or the refusal JSON.
+//!   The request must carry an `Origin` that is `http://` and then exactly its own `Host` value,
+//!   which a browser sends only from a page this host served. A request without that `Origin`
+//!   gets 403. A host started with `--read-only` answers 403 to every write.
+//! - `GET /api/host`: `{"writes": true}`, or `{"writes": false}` for a host started with
+//!   `--read-only`, so the page knows whether it can store an edit.
 //! - `GET /api/projects/<id>/events`: Server-Sent Events; one `map-changed` event per commit.
 //!
 //! The host adds one `meta` element (`HOST_MARK`) to the page it serves. The page reads it to know
@@ -16,6 +23,7 @@
 //!
 //! Every request must name this server in `Host`, and in `Origin` when one is sent, so another
 //! web page cannot reach the map through DNS rebinding. The server binds to 127.0.0.1 only.
+//! The tests of the routes are in `tests/routes.rs`.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -23,7 +31,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::{Path, Request, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -49,6 +57,7 @@ pub struct Project {
     pub folder: PathBuf,
 }
 
+/// What a host needs to serve one home.
 #[derive(Clone)]
 pub struct Config {
     /// The home whose server the host talks to.
@@ -57,6 +66,8 @@ pub struct Config {
     pub server_exe: PathBuf,
     /// The built web files (`metaform/workspace/dist`).
     pub assets: PathBuf,
+    /// True when the host was started with `--read-only`: it then refuses every write.
+    pub read_only: bool,
 }
 
 #[derive(Clone)]
@@ -81,11 +92,42 @@ pub fn is_read(command: &Value) -> bool {
     }
 }
 
+/// Whether a command is one the write route forwards: one `add`, `update` or `delete`.
+pub fn is_write(command: &Value) -> bool {
+    let Some(object) = command.as_object() else { return false };
+    object.len() == 1 && object.keys().all(|key| matches!(key.as_str(), "add" | "update" | "delete"))
+}
+
+/// Why a request may not write, or `None` when it may. A request may write when the host is not
+/// read-only and its `Origin` is `http://` and then exactly its `Host` value. `require_host` has
+/// already checked that `Host` names this server. `localhost` and `127.0.0.1` do not match each
+/// other, because a browser treats them as two origins.
+pub fn write_refusal(read_only: bool, headers: &HeaderMap) -> Option<&'static str> {
+    if read_only {
+        return Some("this host is read-only: it was started with --read-only");
+    }
+    match header_text(headers, header::ORIGIN) {
+        None => Some("a write needs an Origin header, which a browser sends from this host's own page"),
+        Some(origin) if origin.strip_prefix("http://") != Some(header_text(headers, header::HOST).unwrap_or_default()) => {
+            Some("a write must come from this host's own page: Origin must be http:// and then the request's Host")
+        }
+        Some(_) => None,
+    }
+}
+
+/// A header's value as text, or `None` when the header is absent or is not text.
+fn header_text(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
+    headers.get(name).and_then(|v| v.to_str().ok())
+}
+
+/// The host's routes for one home. `addr` is the address the host listens on.
 pub fn router(config: Arc<Config>, addr: SocketAddr) -> Router {
     let state = AppState { config: Arc::clone(&config), addr };
     Router::new()
+        .route("/api/host", get(host))
         .route("/api/projects", get(projects))
         .route("/api/projects/{id}/call", post(forward))
+        .route("/api/projects/{id}/write", post(write))
         .route("/api/projects/{id}/events", get(events))
         .fallback(get(file))
         .layer(middleware::from_fn_with_state(state.clone(), require_host))
@@ -97,11 +139,11 @@ async fn require_host(State(state): State<AppState>, request: Request, next: Nex
     let port = state.addr.port();
     let allowed = [format!("{}", state.addr), format!("localhost:{port}"), format!("127.0.0.1:{port}")];
     let headers = request.headers();
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let host = header_text(headers, header::HOST).unwrap_or_default();
     if !allowed.iter().any(|a| a == host) {
         return (StatusCode::FORBIDDEN, "unexpected Host").into_response();
     }
-    if let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
+    if let Some(origin) = header_text(headers, header::ORIGIN)
         && !allowed.iter().any(|a| origin == format!("http://{a}"))
     {
         return (StatusCode::FORBIDDEN, "unexpected Origin").into_response();
@@ -155,11 +197,36 @@ async fn projects(State(state): State<AppState>) -> Response {
     }
 }
 
+fn forbidden(reason: &str) -> Response {
+    (StatusCode::FORBIDDEN, Json(json!({"error": reason}))).into_response()
+}
+
+async fn host(State(state): State<AppState>) -> Response {
+    Json(json!({"writes": !state.config.read_only})).into_response()
+}
+
 async fn forward(State(state): State<AppState>, Path(id): Path<String>, Json(command): Json<Value>) -> Response {
     if !is_read(&command) {
-        return (StatusCode::FORBIDDEN, Json(json!({"error": "this host forwards reads only"}))).into_response();
+        return forbidden("this route forwards reads only; a write goes to /write");
     }
-    let project = match project(&state, &id).await {
+    relay(&state, &id, command).await
+}
+
+async fn write(State(state): State<AppState>, Path(id): Path<String>, headers: HeaderMap, Json(command): Json<Value>) -> Response {
+    if let Some(reason) = write_refusal(state.config.read_only, &headers) {
+        return forbidden(reason);
+    }
+    if !is_write(&command) {
+        let reason = "this route forwards one add, update or delete command; a read goes to /call";
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": reason}))).into_response();
+    }
+    relay(&state, &id, command).await
+}
+
+/// Sends one command to the home's server for this project and returns the tool's answer
+/// unchanged. A refusal by the tool is an answer, so it also has HTTP 200.
+async fn relay(state: &AppState, id: &str, command: Value) -> Response {
+    let project = match project(state, id).await {
         Ok(p) => p,
         Err(response) => return *response,
     };
@@ -281,6 +348,35 @@ mod tests {
         assert_eq!(page, format!("<html><head><title>x</title>{HOST_MARK}</HEAD><body></body></html>"));
         let bare = String::from_utf8(mark_page(b"<p>x</p>".to_vec())).unwrap();
         assert_eq!(bare, format!("<p>x</p>{HOST_MARK}"));
+    }
+
+    #[test]
+    fn a_write_needs_the_hosts_own_origin() {
+        let headers = |host: &str, origin: Option<&str>| {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::HOST, host.parse().unwrap());
+            if let Some(origin) = origin {
+                headers.insert(header::ORIGIN, origin.parse().unwrap());
+            }
+            headers
+        };
+        let host = "127.0.0.1:4170";
+        assert_eq!(write_refusal(false, &headers(host, Some("http://127.0.0.1:4170"))), None);
+        assert!(write_refusal(true, &headers(host, Some("http://127.0.0.1:4170"))).unwrap().contains("read-only"));
+        assert!(write_refusal(false, &headers(host, None)).unwrap().contains("needs an Origin"));
+        for other in ["http://localhost:4170", "https://127.0.0.1:4170", "http://127.0.0.1:4171", "http://127.0.0.1:4170/", "null"] {
+            assert!(write_refusal(false, &headers(host, Some(other))).unwrap().contains("own page"), "{other}");
+        }
+    }
+
+    #[test]
+    fn the_write_route_takes_one_add_update_or_delete() {
+        for write in [json!({"add": {"code.x": {}}}), json!({"update": {}}), json!({"delete": {"code.x": {}}})] {
+            assert!(is_write(&write), "{write}");
+        }
+        for other in [json!({"map": {}}), json!({"code.store": {"name": "renamed"}}), json!({"add": {}, "delete": {}}), json!({}), json!([])] {
+            assert!(!is_write(&other), "{other}");
+        }
     }
 
     #[test]

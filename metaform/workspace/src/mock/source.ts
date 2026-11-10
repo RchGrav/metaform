@@ -14,6 +14,7 @@ import type {
   Want,
   WorkspaceEvent,
   WorkspaceEvents,
+  WriteCommand,
 } from "../source/types";
 import { RefusalError } from "../source/errors";
 import type { MockEvent, MockWorkspace, Tree } from "./workspace";
@@ -76,17 +77,91 @@ function baseFields(element: Element): ElementFields {
   ) as ElementFields;
 }
 
-function notFound(command: object, address: Address): RefusalError {
-  return new RefusalError({
-    ...command,
-    status: "error",
-    code: "NOT_FOUND",
-    message: `'${address}' does not exist`,
-    remediation: { map: {} },
-  });
+/** A refusal in the server's structure: the command, then status, code, message, remediation. */
+function refusal(command: object, code: string, message: string, remediation: unknown): RefusalError {
+  return new RefusalError({ ...command, status: "error", code, message, remediation });
 }
 
-/** One project's elements, rebuilt from its dump after every simulated write. */
+function notFound(command: object, address: Address): RefusalError {
+  return refusal(command, "NOT_FOUND", `'${address}' does not exist`, { map: {} });
+}
+
+/** The element's node in the tree. With `create`, missing branches are made (R-5.4). */
+function nodeAt(tree: Tree, address: Address, create: boolean): Tree | undefined {
+  let node = tree;
+  for (const segment of address.split(".")) {
+    if (!isObject(node[segment])) {
+      if (!create) return undefined;
+      node[segment] = {};
+    }
+    node = node[segment] as Tree;
+  }
+  return node;
+}
+
+/**
+ * Applies one write command to `tree`, by a short form of the server's rules (commands.rs `add`,
+ * `update`, `delete`): `null` removes a field, `add` makes a list longer, a want needs why, how
+ * and direction, and an element that another element wants, or that has elements beneath it,
+ * cannot be deleted. It throws the refusal. The server's other checks are not simulated.
+ */
+function applyWrite(tree: Tree, command: WriteCommand): void {
+  const [verb, body] = Object.entries(command)[0] ?? [];
+  const [address, supplied] = Object.entries(isObject(body) ? body : {})[0] ?? [];
+  if (!["add", "update", "delete"].includes(verb ?? "") || address === undefined || !isObject(supplied)) {
+    throw refusal(command, "FIELD_MISMATCH", "a write is one add, update or delete with one address", null);
+  }
+  if (verb === "delete") {
+    const node = nodeAt(tree, address, false);
+    if (!node) return;
+    if (Array.isArray(supplied["wants"])) {
+      const wants = isObject(node["wants"]) ? node["wants"] : {};
+      for (const other of supplied["wants"]) delete wants[String(other)];
+      if (Object.keys(wants).length === 0) delete node["wants"];
+      return;
+    }
+    const elements = flatten(tree);
+    const holder = [...elements.keys()].sort(byAddress).find((a) => a !== address && address in elements.get(a)!.wants);
+    if (holder !== undefined) {
+      const message = `cannot delete '${address}': '${holder}' still wants it. Remove that want first.`;
+      throw refusal(command, "DEPENDENCY_LOCK", message, { delete: { [holder]: { wants: [address] } } });
+    }
+    const beneath = [...elements.keys()].filter((a) => a.startsWith(`${address}.`)).sort(byAddress).at(-1);
+    if (beneath !== undefined) {
+      const message = `cannot delete, '${address}', has elements beneath it`;
+      throw refusal(command, "ELEMENTS_BENEATH", message, { delete: { [beneath]: {} } });
+    }
+    const parent = address.includes(".") ? nodeAt(tree, address.slice(0, address.lastIndexOf(".")), false) : tree;
+    delete parent?.[address.slice(address.lastIndexOf(".") + 1)];
+    return;
+  }
+  const writeFields = (at: Address, fields: Record<string, unknown>): void => {
+    const node = nodeAt(tree, at, true)!;
+    for (const [key, value] of Object.entries(fields)) {
+      const current = node[key];
+      if (key === "wants" && isObject(value)) {
+        const wants = (isObject(current) ? current : (node[key] = {})) as Record<Address, Want>;
+        for (const [other, change] of Object.entries(value)) {
+          const record: Want = { ...wants[other], ...(isObject(change) ? change : {}) };
+          const missing = ["why", "how", "direction"].filter((k) => typeof record[k] !== "string" || record[k].trim() === "");
+          if (missing.length > 0) {
+            const complete = { ...record, ...Object.fromEntries(missing.map((k) => [k, `<${k}>`])) };
+            const message = `'${at}' wants '${other}': the want has no ${missing.join(", ")}`;
+            throw refusal(command, "WANT_INCOMPLETE", message, { update: { [at]: { wants: { [other]: complete } } } });
+          }
+          nodeAt(tree, other, true);
+          wants[other] = record;
+        }
+      } else if (value === null) delete node[key];
+      else if (isObject(value)) writeFields(`${at}.${key}`, value);
+      else if (verb === "add" && Array.isArray(current) && Array.isArray(value)) node[key] = [...current, ...value];
+      else node[key] = value;
+    }
+  };
+  writeFields(address, supplied);
+}
+
+/** One project's elements, rebuilt from its dump after every write. */
 class ProjectMap {
   readonly elements: Map<Address, Element>;
   readonly sorted: Address[];
@@ -149,6 +224,7 @@ function prune(tree: Tree, prefix: Address, shown: ReadonlySet<Address>): Tree {
   return out;
 }
 
+/** How a MockSource starts and how it schedules its simulated updates. */
 export interface MockOptions {
   /** Plays the simulated updates. Off for tests that need a fixed map. */
   playEvents?: boolean;
@@ -158,6 +234,7 @@ export interface MockOptions {
   schedule?: (run: () => void, ms: number) => Timer;
 }
 
+/** The simulated source: reads, writes and events over sample data held in memory. */
 export class MockSource implements GraphSource, WorkspaceEvents {
   /** Shown by the views wherever this source supplies data. */
   readonly simulated = true;
@@ -255,6 +332,26 @@ export class MockSource implements GraphSource, WorkspaceEvents {
     const every = Math.max(1, Math.floor(INTAKE_MS / Math.max(1, order.length)));
     order.forEach((_, i) => this.timers.push(schedule(() => step(i + 1), every * (i + 1))));
     return { ...sample };
+  }
+
+  /** The mock stores every edit in memory. */
+  async canWrite(): Promise<boolean> {
+    return true;
+  }
+
+  /**
+   * Applies one write command to the project's map in memory and announces it as map-changed.
+   * A refused command changes nothing. SIMULATED: only the rules in `applyWrite` are checked.
+   */
+  async write(project: string, command: WriteCommand): Promise<void> {
+    const map = this.project(project);
+    const next = structuredClone(map.tree);
+    applyWrite(next, command);
+    // The tree keeps its identity, because the simulated updates (`apply`) write to the same one.
+    for (const key of Object.keys(map.tree)) delete map.tree[key];
+    Object.assign(map.tree, next);
+    this.maps.set(project, new ProjectMap(map.tree));
+    this.emit({ kind: "map-changed", project, simulated: true });
   }
 
   /** {".": {}} (reads.rs `raw`): the stored nested tree, keyed by ".". */

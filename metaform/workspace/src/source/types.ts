@@ -77,6 +77,17 @@ export interface Refusal {
   [echoed: string]: unknown;
 }
 
+/**
+ * One write command of the Metaform tool, exactly as the tool takes it: one `add`, `update` or
+ * `delete` with one address. Examples: `{"update": {"code.x": {"status": "un_built"}}}`,
+ * `{"delete": {"code.x": {"wants": ["code.y"]}}}`.
+ */
+export type WriteCommand =
+  | { add: Record<Address, Record<string, unknown>> }
+  | { update: Record<Address, Record<string, unknown>> }
+  | { delete: Record<Address, { wants?: Address[] }> };
+
+/** The reads and writes the page performs on a project's map. */
 export interface GraphSource {
   projects(): Promise<ProjectRef[]>;
   map(project: string): Promise<ShallowGraph>;
@@ -89,6 +100,14 @@ export interface GraphSource {
    * reads above. Optional until the server's request is decided.
    */
   outsideMap?(project: string, at: Address): Promise<ProjectRef | null>;
+  /**
+   * Stores one edit in the project's map. It resolves when the server stored the command, and
+   * throws RefusalError, with the server's reason and remediation, when the server refused it.
+   * The stored change is then announced as `map-changed`, like any other change.
+   */
+  write(project: string, command: WriteCommand): Promise<void>;
+  /** Whether this source can store an edit. False for a host started with `--read-only`. */
+  canWrite(): Promise<boolean>;
 }
 
 /** `map-changed` carries no diff: the view refetches `map` and `dump` (seam rule 1). */

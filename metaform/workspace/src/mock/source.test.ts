@@ -201,3 +201,90 @@ describe("MockSource simulated updates", () => {
     vi.useRealTimers();
   });
 });
+
+describe("MockSource writes", () => {
+  const want = { why: "Keep the records.", how: "Stores each record.", direction: "outbound" };
+
+  it("stores an edit", async () => {
+    expect(await fixed().canWrite()).toBe(true);
+  });
+
+  it("updates a field, removes one with null, and announces the change", async () => {
+    const source = fixed();
+    const events: WorkspaceEvent[] = [];
+    source.subscribe("metaform", (e) => events.push(e));
+    const before = events.length;
+    await source.write("metaform", { update: { "code.server.tool": { status: "un_built", name: "Tool" } } });
+    const sheet = await source.goto("metaform", "code.server.tool");
+    expect(sheet.element.status).toBe("un_built");
+    expect(sheet.element.name).toBe("Tool");
+    expect(sheet.layers).toEqual({ specification: { records: 1 } });
+    expect(events.slice(before)).toEqual([{ kind: "map-changed", project: "metaform", simulated: true }]);
+    await source.write("metaform", { update: { "code.server.tool": { status: null } } });
+    expect((await source.goto("metaform", "code.server.tool")).element.status).toBeUndefined();
+  });
+
+  it("adds an element with a want, and creates the element the want names", async () => {
+    const source = fixed();
+    await source.write("metaform", {
+      add: { "code.example.new": { technical_name: "new example", name: "Example", role: "Supportive", wants: { "code.example.other": want } } },
+    });
+    const graph = await source.map("metaform");
+    expect(graph.addresses).toEqual(expect.arrayContaining(["code.example", "code.example.new", "code.example.other"]));
+    expect(graph.edges).toContainEqual(["code.example.new", "code.example.other"]);
+    expect((await source.goto("metaform", "code.example.other")).wanted_by).toEqual({ "code.example.new": want });
+  });
+
+  it("changes one field of a want and keeps the others", async () => {
+    const source = fixed();
+    const [holder, wanted] = (await source.map("metaform")).edges[0]!;
+    const before = (await source.goto("metaform", holder)).wants[wanted]!;
+    await source.write("metaform", { update: { [holder]: { wants: { [wanted]: { why: "A new reason." } } } } });
+    expect((await source.goto("metaform", holder)).wants[wanted]).toEqual({ ...before, why: "A new reason." });
+  });
+
+  it("refuses a want with a missing field, in the refusal structure, and changes nothing", async () => {
+    const source = fixed();
+    const before = await source.dump("metaform");
+    const command = { update: { "code.server.tool": { wants: { "code.nowhere.yet": { why: "A reason." } } } } };
+    const error = await source.write("metaform", command).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RefusalError);
+    const refusal = (error as RefusalError).refusal;
+    expect(refusal.code).toBe("WANT_INCOMPLETE");
+    expect(refusal.message).toBe("'code.server.tool' wants 'code.nowhere.yet': the want has no how, direction");
+    expect(refusal.remediation).toEqual({
+      update: { "code.server.tool": { wants: { "code.nowhere.yet": { why: "A reason.", how: "<how>", direction: "<direction>" } } } },
+    });
+    expect(Object.keys(refusal).slice(0, 2)).toEqual(["update", "status"]);
+    expect(await source.dump("metaform")).toEqual(before);
+  });
+
+  it("deletes a want, and then the element nothing wants", async () => {
+    const source = fixed();
+    await source.write("metaform", { add: { "code.example.new": { name: "Example", wants: { "code.example.other": want } } } });
+    const locked = await source.write("metaform", { delete: { "code.example.other": {} } }).catch((e: unknown) => e);
+    expect((locked as RefusalError).refusal.code).toBe("DEPENDENCY_LOCK");
+    expect((locked as RefusalError).refusal.remediation).toEqual({ delete: { "code.example.new": { wants: ["code.example.other"] } } });
+    await source.write("metaform", { delete: { "code.example.new": { wants: ["code.example.other"] } } });
+    expect((await source.goto("metaform", "code.example.new")).wants).toEqual({});
+    await source.write("metaform", { delete: { "code.example.other": {} } });
+    expect((await source.map("metaform")).addresses).not.toContain("code.example.other");
+    const beneath = await source.write("metaform", { delete: { "code.example": {} } }).catch((e: unknown) => e);
+    expect((beneath as RefusalError).refusal.code).toBe("ELEMENTS_BENEATH");
+  });
+
+  it("keeps an edit when a simulated update follows it", async () => {
+    const source = fixed();
+    await source.write("metaform", { update: { "code.store.memory": { status: "un_built" } } });
+    source.apply(workspace.events[0]!);
+    const sheet = await source.goto("metaform", "code.store.memory");
+    expect(sheet.element.status).toBe("un_built");
+    expect(sheet.layers["specification"]).toEqual({ records: 2 });
+  });
+
+  it("never changes the imported workspace data", async () => {
+    const before = JSON.stringify(workspace);
+    await fixed().write("metaform", { update: { "code.server.tool": { status: "un_built" } } });
+    expect(JSON.stringify(workspace)).toBe(before);
+  });
+});

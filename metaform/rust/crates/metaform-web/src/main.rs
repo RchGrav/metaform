@@ -1,9 +1,10 @@
-//! `metaform-web [--home DIR] [--assets DIR] [--port N]`
+//! `metaform-web [--home DIR] [--assets DIR] [--port N] [--read-only]`
 //!
 //! Serves the graph workspace on http://127.0.0.1:<port>/ for every project registered in the
 //! home. A project is registered when an agent first connects from its folder.
 //! Without `--port` the port is 4170, or any free port when 4170 is in use. The host prints the
-//! address it serves. Users start this binary with `metaform gui` (owner decision, 2026-11-09).
+//! address it serves. With `--read-only` the host refuses every write to a map; without it, the
+//! page the host serves can store an edit. Users start this binary with `metaform gui` (owner decision, 2026-11-09).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,7 +13,7 @@ use metaform_web::{Config, DEFAULT_PORT, listen, serve};
 
 fn usage(problem: &str) -> ExitCode {
     eprintln!("metaform-web: {problem}");
-    eprintln!("usage: metaform-web [--home DIR] [--assets DIR] [--port N]");
+    eprintln!("usage: metaform-web [--home DIR] [--assets DIR] [--port N] [--read-only]");
     ExitCode::from(2)
 }
 
@@ -22,6 +23,7 @@ async fn main() -> ExitCode {
     let mut home = metaform_server::default_home();
     let mut assets: Option<PathBuf> = None;
     let mut port: Option<u16> = None;
+    let mut read_only = false;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--home") => match args.next() { Some(v) => home = v.into(), None => return usage("--home needs a folder") },
@@ -30,6 +32,7 @@ async fn main() -> ExitCode {
                 Some(p) => port = Some(p),
                 None => return usage("--port needs a number"),
             },
+            Some("--read-only") => read_only = true,
             _ => return usage(&format!("unexpected argument {}", PathBuf::from(&arg).display())),
         }
     }
@@ -58,7 +61,7 @@ async fn main() -> ExitCode {
     if let Ok(addr) = listener.local_addr() {
         println!("Graph workspace: http://{addr}/");
     }
-    let config = Config { home, server_exe, assets };
+    let config = Config { home, server_exe, assets, read_only };
     match serve(config, listener).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

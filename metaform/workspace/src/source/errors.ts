@@ -1,5 +1,6 @@
 import type { Refusal } from "./types";
 
+/** Whether a value is a refusal as the server sends it: `status` "error" and a `code`. */
 export function isRefusal(value: unknown): value is Refusal {
   return (
     typeof value === "object" &&
@@ -9,7 +10,7 @@ export function isRefusal(value: unknown): value is Refusal {
   );
 }
 
-/** Thrown by a GraphSource when the server refuses a read. It keeps the refusal unchanged. */
+/** Thrown by a GraphSource when the server refuses a read or a write. It keeps the refusal unchanged. */
 export class RefusalError extends Error {
   readonly refusal: Refusal;
   constructor(refusal: Refusal) {
