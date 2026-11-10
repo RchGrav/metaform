@@ -19,6 +19,8 @@ mod model;
 mod names;
 mod reads;
 mod refusal;
+mod rules;
+mod shape;
 pub mod check;
 pub mod markdown;
 pub mod specification;

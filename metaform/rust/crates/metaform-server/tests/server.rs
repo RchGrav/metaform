@@ -543,7 +543,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     let mut agent = Agent::start(&home, &project);
     agent.request("server/discover", json!({}));
     let (refused, said) = agent.call(json!({"add": {"code": {
-        "technical_name": "code", "name": "Packet Lab", "role": "DE",
+        "technical_name": "code", "name": "Packet Lab", "role": "Definitive",
         "specification": [
             {"text": "Packet Lab records frames from the network card."},
             {"level": 1, "title": "Scope", "text": "It MUST record every frame."}
@@ -560,7 +560,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     assert_eq!(code, 0, "{document}");
     assert_eq!(
         document,
-        "# lab\n\n## Packet Lab (`code`)\n\nRole: DE. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
+        "# lab\n\n## Packet Lab (`code`)\n\nRole: Definitive. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
     );
     let (code, checked, reports) = run(&["specification", "export", "--check", "--project", folder]);
     assert_eq!((code, checked), (0, document), "--check leaves stdout as the document");

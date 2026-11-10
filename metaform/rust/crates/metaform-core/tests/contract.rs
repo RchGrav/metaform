@@ -175,9 +175,9 @@ fn refusals_name_the_rule_and_change_nothing() {
         |direction: &str| json!({"why": "Relay it.", "how": "Supplies data.", "direction": direction});
     let table = [
         (
-            json!({"add": {"Code.relay": {"role": "SE"}}}),
+            json!({"add": {"Code.relay": {"role": "Supportive"}}}),
             Code::NameRoundTripFailure,
-            Some(json!({"add": {"code.relay": {"role": "SE"}}})),
+            Some(json!({"add": {"code.relay": {"role": "Supportive"}}})),
         ),
         (
             json!({"update": {"code.queue_2": {"name": "q"}}}),
@@ -233,7 +233,7 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"map": {}})),
         ),
         (
-            json!({"add": {"code.relay": {"role": "DE"}}}),
+            json!({"add": {"code.relay": {"role": "Definitive"}}}),
             Code::RoleTaxonomyFailure,
             Some(json!({"update": {"code.protocol.network.tracker.cs": {"role": null}}})),
         ),
@@ -353,7 +353,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"role": "DE"}}}),
+        json!({"update": {"code.new.part": {"role": "Definitive"}}}),
     );
     assert_eq!(
         read(&contract, &map, json!({"map": {}}))["definitive"],
@@ -367,7 +367,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(&contract, &map, remediation);
     assert_eq!(
         read(&contract, &map, json!({"orphaned": {}})),
-        json!({"code.new.part": {"name": "renamed", "role": "DE"}})
+        json!({"code.new.part": {"name": "renamed", "role": "Definitive"}})
     );
     map = write(&contract, &map, json!({"delete": {"code.other.part": {}}}));
     assert!(

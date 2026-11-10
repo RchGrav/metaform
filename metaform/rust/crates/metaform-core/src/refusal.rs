@@ -70,7 +70,9 @@ impl Code {
                 "R-3.11: technical_name is the same number of leading words of the reversed, space-separated address."
             }
             Code::CanonicalNameCollisionFailure => "R-3.12: name must not equal technical_name.",
-            Code::RoleTaxonomyFailure => "R-3.13: a map has exactly one Definitive element.",
+            Code::RoleTaxonomyFailure => {
+                "R-3.13: a role is Definitive, Supportive, Notable or Divergent, and a map has exactly one Definitive element."
+            }
             Code::GrammarConstraintViolation => {
                 "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
             }

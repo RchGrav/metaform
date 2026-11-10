@@ -417,7 +417,7 @@ fn a_batch_is_stored_whole_or_not_at_all() {
     let map = project(&store, dir.path());
     store.execute(B, &map, &json!({".": {}})).unwrap(); // seeds the definition first
     let announced = store.subscribe(&map);
-    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Pipeline", "role": "Definitive"}}});
+    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Frame mover", "role": "Definitive"}}});
     let blocks = |code: &str| {
         json!({"update": {"code.pipeline": {"specification": [{"level": 1, "code": code, "title": "Purpose", "text": "Moves frames."}]}}})
     };

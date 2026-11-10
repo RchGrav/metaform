@@ -620,23 +620,33 @@ fn split_headings(blocks: &[Block]) -> Vec<Block> {
     clamp_levels(&out)
 }
 
+/// The refusal for a layer value that is not a list. The remediation is the same write with the
+/// value as the one record of a list.
+pub(crate) fn not_a_list(verb: &str, layer: &str, address: &str, value: &Value) -> Refusal {
+    Refusal::new(
+        Code::FieldMismatch,
+        format!("'{address}': {layer}: a layer's value must be a list of records"),
+        Some(json!({verb: {address: {layer: [value]}}})),
+    )
+}
+
 /// The records of any defined layer: the value must be a list (R-6.24).
 pub fn records<'v>(layer: &str, address: &str, value: &'v Value) -> Result<&'v [Value], Refusal> {
-    value.as_array().map(Vec::as_slice).ok_or_else(|| {
-        Refusal::new(
-            Code::FieldMismatch,
-            format!("'{address}': {layer}: a layer's value must be a list of records"),
-            Some(json!({"update": {address: {layer: [value]}}})),
-        )
-    })
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| not_a_list("update", layer, address, value))
 }
 
 /// Refuse records of any layer at an address where records are not allowed (R-6.26). `map` is
 /// the map after the write.
 pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusal> {
     if !records_allowed(map, address) {
+        // No command lets a layer definition hold records, so that refusal has no remediation.
         let remediation = if address == ROOT {
-            json!({"update": {"<definitive address>": {"role": "Definitive"}}})
+            Some(json!({"update": {"<definitive address>": {"role": "Definitive"}}}))
+        } else if in_layer_scope(address) {
+            None
         } else {
             let element = map.element(address);
             let mut fix = JsonMap::new();
@@ -649,7 +659,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
                     fix.insert(key.into(), json!(format!("<{key}>")));
                 }
             }
-            json!({"update": {address: fix}})
+            Some(json!({"update": {address: fix}}))
         };
         let reason = if address == ROOT {
             format!("'.': {layer} records at the root need a Definitive element in the map first")
@@ -663,7 +673,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
         return Err(Refusal::new(
             Code::ElementNotInSkeleton,
             reason,
-            Some(remediation),
+            remediation,
         ));
     }
     Ok(())

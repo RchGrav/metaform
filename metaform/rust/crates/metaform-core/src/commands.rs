@@ -14,7 +14,7 @@ use crate::model::{Effect, Element, Map, flatten, is_want_updates};
 use crate::names::{self, ROOT};
 use crate::reads::{self, is_project_definitive};
 use crate::refusal::{Code, Refusal};
-use crate::specification;
+use crate::{rules, shape, specification};
 
 /// What an accepted command produced.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,9 +42,10 @@ impl Outcome {
     }
 }
 
-/// Perform one command on a map. The command is checked against the contract, then its names
-/// (R-4.11), then applied to a copy of the map.
+/// Perform one command on a map. The command's shape is checked by hand (`shape`), then against
+/// the contract as a backstop, then its names (R-4.11). Then it is applied to a copy of the map.
 pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcome, Refusal> {
+    shape::check(command)?;
     contract.check_input(command)?;
     names::check_command(command)?;
     let (verb, body) = only(command);
@@ -57,6 +58,9 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
         }
         "add" | "update" | "delete" => {
             let (selector, supplied) = only(body);
+            if let (true, Value::Object(fields)) = (verb != "delete", supplied) {
+                rules::check_layer_values(map, verb, selector, fields)?;
+            }
             let mut work = Work {
                 contract,
                 before: map,
@@ -305,7 +309,7 @@ impl Work<'_> {
                 continue;
             };
             self.check_layers_defined(address, element, &defined)?;
-            self.check_name_length(address, element)?;
+            rules::check(self.before, address, element)?;
             self.check_collisions(address, element)?;
             self.contract.check_element(address, &element.view())?;
         }
@@ -430,51 +434,6 @@ impl Work<'_> {
                     "'{name}' at '{address}' is not a layer. A list can be written only to a layer defined beneath the layer root, such as layer.document.specification, or to skills, memory or sources."
                 ),
                 Some(json!({"map": {}})),
-            ));
-        }
-        Ok(())
-    }
-
-    /// `technical_name` is the same number of leading words of the reversed, space-separated
-    /// address (documentation set 3.1, 6.1).
-    fn check_name_length(&self, address: &str, element: &Element) -> Result<(), Refusal> {
-        let Some(technical) = element.fields.get("technical_name").and_then(Value::as_str) else {
-            return Ok(());
-        };
-        let reversed: Vec<String> = if address == ROOT {
-            Vec::new()
-        } else {
-            address
-                .split('.')
-                .rev()
-                .flat_map(|segment| segment.split('_').map(str::to_string).collect::<Vec<_>>())
-                .collect()
-        };
-        let words: Vec<&str> = technical.split_whitespace().collect();
-        if words.is_empty()
-            || words.len() > reversed.len()
-            || words.iter().zip(&reversed).any(|(w, r)| *w != r)
-        {
-            // The suggestion is the reversed address without its root scope words: `code.cache.response`
-            // gives "response cache". An element this write created is added again with the name
-            // corrected, because the refused write stored nothing; an existing one is updated.
-            let root_words = address.split('.').next().map_or(0, |root| root.split('_').count());
-            let keep = reversed.len().saturating_sub(root_words).max(1);
-            let suggested = reversed[..keep.min(reversed.len())].join(" ");
-            let remediation = if self.before.element(address).is_some() {
-                json!({"update": {address: {"technical_name": suggested}}})
-            } else {
-                let mut view = element.view();
-                view["technical_name"] = Value::String(suggested);
-                json!({"add": {address: view}})
-            };
-            return Err(Refusal::new(
-                Code::TechnicalNameAlignmentFailure,
-                format!(
-                    "'{address}': technical_name \"{technical}\" is not the leading words of \"{}\"",
-                    reversed.join(" ")
-                ),
-                Some(remediation),
             ));
         }
         Ok(())
