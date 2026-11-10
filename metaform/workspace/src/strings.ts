@@ -269,3 +269,58 @@ export const legend = {
   arrowCount: "Number on an arrow: several wants drawn as one line",
   band: "Dashed line: the project boundary, with upstream on the left and downstream on the right",
 } as const;
+
+/**
+ * The panel system (dev/gui_specification.md, phase 2): the zones around the graph, the panels
+ * they hold, and the Panels menu in the top bar.
+ */
+export const panels = {
+  // The one menu in the top bar that lists every panel with its state.
+  menu: "Panels",
+  title: {
+    entity: "Entity",
+    legend: "Legend",
+    activity: "Activity",
+    outline: "Outline",
+    markdown: "Markdown",
+    evidence: "Evidence",
+    findings: "Findings",
+    review: "Review",
+  },
+  zone: { left: "left zone", right: "right zone", bottom: "bottom zone" },
+  // In a narrow window every open panel is in one zone under the graph.
+  narrowZone: "zone under the graph",
+  // The state of a panel, shown beside its title in the Panels menu.
+  floating: "floating",
+  closed: "closed",
+  // The tabs of one zone, and the actions on the panel a zone or a floating frame shows.
+  tabs: (zone: string) => `Panels in the ${zone}`,
+  actions: (title: string) => `Actions for the ${title} panel`,
+  close: (title: string) => `Close the ${title} panel`,
+  moveTo: (zone: string) => `Move to the ${zone}`,
+  float: "Float over the graph",
+  dock: (zone: string) => `Dock in the ${zone}`,
+  // Dividers and floating panels can be dragged, or adjusted from the keyboard.
+  resizeZone: (zone: string) => `Resize the ${zone}. Drag, or press the arrow keys.`,
+  moveFloating: (title: string) => `Move the ${title} panel. Drag, or press the arrow keys.`,
+  resizeFloating: (title: string) => `Resize the ${title} panel. Drag, or press the arrow keys.`,
+  restore: "Restore the default layout",
+  workspaceText: "Workspace text size",
+  panelText: "Panel text size",
+  smaller: (what: string) => `${what}: smaller`,
+  larger: (what: string) => `${what}: larger`,
+  pixels: (n: number) => `${n} px`,
+  // Shown in the Entity panel while no element is selected.
+  noProject: "No project is open.",
+  noSelection: "Select an element in the graph to see its folder here.",
+  // Shown in the Activity panel while its list is empty.
+  noActivity: "No activity yet. Changes to the map appear here.",
+  // The body of a panel that is registered and not built yet.
+  notBuilt: {
+    outline: "This panel will show the specification as an outline of its elements. It is not built yet.",
+    markdown: "This panel will show the specification as Markdown, ready to copy or download. It is not built yet.",
+    evidence: "This panel will show the source references for the selected element. It is not built yet.",
+    findings: "This panel will show findings about the repository and its specification. It is not built yet.",
+    review: "This panel will show the proposals you accepted and the proposals you rejected. It is not built yet.",
+  },
+} as const;

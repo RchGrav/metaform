@@ -1,6 +1,9 @@
-// The graph workspace (dev/user_agent_interfaces.md; interaction: dev/user_agent_interfaces-ux.md).
+// The graph workspace (dev/gui_specification.md; dev/user_agent_interfaces.md; interaction:
+// dev/user_agent_interfaces-ux.md). The page is the top bar, the graph with the panels around it
+// (src/panels), and the bottom strip.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fromDump } from "./spec/model";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { GraphRenderer, Viewport } from "./graph/renderer";
 import { CAMERA_MS, MAX_ZOOM, MIN_ZOOM } from "./graph/renderer";
 import type { Address, GraphSource, ProjectRef, SummarySheet, WorkspaceEvents } from "./source";
@@ -9,7 +12,8 @@ import { elementScene, functionalScene, type SceneInput } from "./state/scene";
 import { TOP, bandOf, beneathCounts, graphAddresses, outsideAddress, startBudget, startExpansion, visibleIn } from "./state/structure";
 import { currentView, type Action } from "./state/view";
 import { Canvas } from "./views/Canvas";
-import { BottomStrip, Details, FocusBanner, KeyboardHelp, Legend, NoticeBar, Rail, TopBar, platform } from "./views/Chrome";
+import { Dock, PANELS, PanelsMenu, bodyOf, placeOf, useLayout, useNarrow, type PanelBodyProps } from "./panels";
+import { BottomStrip, FocusBanner, KeyboardHelp, NoticeBar, Rail, TopBar, platform } from "./views/Chrome";
 import { Onboarding } from "./views/Onboarding";
 import { ACTIVE_MS, useWorkspace } from "./views/useWorkspace";
 import { connected, isArrow, nearestInDirection, nodeCentres } from "./views/navigate";
@@ -32,6 +36,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 }
 
+/** The page: it joins the workspace state, the graph, the panels and the chrome. */
 export function App({ source, events, renderer, simulated, startCommand }: AppProps) {
   const ws = useWorkspace(source, events, simulated);
   const { state, dispatch, current } = ws;
@@ -40,24 +45,9 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [showGuide, setShowGuide] = useState(false);
   const [showKeys, setShowKeys] = useState(false);
-  // The legend opens by default until the viewer closes it once (a per-browser convenience).
-  const [legendOpen, setLegendOpen] = useState(() => {
-    try {
-      return localStorage.getItem("mf-legend-closed") !== "1";
-    } catch {
-      return true;
-    }
-  });
-  const toggleLegend = useCallback(() => {
-    setLegendOpen((open) => {
-      try {
-        localStorage.setItem("mf-legend-closed", open ? "1" : "0");
-      } catch {
-        // Storage can be unavailable; the toggle still works for this page.
-      }
-      return !open;
-    });
-  }, []);
+  // Which panels are open and where, the zone sizes and the two text sizes (saved in this browser).
+  const { layout, actions: panelActions } = useLayout(PANELS);
+  const narrow = useNarrow();
   const [sheet, setSheet] = useState<SummarySheet | null>(null);
   const [zoom, setZoom] = useState(1);
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
@@ -380,8 +370,6 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
     if (view.selection) renderer.focusNode(view.selection);
   }, [renderer, view.selection]);
 
-
-
   const layerTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const perLayer of current?.layerCounts.values() ?? []) {
@@ -396,16 +384,88 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const visibleCount = current ? visibleIn(addresses, view.container, new Set(view.expanded)).size : 0;
 
+  // What the page hands the body of every panel (src/panels/registry.tsx).
+  const selection = view.selection;
+  const select = useCallback((address: Address | null) => dispatch({ type: "select", address }), [dispatch]);
+  // The one specification every view reads (ARCHITECTURE.md section 1), built from the server's dump.
+  const spec = useMemo(
+    () => (current && state.project !== null ? fromDump(projects.find((p) => p.id === state.project)?.name ?? state.project, current.dump) : null),
+    [current, state.project, projects],
+  );
+  const panelBody: PanelBodyProps = {
+    spec,
+    project: state.project,
+    selection,
+    simulated,
+    select,
+    entity:
+      selection === null
+        ? null
+        : {
+            address: selection,
+            sheet,
+            records,
+            nameOf,
+            beneath: addresses.filter((a) => a.startsWith(`${selection}.`) && !a.slice(selection.length + 1).includes(".")),
+            opensProject: linkedProject(selection) !== null,
+            onClose: () => select(null),
+            onFocus: () => dispatch({ type: "set-focus", address: selection }),
+            onOpenProject: () => openLinked(selection),
+            ...(outsideMap
+              ? {
+                  onOpenMap: () => {
+                    ws.addOutside(outsideMap);
+                    dispatch({ type: "open-project", project: outsideMap.id, from: "link", at: outsideAddress(selection) });
+                  },
+                }
+              : {}),
+            onSelect: select,
+          },
+    activity: {
+      activity: ws.activity,
+      projectName,
+      onSelect: (project, address) => {
+        if (project !== state.project) dispatch({ type: "open-project", project });
+        dispatch({ type: "select", address });
+      },
+      onSeen: ws.markActivitySeen,
+    },
+  };
+  const renderPanel = (id: string) => {
+    const Body = bodyOf(id);
+    return Body ? <Body {...panelBody} /> : null;
+  };
+
   return (
-    <div className={`workspace theme-${theme}${present ? " present" : ""}`} data-mode={state.mode}>
+    <div
+      className={`workspace theme-${theme}${present ? " present" : ""}`}
+      data-mode={state.mode}
+      style={{ "--text-workspace": `${layout.text.workspace}px`, "--text-panels": `${layout.text.panels}px` } as CSSProperties}
+    >
       {!present && (
-        <TopBar state={state} projects={projects} container={view.container} zoom={zoom} dispatch={dispatch} />
+        <TopBar
+          state={state}
+          projects={projects}
+          container={view.container}
+          zoom={zoom}
+          menu={<PanelsMenu layout={layout} actions={panelActions} panels={PANELS} narrow={narrow} />}
+          dispatch={dispatch}
+        />
       )}
       {state.notice && <NoticeBar notice={state.notice} onDismiss={() => dispatch({ type: "dismiss-notice" })} />}
       {view.focus !== null && state.mode === "graph" && (
         <FocusBanner address={view.focus} onClear={() => dispatch({ type: "clear-focus" })} />
       )}
-      <main className="body">
+      {/* The panels show beside the graph, except in Present and before the home has a project. */}
+      <Dock
+        layout={layout}
+        actions={panelActions}
+        panels={PANELS}
+        renderBody={renderPanel}
+        narrow={narrow}
+        shown={!present && !firstRun}
+        graphShown={!showKeys && !showGuide}
+      >
         {!present && (
           <Rail
             open={railOpen}
@@ -478,53 +538,20 @@ export function App({ source, events, renderer, simulated, startCommand }: AppPr
         {!state.gestureHintDone && view.selection !== null && !present && (
           <p className="gesture-hint" role="note">{strings.hints.openOrGoUp(platform)}</p>
         )}
-        {!present && (view.selection !== null || (legendOpen && !firstRun)) && (
-          <div className="side">
-        {view.selection !== null && (
-          <Details
-            address={view.selection}
-            sheet={sheet}
-            records={records}
-            nameOf={nameOf}
-            beneath={addresses.filter((a) => a.startsWith(`${view.selection}.`) && !a.slice(String(view.selection).length + 1).includes("."))}
-            opensProject={linkedProject(view.selection) !== null}
-            onClose={() => dispatch({ type: "select", address: null })}
-            onFocus={() => view.selection && dispatch({ type: "set-focus", address: view.selection })}
-            onOpenProject={() => view.selection && openLinked(view.selection)}
-            {...(outsideMap && view.selection !== null
-              ? {
-                  onOpenMap: () => {
-                    if (view.selection === null) return;
-                    ws.addOutside(outsideMap);
-                    dispatch({ type: "open-project", project: outsideMap.id, from: "link", at: outsideAddress(view.selection) });
-                  },
-                }
-              : {})}
-            onSelect={(address) => dispatch({ type: "select", address })}
-          />
-        )}
-        {legendOpen && !firstRun && <Legend onClose={toggleLegend} simulated={simulated} />}
-          </div>
-        )}
-      </main>
+      </Dock>
       {!present && (
         <BottomStrip
           state={state}
           layers={current?.layers ?? []}
           counts={layerTotals}
-          activity={ws.activity}
           agents={ws.agents}
           unseen={ws.unseenActivity}
           simulated={simulated}
-          projectName={projectName}
-          onOpenActivity={ws.markActivitySeen}
-          legendOpen={legendOpen}
-          onToggleLegend={toggleLegend}
+          legendOpen={placeOf(layout, "legend") !== null}
+          onToggleLegend={() => panelActions.toggle("legend")}
+          activityOpen={placeOf(layout, "activity") !== null}
+          onToggleActivity={() => panelActions.toggle("activity")}
           dispatch={dispatch}
-          onSelect={(project, address) => {
-            if (project !== state.project) dispatch({ type: "open-project", project });
-            dispatch({ type: "select", address });
-          }}
         />
       )}
     </div>

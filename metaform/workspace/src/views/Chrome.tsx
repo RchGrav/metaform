@@ -1,16 +1,20 @@
-// The workspace chrome: top bar, rail, details, bottom strip and onboarding
-// (dev/user_agent_interfaces-ux.md sections 2, 3, 7, 8, 9, 11 and 12). Every word comes from strings.ts.
+// The workspace chrome: top bar, rail, bottom strip and keyboard help, and the bodies of the
+// Entity, Legend and Activity panels (dev/user_agent_interfaces-ux.md sections 2, 3, 7, 8, 9, 11
+// and 12; dev/gui_specification.md). Every word comes from strings.ts.
 
 import { useEffect, useRef, useState } from "react";
+import type React from "react";
 import type { Address, ProjectRef, SummarySheet, Want } from "../source";
 import * as strings from "../strings";
 import { TOP } from "../state/structure";
 import { FOCUS_REACH, layerShown, type Mode, type Notice, type ViewState, type Action } from "../state/view";
 import type { ActivityLine, AgentState } from "./useWorkspace";
 
+/** The platform the page is on, which decides the names of the modifier keys it shows. */
 export const platform: strings.Platform =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "mac" : "other";
 
+/** The badge that marks simulated data. */
 export function SimulatedBadge() {
   return (
     <span className="badge simulated" title={strings.simulated.tooltip}>
@@ -19,12 +23,14 @@ export function SimulatedBadge() {
   );
 }
 
-
+/** The top bar: the project, the breadcrumbs, the modes, the zoom level and the Panels menu. */
 export function TopBar(props: {
   state: ViewState;
   projects: ProjectRef[];
   container: Address;
   zoom: number;
+  /** The Panels menu (src/panels/PanelsMenu.tsx). */
+  menu: React.ReactNode;
   dispatch: (action: Action) => void;
 }) {
   const { state, projects, container, zoom, dispatch } = props;
@@ -78,6 +84,7 @@ export function TopBar(props: {
       <span className="zoom" aria-live="off">
         {strings.topBar.zoom(zoom * 100)}
       </span>
+      {props.menu}
     </header>
   );
 }
@@ -131,7 +138,8 @@ export function Rail(props: {
           ⋯<span className="visually-hidden">{strings.rail.more}</span>
         </button>
         {more && (
-          <div className="rail-more" role="menu">
+          // Choosing an item closes the menu, so the menu never stays over what the item shows.
+          <div className="rail-more" role="menu" onClick={() => setMore(false)}>
             <button type="button" role="menuitem" onClick={props.onCollapseAll}>{strings.rail.collapseAll}</button>
             <button type="button" role="menuitem" onClick={props.onExpandAll}>{strings.rail.expandAll}</button>
             <button type="button" role="menuitem" onClick={props.onTheme}>{strings.rail.theme}</button>
@@ -319,6 +327,7 @@ export function Details(props: {
   );
 }
 
+/** The bar that reports a refusal, a lost connection, or a container that no longer exists. */
 export function NoticeBar({ notice, onDismiss }: { notice: Notice; onDismiss: () => void }) {
   const text =
     notice.kind === "moved"
@@ -334,6 +343,7 @@ export function NoticeBar({ notice, onDismiss }: { notice: Notice; onDismiss: ()
   );
 }
 
+/** The bar that names the focus element while the graph shows only what is near it. */
 export function FocusBanner({ address, onClear }: { address: Address; onClear: () => void }) {
   return (
     <div className="focus-banner" role="status">
@@ -343,23 +353,55 @@ export function FocusBanner({ address, onClear }: { address: Address; onClear: (
   );
 }
 
+/** The activity lines, newest first as the workspace keeps them. This is the body of the Activity panel. */
+export function ActivityList(props: {
+  activity: ActivityLine[];
+  projectName: (id: string) => string;
+  onSelect: (project: string, address: Address) => void;
+  /** Called when the list shows and when a line arrives while it shows: the user has now seen every line. */
+  onSeen: () => void;
+}) {
+  const onSeen = useRef(props.onSeen);
+  onSeen.current = props.onSeen;
+  const lines = props.activity.length;
+  useEffect(() => onSeen.current(), [lines]);
+  if (lines === 0) return <p className="panel-note">{strings.panels.noActivity}</p>;
+  return (
+    <ol className="activity-list">
+      {props.activity.map((line) => {
+        const time = line.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const text =
+          line.kind === "map-changed"
+            ? strings.activity.mapChanged(time)
+            : strings.presence.at(line.agent ?? "", line.at ?? props.projectName(line.project), line.activity ?? undefined);
+        return (
+          <li key={line.id}>
+            <button type="button" className="link" disabled={line.at === null} onClick={() => line.at !== null && props.onSelect(line.project, line.at)}>
+              {text}
+            </button>
+            {line.simulated && <SimulatedBadge />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** The bottom strip: the layer controls, and the buttons that show the Legend and Activity panels. */
 export function BottomStrip(props: {
   state: ViewState;
   layers: string[];
   counts: Record<string, number>;
-  activity: ActivityLine[];
   agents: AgentState[];
   unseen: number;
   simulated: boolean;
-  /** The page's origin, shown with a control that copies it. */
-  projectName: (id: string) => string;
-  onOpenActivity: () => void;
   dispatch: (action: Action) => void;
-  onSelect: (project: string, address: Address) => void;
+  /** Whether the Legend panel and the Activity panel are open, and the actions that open or close each. */
   legendOpen: boolean;
   onToggleLegend: () => void;
+  activityOpen: boolean;
+  onToggleActivity: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const { state, layers, dispatch } = props;
   return (
     <footer className="bottom-strip">
@@ -396,36 +438,10 @@ export function BottomStrip(props: {
         <button type="button" className="link" aria-pressed={props.legendOpen} onClick={props.onToggleLegend}>
           {props.legendOpen ? strings.legend.hide : strings.legend.show}
         </button>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen(!open);
-            props.onOpenActivity();
-          }}
-        >
+        <button type="button" aria-pressed={props.activityOpen} onClick={props.onToggleActivity}>
           {strings.activity.summary(props.unseen)}
         </button>
         {props.simulated && <SimulatedBadge />}
-        {open && (
-          <ol className="activity-list">
-            {props.activity.map((line) => {
-              const time = line.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              const text =
-                line.kind === "map-changed"
-                  ? strings.activity.mapChanged(time)
-                  : strings.presence.at(line.agent ?? "", line.at ?? props.projectName(line.project), line.activity ?? undefined);
-              return (
-                <li key={line.id}>
-                  <button type="button" className="link" disabled={line.at === null} onClick={() => line.at !== null && props.onSelect(line.project, line.at)}>
-                    {text}
-                  </button>
-                  {line.simulated && <SimulatedBadge />}
-                </li>
-              );
-            })}
-          </ol>
-        )}
       </div>
     </footer>
   );
@@ -472,13 +488,10 @@ function Swatch({ entry }: { entry: (typeof LEGEND_ENTRIES)[number] }) {
 /** The marks that only simulated data draws: Metaform has no source of agent presence (seam gap 2). */
 const SIMULATED_ENTRIES: readonly string[] = ["agent", "agentActive", "agentIdle"];
 
-export function Legend({ onClose, simulated }: { onClose: () => void; simulated: boolean }) {
+/** Every mark the graph draws, with its meaning. This is the body of the Legend panel, which gives the title. */
+export function Legend({ simulated }: { simulated: boolean }) {
   return (
-    <aside className="legend" aria-labelledby="legend-title">
-      <header>
-        <h2 id="legend-title">{strings.legend.title}</h2>
-        <button type="button" onClick={onClose} aria-label={strings.legend.hide} title={strings.legend.hide}>×</button>
-      </header>
+    <div className="legend">
       <ul>
         {LEGEND_ENTRIES.filter((key) => simulated || !SIMULATED_ENTRIES.includes(key)).map((key) => (
           <li key={key}>
@@ -487,7 +500,7 @@ export function Legend({ onClose, simulated }: { onClose: () => void; simulated:
           </li>
         ))}
       </ul>
-    </aside>
+    </div>
   );
 }
 
