@@ -206,7 +206,7 @@ export function goto(map: MapModel, address: string): Json {
   if (defined.length > 0) {
     const instructions: JsonObject = new Map();
     for (const d of defined) {
-      instructions.set(d.layer, `Before you write ${d.layer}, goto ${d.address} for its rules.`);
+      instructions.set(d.layer, `The rules for writing ${d.layer} are at ${d.address}. Read them only when you write ${d.layer}.`);
     }
     sheet.set("instructions", instructions);
   }

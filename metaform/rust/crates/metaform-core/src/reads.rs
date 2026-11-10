@@ -223,7 +223,7 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
             defined
                 .iter()
                 .map(|d| {
-                    let text = format!("Before you write {}, goto {} for its rules.", d.layer, d.address);
+                    let text = format!("The rules for writing {0} are at {1}. Read them only when you write {0}.", d.layer, d.address);
                     (d.layer.clone(), Value::String(text))
                 })
                 .collect(),

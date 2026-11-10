@@ -109,11 +109,29 @@ What this shows:
 What it does not show: two sessions for each target are too few to separate the effect of the build from the difference between two agents.
 
 What the second round found:
-- **The pointer in `goto` did not keep the rules away.** Both agents followed "Before you write specification, goto layer.document.specification for its rules", received about 2.7 KB, and wrote no specification. The pointer costs less than the rules did on every first `goto`, but as test users both agents went to look. The next experiment is the pointer's wording.
-- **`{"status": "ok"}` does not say what an `update` did to existing wants.** Both agents checked with a `goto` that an `update` adds to the wants and replaces only the one it names. This belongs in the tool's description, which is a protected file.
-- **A role on a `downstream` element is accepted without comment,** and the procedure gives none. Both agents were unsure (section 8, item 5).
+- **The pointer in `goto` did not keep the rules away.** Both agents followed "Before you write specification, goto layer.document.specification for its rules", received about 2.7 KB, and wrote no specification.
+- **`{"status": "ok"}` does not say what an `update` did to existing wants.** Agents in both later rounds checked with a `goto` that an `update` adds to the wants and replaces only the one it names. This belongs in the tool's description, which is a protected file.
+- **A role on a `downstream` element is accepted without comment,** and the procedure gives none. Every agent was unsure (section 8, item 5).
 - **`DEPENDENCY_LOCK` names every element that still wants the target and gives the remediation for the first only.**
 
+## 6b. Experiment 4: the wording of the pointer, tested with a third round
+
+| # | Hypothesis | Change | Result | Decision |
+|---|---|---|---|---|
+| 4 | The pointer read as an invitation. A sentence that says when to read the rules keeps an agent from reading them early. | The `instructions` entry is "The rules for writing <layer> are at <address>. Read them only when you write <layer>." | Round 2 (old wording): 2 of 2 agents went to the layer's definition, and neither wrote the layer. Round 3 (new wording): 0 of 2 went. The sentence is 148 bytes longer over the four first-round traces (207,006 against 206,858). | Kept, in all three forms. |
+
+The third round, on the build with experiments 1 to 4 (`metaform/conformance/traces/round3/`):
+
+| | `lbug` round 1 | `lbug` round 3 | `axum` round 1 | `axum` round 3 |
+|---|---|---|---|---|
+| Commands | 39 | 37 | 100 | 146 |
+| Refused | 1 | 0 | 3 | 2 (both sent on purpose, to read the messages) |
+| Elements, wants | 21, 30 | 22, 42 | 23, 41 | 37, 61 |
+| Bytes sent | 10,963 | 14,394 | 20,947 | 28,887 |
+| Bytes received | 34,109 | 7,346 | 65,053 | 23,234 |
+| Bytes received for each command | 875 | 199 | 651 | 159 |
+
+In round 3 both agents received fewer bytes than they sent, and both recorded larger maps than in round 1. Two sessions for each target in each round remain too few to separate the build from the agent; the direction is the same in all four later sessions.
 
 **Most useful next experiments,** from both rounds: the wording of the pointer in `goto`; `goto` lists layers and memory with zero records; `map` lists the branch addresses and the `layer` addresses with the elements; `orphaned` returns whole records where intake needs addresses; a refusal's remediation repeats the whole command.
 

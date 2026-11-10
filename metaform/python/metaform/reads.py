@@ -157,7 +157,7 @@ def goto(map: Map, address: str) -> dict[str, Any]:
     # this part once for each context (R-6.27).
     if defined:
         sheet["instructions"] = {
-            d.layer: f"Before you write {d.layer}, goto {d.address} for its rules." for d in defined
+            d.layer: f"The rules for writing {d.layer} are at {d.address}. Read them only when you write {d.layer}." for d in defined
         }
     # At a layer's definition element, the sheet always carries that layer's guidance, so an
     # agent whose context was reset can read it again (R-5.30).

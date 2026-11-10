@@ -1575,7 +1575,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -2520,7 +2520,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -6509,7 +6509,7 @@
       }
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -7024,8 +7024,8 @@
       "records": 0
      },
      "instructions": {
-      "cpp": "Before you write cpp, goto layer.code.cpp for its rules.",
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "cpp": "The rules for writing cpp are at layer.code.cpp. Read them only when you write cpp.",
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -7926,7 +7926,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -9721,7 +9721,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -9887,7 +9887,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
@@ -10329,7 +10329,7 @@
       "records": 0
      },
      "instructions": {
-      "specification": "Before you write specification, goto layer.document.specification for its rules."
+      "specification": "The rules for writing specification are at layer.document.specification. Read them only when you write specification."
      }
     },
     "refused": false
