@@ -15,11 +15,11 @@
 
 ### Summary
 
-Metaform gives development agents a map of what a project *does*, not of its files. An intake agent reads the project, which can be code, a specification, a manual or anything else, and writes a tree of functional elements. Each element records which other elements it needs, why, and how. Agents then work from a small, relevant slice of that map instead of rereading the whole project. The goal is to save tokens and to stop agents from changing things they do not understand.
+Metaform gives development agents a map of what a project *does*, not of its files. An intake agent reads the project, which can be code, a specification, a manual or anything else, and writes a tree of functional elements. Each element records which other elements it needs, why, and how. Agents then work from a small, relevant slice of that map instead of rereading the whole project. The goal is to spend less of an agent's reasoning on orientation, so that its reasoning is kept for the work, and to stop agents from changing things they do not understand. The saving is not a token saving or a money saving (owner, 2026-11-09; `metaform/SPEC.md` R-1.4).
 
 ## 2. The need, the users and the goals
 
-**The problem.** Agents spend a large share of their context and cost working out where they are in a project, and they make unsafe changes when they do not understand what a part is for. **Confirmed** (`TOPOGEE.md` opening; the owner: "Before anything can mutate it needs to fully understand what a thing is").
+**The problem.** An agent has a finite amount of reasoning: a limit on how many things it can track and understand at once. Orientation in a project uses part of that reasoning and wastes context, and the agent still does not get the whole picture. Agents also make unsafe changes when they do not understand what a part is for. **Confirmed** (`TOPOGEE.md` opening; the owner: "Before anything can mutate it needs to fully understand what a thing is").
 
 **Intended users**
 - Development agents working in a project (Claude Code, Codex and other harnesses). **Confirmed.**
