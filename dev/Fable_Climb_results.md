@@ -190,9 +190,29 @@ What the four agents reported:
 - `goto` at the specification layer's definition returned 2,000 to 2,800 characters of writing rules to agents that only wanted to know what the `layer` addresses were.
 - `orphaned` returns whole elements where addresses would do, and lists the downstream parties every time.
 
+A fifth round, into `~/.metaform-climb5`, after three more adjustments: the message names the part and the fault, a `why` or `how` of more than 14 words is refused, and the remediation for a refused `add` of a new element is that `add`. The agents were told to read the source in depth.
+
+| Target | Elements | Wants | Commands | Refused (grammar) | Received |
+|---|---|---|---|---|---|
+| axum-0.8.9 | 47 | 92 | 327 | 4 (3) | 85,225 bytes |
+| lbug-0.22.3 | 39 | 72 | 66 | 1 (1) | 20,048 bytes |
+| rmcp-3.9.0 | 47 | 75 | 251 | 7 (4) | 75,744 bytes |
+| this repository | 72 | 121 | 103 | 0 (0) | 69,837 bytes |
+
+The command counts include each agent's own reads for its final proof. The agent for this repository read the grammar rule in `rules.rs` while it surveyed the source, so its zero refusals say nothing about the refusal text. The other three said each grammar refusal let them write the next text correctly the first time.
+
+Reported in this round:
+
+- The fault "holds a value" does not name the word; an agent guessed `128-bit`.
+- Only the first broken want of a command is reported.
+- An `-ing` word after the first word passes (D-14), and so does a `how` of two verbs joined by "and" within 14 words.
+- Writing a layer's list replaces the list, with no word that it did.
+- `FIELD_MISMATCH` for an unknown want field has no remediation; for `intent` it could name `direction`. The field `intent` is in the tool the agents' own harness lists (`mcp__metaform__project-map`, the owner's installed server of an earlier build), not in this build.
+- Three agents shared one scratch folder and one overwrote another's helper script; no data was lost. A later round must give each agent its own folder for helpers.
+
 ## 7b. The earlier map page (2026-11-10)
 
-The owner said the new page was a step backwards from the earlier Metaform page and asked to start from the old code. The earlier page's own 2D map, camera, depth, flow, hover, selection, keys, search, side column tabs, layers list, right-click menu and exports now run against the new host at `/classic/` (`metaform/workspace/public/classic`), with one adapter for the new server's data. The 3D map, agents, chat, board, roundtables, voice and memory are not ported.
+The owner said the new page was a step backwards from the earlier Metaform page and asked to start from the old code. The earlier page's own 2D map, camera, depth, flow, hover, selection, keys, search, side column tabs, layers list, right-click menu and exports now run against the new host at `/classic/` (`metaform/workspace/public/classic`), with one adapter for the new server's data. A third pass brought the earlier 3D map beside the 2D map, with one selection. Agents, chat, board, roundtables, voice and memory are not ported.
 
 ## 8. Open for the owner
 
@@ -204,7 +224,7 @@ The owner said the new page was a step backwards from the earlier Metaform page 
 6. **One map or two.** The intake of this repository put Metaform and Roundtable in one map and had to make Roundtable's engine Divergent, because a map has one Definitive element. The agent recommends a separate map for Roundtable.
 8. **The example `"how": "Prepared mash data packets."`** in `tool-examples.json`, `intake-example.json` and `SPECIFICATION.md` is refused by the grammar check. Recommended: "Prepares mash data packets."
 9. **The schema's descriptions of `why` and `how`** do not state the R-6.17 rule. The schema is protected. Recommended: replace them with the rule and the two examples, so an agent reads the rule before its first write.
-10. **A want for an address that is not an element** is accepted. Recommended: refuse it, as the procedure says both ends resolve to elements.
+10. **A want for an address that is not an element** is accepted and makes the element. Withdrawn as a recommendation: `SPEC.md` R-5.4 decides it ("A write creates every path it needs, including the element that a want names"). `Intake.md` says both ends must resolve to elements, so the procedure and the specification disagree; the procedure is protected.
 11. **Which page is the base:** the earlier page at `/classic/`, or the page written on 2026-11-09 and 2026-11-10.
 7. **Deleting a layer's definition** leaves its records at the elements, where no read that names the layer returns them. Whether a deletion should remove them, or be refused while records exist, depends on item 4.
 
