@@ -163,7 +163,7 @@ export function setTheme(name) {
   try { localStorage.setItem('metaform.theme', name); } catch (error) { /* storage can be blocked; it still shows */ }
   if (G) recolor3d();
   setMermaidReady(false);
-  build2D();
+  build2D(true, false, true);
 }
 /* The 3D view reads its colors again from the theme in force. */
 function recolor3d() {

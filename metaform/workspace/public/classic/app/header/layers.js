@@ -125,7 +125,7 @@ function rootRow(root, checked) {
     input.checked ? next.delete(root) : next.add(root);
     await saveView('web_roots_off', next.size ? [...next] : null);
     renderChips();
-    draw3D(); renderLegend(); build2D();
+    draw3D(); renderLegend(); build2D(true, false, true);
     document.dispatchEvent(new CustomEvent('classic:depth'));  // the map's levels are counted without the root
   }});
   input.checked = checked;

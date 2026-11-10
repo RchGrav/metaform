@@ -132,6 +132,10 @@ export function pickNode2d(key) {
   if (!HOVER2D.on?.startsWith('figure:')) HOVER2D.on = key;
   if (flowModeNow() === 'hover') flows2d();
   if (key && !HOVER2D.on?.startsWith('figure:')) readout('2d', readoutOf(key, '2d'));
+  // Added to the earlier page's code: with no node within reach any longer the readout goes, or says the edge still
+  // picked. A pointer that left a node's box but not its reach kept the readout, `hoverOut`, and nothing took it away
+  // once the pointer left the reach too, as `pickEdge2d` returns early while no edge is picked.
+  else if (!key && !HOVER2D.on) readout('2d', EDGE_PICK.edge2d ? edgeWords(EDGE_PICK.edge2d.join) : null);
 }
 export function pickEdge2d(edge) {
   if (EDGE_PICK.edge2d === edge) return;
@@ -148,7 +152,7 @@ export function pickEdge2d(edge) {
 }
 /* The 2D map's hover, as the 3D map's: a node, an agent's figure or a box inside a node said in the readout; the
  * edge under the pointer is `pickEdge2d`'s. */
-export const HOVER2D = {on: null};
+export const HOVER2D = {on: null, again: 0, repick: null};
 function hoverOver(event) {
   const node = event.target.closest?.('g.node');
   if (!node?.dataset.key) return;
@@ -164,6 +168,23 @@ function hoverOut(event) {
 }
 $('#viewport').addEventListener('pointerover', hoverOver);
 $('#viewport').addEventListener('pointerout', hoverOut);
+/* Added to the earlier page's code: the hover let go when the drawing on view leaves the page, as a map drawn again,
+ * a node entered or left and a project switched each replace it. A drawing taken away sends no `pointerout`, so the
+ * readout, the card and the mark of the node or edge that was under the pointer stayed, though the pointer was on it
+ * no longer. What is under the pointer is decided again once the move between layouts has ended, `settle2D`, by
+ * `repick`, which the page's wiring sets, wire.js. */
+export function unhover2d() {
+  clearTimeout(HOVER2D.again);
+  pickNode2d(null);
+  pickEdge2d(null);
+  HOVER2D.on = null;
+  REACH.d2 = null;  // the reaches measured were the drawing's that left
+  $('#viewport').classList.remove('picking');
+  readout('2d', null);
+  HOVER2D.again = setTimeout(() => HOVER2D.repick?.(), 800);
+}
+new MutationObserver(records => { if (records.some(record => record.removedNodes.length)) unhover2d(); })
+  .observe($('#viewport'), {childList: true});
 /* All shows the whole map and leaves the selection as it is, its node and its joins still marked, so the whole map is
  * seen with what the selected node is joined to; letting go of the selection clears the marks, `deselect`. */
 export function unmark2D() {

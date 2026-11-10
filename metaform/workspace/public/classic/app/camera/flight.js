@@ -38,7 +38,7 @@ export async function swap(on, remember = true) {
   resize();
   if (G) setTimeout(() => refit3d(on), 50);
   if (S.loading || !S.elements.size) return;
-  await build2D(false);  // drawn for its new area, opening as it does on loading
+  await build2D(false, false, true);  // drawn for its new area, opening as it does on loading, and at once
   if (S.selected) select(S.selected, false, true);
 }
 /* The 3D map in its new area: a met name kept at the new area's share; an unfocused map still opens whole. */

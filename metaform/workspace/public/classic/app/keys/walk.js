@@ -349,5 +349,5 @@ function redrawDepth(branch = false) {
   FOCUS.sig = focusSig();  // what is drawn now opens these, so the next branch said is compared with them
   if (branch) drawBranch(); else { draw3D(); renderLegend(); }
   if (G && !small3d()) { V3.auto = true; fit3d(); }
-  build2D(true, branch).then(fullFit2d);
+  build2D(true, branch, true).then(fullFit2d);
 }

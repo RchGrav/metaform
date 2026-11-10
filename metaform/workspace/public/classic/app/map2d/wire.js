@@ -9,7 +9,7 @@ import {M} from '/classic/app/map2d/build.js';
 import {showBase} from '/classic/app/map2d/fit.js';
 import {IN, samePath, drawInside} from '/classic/app/map2d/inside.js';
 import {setCam, stopCam, area2d, labelSize, scaleFor, focus2d, place2d, aim2d, hold2d} from '/classic/app/map2d/camera.js';
-import {EDGE_PICK, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/classic/app/map2d/hover.js';
+import {EDGE_PICK, HOVER2D, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/classic/app/map2d/hover.js';
 import {clicked2d, modified2d} from '/classic/app/map2d/flow2d.js';
 import {select} from '/classic/app/selection/select.js';
 import {revealDepth} from '/classic/app/keys/walk.js';
@@ -32,7 +32,7 @@ export function noneSelected() {
     "Nothing is selected. Click a part on either map, or press an arrow key to start from the map's entry."));
 }
 /* A drag under way on the 2D map, and whether the last press was a drag, so its release is no click. */
-const PAN = {drag: null, dragged: false};
+const PAN = {drag: null, dragged: false, at: null};
 function wire2D() {
   const host = $('#map2d');
   // A drag moves the view within the mode's limits, VIEW-041, and is not a click on what it started on.
@@ -40,7 +40,12 @@ function wire2D() {
   host.addEventListener('pointermove', pan);
   host.addEventListener('pointerup', () => { PAN.dragged = Boolean(PAN.drag?.moving); PAN.drag = null; });
   host.addEventListener('pointermove', markUnderPointer);
-  host.addEventListener('pointerleave', () => { pickNode2d(null); pickEdge2d(null); });
+  host.addEventListener('pointerleave', () => { PAN.at = null; pickNode2d(null); pickEdge2d(null); });
+  // what is under a pointer at rest decided again after the drawing under it was replaced, hover.js `unhover2d`
+  HOVER2D.repick = () => {
+    const target = PAN.at && document.elementFromPoint(PAN.at.x, PAN.at.y);
+    if (target) markUnderPointer({clientX: PAN.at.x, clientY: PAN.at.y, target});
+  };
   host.addEventListener('click', clickPicked, true);
   host.addEventListener('click', clickEmpty);
   host.addEventListener('wheel', wheel2d, {passive: false});
@@ -72,6 +77,7 @@ const offMap = target => !M.svg || target.closest?.('.crumbs, button, g.agent2d'
 /* The edge a click would take, marked as the pointer moves, once a frame; a node under the pointer takes it instead:
  * the node nearest the pointer within reach, then the nearest edge. */
 function markUnderPointer(event) {
+  PAN.at = {x: event.clientX, y: event.clientY};  // where the pointer is, for `repick`
   if (PAN.drag?.moving || EDGE_PICK.frame) return;
   const {clientX: x, clientY: y, target} = event;
   EDGE_PICK.frame = requestAnimationFrame(() => {

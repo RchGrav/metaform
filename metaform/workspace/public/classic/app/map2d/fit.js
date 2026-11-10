@@ -168,8 +168,16 @@ const idle2d = () => new Promise(go => window.requestIdleCallback
  * A map drawn where none is shown yet, as at load, is drawn once and shown, F4: in the way this browser kept for the
  * same text, `kept2d`, which is the whole search's choice and so the last drawing; else in the way last chosen in this
  * pane, or the likelier direction, and the search goes on once it is shown, `hurried`. While a map is shown each
- * layout waits for an idle moment, `idle2d`. */
-export async function fitPick2d(body, shape, generation, branch = false) {
+ * layout waits for an idle moment, `idle2d`.
+ * Changed from the earlier page: a choice a person's action `asked` for, `build2D`, does not wait for an idle moment,
+ * and its budget is `prompt` ms in place of `budget`. The page never idles while the 3D map draws, so each layout
+ * waited the whole `wait` ms, and a depth changed with Less or More showed after 4.9 to 8.6 s on the 39 elements of
+ * rmcp-3.9.0 (2026-11-10, software WebGL); without the waits the layouts alone took 1.7 to 3.3 s there. Where every
+ * way is laid out within `prompt` the choice is the whole search's, as before; else it is shown `hurried` and the
+ * search goes on once it is shown, `asked` then 'search': with the whole `budget`, and still without the waits, which
+ * put the search's choice on the page 9.5 s after the click. The search after a load, and a map drawn again for a
+ * change on the server, wait as before. */
+export async function fitPick2d(body, shape, generation, branch = false, asked = false) {
   if (S.project && VIEW.read === S.project) await VIEW.reading;
   if (generation !== M.generation) return null;
   const area = area2d(), step = M.bucket = fitStep2d(area, M.bucket ?? null), pane = Math.exp(step * FIT2D.step);
@@ -182,14 +190,15 @@ export async function fitPick2d(body, shape, generation, branch = false) {
   // is kept for this text in this page, so the map stays drawn that way; the search runs again on any other change.
   const same = branch && shown && !held && isWay2d(M.way)
     && (pin === 'auto' || M.way.vertical === (pin === 'down')) ? {...M.way, aim} : null;
-  const ways = held ? [held] : same ? [same] : waysFor(shape, pin, aim), quick = branch && shown;
+  const ways = held ? [held] : same ? [same] : waysFor(shape, pin, aim), quick = (branch || asked) && shown;
   const last = kept2d().last[pane2d()], first = !held && !shown && ways.length > 1;
   if (first && isWay2d(last) && pin === 'auto') ways.unshift({...last, aim});  // drawn first, then the rest searched
   const since = FIT2D.since ??= performance.now(), tried = new Set();
+  const budget = asked === true && shown ? FIT2D.prompt : FIT2D.budget;
   let best = null, hurried = false;
   for (let at = 0; at < ways.length; at++) {
     const now = performance.now();
-    if (best && (first || now - since > FIT2D.budget)) { hurried = true; break; }  // the ways left come once shown
+    if (best && (first || now - since > budget)) { hurried = true; break; }  // the ways left come once shown
     if (ways[at].narrow === true) {  // its layers' bound once the likelier direction is drawn, `narrowFor`
       const narrow = best && narrowFor(shape, best, pane);
       if (!narrow) continue;
@@ -227,7 +236,7 @@ export async function fitPick2d(body, shape, generation, branch = false) {
     best = drawn ? {...drawn, way: best.way, score: best.score, key: best.key} : null;
   }
   if (!best) { FIT2D.since = null; throw new Error('ELK laid out none of the ways.'); }
-  if (fitPin2d() !== pin) return fitPick2d(body, shape, generation, branch);  // its direction was changed meanwhile
+  if (fitPin2d() !== pin) return fitPick2d(body, shape, generation, branch, asked);  // its direction changed meanwhile
   if (same) FIT2D.chosen.set(mark, best.way);  // this page's alone: this browser keeps only the search's choices
   else if (!hurried) { FIT2D.chosen.set(mark, best.way); keepWay2d(mark, best.way); }
   while (FIT2D.chosen.size > FIT2D.most) FIT2D.chosen.delete(FIT2D.chosen.keys().next().value);
@@ -304,7 +313,7 @@ new ResizeObserver(relayoutSoon).observe($('#viewport'));
 export function fitDirection2d(direction) {
   if (!direction || direction === (PEEK.direction || 'auto')) return;
   PEEK.direction = direction;
-  if (M.base) build2D();
+  if (M.base) build2D(true, false, true);
 }
 /* Where each node of a drawn map stands, by its element id, in the map's own units, counting any move it is still
  * making, so a map drawn again mid-move starts from where its nodes are and not where they were going. */

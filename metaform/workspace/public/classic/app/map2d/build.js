@@ -43,9 +43,10 @@ const ELK2D = {layout: 'elk', elk: {nodePlacementStrategy: 'NETWORK_SIMPLEX'}, m
  * it was, gets its own picture again at once. Laying out stops after `budget` ms once one way is drawn, so a large map
  * costs about that and no more; `since` is when the first choice not yet shown began. A map drawn where none is shown,
  * as at load, is drawn in one way and shown, and the search goes on after, each layout in an idle moment or after
- * `wait` ms; the ways chosen are kept in this browser for each base, so a reload draws the same map once, `kept2d`. */
+ * `wait` ms; the ways chosen are kept in this browser for each base, so a reload draws the same map once, `kept2d`.
+ * A choice a person's action asked for stops after `prompt` ms in place of `budget`, and waits for no idle moment. */
 export const FIT2D = {config: null, step: Math.log(1.25), stay: 0.75, budget: 6000, correction: 0.5, small: 100,
-  narrow: 2, most: 24, wait: 1000, chosen: new Map(), drawn: new Map(), since: null, laid: new Map()};
+  narrow: 2, most: 24, wait: 1000, prompt: 300, chosen: new Map(), drawn: new Map(), since: null, laid: new Map()};
 /* A name as a 2D label: the characters Mermaid would read as its own taken out, and a name longer than `most` cut at
  * the last break between words that keeps most of it, with an ellipsis, so a label never ends in half a word and always
  * says it goes on. The whole name is in the panel and in the 3D map's tooltip. */
@@ -63,8 +64,11 @@ export function setMermaidReady(value) { mermaidReady = value; }
 const SHAPES2D = {code: 'rect', document: 'doc', media: 'curv-trap', data: 'cyl', collection: 'st-rect',
   upstream: 'lean-r', downstream: 'lean-l'};
 /* `branch`: what changed is a branch opened or closed, keys/walk.js FOCUS and a click breaking out a node's next level,
- * so the map is laid out at once in the way it is drawn now, without choosing among the ways again, `fitPick2d`. */
-export async function build2D(keep = true, branch = false) {
+ * so the map is laid out at once in the way it is drawn now, without choosing among the ways again, `fitPick2d`.
+ * `asked`: a person's action asked for this drawing, a depth, a direction, a root hidden or shown, a theme or a swap
+ * of the maps, so its layouts do not wait for an idle moment and it is shown after a short budget, `fitPick2d`.
+ * `asked` is 'search' for the search that goes on once such a drawing is shown: no idle wait, and the whole budget. */
+export async function build2D(keep = true, branch = false, asked = false) {
   const generation = ++M.generation;
   const host = $('#viewport');
   if (!window.mermaid) return emptyIn(host, 'The 2D map could not load.');
@@ -89,7 +93,7 @@ export async function build2D(keep = true, branch = false) {
       + 'The 3D map shows them all.');
   }
   let picked = null, layout = 'elk';
-  try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation, branch)); }
+  try { picked = await choosing(() => fitPick2d(lines.join('\n'), shape, generation, branch, asked)); }
   catch (error) {
     // ELK failing never leaves the pane empty: the same map is drawn with Mermaid's other layout, dagre, P043
     layout = 'dagre';
@@ -109,7 +113,10 @@ export async function build2D(keep = true, branch = false) {
   finally {  // the search goes on once this drawing is shown, or has given way to another
     opened2d();
     if (picked.hurried) {
-      setTimeout(() => { try { if (generation === M.generation) build2D(); } finally { opened2d(); } });
+      const more = asked ? 'search' : false;
+      setTimeout(() => {
+        try { if (generation === M.generation) build2D(true, false, more); } finally { opened2d(); }
+      });
     }
   }
 }
