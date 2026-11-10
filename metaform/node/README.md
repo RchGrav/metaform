@@ -59,6 +59,7 @@ These differences from the Rust form come from the design document, section 2.
 |---|---|---|---|
 | Change announcements (R-4.10) | Pushed to subscribers after each commit | Not offered. The MCP capabilities do not list `resources`. | A process cannot learn of another process's commit without polling. |
 | Graph workspace | `metaform gui` | Not offered | The workspace's host needs change announcements. |
+| `instructions` in the `initialize` answer | A text that tells the agent about `metaform gui` | Not given | The text is about the graph workspace, which this form does not offer. |
 | Specification export and import (R-6.28) | `metaform specification` | Not offered yet | It is a CLI command, not part of the tool. It can be ported with no change to the store. |
 | Maps that belong to no project | `--map NAME` | Not offered | The design's command line has `--home` and `--project` only. |
 | Settings | `metaform settings`, `set`, `unset` | Not offered | The settings belong to the Rust form's server. |

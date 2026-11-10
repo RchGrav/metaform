@@ -3,24 +3,45 @@
 // them to every element a write touched.
 
 import type { Json, JsonObject } from "./json.ts";
-import { isArray, isObject, obj } from "./json.ts";
+import { equal, isArray, isObject, obj } from "./json.ts";
 import type { Element, MapModel } from "./model.ts";
 import { ROOT, join } from "./names.ts";
 import { Code, Refusal } from "./refusal.ts";
 import * as specification from "./specification.ts";
-import { trim, words } from "./text.ts";
+import { words } from "./text.ts";
 
 /** The four roles (R-3.13), spelled as a write must spell them. */
 export const ROLES = ["Definitive", "Supportive", "Notable", "Divergent"];
 
 /**
- * Check one touched element: `technical_name` (R-3.11), then `name` (R-3.12), then `role`
- * (R-3.13). `before` is the map before the write.
+ * Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the
+ * map before the write.
+ *
+ * R-3.12 (`name` must not equal `technical_name`) is not checked. The intake procedure lets
+ * `name` be the standard term when the project has no name of its own for the element. The
+ * conflict between R-3.12 and the procedure is the owner's to settle (`SPEC.md` D-19).
  */
 export function check(before: MapModel, address: string, element: Element): void {
   checkTechnicalName(before, address, element);
-  checkName(before, address, element);
   checkRole(before, address, element);
+  checkSystemLayers(before, address, element);
+}
+
+/**
+ * A system layer (`skills`, `memory`, `sources`) holds a list of records (R-6.15). A value this
+ * write set that is not a list is refused, with the value as one record in the remediation.
+ */
+function checkSystemLayers(before: MapModel, address: string, element: Element): void {
+  for (const layer of specification.SYSTEM_LAYERS) {
+    const value = element.fields.get(layer);
+    if (value === undefined) {
+      continue;
+    }
+    const stored = before.element(address)?.fields.get(layer);
+    if (!isArray(value) && (stored === undefined || !equal(stored, value))) {
+      throw specification.notAList("update", layer, address, value);
+    }
+  }
 }
 
 /**
@@ -67,26 +88,6 @@ function checkTechnicalName(before: MapModel, address: string, element: Element)
     Code.TechnicalNameAlignmentFailure,
     `'${address}': technical_name "${technical}" is not the leading words of "${reversed.join(" ")}"`,
     correction(before, address, element, "technical_name", suggested),
-  );
-}
-
-/**
- * `name` is the project's own name for the element, so it must not equal `technical_name`
- * (R-3.12). The two are compared trimmed, ignoring case.
- */
-function checkName(before: MapModel, address: string, element: Element): void {
-  const name = element.fields.get("name");
-  const technical = element.fields.get("technical_name");
-  if (typeof name !== "string" || typeof technical !== "string") {
-    return;
-  }
-  if (trim(name).toLowerCase() !== trim(technical).toLowerCase()) {
-    return;
-  }
-  throw new Refusal(
-    Code.CanonicalNameCollisionFailure,
-    `'${address}': name "${name}" is the same as technical_name; name is the project's own name for the element`,
-    correction(before, address, element, "name", "<the project's own name for it>"),
   );
 }
 

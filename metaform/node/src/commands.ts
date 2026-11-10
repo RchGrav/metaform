@@ -60,9 +60,10 @@ export function execute(map: MapModel, command: Json): Outcome {
       work.delete(selector, supplied);
     }
     const write = work.finish();
-    const result: JsonObject = new Map(command as JsonObject);
-    result.set("status", "ok");
-    return { result, write };
+    // A successful write answers with its status alone. It does not repeat the command: the
+    // agent sent it and has it. A refusal still repeats the command, so the agent sees what was
+    // refused beside the reason.
+    return { result: obj(["status", "ok"]), write };
   }
   if (verb.startsWith(".")) {
     return { result: reads.raw(map, verb) };
@@ -208,6 +209,7 @@ class Work {
       for (const other of wants) {
         if (typeof other === "string" && this.elements.get(address)?.wants.has(other)) {
           this.elementMut(address).wants.delete(other);
+          this.prune(other);
         }
       }
       return;
@@ -242,9 +244,25 @@ class Work {
         obj(["delete", obj([deepest, obj()])]),
       );
     }
+    const wanted = [...(this.elements.get(address) as Element).wants.keys()];
     this.remove(address);
-    // Remove the branches the deletion left with nothing in them.
-    let branch = names.parent(address);
+    const parent = names.parent(address);
+    if (parent !== null) {
+      this.prune(parent);
+    }
+    for (const other of wanted) {
+      this.prune(other);
+    }
+  }
+
+  /**
+   * Remove an element that a deletion left with nothing in it, and then each branch above it
+   * that is left the same way: no fields, no wants, nothing beneath it and nothing that wants
+   * it. A write creates the element a want names (R-5.4); when the last want that names it is
+   * gone and it was never filled in, it goes too, so no empty address stays in the map.
+   */
+  prune(address: string): void {
+    let branch: string | null = address;
     while (branch !== null && branch !== ROOT) {
       const at = branch;
       const empty = this.elements.get(at)?.isEmpty() ?? false;
@@ -455,10 +473,23 @@ class Work {
     }
     const existing = definitive.find((address) => !this.touched.has(address)) ?? definitive[0];
     const added = definitive.find((address) => address !== existing) ?? definitive[1];
+    // The remediation gives the new element another role. It never removes the role of the
+    // element that is Definitive already: an agent that followed it would lose the one element
+    // that says what the project is.
+    const otherRole = "<Supportive, Notable or Divergent>";
+    const element = this.elements.get(added);
+    let remediation: Json;
+    if (this.before.element(added) === undefined && element !== undefined) {
+      const view = element.view();
+      view.set("role", otherRole);
+      remediation = obj(["add", obj([added, view])]);
+    } else {
+      remediation = obj(["update", obj([added, obj(["role", otherRole])])]);
+    }
     throw new Refusal(
       Code.RoleTaxonomyFailure,
       `'${added}' cannot be Definitive: '${existing}' already is, and a map has one Definitive element`,
-      obj(["update", obj([existing, obj(["role", null])])]),
+      remediation,
     );
   }
 }

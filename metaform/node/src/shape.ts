@@ -24,7 +24,7 @@
 // checked in the command's order; for each item: it is text, it is not the root, it is an
 // address, it is not a repeat.
 //
-// The rules C1 to W7 that these checks enforce are listed in the Rust file.
+// The rules C1 to W8 that these checks enforce are listed in the Rust file.
 
 import type { Json, JsonObject } from "./json.ts";
 import { copy, get, isArray, isObject, obj } from "./json.ts";
@@ -203,6 +203,13 @@ class Check {
     if (level === Level.Beneath && !holdsRecords) {
       this.fields(value, join(holder, "wants"), path, Level.Beneath);
       return;
+    }
+    if (value.size === 0) {
+      // W8: an empty `wants` would be read as an element named "wants" beneath the holder.
+      throw refuse(
+        `wants at '${holder}' holds no want record`,
+        replaced(this.command, path, obj(["<address>", wantPlaceholder()])),
+      );
     }
     for (const [other, record] of value) {
       if (other === ROOT) {

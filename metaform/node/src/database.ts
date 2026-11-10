@@ -398,6 +398,15 @@ export class ProjectDb {
     }
     // The deepest first, so that no element is removed before the elements beneath it.
     removed.sort((a, b) => count(b, ".") - count(a, "."));
+    // The wants of every removed element first: one write can remove an element and the element
+    // it wanted (`prune` in `commands`), and a provider cannot go while a want still names it.
+    const unwant = this.statement("DELETE FROM wants WHERE element = ?");
+    for (const address of removed) {
+      const key = keys.get(address);
+      if (key !== undefined) {
+        unwant.run(key);
+      }
+    }
     const remove = this.statement("DELETE FROM element WHERE key = ?");
     for (const address of removed) {
       const key = keys.get(address);

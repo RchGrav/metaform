@@ -200,12 +200,13 @@ export function goto(map: MapModel, address: string): Json {
   if (skills.size > 0) {
     sheet.set("skills", skills);
   }
-  // How to write the layers listed here. `Presence` delivers this part once per context, not
-  // once per address (R-6.27), so each entry says where to read it again (R-5.30).
+  // Where the rules for writing each listed layer are. The sheet names the place and does not
+  // carry the rules: an agent that arrives here may never write the layer. `Presence` delivers
+  // this part once per context (R-6.27).
   if (defined.length > 0) {
     const instructions: JsonObject = new Map();
     for (const d of defined) {
-      instructions.set(d.layer, `${d.guidance()}\ngoto ${d.address} to see this again.`);
+      instructions.set(d.layer, `Before you write ${d.layer}, goto ${d.address} for its rules.`);
     }
     sheet.set("instructions", instructions);
   }
