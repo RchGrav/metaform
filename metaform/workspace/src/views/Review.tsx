@@ -7,7 +7,7 @@ import type { KeyboardEvent } from "react";
 import type { ProposalScope } from "../source/agent";
 import type { Address } from "../source";
 import type { Change, Proposal } from "../spec/changes";
-import { reviewRecords } from "../spec/evidence";
+import { reviewRecords, whatOf } from "../spec/evidence";
 import type { ReviewRecord } from "../spec/evidence";
 import { elementAt, labelAt } from "../spec/model";
 import type { Spec } from "../spec/model";
@@ -167,7 +167,9 @@ export function Review({ spec, review, selection, onSelect }: ReviewProps) {
   const { store, state } = review;
   const waiting = state.proposals.filter((proposal) => proposal.state === "proposed");
   const history = historyOf(spec);
-  const rejected = state.proposals.filter((proposal) => proposal.state === "rejected");
+  // A rejection the map recorded is in the history. The others are listed apart, with the reason.
+  const recorded = new Set(history.filter(({ record }) => record.state === "rejected").map(({ address, record }) => `${address}|${record.what}`));
+  const rejected = state.proposals.filter((proposal) => proposal.state === "rejected" && !recorded.has(`${proposal.change.address}|${whatOf(proposal.change)}`));
   const line = writableLine(state.writable);
   const ask = (scope: ProposalScope) => void store.ask(scope);
   return (

@@ -79,7 +79,7 @@ export interface Layout {
 export const NODE_HEIGHT = 52;
 const PAD = 16;
 const MIN_WIDTH = 132;
-const MAX_WIDTH = 340;
+const MAX_WIDTH = 430;
 /** Estimated advance of one character: bold 17 px labels, which grow by up to a quarter when the view is zoomed out (style.ts), regular 11 px badges. */
 const LABEL_CHAR = 13.4;
 const SMALL_CHAR = 6.4;
