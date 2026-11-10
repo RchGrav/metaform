@@ -118,7 +118,7 @@ What the second round found:
 
 | # | Hypothesis | Change | Result | Decision |
 |---|---|---|---|---|
-| 4 | The pointer read as an invitation. A sentence that says when to read the rules keeps an agent from reading them early. | The `instructions` entry is "The rules for writing <layer> are at <address>. Read them only when you write <layer>." | Round 2 (old wording): 2 of 2 agents went to the layer's definition, and neither wrote the layer. Round 3 (new wording): 0 of 2 went. The sentence is 148 bytes longer over the four first-round traces (207,006 against 206,858). | Kept, in all three forms. |
+| 4 | The pointer read as an invitation. A sentence that says when to read the rules keeps an agent from reading them early. | The `instructions` entry is "The rules for writing <layer> are at <address>. Read them only when you write <layer>." | Round 2 (old wording): 2 of 2 agents went to the layer's definition, and neither wrote the layer. Round 3 (new wording): 0 of 2 went. One round-3 agent sent `{"goto": "layer"}` (88 bytes received) to learn what the `layer` addresses in `map` are; it did not read the rules. The sentence is 148 bytes longer over the four first-round traces (207,006 against 206,858). | Kept, in all three forms. |
 
 The third round, on the build with experiments 1 to 4 (`metaform/conformance/traces/round3/`):
 
