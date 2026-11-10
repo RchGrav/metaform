@@ -162,6 +162,38 @@ The last test asked for proposals in 3 actions; the one before needed 7. It stil
 
 Not established: the clipboard copy and the file download (the browser under test has no clipboard or downloads folder to inspect), behavior in Firefox or Safari, and maps above 200 elements in a browser.
 
+## 7a. The grammar of `why` and `how`, and a fourth round of intakes (2026-11-10)
+
+The owner saw whole sentences and values in `why` and `how` on the page. `SPEC.md` R-3.17 and R-6.17 and the documentation set, module 6.4, state the rule. No form delivered it or checked it, and the input schema says only "Use clear, simple technical English". The three earlier rounds of intakes were measured without this fault being seen.
+
+Built in the Rust, Node and Python forms: the refusal `GRAMMAR_CONSTRAINT_VIOLATION` (see the note under R-5.24 in `SPEC.md`). Conformance is 24 cases, 388 steps, 0 differences in each form.
+
+Four Sonnet intakes into a new home, `~/.metaform-climb4`, with the check in force:
+
+| Target | Elements | Wants | Commands | Refused (grammar) | Received |
+|---|---|---|---|---|---|
+| axum-0.8.9 | 21 | 26 | 67 | 2 (2) | 9,058 bytes |
+| lbug-0.22.3 | 26 | 36 | 48 | 7 (1) | 19,591 bytes |
+| rmcp-3.9.0 | 40 | 77 | 113 | 10 (3) | 51,282 bytes |
+| this repository | 61 | 80 | 141 | 1 (1) | 49,356 bytes |
+
+The stored wants are fragments. The axum intake was shallow by its own account, so its map is not comparable with the earlier one.
+
+What the four agents reported:
+
+- The rule reaches an agent only through a refusal. All four said so. An agent wrote about 15 wants before its first refusal.
+- The check does not refuse a long `how` made of verbs joined by commas, or a `why` that lists several actions.
+- The message did not name the part or the fault. This was adjusted after the first intake; the other three still saw the earlier message, because the server process of that home had started before the adjustment.
+- A refusal of about 1,100 bytes carries about 100 bytes of new information: the command is echoed, rendered as the tested sentence and given again as the remediation.
+- A want for an address that is not an element is accepted and makes an empty element. `Intake.md` says both ends must resolve to elements. `SPEC.md` has no rule for it.
+- `Intake.md` names a "native investigation knowledge layer" that does not exist (three agents), and the refusal's remediation for it, `{"map": {}}`, does not help.
+- `goto` at the specification layer's definition returned 2,000 to 2,800 characters of writing rules to agents that only wanted to know what the `layer` addresses were.
+- `orphaned` returns whole elements where addresses would do, and lists the downstream parties every time.
+
+## 7b. The earlier map page (2026-11-10)
+
+The owner said the new page was a step backwards from the earlier Metaform page and asked to start from the old code. The earlier page's own 2D map, camera, depth, flow, hover, selection, keys, search, side column tabs, layers list, right-click menu and exports now run against the new host at `/classic/` (`metaform/workspace/public/classic`), with one adapter for the new server's data. The 3D map, agents, chat, board, roundtables, voice and memory are not ported.
+
 ## 8. Open for the owner
 
 1. **D-19.** Whether `name` may equal `technical_name` when the project has no name of its own. Recommended: yes, as the procedure says.
@@ -170,6 +202,10 @@ Not established: the clipboard copy and the file download (the browser under tes
 4. **Where a layer is active** (enabled, linked, blocked) is recorded in `SPEC.md` and not built.
 5. **The procedure names things the tool does not have:** a "native investigation knowledge layer", and it gives no role for a `downstream` party. Two agents asked for both.
 6. **One map or two.** The intake of this repository put Metaform and Roundtable in one map and had to make Roundtable's engine Divergent, because a map has one Definitive element. The agent recommends a separate map for Roundtable.
+8. **The example `"how": "Prepared mash data packets."`** in `tool-examples.json`, `intake-example.json` and `SPECIFICATION.md` is refused by the grammar check. Recommended: "Prepares mash data packets."
+9. **The schema's descriptions of `why` and `how`** do not state the R-6.17 rule. The schema is protected. Recommended: replace them with the rule and the two examples, so an agent reads the rule before its first write.
+10. **A want for an address that is not an element** is accepted. Recommended: refuse it, as the procedure says both ends resolve to elements.
+11. **Which page is the base:** the earlier page at `/classic/`, or the page written on 2026-11-09 and 2026-11-10.
 7. **Deleting a layer's definition** leaves its records at the elements, where no read that names the layer returns them. Whether a deletion should remove them, or be refused while records exist, depends on item 4.
 
 ## 9. Known limits left as they are
