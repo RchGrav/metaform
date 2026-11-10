@@ -22,6 +22,10 @@ function containerOf(address: Address): string {
   return cut < 0 ? "." : address.slice(0, cut);
 }
 
+/** The size of a label in the style sheet, and how far it grows when the view is zoomed out (style.ts). */
+const LABEL_PX = 17;
+const LABEL_GROWTH = 1.25;
+
 /**
  * Draws one element in `parent` and returns its group. `container` is true for an expanded
  * element that holds others in the picture. `functional` is true in the functional graph, where
@@ -59,9 +63,17 @@ export function drawNode(node: RenderNode, box: Box, container: boolean, parent:
     el("text", { class: "mf-status", x: box.width - 12, y: 41, "text-anchor": "end" }, g).textContent = text.notBuilt;
   }
   // A name longer than its box is cut with an ellipsis; the whole name is in the tooltip.
-  const room = Math.max(4, Math.floor((box.width - 32) / 9.8));
+  const room = Math.max(4, Math.floor((box.width - 32) / 13.4));
   label.textContent = node.label.length > room ? `${node.label.slice(0, room - 1).trimEnd()}…` : node.label;
   if (node.label.length > room) tip(label, node.label);
+  // The width of a label is estimated before it is drawn. A label that would pass its room at
+  // its largest size (style.ts lets a label grow by a quarter when zoomed out) gets a smaller base size.
+  if (!container && typeof label.getComputedTextLength === "function" && label.isConnected) {
+    const size = parseFloat(getComputedStyle(label).fontSize) || LABEL_PX;
+    const widest = (label.getComputedTextLength() * LABEL_PX * LABEL_GROWTH) / size;
+    const most = box.width - 16 - (node.beneath > 0 ? 34 : 10);
+    if (widest > most) label.style.fontSize = `calc(${((LABEL_PX * most) / widest).toFixed(2)}px * clamp(1, calc(var(--mf-unzoom, 1) * 0.6), ${LABEL_GROWTH}))`;
+  }
   let right = box.width - 16;
   if (node.beneath > 0) {
     const chevron = el("g", {

@@ -80,8 +80,8 @@ export const NODE_HEIGHT = 52;
 const PAD = 16;
 const MIN_WIDTH = 132;
 const MAX_WIDTH = 340;
-/** Estimated advance of one character: bold 17 px labels, regular 11 px badges. */
-const LABEL_CHAR = 10.4;
+/** Estimated advance of one character: bold 17 px labels, which grow by up to a quarter when the view is zoomed out (style.ts), regular 11 px badges. */
+const LABEL_CHAR = 13.4;
 const SMALL_CHAR = 6.4;
 /** Room above an expanded element's children for its own label. */
 export const HEADER = 36;
