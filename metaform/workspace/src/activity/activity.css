@@ -1,0 +1,69 @@
+/* Styles of the Findings panel and the Activity panel. The colours are the page's own tokens
+   (styles.css). Sizes are in em, so both panels follow the panel's text size. Each state and
+   kind has a word or a mark; no rule here gives a meaning by colour alone. */
+
+.act-panel { color: var(--text); line-height: 1.4; min-width: 0; padding: 0.6em 0.9em; }
+.act-panel p { margin: 0; }
+.act-origin, .act-note { color: var(--muted); font-size: 0.85em; }
+.act-origin { padding-bottom: 0.5em; }
+.act-empty { padding: 0.5em 0; }
+.act-mark { display: inline-block; min-width: 1em; margin-right: 0.35em; text-align: center; color: var(--text); }
+.act-count { color: var(--muted); font-weight: 400; font-size: 0.85em; margin-left: 0.4em; }
+
+.act-kinds { margin: 0.3em 0 0; padding: 0; list-style: none; font-size: 0.9em; }
+.act-kinds li { padding: 0.15em 0; }
+
+.act-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.6em; padding: 0.2em 0 0.5em; }
+.act-chip, .act-button, .act-new, .act-field select {
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0.25em 0.7em; cursor: pointer;
+}
+.act-chip:hover, .act-button:hover { border-color: var(--accent); }
+.act-chip:disabled { color: var(--muted); cursor: default; border-style: dashed; }
+/* A pressed control has a thicker border and bold text as well as the accent colour. */
+.act-chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
+.act-field { display: inline-flex; align-items: center; gap: 0.4em; font-size: 0.9em; }
+
+.act-group h3 { margin: 0; padding: 0.7em 0 0.1em; font-size: 1em; font-weight: 600; border-top: 1px solid var(--line); }
+.act-rows { list-style: none; margin: 0; padding: 0; }
+.act-row {
+  display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 0.1em;
+  width: 100%; padding: 0.35em 0.5em; text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; border-left: 3px solid transparent; border-radius: 2px; cursor: pointer;
+}
+.act-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.act-row:focus-visible, .act-chip:focus-visible, .act-button:focus-visible, .act-new:focus-visible,
+.act-field select:focus-visible, .act-field input:focus-visible, .act-scroller:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+/* The row of the selected element has a bar and bold text as well as a tint. */
+.act-row[aria-current="true"] { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.act-row[aria-current="true"] .act-row-main { font-weight: 700; }
+.act-row-main { overflow-wrap: anywhere; }
+.act-row-address { font-family: ui-monospace, monospace; font-size: 0.8em; color: var(--muted); overflow-wrap: anywhere; }
+.act-row-note { font-size: 0.85em; color: var(--muted); overflow-wrap: anywhere; }
+
+/* The Activity panel fills its panel and scrolls its own list, so it can tell when the user has
+   left the top. The page moves the scroll position itself when items arrive, so the browser's
+   own scroll anchoring is off. */
+.act-activity { display: flex; flex-direction: column; height: 100%; min-height: 12em; }
+.act-states { padding-bottom: 0.4em; }
+.act-state { font-size: 0.9em; }
+.act-state-not-connected, .act-state-paused { font-weight: 700; }
+.act-scroller { flex: 1 1 0; min-height: 0; overflow: auto; overflow-anchor: none; border-top: 1px solid var(--line); }
+.act-new { position: sticky; top: 0; z-index: 1; display: block; width: 100%; text-align: left; border-color: var(--accent); font-weight: 600; }
+.act-item { border-bottom: 1px solid var(--line); }
+.act-item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2em 0.8em; font-size: 0.85em; color: var(--muted); }
+.act-item-head time { font-variant-numeric: tabular-nums; }
+.act-type { color: var(--text); font-weight: 600; }
+.act-simulated { border: 1px dashed var(--unseen); border-radius: 3px; padding: 0 0.4em; color: var(--unseen); }
+
+.act-details { padding: 0.3em 0.5em 0.7em 0.9em; border-left: 3px solid var(--line); }
+.act-facts { display: grid; gap: 0.1em; margin: 0 0 0.4em; font-size: 0.9em; }
+.act-facts div { display: grid; grid-template-columns: 9em minmax(0, 1fr); }
+.act-facts dt { color: var(--muted); }
+.act-facts dd { margin: 0; overflow-wrap: anywhere; }
+.act-changes { width: 100%; border-collapse: collapse; margin: 0.3em 0 0.6em; font-size: 0.9em; table-layout: fixed; }
+.act-changes th, .act-changes td { border: 1px solid var(--line); padding: 0.25em 0.5em; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.act-changes thead th { color: var(--muted); font-weight: 600; }
+.act-changes em { color: var(--muted); }
