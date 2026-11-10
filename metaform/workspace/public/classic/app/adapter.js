@@ -15,10 +15,12 @@
  *   - a field of an element that holds a list is that element's records of a layer of that name. They are kept on the
  *     element as `records` and shown in the side column; the map does not draw them.
  * What has no equivalent: a join that holds several elements (each want names one); memories, tickets and open work
- * other than `un_built`; links from one node's layer record to another node; the server's own search and brief. */
+ * other than `un_built`; links from one node's layer record to another node; the server's own search. The brief
+ * of an element is the host's answer to `goto`, `readBrief`. */
 import '/classic/app/core/reads.js';  // the part before runs first, so the parts run in the page's order
 import {S} from '/classic/app/core/reads.js';
 import {withProviders} from '/classic/app/graph/data.js';
+import {layerOn} from '/classic/app/header/layers.js';
 
 const IFD = {inbound: 'receives', outbound: 'sends', 'two-way': 'both'};
 const OWN_FIELDS = new Set(['technical_name', 'name', 'role', 'status', 'uri', 'wants']);
@@ -93,11 +95,26 @@ export function recordValue(record) {
   }
   return record;
 }
+/* An element's records, layer by layer, in the layers the Layers checklist leaves on, header/layers.js. */
+export const recordsShown = element => Object.entries(element.records).filter(([layer]) => layerOn(layer));
+/* An element as an agent is handed it: the host's answer to the `project-map` command `{"goto": "<address>"}`, as
+ * the text the host sent and as the object it holds. A refusal is an error that carries what the host said. */
+export async function readBrief(project, address) {
+  const response = await fetch(`${projectPath(project)}/call`, {method: 'POST',
+    headers: {'content-type': 'application/json'}, body: JSON.stringify({goto: address})});
+  const text = await response.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = undefined; }
+  if (!response.ok || !isObject(body) || body.status === 'error') {
+    throw new Error(isObject(body) ? body.message || body.error || text : `The Metaform host answered ${response.status}.`);
+  }
+  return {text, body};
+}
 /* What the layers hold at a node, in the shape the earlier page's read of a node gave: one group for each layer. */
 export function nodeView(key) {
   const element = S.elements.get(key)?.element;
   if (!element) return {layers: []};
-  return {layers: Object.entries(element.records).map(([layer, records]) => ({layer, kind: 'knowledge',
+  return {layers: recordsShown(element).map(([layer, records]) => ({layer, kind: 'knowledge',
     items: records.map((record, index) => ({id: `${element.address}#${layer}#${index}`, value: recordValue(record)}))}))};
 }
 /* The layers' records that hold every word of `query`, the first `limit`, each with the element it is at, in the shape
@@ -106,7 +123,7 @@ export function searchRecords(query, limit) {
   const words = String(query).toLowerCase().split(/\s+/).filter(Boolean), found = [];
   if (!words.length) return found;
   for (const {element} of S.elements.values()) {
-    for (const [layer, records] of Object.entries(element.records)) {
+    for (const [layer, records] of recordsShown(element)) {
       records.forEach((record, index) => {
         const text = typeof record === 'string' ? record : JSON.stringify(record);
         if (found.length < limit && words.every(word => text.toLowerCase().includes(word))) {

@@ -10,6 +10,9 @@ import {revealDepth} from '/classic/app/keys/walk.js';
 import {IN, samePath, renderThing} from '/classic/app/map2d/inside.js';
 import {focus2D} from '/classic/app/map2d/flow2d.js';
 import {renderJoin, renderObject} from '/classic/app/panel/object.js';
+import {tabNow, showTab} from '/classic/app/panel/tabs.js';
+import {renderBrief} from '/classic/app/panel/brief.js';
+import {renderProv} from '/classic/app/panel/provenance.js';
 
 /* ---------- selection: both views move together; the long text goes in the panel ----------
  * A selection made as the map is loaded or read again, again, leaves open the tab of the panel the person has open,
@@ -47,11 +50,18 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   if (!known) {
     S.neighbors = new Set();
     focus2D(id, frame);
+    if (!again) showTab('object');
     renderThing(thing);
     return;
   }
   S.neighbors = neighborsOf(id, join);
   focus2D(id, frame);
+  // The brief stays on view while the person walks the map from it, and on this page the provenance too, which is
+  // the selected element's own; a selection made as the map is read again draws the tab on view again.
+  const tab = tabNow();
+  if (!again) showTab(tab);
+  else if (tab === 'brief') renderBrief();
+  else if (tab === 'prov') renderProv();
   // A map read again leaves the Object tab as it is while nothing it was drawn from changed, so agents writing
   // elsewhere neither make it flicker nor take the person's place in it (2026-10-18).
   const print = MEM.key ? null : panelPrint(id);

@@ -1,5 +1,5 @@
-/* The header's menus and popovers, its text size and its fold, the skip links and the window, workspace and
- * administration menus. */
+/* The header's menus and popovers, its text size and its fold, from the earlier page's header/menus.js. The skip
+ * links and the window, workspace and administration menus, which that file also held, are not part of this page. */
 import '/classic/app/header/layers.js';  // the part before runs first, so the parts run in the page's order
 import {$, h} from '/classic/app/core/dom.js';
 import {overlay} from '/classic/app/core/overlays.js';
@@ -15,6 +15,8 @@ export function toggler(button, box, open = () => {}) {
   };
   button.addEventListener('click', flip);
 }
+overlay($('#layerlist'), {kind: 'popover', focus: () => $('#layerlist input:not(:disabled)')});
+toggler($('#layersBtn'), $('#layerlist'));
 overlay($('#settingsbox'), {kind: 'popover', focus: () => $('#settingsbox')});  // the menu itself, so no control shows a ring on opening
 toggler($('#settingsBtn'), $('#settingsbox'));
 /* Where the header ends, `--head-bottom`, kept as the header changes height, as when it folds: the configuration
@@ -63,5 +65,40 @@ for (const [index, step] of TEXTSIZE.steps.entries()) {
 $('#textsize').onchange = event => textSize(Number(event.target.value));
 // The text size is chosen in the View menu; no Alt shortcut, which the system takes on some machines.
 textSize(textStep());
+/* The header folds its rest behind the menu button below 1100 px, by the styles. On a wider window its one row gives
+ * back room in steps while it does not hold everything, as at a larger text size or a long project name: the search
+ * keeps its icon alone, then the spacing tightens, then the labels go, then the names shorten; only a row that still
+ * does not fit folds. Each step is measured unfolded, in the same frame, so nothing flashes. */
+const STEPS = ['compact', 'tight', 'tighter'];
+export function foldHeader() {
+  const header = $('header');
+  header.classList.remove('fold', ...STEPS);
+  if (innerWidth <= 1100) return;  // the styles fold it there
+  header.classList.add('measure');  // each part at its own width, so a row too full shows as overflow
+  // past the row's end, by the parts' own edges: scrollWidth rounds, and a row a few pixels over squeezes the names
+  const parts = header.querySelectorAll(':scope > *, :scope > .hmore > *');
+  const over = () => {
+    const end = header.getBoundingClientRect().right - parseFloat(getComputedStyle(header).paddingRight);
+    return Math.max(...[...parts].map(part => part.getBoundingClientRect().right)) > end + 0.5;
+  };
+  for (let step = 0; step < STEPS.length && over(); step++) header.classList.add(STEPS[step]);
+  let fold = false;
+  if (over()) {
+    header.classList.add('short');  // the project and base names cut to their shortest
+    fold = over();
+    header.classList.remove('short');
+  }
+  header.classList.remove('measure');
+  header.classList.toggle('fold', fold);
+}
+addEventListener('resize', foldHeader);
+document.fonts?.ready.then(foldHeader);
+/* Below 1100 px, or where its row does not fit, the header's rest folds behind the menu button. */
+function unfoldHeader() {
+  const open = !$('header').classList.contains('expanded');
+  $('header').classList.toggle('expanded', open);
+  $('#moreBtn').setAttribute('aria-expanded', String(open));
+}
+$('#moreBtn').onclick = unfoldHeader;
 /* The map is the page's large view. */
 export const largeView = () => $('#map2d');

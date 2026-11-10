@@ -1,6 +1,7 @@
 /* How the 2D map fits its pane, P043: the direction likelier to fit, ELK's options, the fit picked and checked
  * again, and the move between layouts. */
 import '/classic/app/map2d/build.js';  // the part before runs first, so the parts run in the page's order
+import {menu} from '/classic/app/selection/menu.js';
 import {$, reduced, fill} from '/classic/app/core/dom.js';
 import {S} from '/classic/app/core/reads.js';
 import {MARGIN} from '/classic/app/camera/flight.js';
@@ -396,6 +397,11 @@ export function placeIn(nodes, id, group, title, work, tip = title, measured = m
   for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
   if (work?.length) glow2d(group);  // its pulse drawn by a copy, `glow2d`
   group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id, event); });
+  group.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    menu(id, event.clientX, event.clientY);
+  });
 }
 /* The drawing's own bounds, the map's edge in its own units, VIEW-041. */
 export function boundsOf(svg) {

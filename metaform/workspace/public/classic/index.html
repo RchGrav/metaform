@@ -14,11 +14,24 @@
 <!-- Shown at once while the page loads and lays itself out, `booting` in theme.js; gone when the page is shown. -->
 <div id="boot" role="status">Loading the map…</div>
 <div class="app">
-  <!-- The header: the project on the left, the search, what sets the view, and the way to the new workspace. -->
+  <!-- The header: the project on the left, the export, the search, what sets the view, and the way to the new
+       workspace. In a narrow window everything in `hmore` folds behind the menu button, `foldHeader`. -->
   <header>
     <div class="brand"><span>meta<b>form</b></span></div>
     <div class="hfield proj"><label for="proj">Project</label><select id="proj"></select></div>
+    <div class="hmore">
+      <div class="exportpick pick">
+        <button class="btn quiet" id="exportBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="exportbox" title="Save the map as a document">Export<i class="i i-chev" aria-hidden="true"></i></button>
+        <div class="menu" id="exportbox" hidden role="menu" aria-label="Export">
+          <button id="exportMarkdown" type="button" role="menuitem" title="The map as a Markdown document: one section for each element, with what it relies on as sentences">Markdown</button>
+          <div class="sep" role="separator"></div>
+          <button id="exportMermaid" type="button" role="menuitem" title="The 2D map as a Mermaid flowchart, a .mmd file GitHub, VS Code and Obsidian draw">Mermaid (.mmd)</button>
+          <button id="copyMermaid" type="button" role="menuitem" title="The 2D map as Mermaid code, copied to paste into a document or a chat">Copy as Mermaid</button>
+        </div>
+      </div>
+    </div>
     <button class="btn searchbtn" id="searchBtn" type="button" aria-keyshortcuts="/" aria-controls="search" title="Search the map (/)"><i class="i i-search" aria-hidden="true"></i><span class="lbl">Search the map</span><kbd aria-hidden="true">/</kbd></button>
+    <div class="hmore">
     <div class="hfield depthpick" role="group" aria-label="Depth of the map" title="How many levels of the map show, counted along the lines from the top (4 steps through them)">
       <label>Depth</label>
       <button class="btn sm" id="depthLess" type="button" title="One level fewer">Less</button>
@@ -28,6 +41,13 @@
     <div class="hfield" title="The way the map runs: chosen for the pane, left to right, or top to bottom">
       <label for="directionat">Direction</label>
       <select id="directionat"><option value="auto">Auto</option><option value="across">Across</option><option value="down">Down</option></select>
+    </div>
+    <div class="layerpick pick">
+      <button class="btn" id="layersBtn" type="button" aria-expanded="false" aria-controls="layerlist"><span class="lbl">Layers</span></button>
+      <div class="layerlist surface" id="layerlist" hidden role="dialog" aria-label="Layers shown in this view">
+        <div id="layers" role="group" aria-label="Layers shown in this view"></div>
+        <p class="note" id="note"></p>
+      </div>
     </div>
     <div class="settingspick pick">
       <!-- The View menu: how this page draws the map, its colors and its keys. -->
@@ -60,12 +80,22 @@
         <button id="shortcutsBtn" type="button" title="Every key the map and the page take">Keyboard shortcuts <kbd aria-hidden="true">?</kbd></button>
       </div>
     </div>
+    </div>
     <button class="btn quiet helpbtn" id="helpBtn" type="button" aria-label="Help" aria-keyshortcuts="?" aria-controls="help" title="Help: every key the map and the page take (?)"><span class="lbl">Help</span></button>
     <a class="tonew" href="/" title="The new graph workspace">New workspace</a>
+    <button class="btn icon quiet" id="moreBtn" type="button" aria-label="More controls" aria-expanded="false" title="More controls"><i class="i i-menu" aria-hidden="true"></i></button>
   </header>
 
   <aside>
-    <section class="pane" id="p-object" aria-label="The selected part" tabindex="-1"><p class="loading">Reading the map…</p></section>
+    <div class="tabs" role="tablist" aria-label="The selected object">
+      <button role="tab" id="t-object" type="button" aria-selected="true" aria-controls="p-object">Object</button>
+      <button role="tab" id="t-brief" type="button" aria-selected="false" aria-controls="p-brief" tabindex="-1" title="What an agent reads about the selected element">Brief</button>
+      <button role="tab" id="t-prov" type="button" aria-selected="false" aria-controls="p-prov" tabindex="-1" title="Where the selected element comes from: its source reference, its sources and its reviews">Provenance</button>
+    </div>
+    <section class="pane" id="p-object" role="tabpanel" aria-labelledby="t-object" tabindex="-1"><p class="loading">Reading the map…</p></section>
+    <!-- The element's brief: the answer an agent is handed when it goes to the element's address, with its size. -->
+    <section class="pane" id="p-brief" role="tabpanel" aria-labelledby="t-brief" hidden></section>
+    <section class="pane" id="p-prov" role="tabpanel" aria-labelledby="t-prov" hidden></section>
   </aside>
 
   <main>
@@ -76,6 +106,7 @@
   </main>
 </div>
 <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+<div id="menu" class="menu" hidden role="menu" aria-label="What can be done with this element"></div>
 <!-- The page's own dialogs: a confirmation, the search of the map, and the keyboard shortcuts. -->
 <div id="confirm" class="window dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
   <div class="body"></div>

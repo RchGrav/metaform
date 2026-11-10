@@ -9,7 +9,7 @@ import {colorVar} from '/classic/app/header/layers.js';
 import {labelOf} from '/classic/app/map2d/inside.js';
 import {flowArrow} from '/classic/app/map2d/flow2d.js';
 import {select} from '/classic/app/selection/select.js';
-import {directionWord} from '/classic/app/adapter.js';
+import {directionWord, recordsShown} from '/classic/app/adapter.js';
 
 /* A part of the column under one line with its count; it opens as drawn, and a person may fold it. */
 function folded(title, count, ...body) {
@@ -94,7 +94,7 @@ export function renderObject(id) {
   const held = S.joins.filter(join => join.receiver === id);
   const serves = S.joins.filter(join => join.providers.includes(id));
   const loose = Object.entries(element.wants).filter(([to]) => !S.elements.has(to));
-  const layers = Object.entries(element.records);
+  const layers = recordsShown(element);  // the layers the Layers checklist leaves on
   fill($('#p-object'),
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, labelOf(element)),

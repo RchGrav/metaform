@@ -1,7 +1,7 @@
 /* Loading: the projects, a project's map read and drawn, the map followed as it changes, and the header's own
  * controls. It does the work of the earlier page's loading/load.js and workspace/workspace.js `main` for this page;
  * the reads are adapter.js's. */
-import '/classic/app/search/search.js';  // the part before runs first, so the parts run in the page's order
+import '/classic/app/header/export.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/classic/app/core/dom.js';
 import {toast} from '/classic/app/core/controls.js';
 import {S} from '/classic/app/core/reads.js';
@@ -13,6 +13,8 @@ import {deselect, noneSelected} from '/classic/app/map2d/wire.js';
 import {DEPTH, FOCUS, nudgeDepth, depthWords} from '/classic/app/keys/walk.js';
 import {select} from '/classic/app/selection/select.js';
 import {readView} from '/classic/app/views/settings.js';
+import {renderChips} from '/classic/app/header/layers.js';
+import {foldHeader} from '/classic/app/header/menus.js';
 
 const LOAD = {unfollow: null, reading: null, again: false};
 const PROJECT_KEY = 'classic.project';
@@ -27,6 +29,7 @@ async function readGraph() {
     const project = S.project, found = await readMap(project);
     if (project !== S.project) return false;  // another project was chosen meanwhile
     Object.assign(S, found);
+    renderChips();  // the Layers checklist lists the layers this map holds
     return true;
   } catch (error) {
     toast(error.message);
@@ -98,6 +101,7 @@ export async function main() {
     return;
   }
   fill(select2, S.projects.map(project => h('option', {value: project.id, title: project.folder || ''}, project.name)));
+  foldHeader();  // the project's name is in the header now
   select2.onchange = () => { loadProject(select2.value); $('#map2d').focus({preventScroll: true}); };
   let wanted = new URLSearchParams(location.search).get('project');
   try { wanted ||= localStorage.getItem(PROJECT_KEY); } catch { /* storage can be blocked */ }

@@ -11,6 +11,7 @@ import {EDGE_PICK, edgeAt2d, nodeAt2d, pickNode2d, pickEdge2d, unmark2D} from '/
 import {clicked2d, modified2d} from '/classic/app/map2d/flow2d.js';
 import {select} from '/classic/app/selection/select.js';
 import {revealDepth} from '/classic/app/keys/walk.js';
+import {tabNow, showTab} from '/classic/app/panel/tabs.js';
 
 /* Letting go of the selection, by a click on the map's empty space or Escape, VIEW-008: its marks go from both maps,
  * the panel says nothing is selected, and nothing is selected again until the person selects, even as the map is read
@@ -20,6 +21,7 @@ export function deselect() {
   Object.assign(S, {selected: null, cleared: true, panelFor: null, trail: [], neighbors: new Set()});
   unmark2D();
   noneSelected();  // the 2D view stays where it is, VIEW-041
+  showTab(tabNow());  // the Brief and the Provenance tabs say nothing is selected too
   revealDepth(null);  // the branch the selection opened closes, walk.js FOCUS
 }
 export function noneSelected() {
