@@ -43,6 +43,7 @@ The home is the folder a form writes under. It is `--home`, or `METAFORM_HOME`, 
 <home>/projects/<id>/source.txt  the project's folder, for a person who looks in the home
 ```
 
+- A form writes the marker as `store.format.<process id>.tmp` and then links it into place, so another process sees the marker complete or not at all. A file with that temporary name does not count as a file in the home.
 - A form refuses a home whose `store.format` holds anything else, and a home that has files and no `store.format`. The Rust form's home has a different format and is refused. **Reason:** two engines must never write one home.
 - The project id is the Rust form's: the folder's canonical path with every character that is not an ASCII letter or digit replaced by `-`, followed by a three-digit number, the first that is free. **Reason:** one rule for a project's id in every form.
 - Nothing is written into a project's own folder, and a project's database never holds the project's name (R-4.1). The name is in the core database only: `project(id, source, name)`.
@@ -81,6 +82,8 @@ CREATE TABLE "l_<name>" (element INTEGER NOT NULL REFERENCES element(key) ON DEL
 ```
 
 - `<name>` is the field's name in the stored form (camelCase). The table name is written as a quoted identifier with every `"` doubled, so no field name can alter a statement. Every value goes in as a bound parameter.
+- SQLite ignores the case of ASCII letters in a table name, so `f_fooBar` (the field `foo_bar`) and `f_foobar` (the field `foobar`) would be one table. When a name's table would collide in this way with a table that exists, the later name gets the table `f__<the name in snake_case>` (or `l__...` for a layer). A stored name holds no underscore, so that name is always free. A form finds the table of a stored name by an exact, case-sensitive match in `sqlite_schema`: first `f_<name>`, then `f__<the name in snake_case>`. (Found by the Node build, 2026-11-09.)
+- A name that holds the character U+0000 cannot be written in SQL text. Its table name has a period in that place; no stored name holds a period.
 - A scalar is stored as JSON text (`"un_built"`, `3`, `true`), so a string, a number and a boolean come back as what they were.
 - A layer's records are rows in order, one row for each record. Appending a record writes one row; it does not rewrite the list.
 - `holds` has one row for each element that has a layer, including a layer whose list is empty. The Rust form keeps an empty list of a system layer (`"sources": []`) as a field that is present, and a layer table with no rows cannot say that. `holds` also answers which layers an element has without a look in every layer table.

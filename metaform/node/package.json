@@ -1,0 +1,15 @@
+{
+  "name": "metaform-node",
+  "version": "0.1.0",
+  "description": "The Node form of Metaform: the project-map tool over stdio MCP, on a SQLite store.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "start": "node src/main.ts mcp",
+    "test": "node --test"
+  }
+}
