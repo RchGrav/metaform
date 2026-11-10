@@ -212,7 +212,7 @@ Reported in this round:
 
 ## 7b. The earlier map page (2026-11-10)
 
-The owner said the new page was a step backwards from the earlier Metaform page and asked to start from the old code. The earlier page's own 2D map, camera, depth, flow, hover, selection, keys, search, side column tabs, layers list, right-click menu and exports now run against the new host at `/classic/` (`metaform/workspace/public/classic`), with one adapter for the new server's data. A third pass brought the earlier 3D map beside the 2D map, with one selection. Agents, chat, board, roundtables, voice and memory are not ported.
+The owner said the new page was a step backwards from the earlier Metaform page and asked to start from the old code. The earlier page's own 2D map, camera, depth, flow, hover, selection, keys, search, side column tabs, layers list, right-click menu and exports now run against the new host at `/classic/` (`metaform/workspace/public/classic`), with one adapter for the new server's data. A third pass brought the earlier 3D map beside the 2D map, with one selection. Checked on a generated map of 251 elements: the page opened it at 3 levels (51 elements, 25 of them with a `+8` count), More opened the next level (76 elements), and a theme change redrew it, with no page error. Not checked: a browser with a GPU. Agents, chat, board, roundtables, voice and memory are not ported.
 
 ## 8. Open for the owner
 
