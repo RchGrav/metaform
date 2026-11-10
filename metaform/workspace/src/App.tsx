@@ -655,6 +655,11 @@ export function App({ source, events, renderer, simulated, startCommand, agent }
             />
           </div>
         )}
+        {present && (
+          <button type="button" className="leave-present" onClick={() => dispatch({ type: "mode", mode: "graph" })}>
+            {strings.modes.leavePresent}
+          </button>
+        )}
         {current && addresses.length === 0 && !firstRun && (
           // A registered project whose map has no element yet: say so, in place of a blank canvas.
           <p className="empty-map">{strings.graph.emptyMap}</p>

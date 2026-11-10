@@ -17,6 +17,8 @@ export const modes = {
   // Proposed to Ida as "Element" so that "focus" names only the pivot. Not yet accepted.
   element: "Element",
   present: "Present",
+  // The one control Present mode shows: it brings the page's controls back.
+  leavePresent: "Leave Present (Esc)",
 } as const;
 
 export const topBar = {

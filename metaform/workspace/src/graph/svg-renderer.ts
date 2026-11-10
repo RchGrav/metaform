@@ -28,6 +28,8 @@ import { GRAPH_CSS } from "./style";
 
 /** A fit of a selection or a branch never magnifies past this zoom. */
 const PART_FIT_ZOOM = 1.25;
+/** How long after the last change of the pane the view is fitted again. */
+const REFIT_MS = 120;
 /** How long after the last wheel or drag a viewport change counts as settled. */
 const SETTLE_MS = 150;
 
@@ -68,6 +70,9 @@ export class ElkRenderer implements GraphRenderer {
   private resizeObserver: ResizeObserver | null = null;
   /** The scene the last call of `render` asked for. `scene` is the one drawn. */
   private asked: RenderScene | null = null;
+  /** True while the view is where a fit put it: the user has not panned or zoomed since. */
+  private atFit = false;
+  private refitTimer: ReturnType<typeof setTimeout> | undefined;
   /** The shape of the pane that call laid out for, or null when the pane had no size. */
   private askedAspect: ReturnType<typeof aspectBucket> | null = null;
 
@@ -104,6 +109,7 @@ export class ElkRenderer implements GraphRenderer {
     this.glide.stop();
     for (const off of this.cleanup.splice(0)) off();
     clearTimeout(this.settleTimer);
+    clearTimeout(this.refitTimer);
     this.camera.stop();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -137,6 +143,7 @@ export class ElkRenderer implements GraphRenderer {
   }
 
   setViewport(viewport: Viewport, animate: boolean): void {
+    this.atFit = false;
     this.viewport = { ...viewport, zoom: clampZoom(viewport.zoom) };
     this.camera.moveTo(this.viewport, animate);
   }
@@ -194,6 +201,7 @@ export class ElkRenderer implements GraphRenderer {
     if (!size || size.width === 0 || size.height === 0) return { ...this.viewport };
     const clear = clearPart(size, this.insets);
     this.viewport = fitViewport(target, clear, margin, maxZoom);
+    this.atFit = true;
     this.camera.fitTo(this.viewport, { x: clear.x + clear.width / 2, y: clear.y + clear.height / 2 }, animate);
     return { ...this.viewport };
   }
@@ -215,8 +223,10 @@ export class ElkRenderer implements GraphRenderer {
 
   /**
    * The pane or its insets changed. When its shape moved to another step, the scene is laid out
-   * for the new shape. If the layout then runs in another direction, the old viewport no longer
-   * shows the graph, so the scope is fitted and the viewport reported (rule 2).
+   * for the new shape. The scope is then fitted, and the viewport reported, in two cases: the
+   * view was at a fit and the user had not moved it since, or the layout now runs in another
+   * direction, so the old viewport no longer shows the graph (rule 2). A view the user moved
+   * stays where the user put it.
    */
   private paneChanged(): void {
     const pane = this.pane();
@@ -224,13 +234,22 @@ export class ElkRenderer implements GraphRenderer {
     // would supersede it and leave an old scene on screen.
     const scene = this.asked;
     const before = this.current;
+    if (!pane || !scene || !before) return;
+    const refit = () => {
+      clearTimeout(this.refitTimer);
+      // A panel edge that is dragged reports many sizes; the fit follows the last one.
+      this.refitTimer = setTimeout(() => void this.fitScope(true).then((viewport) => this.events?.viewportChange(viewport)), REFIT_MS);
+    };
     // A layout for this scene and this shape of pane may be in progress already; it is not started again.
-    if (!pane || !scene || !before || this.askedAspect === aspectBucket(pane)) return;
+    if (this.askedAspect === aspectBucket(pane)) {
+      if (this.atFit) refit();
+      return;
+    }
+    const wasAtFit = this.atFit;
     void this.render(scene).then(() => {
       const now = this.current;
       if (!now || now === before || this.asked !== scene) return;
-      if (now.direction === before.direction && now.wrapped === before.wrapped) return;
-      void this.fitScope(true).then((viewport) => this.events?.viewportChange(viewport));
+      if (wasAtFit || now.direction !== before.direction || now.wrapped !== before.wrapped) refit();
     });
   }
 
@@ -405,6 +424,8 @@ export class ElkRenderer implements GraphRenderer {
   }
 
   private settled(): void {
+    // The user moved the view, so a later change of the pane leaves it where the user put it.
+    this.atFit = false;
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => this.events?.viewportChange({ ...this.viewport }), SETTLE_MS);
   }

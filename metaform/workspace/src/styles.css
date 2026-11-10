@@ -198,3 +198,5 @@ kbd { font: .857em/1.6 ui-monospace, monospace; background: var(--bg); border: 1
 .layers-title { color: var(--muted); font-size: .857em; }
 .spec-outline { padding: 0 12px 12px; }
 .spec-preview { padding: 0 12px 12px; }
+.leave-present { position: absolute; right: 12px; top: 12px; z-index: 3; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; opacity: .7; }
+.leave-present:hover, .leave-present:focus-visible { opacity: 1; color: var(--text); }

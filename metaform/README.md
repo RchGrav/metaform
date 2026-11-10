@@ -88,6 +88,15 @@ metaform/rust/target/release/metaform gui
 
 `metaform gui` prints the address of the graph workspace, `http://127.0.0.1:4170/` unless that port is in use. The workspace shows every project in the home and follows changes as agents write them. The server tells each agent that connects to give its user this address.
 
+The workspace shows one project's functional specification in three views that read the same state: the graph, the outline with the element panels, and the Markdown document.
+
+- **Graph.** Elements and the wants between them, laid out by purpose. Controls set the depth, show or hide a category, and fit the graph, the selection or a branch. A selected element shows its wants with the why, the how and the direction.
+- **Evidence.** Each element and each part carries a status: source-backed, inferred, unverified, user-authored, agent-proposed, accepted or rejected. The Findings panel lists what the map leaves open.
+- **Edit and review.** An edit is sent to the server as a `project-map` command, and a refusal shows the server's reason. Proposals show the change, the rationale and the evidence, and wait for accept or reject. No agent service is connected to the page, so proposals come from a generator in the page and are labelled Simulated.
+- **Markdown.** The specification on screen as a document, to copy or download.
+
+`metaform/workspace/ARCHITECTURE.md` says how the page is built, which parts are real and which are simulated, and its limits.
+
 ## The intake procedure
 
 The intake procedure and its semantics are proven over six months and many intakes. They are protected: do not edit them without the owner's direct instruction (`context/topogee-repo/AGENTS.md`).

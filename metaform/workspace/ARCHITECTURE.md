@@ -1,6 +1,6 @@
 # Architecture of the Metaform GUI
 
-**Status:** Proposed by an agent, 2026-11-09, to carry out the owner's GUI specification, `dev/gui_specification.md`. That document governs. This one says how the page is built and which parts are real and which are simulated.
+**Status:** Written by an agent, 2026-11-09, and built as described by 2026-11-10, to carry out the owner's GUI specification, `dev/gui_specification.md`. That document governs. This one says how the page is built and which parts are real and which are simulated.
 
 ## 1. One canonical specification
 
@@ -40,7 +40,7 @@ The map does not record a status field today. The first three are derived from w
 | Writing an edit or an accepted proposal | Real: a write route on the host that forwards one `project-map` command. It accepts a request only when its Origin is the page's own address, as the earlier Metaform page did. |
 | The Markdown | Real: generated in the browser from `current`, with the user's choices of what to include. The preview, the copy and the download come from one function. |
 | Agent proposals | Simulated. No agent service is reachable from the host. The page offers proposals from a local generator behind the `AgentService` interface and labels each one "Simulated". A real service implements the same interface. |
-| The activity stream | Map changes are real. Test results, build results, dependency changes and runtime issues have no source yet; they appear only with sample data and are labelled "Simulated". |
+| The activity stream | Map changes are real: each item is made by comparing the specification before and after a change the server announced. Test results, build results, dependency changes and runtime issues have no source yet; they appear only with sample data and are labelled "Simulated". |
 | Sample data (`?mock`, `npm run dev`) | Simulated, and labelled. |
 
 ## 4. Parts of the page
@@ -50,13 +50,25 @@ The map does not record a status field today. The first three are derived from w
 | `src/spec/` | The `Spec` model, how it is built from a raw dump, edits and proposals, evidence status, and the Markdown generator. Pure functions, with tests. |
 | `src/graph/` | The graph: layout by purpose (ELK), the SVG renderer, the camera, the flow on the lines. |
 | `src/panels/` | The panel system: zones (left, right, bottom), floating panels, resizing, the saved layout and text size. No dependency. |
-| `src/views/` | The panels themselves: entity, evidence, outline, findings, activity, review history, Markdown preview; the top bar and the graph controls. |
+| `src/views/` | The panels themselves: entity, evidence, outline, findings, activity, review, Markdown preview; the top bar and the graph controls. |
+| `src/review/` | The store that takes edits and proposals, sends each accepted change to the server, and records it in the `review` layer. |
+| `src/activity/` | Findings read from the specification, and the activity items. |
 | `src/source/` | The seam to the server: reads, events, writes, and the `AgentService` interface. |
 | `src/mock/` | Sample data and the simulated services. |
 
 ## 5. The graph
 
-- It draws elements and wants only. There are no address boxes. Layout is by purpose: who the project serves at the top, what it relies on at the bottom.
-- Depth follows the earlier Metaform map: levels are counted along the wants from the elements nothing relies on. A map of up to 200 elements is shown whole. A closed element shows how many it holds. Controls: collapse all, expand all, collapse to a depth, expand one level, and undo.
+- It draws elements and wants only. There are no address boxes. Layout is by purpose: who the project serves comes first and what it relies on comes last. The renderer chooses the direction for the shape of the pane: downward in a tall pane, across in a wide and short one. A layer that is too long for the pane wraps.
+- Depth follows the earlier Metaform map: levels are counted along the wants from the elements nothing relies on. A map of up to 200 elements is shown whole. A closed element shows how many hidden elements it holds. Controls: collapse all, expand all, one level more or less, open or close one element, and undo.
+- Categories are the first segment of an address (downstream, code, document, data, media, upstream). Each can be shown, hidden or isolated. Isolation makes the other categories recede and moves nothing.
+- Fit graph, fit selection, fit branch and fit visible scope keep the graph clear of the controls that lie over the pane.
 - The camera eases to a new fit when the user changes what is shown. A selection does not move it, and a change from an agent never does.
-- The flow on the lines runs for the selected element and can be switched off.
+- The flow on the lines runs for the selected element.
+
+## 6. Limits
+
+- Each element hangs from the one element that reached it first. Closing that element hides it even when another visible element relies on it.
+- A want to a hidden element is not drawn.
+- A pending edit shows in the panels at once. The graph shows it after the server confirms it.
+- Proposals that wait, and the list of rejected proposals, last until the page is loaded again. An accepted proposal and a user's edit are recorded in the map's `review` layer.
+- The light theme and maps above 200 elements were not checked in a browser.
