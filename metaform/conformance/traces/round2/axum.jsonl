@@ -1,0 +1,139 @@
+{"map": {}}
+{"code.router.http": {}}
+{"add": {"code.framework.web": {"technical_name": "web framework", "name": "axum", "role": "Definitive", "uri": "./src/lib.rs"}}}
+{"add": {"downstream.http_client": {"technical_name": "http client", "name": "http client", "uri": "./src/lib.rs", "role": "Supportive", "wants": {"code.framework.web": {"why": "Send HTTP requests to a service and receive correct, well-formed responses, including streamed events, upgraded WebSocket connections and error statuses.", "how": "Accepts HTTP connections, routes each request to the application's handler and writes back the handler's response.", "direction": "two-way"}}}}}
+{"goto": "downstream.http_client"}
+{"map": {}}
+{"add": {"code.router.http": {"technical_name": "http router", "name": "Router", "role": "Supportive", "uri": "./src/routing/mod.rs"}}}
+{"add": {"code.router.method": {"technical_name": "method router", "name": "MethodRouter", "role": "Supportive", "uri": "./src/routing/method_routing.rs"}}}
+{"add": {"code.handler.request": {"technical_name": "request handler", "name": "Handler", "role": "Supportive", "uri": "./src/handler/mod.rs"}}}
+{"add": {"code.extractor.request": {"technical_name": "request extractor", "name": "FromRequest and FromRequestParts", "role": "Supportive", "uri": "./src/extract/mod.rs"}}}
+{"add": {"code.response.http": {"technical_name": "http response", "name": "IntoResponse", "role": "Supportive", "uri": "./src/response/mod.rs"}}}
+{"add": {"code.server.http": {"technical_name": "http server", "name": "serve", "role": "Supportive", "uri": "./src/serve/mod.rs"}}}
+{"update": {"code.framework.web": {"wants": {"code.server.http": {"why": "Accept network connections and turn each into HTTP requests for the application service.", "how": "axum::serve takes a listener and a make-service, runs hyper per connection and supports graceful shutdown.", "direction": "inbound"}, "code.router.http": {"why": "Decide which handler or service receives each request so the application defines behavior per path and method.", "how": "Router matches the path with matchit, delegates to a MethodRouter, supports nest, merge, layer, state and fallbacks.", "direction": "two-way"}}}}}
+{"add": {"upstream.library.tower": {"technical_name": "tower library", "name": "tower, tower-service, tower-layer", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.library.hyper": {"technical_name": "hyper library", "name": "hyper, hyper-util", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.runtime.tokio": {"technical_name": "tokio runtime", "name": "tokio", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.library.http": {"technical_name": "http library", "name": "http, http-body, bytes", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.library.axum_core": {"technical_name": "axum core library", "name": "axum-core", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"code.service.route": {"technical_name": "route service", "name": "Route", "role": "Supportive", "uri": "./src/routing/route.rs"}}}
+{"add": {"code.router.path": {"technical_name": "path router", "name": "PathRouter", "role": "Supportive", "uri": "./src/routing/path_router.rs"}}}
+{"add": {"upstream.library.matchit": {"technical_name": "matchit library", "name": "matchit", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"update": {"code.router.path": {"wants": {"upstream.library.matchit": {"why": "Match a request path against registered path patterns with named and wildcard parameters.", "how": "Holds a matchit Node and returns the matched route id and captured parameters.", "direction": "inbound"}, "code.service.route": {"why": "Store every endpoint in one uniform callable form so any handler or service can serve a matched path.", "how": "Keeps a map of route id to Endpoint, where an Endpoint is a MethodRouter or a boxed Route.", "direction": "two-way"}, "code.router.method": {"why": "Dispatch a matched path to the endpoint for the request method.", "how": "Calls the MethodRouter stored for the route id.", "direction": "two-way"}}}}}
+{"update": {"code.router.http": {"wants": {"code.router.path": {"why": "Resolve the request path to an endpoint, including nested routers and the fallback.", "how": "Router owns a PathRouter for routes and a second PathRouter for fallbacks and calls it for each request.", "direction": "two-way"}, "upstream.library.tower": {"why": "Accept and apply tower layers and services so middleware and services compose with routes.", "how": "Router implements tower Service for Request, and layer, route_layer and route_service take tower Layer and Service values.", "direction": "two-way"}}}}}
+{"add": {"code.listener.connection": {"technical_name": "connection listener", "name": "Listener", "role": "Supportive", "uri": "./src/serve/listener.rs"}}}
+{"add": {"code.middleware.function": {"technical_name": "function middleware", "name": "from_fn, map_request, map_response, from_extractor", "role": "Supportive", "uri": "./src/middleware/from_fn.rs"}}}
+{"add": {"code.handler.error": {"technical_name": "error handler", "name": "HandleError", "role": "Supportive", "uri": "./src/error_handling/mod.rs"}}}
+{"add": {"code.extractor.path": {"technical_name": "path extractor", "name": "Path", "role": "Supportive", "uri": "./src/extract/path/mod.rs"}}}
+{"add": {"code.extractor.query": {"technical_name": "query extractor", "name": "Query", "role": "Supportive", "uri": "./src/extract/query.rs"}}}
+{"add": {"code.extractor.state": {"technical_name": "state extractor", "name": "State", "role": "Supportive", "uri": "./src/extract/state.rs"}}}
+{"add": {"code.extractor.json": {"technical_name": "json extractor", "name": "Json", "role": "Supportive", "uri": "./src/json.rs"}}}
+{"add": {"code.extractor.form": {"technical_name": "form extractor", "name": "Form", "role": "Supportive", "uri": "./src/form.rs"}}}
+{"add": {"code.extractor.multipart": {"technical_name": "multipart extractor", "name": "Multipart", "role": "Supportive", "uri": "./src/extract/multipart.rs"}}}
+{"add": {"code.extractor.websocket": {"technical_name": "websocket extractor", "name": "WebSocketUpgrade", "role": "Supportive", "uri": "./src/extract/ws.rs"}}}
+{"add": {"code.extractor.connect_info": {"technical_name": "connect info extractor", "name": "ConnectInfo", "role": "Supportive", "uri": "./src/extract/connect_info.rs"}}}
+{"add": {"code.response.sse": {"technical_name": "sse response", "name": "Sse", "role": "Supportive", "uri": "./src/response/sse.rs"}}}
+{"add": {"code.response.redirect": {"technical_name": "redirect response", "name": "Redirect", "role": "Supportive", "uri": "./src/response/redirect.rs"}}}
+{"add": {"upstream.library.serde": {"technical_name": "serde library", "name": "serde, serde_json, serde_urlencoded, serde_path_to_error", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.library.tungstenite": {"technical_name": "tungstenite library", "name": "tokio-tungstenite", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"add": {"upstream.library.multer": {"technical_name": "multer library", "name": "multer", "role": "Notable", "uri": "./Cargo.toml"}}}
+{"update": {"code.server.http": {"wants": {"code.listener.connection": {"why": "Receive each new network connection with its peer address.", "how": "Listener::accept returns an IO stream and address; implemented for TcpListener, with ListenerExt adding tap_io and limit_connections.", "direction": "inbound"}, "upstream.library.hyper": {"why": "Parse HTTP/1 and HTTP/2 on each connection and hand request bodies and responses between the socket and the service.", "how": "hyper_util auto Builder serves each connection and upgrades are enabled for WebSocket.", "direction": "two-way"}, "upstream.runtime.tokio": {"why": "Perform asynchronous socket IO, spawn one task per connection and observe the shutdown signal.", "how": "tokio::spawn per connection, TcpListener for accept, and a watch channel for graceful shutdown.", "direction": "two-way"}, "code.router.http": {"why": "Obtain the per-connection service that answers each request.", "how": "The make-service, usually Router::into_make_service, is called with IncomingStream and returns a cloned service.", "direction": "inbound"}}}}}
+{"update": {"code.router.method": {"wants": {"code.handler.request": {"why": "Run application logic for the matching HTTP method and obtain its response.", "how": "The get, post, put, delete, patch, head, options, trace, connect and any functions wrap a Handler into a Route stored per method.", "direction": "two-way"}, "code.service.route": {"why": "Hold each per-method endpoint, and the 405 fallback, as one uniform service.", "how": "Fields get, post and others are MethodEndpoint values, either Route or BoxedHandler.", "direction": "two-way"}, "upstream.library.http": {"why": "Select the endpoint by request method and set the Allow header on 405 responses.", "how": "MethodFilter maps to http::Method; head requests fall back to get with the body removed.", "direction": "inbound"}}}}}
+{"update": {"code.service.route": {"wants": {"upstream.library.tower": {"why": "Erase the concrete type of any service or layered service so all routes share one type.", "how": "Route wraps a tower BoxCloneSyncService, applies layers by boxing the result, and fixes the content-length of HEAD responses.", "direction": "two-way"}}}}}
+{"update": {"code.handler.request": {"wants": {"code.extractor.request": {"why": "Build each handler argument from the incoming request before the handler runs.", "how": "For an async fn with up to 16 arguments, every argument but the last is FromRequestParts and the last is FromRequest; the first failure becomes the response.", "direction": "inbound"}, "code.response.http": {"why": "Turn the handler's return value into a full HTTP response.", "how": "Calls IntoResponse::into_response on the output of the async fn.", "direction": "outbound"}}}}}
+{"update": {"code.server.http": {"wants": {"code.listener.connection": {"why": "Receive each new network connection with its peer address.", "how": "Listener::accept returns an IO stream and address; implemented for TcpListener, with ListenerExt adding tap_io.", "direction": "inbound"}}}}}
+{"goto": "code.server.http"}
+{"update": {"code.extractor.request": {"wants": {"upstream.library.axum_core": {"why": "Define the contract that lets any type be built from a request.", "how": "Re-exports FromRequest, FromRequestParts, FromRef, DefaultBodyLimit and Request from axum-core.", "direction": "inbound"}, "code.extractor.path": {"why": "Offer the captured URL path parameters as typed values.", "how": "Path<T> deserializes route parameters stored in request extensions by the path router.", "direction": "inbound"}, "code.extractor.query": {"why": "Offer the URL query string as a typed value.", "how": "Query<T> deserializes the query with serde_urlencoded.", "direction": "inbound"}, "code.extractor.state": {"why": "Give handlers shared application state.", "how": "State<T> clones T out of the router state, using FromRef to pick a part of it.", "direction": "inbound"}, "code.extractor.json": {"why": "Offer a JSON request body as a typed value.", "how": "Json<T> requires a JSON content type, buffers the body and deserializes it with serde_json; it also serves as a response.", "direction": "inbound"}, "code.extractor.form": {"why": "Offer a form-encoded body or query as a typed value.", "how": "Form<T> reads the query for GET and HEAD and the urlencoded body otherwise.", "direction": "inbound"}, "code.extractor.multipart": {"why": "Offer multipart form-data uploads as a stream of fields.", "how": "Multipart reads the boundary from the content type and yields fields through multer.", "direction": "inbound"}, "code.extractor.websocket": {"why": "Offer the HTTP upgrade to a WebSocket connection.", "how": "WebSocketUpgrade checks the upgrade headers; on_upgrade returns the 101 response and gives the handler a WebSocket after the upgrade.", "direction": "two-way"}, "code.extractor.connect_info": {"why": "Offer details about the connection, such as the peer address.", "how": "ConnectInfo<T> reads a value built from IncomingStream by into_make_service_with_connect_info.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.query": {"wants": {"upstream.library.serde": {"why": "Deserialize query text into the caller's type and report which field failed.", "how": "serde_urlencoded with serde_path_to_error.", "direction": "inbound"}}}, "code.extractor.json": {"wants": {"upstream.library.serde": {"why": "Deserialize and serialize the JSON body.", "how": "serde_json with serde_path_to_error; Json implements IntoResponse by serializing to bytes.", "direction": "two-way"}}}, "code.extractor.form": {"wants": {"upstream.library.serde": {"why": "Deserialize urlencoded text into the caller's type.", "how": "serde_urlencoded.", "direction": "inbound"}}}, "code.extractor.multipart": {"wants": {"upstream.library.multer": {"why": "Parse the multipart wire format.", "how": "multer::Multipart reads the request body stream and yields fields.", "direction": "inbound"}}}, "code.extractor.websocket": {"wants": {"upstream.library.tungstenite": {"why": "Frame, encode and decode WebSocket messages after the upgrade.", "how": "tokio-tungstenite WebSocketStream wraps the upgraded connection.", "direction": "two-way"}, "upstream.library.hyper": {"why": "Take over the raw connection after the 101 response.", "how": "hyper::upgrade::on yields the upgraded IO.", "direction": "inbound"}}}, "code.extractor.path": {"wants": {"upstream.library.serde": {"why": "Deserialize captured parameters into tuples, structs or maps.", "how": "A custom serde Deserializer over percent-decoded parameter pairs.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.query": {"wants": {"upstream.library.serde": {"why": "Deserialize query text into the caller's type and report which field failed.", "how": "serde_urlencoded with serde_path_to_error.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.json": {"wants": {"upstream.library.serde": {"why": "Deserialize and serialize the JSON body.", "how": "serde_json with serde_path_to_error; Json implements IntoResponse by serializing to bytes.", "direction": "two-way"}}}}}
+{"update": {"code.extractor.form": {"wants": {"upstream.library.serde": {"why": "Deserialize urlencoded text into the caller's type.", "how": "serde_urlencoded.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.multipart": {"wants": {"upstream.library.multer": {"why": "Parse the multipart wire format.", "how": "multer::Multipart reads the request body stream and yields fields.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.websocket": {"wants": {"upstream.library.tungstenite": {"why": "Frame, encode and decode WebSocket messages after the upgrade.", "how": "tokio-tungstenite WebSocketStream wraps the upgraded connection.", "direction": "two-way"}, "upstream.library.hyper": {"why": "Take over the raw connection after the 101 response.", "how": "hyper::upgrade::on yields the upgraded IO.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.path": {"wants": {"upstream.library.serde": {"why": "Deserialize captured parameters into tuples, structs or maps.", "how": "A custom serde Deserializer over percent-decoded parameter pairs.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.connect_info": {"wants": {"code.server.http": {"why": "Receive the per-connection value the server builds for each accepted connection.", "how": "The server passes IncomingStream, with remote_addr and the IO, to the make-service that stores the value in request extensions.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.state": {"wants": {"code.router.http": {"why": "Receive the application state supplied to the router.", "how": "Router::with_state stores the state; each handler call passes a clone, and State reads it with FromRef.", "direction": "inbound"}}}}}
+{"update": {"code.response.http": {"wants": {"upstream.library.axum_core": {"why": "Define the contract that lets any type become a response.", "how": "Re-exports IntoResponse, IntoResponseParts, Response and AppendHeaders; strings, status codes, tuples, Result and Json implement it.", "direction": "inbound"}, "upstream.library.http": {"why": "Represent status, headers and body.", "how": "http::Response with the axum Body; tuples set status and headers before the body.", "direction": "inbound"}, "code.response.sse": {"why": "Offer a long-lived stream of server-sent events as a response.", "how": "Sse wraps a Stream of Event values as a text/event-stream body, optionally with keep-alive comments.", "direction": "outbound"}, "code.response.redirect": {"why": "Offer redirect responses without hand-building headers.", "how": "Redirect::to, temporary and permanent set the status and Location header.", "direction": "outbound"}}}}}
+{"update": {"code.listener.connection": {"wants": {"upstream.runtime.tokio": {"why": "Accept sockets and back off after accept errors.", "how": "Wraps tokio TcpListener and sleeps one second on non-connection errors.", "direction": "inbound"}}}}}
+{"update": {"code.router.http": {"wants": {"code.router.method": {"why": "Attach per-method handlers to a path.", "how": "route takes a MethodRouter and merges it when the path already exists.", "direction": "two-way"}, "code.handler.request": {"why": "Serve unmatched requests and 405 responses with application logic.", "how": "fallback and method_not_allowed_fallback accept a Handler.", "direction": "two-way"}, "code.middleware.function": {"why": "Wrap all routes, or only matched routes, in cross-cutting behavior.", "how": "layer and route_layer accept the layers returned by from_fn, map_request, map_response and from_extractor.", "direction": "two-way"}}}}}
+{"add": {"code.test.routing": {"technical_name": "routing test", "name": "routing tests and TestClient", "role": "Supportive", "uri": "./src/routing/tests/mod.rs"}}}
+{"add": {"code.benchmark.http": {"technical_name": "http benchmark", "name": "benches", "role": "Supportive", "uri": "./benches/benches.rs"}}}
+{"add": {"upstream.tool.rewrk": {"technical_name": "rewrk tool", "name": "rewrk", "role": "Notable", "uri": "./benches/benches.rs"}}}
+{"update": {"code.middleware.function": {"wants": {"upstream.library.tower": {"why": "Plug into the layer system and call the rest of the stack.", "how": "Each helper returns a tower Layer; from_fn gives the function a Next that runs the remaining stack.", "direction": "two-way"}, "code.extractor.request": {"why": "Let middleware functions take extractors as arguments, and let from_extractor run an extractor as a gate.", "how": "from_fn, map_request and from_extractor run FromRequestParts extractors before the user function.", "direction": "inbound"}, "code.response.http": {"why": "Turn the middleware's result into a response, or map the inner response.", "how": "map_response and from_fn convert return values through IntoResponse.", "direction": "outbound"}}}}}
+{"update": {"code.handler.error": {"wants": {"upstream.library.tower": {"why": "Convert the fallible errors of any tower service into the Infallible error that axum routes require.", "how": "HandleError and HandleErrorLayer wrap a Service and call an async function with the error.", "direction": "two-way"}, "code.extractor.request": {"why": "Give the error function access to request parts.", "how": "The error function may take FromRequestParts extractors before the error argument.", "direction": "inbound"}, "code.response.http": {"why": "Replace a service error with a response.", "how": "The error function returns IntoResponse.", "direction": "outbound"}}}}}
+{"update": {"code.test.routing": {"wants": {"code.router.http": {"why": "Check routing, nesting, merging, fallbacks and error handling behave as documented.", "how": "Builds routers, sends requests through TestClient and asserts on status and body; tests/panic_location.rs checks panic locations.", "direction": "outbound"}}}}}
+{"update": {"code.benchmark.http": {"wants": {"code.router.http": {"why": "Measure request throughput for sample routers, such as minimal, basic, JSON and state routes.", "how": "Starts each router on a local port and drives it with rewrk.", "direction": "outbound"}, "upstream.tool.rewrk": {"why": "Generate load and report latency and requests per second.", "how": "Runs the rewrk command and reads its output.", "direction": "inbound"}}}}}
+{"add": {"downstream.middleware_author": {"technical_name": "middleware author", "name": "middleware author", "role": "Supportive", "uri": "./src/middleware/mod.rs", "wants": {"code.framework.web": {"why": "Publish reusable tower layers and services that work unchanged inside axum applications.", "how": "Accepts any tower Service or Layer wherever it takes a handler or middleware.", "direction": "outbound"}}}}}
+{"orphaned": {}}
+{"map": {}}
+{"add": {"code.extractor.extension": {"technical_name": "extension extractor", "name": "Extension", "role": "Supportive", "uri": "./src/extension.rs"}}}
+{"add": {"code.body.http": {"technical_name": "http body", "name": "Body", "role": "Supportive", "uri": "./src/body/mod.rs"}}}
+{"update": {"code.router.method": {"wants": {"code.handler.error": {"why": "Convert errors of a service route into responses so the route can be called with an Infallible error.", "how": "MethodRouter::handle_error wraps the router in HandleError; ServiceExt::handle_error does the same for any service.", "direction": "two-way"}}}}}
+{"update": {"code.extractor.request": {"wants": {"code.extractor.extension": {"why": "Offer values that middleware or the server stored in request extensions.", "how": "Extension<T> clones T from the request extensions; it is also a layer that inserts T and a response part that adds T to the response.", "direction": "two-way"}, "code.body.http": {"why": "Read the request body, bounded by a size limit, when an extractor needs its bytes.", "how": "Request<Body> carries the body; body::to_bytes collects it up to a limit and DefaultBodyLimit sets the 2 MB default.", "direction": "inbound"}}}}}
+{"update": {"code.extractor.request": {"wants": {"code.extractor.path": {"why": "Offer the captured URL path parameters as typed values, plus raw path and query views.", "how": "Path<T> deserializes route parameters stored in request extensions by the path router; MatchedPath, NestedPath, OriginalUri, RawPathParams, RawQuery and RawForm expose the same request data without typing.", "direction": "inbound"}}}}}
+{"update": {"code.handler.request": {"wants": {"code.response.http": {"why": "Turn the handler's return value into a full HTTP response.", "how": "Calls IntoResponse::into_response on the output of the async fn; Handler::with_state, into_service, layer and HandlerWithoutStateExt wrap a handler as a tower service.", "direction": "outbound"}}}}}
+{"update": {"code.response.http": {"wants": {"code.body.http": {"why": "Carry the response payload as a streamable body.", "how": "Response<Body> is the response type; strings, bytes and streams convert into Body.", "direction": "outbound"}}}}}
+{"update": {"code.router.http": {"wants": {"upstream.library.matchit": {"why": "Match a request path against registered path patterns with named and wildcard parameters.", "how": "An internal PathRouter holds a matchit Node, one for routes and one for fallbacks, and returns the matched route id and captured parameters.", "direction": "inbound"}, "code.service.route": {"why": "Store every endpoint in one uniform callable form so any handler or service can serve a matched path.", "how": "The internal PathRouter keeps a map of route id to Endpoint, where an Endpoint is a MethodRouter or a boxed Route.", "direction": "two-way"}}}}}
+{"update": {"code.extractor.request": {"wants": {"code.extractor.path": {"why": "Offer the captured URL path parameters as typed values, plus raw path and query views.", "how": "Path<T> deserializes route parameters stored in request extensions by the router; MatchedPath, NestedPath, OriginalUri, RawPathParams, RawQuery and RawForm expose the same request data without typing.", "direction": "inbound"}}}}}
+{"delete": {"code.router.http": {"wants": ["code.router.path"]}}}
+{"delete": {"code.router.path": {}}}
+{"delete": {"code.service.route": {}}}
+{"orphaned": {}}
+{"goto": "layer.document.specification"}
+{"map": {}}
+{"goto": "code.benchmark"}
+{"goto": "code.benchmark.http"}
+{"goto": "code.body"}
+{"goto": "code.body.http"}
+{"goto": "code.extractor"}
+{"goto": "code.extractor.connect_info"}
+{"goto": "code.extractor.extension"}
+{"goto": "code.extractor.form"}
+{"goto": "code.extractor.json"}
+{"goto": "code.extractor.multipart"}
+{"goto": "code.extractor.path"}
+{"goto": "code.extractor.query"}
+{"goto": "code.extractor.request"}
+{"goto": "code.extractor.state"}
+{"goto": "code.extractor.websocket"}
+{"goto": "code.framework"}
+{"goto": "code.framework.web"}
+{"goto": "code.handler"}
+{"goto": "code.handler.error"}
+{"goto": "code.handler.request"}
+{"goto": "code.listener"}
+{"goto": "code.listener.connection"}
+{"goto": "code.middleware"}
+{"goto": "code.middleware.function"}
+{"goto": "code.response"}
+{"goto": "code.response.http"}
+{"goto": "code.response.redirect"}
+{"goto": "code.response.sse"}
+{"goto": "code.router"}
+{"goto": "code.router.http"}
+{"goto": "code.router.method"}
+{"goto": "code.server"}
+{"goto": "code.server.http"}
+{"goto": "code.service"}
+{"goto": "code.service.route"}
+{"goto": "code.test"}
+{"goto": "code.test.routing"}
+{"goto": "downstream.http_client"}
+{"goto": "downstream.middleware_author"}
+{"goto": "upstream.library"}
+{"goto": "upstream.library.axum_core"}
+{"goto": "upstream.library.http"}
+{"goto": "upstream.library.hyper"}
+{"goto": "upstream.library.matchit"}
+{"goto": "upstream.library.multer"}
+{"goto": "upstream.library.serde"}
+{"goto": "upstream.library.tower"}
+{"goto": "upstream.library.tungstenite"}
+{"goto": "upstream.runtime"}
+{"goto": "upstream.runtime.tokio"}
+{"goto": "upstream.tool"}
+{"goto": "upstream.tool.rewrk"}
+{"downstream.http_client": {}}
+{"code.framework.web": {}}
+{"map": {}}
+{"map": {}}

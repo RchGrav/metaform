@@ -58,7 +58,7 @@ Both are complete ports of the agent-facing tool, with no dependencies, on one S
 | A home written by both forms in turn | read the same through both | read the same through both |
 | Replay of 334 intake commands | 206,858 bytes, equal to Rust | 206,858 bytes, equal to Rust |
 
-Not established: types (no TypeScript compiler or Python type checker is installed), survival of power loss, and fairness of the write lock under heavy load (SQLite's lock is not first come, first served; the design document says so).
+Types: the Node form passes `tsc --strict` and the Python form passes `pyright`, both performed from a scratch folder, so neither is a project dependency. Not established: survival of power loss, and fairness of the write lock under heavy load (SQLite's lock is not first come, first served; the design document says so).
 
 ## 5. Test intakes
 
@@ -83,9 +83,39 @@ One variable for each experiment. Evaluation: `replay.py --form rust` on the fou
 | 1 | The repeat of the command in a successful answer gives the agent nothing | A successful write answers `{"status": "ok"}` | 215,946 (−28.6%) | Kept (R-5.35). All tests passed unchanged. |
 | 2 | A layer's rules are needed only when the agent writes that layer | `goto` gives one sentence that names the definition's address; the rules are at the definition | 206,858 (−4.2%) | Kept. Four tests asserted the old text and now read the rules at the definition. |
 
-**Not established:** that agents do as well or better with the smaller answers. The replay holds the commands fixed. The next experiment should be a second set of Sonnet intakes on the current build, compared with the first on refusals, commands and the quality of the map.
+| 3 | At a layer's definition, the sheet holds the instruction twice | The sheet's `element` part leaves `instruction` out; `guidance` holds it | First `goto` at `layer.document.specification`: 2,720 bytes, down from 4,189. The traces are unchanged, because no first-round session went to a definition. | Kept. |
 
-**Most useful next experiments,** from the same reports: `goto` lists layers and memory with zero records (omit them); `orphaned` returns whole records where intake needs addresses; a refusal's remediation repeats the whole command; at a layer's definition the sheet holds the instruction twice (in `element` and in `guidance`).
+The replay holds the commands fixed, so it cannot show how an agent behaves with the smaller answers. Section 6a does.
+
+## 6a. A second round of intakes, on the final build
+
+Two new Sonnet agents performed the same briefs on `lbug` and `axum`, into the home `~/.metaform-climb2`. Their sessions are in `metaform/conformance/traces/round2/`.
+
+| | `lbug` round 1 | `lbug` round 2 | `axum` round 1 | `axum` round 2 |
+|---|---|---|---|---|
+| Commands | 39 | 41 | 100 | 139 |
+| Refused | 1 | 0 | 3 | 3 |
+| Elements, wants | 21, 30 | 18, 24 | 23, 41 | 36, 56 |
+| Bytes sent | 10,963 | 9,572 | 20,947 | 24,978 |
+| Bytes received | 34,109 | 11,743 | 65,053 | 61,100 |
+| Bytes received for each command | 875 | 286 | 651 | 440 |
+| Bytes received from successful writes | not kept apart | 480 (32 writes) | not kept apart | 1,065 (71 writes) |
+
+What this shows:
+- Both agents finished every step of the procedure. Neither invented a name, and neither was refused for a name.
+- A successful write now costs 15 bytes. In round 2 it is no longer a measurable part of what an agent receives.
+- The second `axum` agent did more with about the same bytes: 39 more commands and a larger map. It read every element back with `goto` in its final proof (55 calls, 40,242 bytes), which the first agent did not do.
+
+What it does not show: two sessions for each target are too few to separate the effect of the build from the difference between two agents.
+
+What the second round found:
+- **The pointer in `goto` did not keep the rules away.** Both agents followed "Before you write specification, goto layer.document.specification for its rules", received about 2.7 KB, and wrote no specification. The pointer costs less than the rules did on every first `goto`, but as test users both agents went to look. The next experiment is the pointer's wording.
+- **`{"status": "ok"}` does not say what an `update` did to existing wants.** Both agents checked with a `goto` that an `update` adds to the wants and replaces only the one it names. This belongs in the tool's description, which is a protected file.
+- **A role on a `downstream` element is accepted without comment,** and the procedure gives none. Both agents were unsure (section 8, item 5).
+- **`DEPENDENCY_LOCK` names every element that still wants the target and gives the remediation for the first only.**
+
+
+**Most useful next experiments,** from both rounds: the wording of the pointer in `goto`; `goto` lists layers and memory with zero records; `map` lists the branch addresses and the `layer` addresses with the elements; `orphaned` returns whole records where intake needs addresses; a refusal's remediation repeats the whole command.
 
 ## 7. The graph workspace
 
