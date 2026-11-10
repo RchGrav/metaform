@@ -120,3 +120,4 @@ kbd { font: 12px/1.6 ui-monospace, monospace; background: var(--bg); border: 1px
   .top-bar { flex-wrap: wrap; }
   .activity-list { width: min(380px, 90vw); }
 }
+.details .beneath .link { color: var(--accent); font-family: ui-monospace, monospace; font-size: 12px; padding: 3px 0; }

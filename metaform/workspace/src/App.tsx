@@ -443,6 +443,7 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
           <Details
             address={view.selection}
             sheet={sheet}
+            beneath={addresses.filter((a) => a.startsWith(`${view.selection}.`) && !a.slice(String(view.selection).length + 1).includes("."))}
             opensProject={linkedProject(view.selection) !== null}
             onClose={() => dispatch({ type: "select", address: null })}
             onFocus={() => view.selection && dispatch({ type: "set-focus", address: view.selection })}

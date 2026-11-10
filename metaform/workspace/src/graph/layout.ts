@@ -87,6 +87,16 @@ const COMPOUND_OPTIONS: Record<string, string> = {
   "elk.padding": `[top=${HEADER},left=16,bottom=16,right=16]`,
 };
 
+/**
+ * Width that an expanded element's header needs on its one row: the label, the wants that leave
+ * it, and the chevron. The count of elements beneath is not drawn there, because the elements
+ * themselves are in view.
+ */
+export function headerWidth(node: Pick<RenderNode, "label" | "outside">, outsideText: (n: number) => string): number {
+  const outside = node.outside > 0 ? outsideText(node.outside).length * SMALL_CHAR + 16 : 0;
+  return Math.round(node.label.length * LABEL_CHAR + outside + 28 + 2 * PAD + 4);
+}
+
 /** Width that fits the node's two rows: label and chevron; layer marks, wants and beneath count. */
 export function nodeWidth(node: Pick<RenderNode, "label" | "beneath" | "layers" | "outside">, beneathText: (n: number) => string, outsideText: (n: number) => string): number {
   const top = node.label.length * LABEL_CHAR + (node.beneath > 0 ? 28 : 0);
@@ -120,7 +130,7 @@ function bandOf(node: RenderNode, byAddress: Map<Address, RenderNode>): Band {
 }
 
 /** Builds one ELK graph per band. Nodes keep the scene's order (sorted by address). */
-export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>): Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }> {
+export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>, headers: ReadonlyMap<Address, number> = new Map()): Map<Band, { graph: ElkGraph; crossing: RenderEdge[] }> {
   const byAddress = new Map(scene.nodes.map((n) => [n.address, n]));
   const hasChildren = new Set(scene.nodes.flatMap((n) => (n.parent === null ? [] : [n.parent])));
   const elkNodes = new Map<Address, ElkGraph>();
@@ -130,7 +140,18 @@ export function toElk(scene: RenderScene, widths: ReadonlyMap<Address, number>):
   }
   for (const node of scene.nodes) {
     const elkNode: ElkGraph = hasChildren.has(node.address)
-      ? { id: node.address, layoutOptions: { ...COMPOUND_OPTIONS }, children: [] }
+      ? {
+        id: node.address,
+        // An expanded element is at least as wide as its header, so the header's parts never
+        // overlap when the elements beneath are narrow.
+        layoutOptions: {
+          ...COMPOUND_OPTIONS,
+          "elk.nodeSize.constraints": "MINIMUM_SIZE",
+          "elk.nodeSize.options": "MINIMUM_SIZE_ACCOUNTS_FOR_PADDING",
+          "elk.nodeSize.minimum": `(${headers.get(node.address) ?? MIN_WIDTH},0)`,
+        },
+        children: [],
+      }
       : { id: node.address, width: widths.get(node.address) ?? MIN_WIDTH, height: NODE_HEIGHT };
     if (node.address === scene.top) {
       elkNode.layoutOptions = { ...elkNode.layoutOptions, "elk.layered.layering.layerConstraint": "FIRST" };
@@ -216,7 +237,7 @@ function collectBoxes(node: ElkGraph, dx: number, out: Map<Address, Box>): void 
 }
 
 /** Runs ELK for each non-empty band and places the bands side by side. */
-export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<Address, number>): Promise<Layout> {
+export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<Address, number>, headers: ReadonlyMap<Address, number> = new Map()): Promise<Layout> {
   const key = layoutKey(scene, widths);
   const boxes = new Map<Address, Box>();
   const routes = new Map<string, Point[]>();
@@ -227,7 +248,7 @@ export async function layout(elk: Elk, scene: RenderScene, widths: ReadonlyMap<A
   // element right (climb step 6a2; viewer plan: positions stay stable). Downstream follows the
   // project band, or upstream when there is no project band.
   const laid = new Map<Band, ElkGraph>();
-  for (const [band, { graph, crossing: across }] of toElk(scene, widths)) {
+  for (const [band, { graph, crossing: across }] of toElk(scene, widths, headers)) {
     crossing.push(...across);
     if ((graph.children ?? []).length > 0) laid.set(band, await elk.layout(graph));
   }

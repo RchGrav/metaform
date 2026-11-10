@@ -81,6 +81,9 @@ export const details = {
   wants: "wants",
   wantedBy: "wanted by",
   layers: "layers",
+  // Shown for an address that only groups the elements beneath it.
+  branch: (n: number) =>
+    `This address groups ${count(n, "element")}. The arrows drawn at it belong to them. Select one to see its wants.`,
   noWants: "No wants.",
   notWanted: "No element wants this one.",
 } as const;

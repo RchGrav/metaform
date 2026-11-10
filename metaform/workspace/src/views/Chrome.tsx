@@ -195,6 +195,8 @@ function WantCard(props: { re: Address; pe: Address; want: Want; here: Address; 
 export function Details(props: {
   address: Address;
   sheet: SummarySheet | null;
+  /** The addresses directly beneath this one. */
+  beneath: Address[];
   opensProject: boolean;
   /** Present when the element is outside the project and its own map can be read (seam gap 4). */
   onOpenMap?: () => void;
@@ -208,6 +210,9 @@ export function Details(props: {
   const wantedBy = Object.entries(sheet?.wanted_by ?? {});
   const layerEntries = Object.entries(sheet?.layers ?? {});
   const fields = Object.entries(sheet?.element ?? {}).filter(([, v]) => typeof v !== "object");
+  // A branch is an address that only groups the elements beneath it: it has no fields and no
+  // wants of its own. The arrows the graph draws at it belong to those elements.
+  const branch = sheet !== null && props.beneath.length > 0 && fields.length === 0 && wants.length === 0 && wantedBy.length === 0;
   return (
     <aside className="details" aria-label={address}>
       <header>
@@ -240,8 +245,20 @@ export function Details(props: {
           <button type="button" onClick={props.onOpenMap}>{strings.details.openItsMap}</button>
         )}
       </div>
-      <h3>{strings.details.wants}</h3>
-      {wants.length === 0 ? (
+      {branch && (
+        <>
+          <p className="empty">{strings.details.branch(props.beneath.length)}</p>
+          <ul className="beneath">
+            {props.beneath.map((child) => (
+              <li key={child}>
+                <button type="button" className="link" onClick={() => props.onSelect(child)}>{child}</button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {!branch && <h3>{strings.details.wants}</h3>}
+      {branch ? null : wants.length === 0 ? (
         <p className="empty">{strings.details.noWants}</p>
       ) : (
         <ul className="wants">
@@ -250,8 +267,8 @@ export function Details(props: {
           ))}
         </ul>
       )}
-      <h3>{strings.details.wantedBy}</h3>
-      {wantedBy.length === 0 ? (
+      {!branch && <h3>{strings.details.wantedBy}</h3>}
+      {branch ? null : wantedBy.length === 0 ? (
         <p className="empty">{strings.details.notWanted}</p>
       ) : (
         <ul className="wants">

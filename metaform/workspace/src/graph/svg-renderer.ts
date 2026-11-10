@@ -6,7 +6,7 @@ import { graph as text, intake, layers as layerText, legend, presence } from "..
 import { Camera } from "./camera";
 import { Flow } from "./flow";
 import { Glide, type GlideItem } from "./glide";
-import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point } from "./layout";
+import { type Box, type Elk, HEADER, type Layout, layout, layoutKey, nodeWidth, type Point, headerWidth } from "./layout";
 import {
   type GraphRenderer,
   MAX_FIT_ZOOM,
@@ -190,7 +190,8 @@ export class ElkRenderer implements GraphRenderer {
       this.draw(scene, known);
       return this.pending;
     }
-    this.pending = layout(this.elk(), scene, widths).then((next) => {
+    const headers = new Map(scene.nodes.map((n) => [n.address, headerWidth(n, text.wantsOutside)]));
+    this.pending = layout(this.elk(), scene, widths, headers).then((next) => {
       if (generation !== this.generation || !this.canvas) return; // superseded
       this.current = next;
       this.scene = scene;
@@ -356,13 +357,15 @@ export class ElkRenderer implements GraphRenderer {
       if (container) right -= 24;
     }
     const badgeRight = right + (container || node.beneath === 0 ? 0 : 4);
-    if (node.beneath > 0) {
+    // An expanded element shows the elements beneath it, so its header does not also count them.
+    const counted = node.beneath > 0 && !container;
+    if (counted) {
       const badge = el("text", { class: "mf-beneath", x: badgeRight, y: row2, "text-anchor": "end", "aria-hidden": "true" }, g);
       badge.textContent = text.beneathBadge(node.beneath);
       tip(badge, legend.beneath);
     }
     if (node.outside > 0) {
-      const shift = node.beneath > 0 ? (text.beneathBadge(node.beneath).length * 6.4 + 12) : 0;
+      const shift = counted ? (text.beneathBadge(node.beneath).length * 6.4 + 12) : 0;
       const out = el("text", {
         class: "mf-outside", x: badgeRight - shift, y: row2, "text-anchor": "end",
         "aria-label": text.wantsOutsideLabel(node.outside, containerOf(node.address)),
