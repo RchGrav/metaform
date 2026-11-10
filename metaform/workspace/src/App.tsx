@@ -429,6 +429,10 @@ export function App({ source, events, renderer, simulated, startCommand, pageAdd
             dispatch={dispatch}
           />
         )}
+        {current && addresses.length === 0 && !firstRun && (
+          // A registered project whose map has no element yet: say so, in place of a blank canvas.
+          <p className="empty-map">{strings.graph.emptyMap}</p>
+        )}
         {offView.length > 0 && !firstRun && (
           <button type="button" className="off-view" aria-label={strings.offView.label(offView.length)} onClick={showOffView}>
             {strings.offView.chip(offView.length, offViewArrow.arrow)}

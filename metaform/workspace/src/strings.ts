@@ -51,6 +51,8 @@ export const hints = {
 } as const;
 
 export const graph = {
+  // Shown on the canvas when a project is registered and its map has no element.
+  emptyMap: "This project's map has no elements yet. They appear here as an agent adds them.",
   // The visible badge on an element with elements beneath it.
   beneathBadge: (n: number) => `${n} beneath`,
   // The accessible name of the same badge; the badge alone is not a complete thought.
