@@ -5,7 +5,16 @@
 
 ---
 
-## 1. What the target is
+## 0. What changed after this document was prepared
+
+This document describes the folder as it was gathered on 2026-11-08. Later work is recorded in `metaform/SPEC.md` and the commit history. The main differences a developer will meet:
+
+- **Three forms (2026-11-09).** The Node harness in `metaform/server/` is gone. `metaform/node/` and `metaform/python/` are complete forms of the tool on a SQLite store (`metaform/docs/designs/sqlite-forms.md`). Sections 3.1 and 5.1 below still name the harness.
+- **Conformance (2026-11-09).** `metaform/conformance/` holds recorded cases that all three forms answer equally, and recorded intake sessions that measure what a build delivers.
+- **Graph workspace.** `metaform/workspace/` and the `metaform-web` crate exist; `metaform gui` serves real projects. Section 5.1 lists three Rust crates; there are four.
+- **Built since section 5.2 was written:** the specification layer and its export and import, layers defined in the map, the fixed refusal codes, the raw dump and `map`. Still not built: the layer list and walk, chaining, search, tasks, the memory module, tickets and agent identity.
+
+
 
 **Metaform** is the context tool for development agents. It is made up of the intake procedure, the functional map (the "functional namespace"), the one MCP tool and the map server. The owner describes it as "a functional topology capable of forming intake from intent, greenfield, to brownfield or any type of project code or not code". It can refine a specification and re-save it, act as a formboard for realigning hard-to-refactor code, and serve as a context management system inside any project. **Stated** (`metaform/SPEC.md` §1, owner 2026-11-07).
 

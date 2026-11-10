@@ -19,7 +19,7 @@ Agents also load [CLAUDE.md](CLAUDE.md), which brings in [TASTE.md](TASTE.md) (h
 
 | Path | What it is | Edit? |
 |---|---|---|
-| `metaform/` | Metaform's project folder: spec, intake procedure, schema, tool contract, Rust server, Node test harness, tests | Yes, this is the working copy |
+| `metaform/` | Metaform's project folder: spec, intake procedure, schema, tool contract, the three forms (`rust/`, `node/`, `python/`), the graph workspace, the conformance set, tests | Yes, this is the working copy |
 | `roundtable/` | Roundtable (Rust), the refined version from `~/topogee/roundtable` | Yes, this is the working copy |
 | `TASTE.md`, `EXPECTATIONS.md` | Owner's writing and engineering guidance (copies of the current versions) | Owner's call |
 | `CLAUDE.md` | Agent entry point written for this folder | Yes |
@@ -35,14 +35,17 @@ Agents also load [CLAUDE.md](CLAUDE.md), which brings in [TASTE.md](TASTE.md) (h
 
 ## Checks
 
+The full list, with what each check establishes, is in [metaform/README.md](metaform/README.md), "Checks". The shortest useful set:
+
 ```sh
 python3 metaform/tests/check_contract.py
 python3 metaform/tests/check_tool_input.py
 python3 tools/verify_bootstrap.py
-(cd metaform/rust && cargo build --release -p metaform-server && cargo test)
+(cd metaform/rust && cargo build --release -p metaform-server -p metaform-web && METAFORM_LAUNCHER= cargo test)
+python3 metaform/conformance/run.py --form rust   # then --form node, and --form python
 ```
 
-The `metaform` MCP server in `.mcp.json` runs the release binary, so build it before you start an agent here.
+The `metaform` MCP server in `.mcp.json` runs the Rust form's release binary, so build it before you start an agent here. After a rebuild, the server that is already running for a home still runs the old build until it is ended; the next agent that connects starts the new one.
 
 ## Path note
 
