@@ -1,0 +1,57 @@
+/* Styles of the specification outline and the Markdown preview. The colours are the page's own
+   tokens (styles.css). Sizes are in em, so both views follow the panel's text size. */
+
+.spec-outline, .spec-preview { color: var(--text); line-height: 1.4; min-width: 0; }
+.spec-outline h3, .spec-outline h4 { margin: 0; font-weight: 600; }
+.spec-outline h3 { font-size: 1em; padding: 0.9em 0 0.3em; border-top: 1px solid var(--line); }
+.spec-section:first-child h3 { border-top: 0; padding-top: 0; }
+.spec-outline h4 { font-size: 0.85em; color: var(--muted); padding: 0.5em 0 0.2em; }
+.spec-none { margin: 0; padding: 0.2em 0; color: var(--muted); font-size: 0.9em; }
+
+.spec-rows { list-style: none; margin: 0; padding: 0; }
+.spec-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 0.75em; align-items: baseline;
+  width: 100%; padding: 0.3em 0.5em; text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; border-left: 3px solid transparent; border-radius: 2px; cursor: pointer;
+}
+.spec-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.spec-row:focus-visible, .spec-text:focus-visible, .spec-actions button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+/* The selected row has a bar and bold text as well as a tint. */
+.spec-row[aria-current="true"] {
+  border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.spec-row[aria-current="true"] .spec-row-name { font-weight: 700; }
+.spec-row-name { overflow-wrap: anywhere; }
+.spec-row-address {
+  grid-column: 1; font-family: ui-monospace, monospace; font-size: 0.8em; color: var(--muted); overflow-wrap: anywhere;
+}
+.spec-row .spec-status { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+
+.spec-status { display: inline-flex; align-items: baseline; gap: 0.35em; font-size: 0.8em; color: var(--muted); white-space: nowrap; }
+.spec-status-mark { color: var(--text); }
+.spec-status-unverified .spec-status-word, .spec-status-rejected .spec-status-word { font-style: italic; }
+
+.spec-preview { display: flex; flex-direction: column; gap: 0.6em; height: 100%; }
+.spec-choices { display: flex; flex-wrap: wrap; gap: 0.75em; }
+.spec-choices fieldset { margin: 0; padding: 0.4em 0.75em 0.6em; border: 1px solid var(--line); border-radius: 4px; min-width: 0; }
+.spec-choices legend { padding: 0 0.3em; font-size: 0.85em; color: var(--muted); }
+.spec-choices label { display: flex; align-items: baseline; gap: 0.45em; padding: 0.15em 0; overflow-wrap: anywhere; }
+.spec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; }
+.spec-actions button {
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0.35em 0.9em; cursor: pointer;
+}
+.spec-actions button:hover { border-color: var(--accent); }
+.spec-summary, .spec-note { color: var(--muted); font-size: 0.85em; }
+.spec-note, .spec-outcome { margin: 0; }
+.spec-outcome { min-height: 1.4em; font-size: 0.9em; }
+.spec-outcome:not(:empty)::before { content: "✓ "; }
+.spec-outcome-failed { color: var(--divergent); font-weight: 600; }
+.spec-outcome-failed:not(:empty)::before { content: "✕ "; }
+.spec-text {
+  flex: 1 1 12em; min-height: 12em; margin: 0; padding: 0.75em; overflow: auto;
+  font-family: ui-monospace, monospace; font-size: 0.9em; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+}
