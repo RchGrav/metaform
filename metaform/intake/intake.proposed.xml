@@ -36,8 +36,8 @@
       <example artifact_type="media.photo" cqu="blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
       <example artifact_type="code.engine.game" cqu="game project" valid="true" reason="when the project is an SDK, every game project that uses the SDK is dependent on it; a CQU does not need to be a who." />
     </examples>
-    <concept term="Upstream" definition="What is external to the project and that the project relies on. An external artifact is named by what it is: its address is the word upstream followed by the address of its Defining Element, and it refers to the external project or source that represents that requirement." />
-    <concept term="Downstream" definition="Any who or what external to the project that relies on it. A CQU is who or what is dependent on this project. A who is addressed under downstream by the name of the type of party it is. A what is an artifact, and it is addressed under downstream by the address of its Defining Element." />
+    <concept term="Upstream" definition="An artifact outside the artifact being examined whose Encounter Function satisfies an Operative Purpose held inside it. The OP belongs to an element of this artifact, but the element that provides for it does not, so it is not placed under the four base types where it would read as a part of this artifact. From here it is one whole thing, and its Defining Element is what names a whole artifact as a type, so its address is the word upstream followed by the address of its own Defining Element." />
+    <concept term="Downstream" definition="Any who or what outside the artifact being examined that bears an Operative Purpose for the Encounter Function of its Defining Element. An Encounter Function is only a how until a receiver holds a why for it, so the downstream is the RE that makes the Defining Element specific to this artifact, and every other OP inside the artifact exists to deliver what that receiver encounters. Each unique interest or dependency is one downstream, because each is a different OP and so a different why to trace through the artifact; the same interest held by another is the same OP and the same join, and it adds nothing to reason about. A what is an artifact, addressed as downstream followed by the address of its own Defining Element. A who is addressed as downstream followed by the name of the type of party it is." />
   </core_concepts>
 
   <join_types>
@@ -66,7 +66,7 @@
       <root_type name="downstream" />
     </external_root_types>
 
-    <note>The four base types are always local to the project they are used in. upstream and downstream represent what is external to the project.</note>
+    <note>The four base types are always local to the artifact being examined, because they name what it is made of. upstream and downstream hold what is outside it, so that an element this artifact relies on, or one that relies on it, is never mistaken for one of its parts.</note>
 
     <note>This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per element.</note>
 
@@ -79,7 +79,7 @@
       <example address="code.game" valid="false" reason="game is not a function" />
       <example address="code.game.engine" valid="false" reason="reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent." note="an earlier draft of this example called it 'almost valid' for the SDK reading, but that reading is already the valid address code.engine.game, so reusing it here would make the namespace non-deterministic." />
       <example address="code.engine.game" valid="true" reason="represents game engine program code; 'game engine' is legal because it is a functionality type enabled by an external SDK identified by that exact name, 'game engine'" />
-      <example address="upstream.code.engine.game" valid="true" reason="represents the external game engine this project requires; the address is a reference to the project that satisfies that upstream requirement" />
+      <example address="upstream.code.engine.game" valid="true" reason="represents an external game engine this project requires; the engine is a whole artifact outside this one, so it is named by its own Defining Element and placed under upstream, not among the elements of this artifact" />
       <example address="code.engine.game.fps" valid="true" reason="valid as a functional subtype — a distinct functionality" note="load-bearing example; initial intake references this via a join as a major core functionality in code.engine.game, with code.engine.game.fps as a supportive element" proof="first-person camera viewpoint with a targeting reticle" />
       <example address="code.engine.game.platformer" valid="false" reason="invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality" note="load-bearing invalid example" proof="spatial navigation and overcoming environmental obstacles" />
       <example address="code.engine.game.doom" valid="false" reason="not a function or type; the name is a specific game and cannot be used as a type or subtype element" />
