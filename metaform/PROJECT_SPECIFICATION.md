@@ -39,7 +39,7 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 
 **Purpose of this document.** To give a technically capable reader, or an agent, enough to understand Metaform, to work on it without altering what must not be altered, and to judge proposed work against what the founder has established.
 
-**In scope:** the map and its terms; the MCP server and its one tool; progressive discovery and task-relevant context; overlays; the three implementations; the web interface.
+**In scope:** the map and its terms; the chassis and its modules; the MCP server and its one tool; progressive discovery and task-relevant context; overlays; the three implementations; the web interface.
 
 **Out of scope, named for context only:**
 
@@ -168,7 +168,56 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 - The home folder is `~/.metaform`. Settings and the registry of projects may be JSON. [R]
 - The Node version was first made quickly and without concurrency. It must not become the design. [R]
 
-### 6.6 The web interface as a concept
+### 6.6 The chassis and its modules
+
+The chassis is the fixed core of the system. It tracks projects across the machine, and it is the entry point through which the system is extended. Extension by modules is how the project is fitted to a person's needs. [R: 2026-11-11] All three implementations have the concept. [R]
+
+**What the chassis is.** [R, from the founder's statements of 2026-10-31 to 2026-11-03]
+
+- The chassis is immutable. A feature never changes it.
+- It owns the data, the settings and the database. Writes go through a queue it owns.
+- It is driven by events.
+- It keeps one core database of projects and one database for each project, and opens only the ones in use.
+- Nearly everything else is a module, the MCP server included. Parts of the core system may themselves be modules.
+- The MCP server works alone. When a chassis is present, the server finds it at startup and uses it as the source for the data that the two must share. Capabilities that need both appear only when both are present.
+
+**The module contract.** [R as to the rule; F as demonstrated by the earlier Python system]
+
+- **The template rule.** Anything the chassis exposes to a module is defined in a template module and documented there. The template is the contract in practice. A new capability updates the template, its document and a demonstration module. The founder names this rule as what made the earlier system dependable.
+- **Stable under extension.** Over two months, each feature of the earlier system arrived as a module that used only services the chassis exposed.
+- **A module is removable.** The chassis is a complete command-line program with every module off or absent. A module that is unloaded loses its commands, settings and subscriptions and keeps its stored data.
+- **One declaration.** A module declares, in one descriptor: its identity and purpose, its commands, the events it subscribes to, its start and end routines, its tables, its panels for the interface, and what it provides to other modules.
+- **Discovery.** Modules are found in a system place, a user place, installed packages and the project. A module that fails to load is listed with the reason.
+- **The storage boundary.** A module declares its tables and reaches them only through the chassis. It writes no SQL and imports only the public surface. Tests enforced this in the earlier system.
+- **Commands are hierarchical** at the command line: the module, then the command.
+- **Tools collapse.** A module's operations appear under one tool. A new module may add operations under another module's tool. [R: 2026-11-03]
+
+**The settings pattern.** [R]
+
+- Everything works with no switch set.
+- A switch may be set and saved in place of a long command line.
+- A reset returns every setting to its default.
+- A glued setting survives a reset.
+- The same settings are reached from the command line and from a keyboard screen.
+
+**What went wrong before, and the rule that follows.** [F] [R]
+
+- The earlier system did not constrain how modules made tools. Each command became a tool, and the tool list grew past 150 tools and 128,000 bytes. A later change brought it to one tool and 737 bytes.
+- The founder's rule is that this must not happen again: context management is the core approach, and a module adds operations, not tools.
+- An earlier rule that every command-line command is also a tool caused part of that growth. It is replaced: a tool operation may be used at the command line, and the reverse does not hold.
+- Feature logic entered the chassis, and one escape gave modules a raw database connection. Both broke the boundary. [F: read in the earlier code.]
+
+**State of the three implementations today.** [F] The Rust implementation has the tracking half: a registry of projects, settings and a write queue. Node has a registry. None of the three has the module entry point, the template module or the settings pattern.
+
+**Not established.** [U]
+
+- The language of the chassis. On 2026-11-03 the founder wanted Rust with an entity component system, and the same day said nobody had convinced him which language it should be in or whether it is part of the MCP server.
+- What "immutable" permits when the contract itself must grow.
+- Whether one module may call another directly. The earlier system left this open.
+- Whether modules written for the earlier Python system are to work again.
+- How one module contract serves three implementations in three languages.
+
+### 6.7 The web interface as a concept
 
 The web interface is the surface through which a person sees the map and moves through it. Section 7 treats it in full.
 
@@ -283,6 +332,7 @@ From the founder's two requirement texts and from corrections given in the sessi
 - The task that commissioned this document treats reuse of the base surface by another project as a distinct concept. [F]
 - Metaform is universal, and projects other than Metaform are the point of it. Topogee is a project built with Metaform. Agents may make and own a map of their own. [R]
 - The record holds no statement that the interface, or a base part of it, is taken into another software project. [F]
+- The established way to extend the system is the chassis and its modules (section 6.6). In the earlier system a module declared its own panels and toolbar items, and the interface placed them. [F] On that evidence, reuse and extension of the interface most likely mean this: the base surface is fixed, and a module adds to it by declaration. [I]
 
 **What is not established.** [U]
 
@@ -313,7 +363,7 @@ From the founder's two requirement texts and from corrections given in the sessi
 - Lifecycle: an overlay removed from the map leaves the interface with no trace.
 - Two overlays do not conflict, because neither changes the map.
 
-**Not established.** [U] Whether an overlay may bring its own view or controls into the interface. The order in which a tour visits features. What the interface shows when two isolated overlays share no element.
+**Not established.** [U] Whether an overlay may bring its own view or controls into the interface. In the earlier system a module, not an overlay, brought panels (section 6.6). The order in which a tour visits features. What the interface shows when two isolated overlays share no element.
 
 ## 10. MCP server
 
@@ -464,6 +514,9 @@ For a proposed piece of work:
 | Use the feature overlay to show one feature at a time | Compliant | The founder's description (7.3, 9). |
 | Let an overlay bring its own panel into the interface | Indeterminate | Not established (9). |
 | Define a new map overlay at a two-segment address beneath the internal root | Compliant | An overlay's address may have several segments (6.3). |
+| Give each command of a new module its own tool | Non-compliant | A module adds operations, not tools (6.6). |
+| Let a module open the database itself | Non-compliant | The storage boundary (6.6). |
+| Add a chassis capability without adding it to the template module | Non-compliant | The template rule (6.6). |
 | Add an operation that starts or ends an intake | Non-compliant | No ceremony in the tool (5, principle 14). |
 | Add a check because it seems prudent, with no observed failure | Non-compliant | Principle 13. |
 | Copy an outside library into the repository for the interface | Non-compliant | Principle 12. |
@@ -482,6 +535,10 @@ For a proposed piece of work:
 | Overlay | A named kind of knowledge laid over the map. Decided 2026-11-11. | A visual layer in a drawing. |
 | Mask | A stop that keeps an overlay from applying at an element and beneath it. | Deletion. A mask hides. |
 | Progressive discovery | The rule of section 11.2. | Lazy loading in general. |
+| Chassis | The immutable core that owns data and settings, tracks projects, and is extended by modules. | The MCP server, which can work without it. |
+| Module | A removable unit that extends the system through the chassis. | An overlay, which adds knowledge to a map. |
+| Template module | The empty module that shows everything the chassis exposes. | |
+| Glue | To make a setting survive a reset. | |
 | Operative Purpose | What a receiving element seeks to accomplish through a providing element. | The purpose of the whole project. |
 | Encounter Function | What the providing element does in that meeting that satisfies the purpose. Open in meaning by design. | The element's function in general. |
 
@@ -541,6 +598,15 @@ Each line is an established requirement unless marked otherwise.
 15. All three present elements with fields together to agents and store by field.
 15a. Writes are queued, with fair queuing.
 
+**Chassis and modules**
+15b. The chassis is immutable and owns the data, the settings and the database.
+15c. The system is extended only by modules.
+15d. Anything the chassis exposes to a module is in the template module and documented.
+15e. The chassis is complete with every module absent.
+15f. A module reaches storage only through the chassis.
+15g. A module adds operations under a tool. It does not add tools.
+15h. Settings work with no switch set, and support set, reset and glue.
+
 **Web interface**
 16. Original, from scratch, surpassing both existing pages.
 17. Legible and dynamic, with a designed system of easing and zooming.
@@ -589,6 +655,11 @@ An earlier draft listed nineteen questions. A full reading of the founder's 1,08
 12. What belongs to the base surface, and what is added to it?
 13. What does reuse by another project mean: which project, what is reused, what the adopter supplies, and how it is taken?
 14. May an overlay bring its own view or controls into the interface?
+
+**Chassis**
+16. What language is the chassis in, and is it part of the MCP server?
+17. How does one module contract serve Rust, Node and Python?
+18. May a module call another module directly?
 
 **Scope**
 15. What is the interface between this repository and the scoring and mutation pipeline?
