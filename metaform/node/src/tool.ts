@@ -15,8 +15,11 @@ import type { Store } from "./store.ts";
 import { refusalJson, storeFailureJson } from "./store.ts";
 
 const CONTRACT = new URL("../../mcp-tools.proposed.json", import.meta.url);
+// The input schema published to agents: the one command shape, each part described once. The
+// full contract still checks every command.
+const PUBLISHED = new URL("../../mcp-tool.published.json", import.meta.url);
 
-/** The one tool's definition from the contract: `name`, `description` and `inputSchema`. */
+/** The one tool: `name` and `description` from the contract, with the published `inputSchema`. */
 export function toolDefinition(): JsonObject {
   const tools = get(parse(readFileSync(CONTRACT, "utf8")), "tools");
   if (!isArray(tools) || tools.length !== 1) {
@@ -27,7 +30,8 @@ export function toolDefinition(): JsonObject {
     const value = get(definition, key);
     return typeof value === "string" ? value : "";
   };
-  const schema = get(definition, "inputSchema");
+  const published = get(parse(readFileSync(PUBLISHED, "utf8")), "inputSchema");
+  const schema = isObject(published) ? published : get(definition, "inputSchema");
   return obj(
     ["name", text("name")],
     ["description", text("description")],

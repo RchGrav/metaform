@@ -130,7 +130,23 @@ impl MapTool {
     }
 }
 
-/// Build the MCP tool from the contract's definition.
+/// The input schema the server publishes to agents: the one command shape, with each part
+/// described once (`metaform/mcp-tool.published.json`). The full contract still checks every
+/// command, so the published schema does not restate the forms for each verb. Owner, 2026-11-10:
+/// the schema an agent is shown must not cost more than the tool is worth to an agent that does
+/// not use it.
+const PUBLISHED: &str = include_str!("../../../../mcp-tool.published.json");
+
+/// The published input schema, or None when the file does not hold one.
+fn published_schema() -> Option<serde_json::Map<String, Value>> {
+    match serde_json::from_str::<Value>(PUBLISHED).ok()?.get("inputSchema") {
+        Some(Value::Object(schema)) => Some(schema.clone()),
+        _ => None,
+    }
+}
+
+/// Build the MCP tool from the contract's definition: its name and description, with the
+/// published input schema.
 pub fn tool_from(definition: &Value) -> Tool {
     let text = |key: &str| {
         definition
@@ -139,10 +155,10 @@ pub fn tool_from(definition: &Value) -> Tool {
             .unwrap_or_default()
             .to_string()
     };
-    let schema = match definition.get("inputSchema") {
+    let schema = published_schema().unwrap_or_else(|| match definition.get("inputSchema") {
         Some(Value::Object(schema)) => schema.clone(),
         _ => serde_json::Map::new(),
-    };
+    });
     Tool::new(
         Cow::Owned(text("name")),
         Cow::Owned(text("description")),

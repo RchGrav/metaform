@@ -15,8 +15,10 @@ use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
 /// Bytes of the compact `tools/list` result (R-1.3 baseline). 11,762 at b202557; 11,973 after
-/// the specification-layer commands and the contract trim (consolidation, 2026-11-09).
-const TOOLS_LIST_BYTES: usize = 11_973;
+/// the specification-layer commands and the contract trim (consolidation, 2026-11-09); 3,929
+/// since 2026-11-10, when the server began to publish the one command shape
+/// (`mcp-tool.published.json`) in place of the contract's schema, which restates it for each verb.
+const TOOLS_LIST_BYTES: usize = 3_929;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]

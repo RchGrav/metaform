@@ -14,6 +14,9 @@ from .values import copy, dumps, same
 
 # The contract, two folders above this package: `metaform/mcp-tools.proposed.json`.
 CONTRACT = Path(__file__).resolve().parents[2] / "mcp-tools.proposed.json"
+# The input schema published to agents: the one command shape, each part described once. The
+# full contract still checks every command.
+PUBLISHED = Path(__file__).resolve().parents[2] / "mcp-tool.published.json"
 
 # Sheet parts whose entries are the same wherever they appear, so each entry is delivered once
 # for each context: the layer `instructions` (R-6.27).
@@ -25,9 +28,11 @@ ALWAYS = ("guidance",)
 
 
 def tool_definition() -> dict[str, Any]:
-    """The MCP tool from the contract's definition: its name, description and input schema."""
+    """The MCP tool: its name and description from the contract, with the published input schema."""
     definition = json.loads(CONTRACT.read_text(encoding="utf-8"))["tools"][0]
-    schema = definition.get("inputSchema")
+    schema = json.loads(PUBLISHED.read_text(encoding="utf-8")).get("inputSchema")
+    if not isinstance(schema, dict):
+        schema = definition.get("inputSchema")
     return {
         "name": definition.get("name") if isinstance(definition.get("name"), str) else "",
         "description": definition.get("description") if isinstance(definition.get("description"), str) else "",

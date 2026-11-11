@@ -319,6 +319,10 @@ The skeleton is not the whole of a thing (R-3.20). The skeleton keeps a thing th
 
 **Status:** Engineering decision, 2026-11-09; not an owner decision. Built. No owner document gives the form of a successful answer; the build repeated the whole command. **Reason:** the agent sent the command and has it. In four recorded intakes, the repeat was 29% of all bytes the tool delivered: 302,384 bytes fell to 215,946 on the same commands (`metaform/conformance/replay.py`). **When the other form is better:** if a write ever alters what was sent in a way the agent must see, the answer should carry that difference, not the whole command.
 
+**R-5.38** The server publishes to agents the one command shape, with each part described once (`mcp-tool.published.json`), not the contract's schema, which restates that shape for each verb. The contract (`mcp-tools.proposed.json`) is unchanged and still checks every command.
+
+**Status:** Built 2026-11-10 in the Rust, Node and Python forms, on the owner's instruction: "its too much if it the Ai isnt using the tool its describing"; "its one command... and one simple schema"; "thats the tooling and you can edit that to make it more efficient". The compact `tools/list` result went from 11,973 to 3,929 bytes. Every description in the published schema is the contract's own text. A check (`tests/check_published_schema.py`) shows it accepts every command of the conformance suite that the contract accepts.
+
 **R-5.36** A deletion leaves no empty element. A write creates the element a want names (R-5.4). When the last want that names it is removed, and it has no fields, no wants and nothing beneath it, it is removed too, with each branch above it that is left the same way.
 
 **Status:** Engineering decision, 2026-11-09. Built. **Reason:** a test intake left empty addresses in the map after it deleted the elements that named them, and `map` then listed addresses that hold nothing.
