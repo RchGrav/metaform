@@ -1,0 +1,13 @@
+205 bytes | goal: second statement of 'function, not variants' (first statement kept in the same paragraph)
+106 bytes | goal: load-bearing emphasis (kept once, at the start of step 1)
+200 bytes | constraint restating the Element definition
+144 bytes | constraint restating namespace rule 8
+174 bytes | constraint restating namespace rule 8 and the goal
+152 bytes | constraint restating namespace rule 8
+185 bytes | constraint restating step 11
+271 bytes | CQU rule restating the CQU definition
+128 bytes | CQU rule restated by the last CQU rule and by three examples
+113 bytes | CQU rule restating the two rules before it
+132 bytes | step 8: restates the CQU rule on the root join
+218 bytes | step 9: restates the Parametric definition
+161 bytes | response instruction restating step 6
