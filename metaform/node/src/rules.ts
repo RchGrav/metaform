@@ -4,7 +4,7 @@
 // R-6.17) is checked here too, for the parts a write sets.
 
 import type { Json, JsonObject } from "./json.ts";
-import { copy, equal, isArray, isObject, obj } from "./json.ts";
+import { equal, isArray, isObject, obj } from "./json.ts";
 import type { Element, MapModel } from "./model.ts";
 import { ROOT, join } from "./names.ts";
 import { Code, Refusal } from "./refusal.ts";
@@ -302,11 +302,6 @@ export function grammarFault(field: string, text: string): string | undefined {
  * full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
  * that `before` holds, it has only those parts. For a want this command made, it has the whole
  * want, because the refused command stored nothing and a want needs all of its fields (R-5.6).
- *
- * `add` is the selector and the body of the refused command when the command is an `add`. When
- * `before` does not hold the element `holder`, an `update` of it cannot work, because the
- * refused `add` stored nothing. The remediation is then the refused `add` itself, whole, with a
- * placeholder in each part that broke the rule.
  */
 export function checkWantGrammar(
   before: MapModel,
@@ -314,7 +309,6 @@ export function checkWantGrammar(
   holder: string,
   other: string,
   written: string[],
-  add?: [string, JsonObject],
 ): void {
   const record = elements.get(holder)?.wants.get(other);
   if (record === undefined) {
@@ -339,17 +333,8 @@ export function checkWantGrammar(
   if (broken.size === 0) {
     return;
   }
-  let remediation: JsonObject;
-  if (add !== undefined && before.element(holder) === undefined) {
-    const [selector, supplied] = add;
-    const whole = copy(supplied) as JsonObject;
-    placeInAdd(whole, selector, holder, other, broken);
-    remediation = obj(["add", obj([selector, whole])]);
-  } else {
-    const stored = before.element(holder)?.wants.has(other) ?? false;
-    const parts: JsonObject = stored ? broken : new Map([...record, ...broken]);
-    remediation = obj(["update", obj([holder, obj(["wants", obj([other, parts])])])]);
-  }
+  const stored = before.element(holder)?.wants.has(other) ?? false;
+  const parts: JsonObject = stored ? broken : new Map([...record, ...broken]);
   const named = (address: string): string => {
     const name = elements.get(address)?.fields.get("name");
     return typeof name === "string" && trim(name) !== "" ? `${address} (${name})` : address;
@@ -358,45 +343,8 @@ export function checkWantGrammar(
   const refusal = new Refusal(
     Code.GrammarConstraintViolation,
     `${faults.join("; ")}. ${GRAMMAR_RULE}`,
-    remediation,
+    obj(["update", obj([holder, obj(["wants", obj([other, parts])])])]),
   );
   refusal.sentence = `${named(holder)} requires ${named(other)} in order to ${part("why")}, which ${part("how")}.`;
   throw refusal;
-}
-
-/**
- * Put the placeholders of `broken` into the want that the body of an `add` command gives for
- * `other` at the element `holder`. `node` is the part of the body at `address`. The walk follows
- * `model.flatten`: an object value is the element one segment beneath. `wants` is one dictionary
- * keyed by the other address, or an older list of such dictionaries, in which the last one that
- * names `other` is the one the command writes. Key order stays as the command gave it. Returns
- * whether the want was found.
- */
-function placeInAdd(node: JsonObject, address: string, holder: string, other: string, broken: JsonObject): boolean {
-  if (address === holder) {
-    const wants = node.get("wants");
-    let record: Json | undefined;
-    if (isObject(wants)) {
-      record = wants.get(other);
-    } else if (isArray(wants)) {
-      for (const group of wants) {
-        if (isObject(group) && group.has(other)) {
-          record = group.get(other);
-        }
-      }
-    }
-    if (!isObject(record)) {
-      return false;
-    }
-    for (const [key, placeholder] of broken) {
-      record.set(key, placeholder);
-    }
-    return true;
-  }
-  for (const [key, value] of node) {
-    if (isObject(value) && placeInAdd(value, join(address, key), holder, other, broken)) {
-      return true;
-    }
-  }
-  return false;
 }

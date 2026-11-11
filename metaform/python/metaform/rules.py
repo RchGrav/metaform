@@ -236,12 +236,7 @@ def grammar_fault(field: str, text: str) -> str | None:
 
 
 def check_want_grammar(
-    before: Map,
-    elements: dict[str, Element],
-    holder: str,
-    other: str,
-    written: list[str],
-    add: tuple[str, dict[str, Any]] | None = None,
+    before: Map, elements: dict[str, Element], holder: str, other: str, written: list[str]
 ) -> None:
     """Check the `why` and `how` that a command wrote in one want. `written` names the parts the
     command wrote; a part it did not write is not checked, so a stored want with older text still
@@ -252,12 +247,7 @@ def check_want_grammar(
     sentence is the wants sentence of R-6.17 with the texts as written, without their trailing
     full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
     that `before` holds, it has only those parts. For a want this command made, it has the whole
-    want, because the refused command stored nothing and a want needs all of its fields (R-5.6).
-
-    `add` is the selector and the body of the refused command when the command is an `add`. When
-    `before` does not hold the element `holder`, an `update` of it cannot work, because the
-    refused `add` stored nothing. The remediation is then the refused `add` itself, whole, with a
-    placeholder in each part that broke the rule."""
+    want, because the refused command stored nothing and a want needs all of its fields (R-5.6)."""
     element = elements.get(holder)
     record = None if element is None else element.wants.get(other)
     if record is None:
@@ -279,16 +269,8 @@ def check_want_grammar(
     if not broken:
         return
     earlier = before.element(holder)
-    remediation: dict[str, Any]
-    if add is not None and earlier is None:
-        selector, supplied = add
-        whole = copy(supplied)
-        _place_in_add(whole, selector, holder, other, broken)
-        remediation = {"add": {selector: whole}}
-    else:
-        stored = earlier is not None and other in earlier.wants
-        parts = broken if stored else {**copy(record), **broken}
-        remediation = {"update": {holder: {"wants": {other: parts}}}}
+    stored = earlier is not None and other in earlier.wants
+    parts = broken if stored else {**copy(record), **broken}
 
     def named(address: str) -> str:
         at = elements.get(address)
@@ -301,33 +283,7 @@ def check_want_grammar(
     refused = Refusal(
         refusal.GRAMMAR_CONSTRAINT_VIOLATION,
         f"{'; '.join(faults)}. {GRAMMAR_RULE}",
-        remediation,
+        {"update": {holder: {"wants": {other: parts}}}},
     )
     refused.sentence = f"{named(holder)} requires {named(other)} in order to {part('why')}, which {part('how')}."
     raise refused
-
-
-def _place_in_add(node: dict[str, Any], address: str, holder: str, other: str, broken: dict[str, Any]) -> bool:
-    """Put the placeholders of `broken` into the want that the body of an `add` command gives for
-    `other` at the element `holder`. `node` is the part of the body at `address`. The walk follows
-    `model.flatten`: an object value is the element one segment beneath. `wants` is one dictionary
-    keyed by the other address, or an older list of such dictionaries, in which the last one that
-    names `other` is the one the command writes. Key order stays as the command gave it. Returns
-    whether the want was found."""
-    if address == holder:
-        wants = node.get("wants")
-        record = None
-        if isinstance(wants, dict):
-            record = wants.get(other)
-        elif isinstance(wants, list):
-            for group in wants:
-                if isinstance(group, dict) and other in group:
-                    record = group[other]
-        if not isinstance(record, dict):
-            return False
-        record.update(broken)
-        return True
-    for key, value in node.items():
-        if isinstance(value, dict) and _place_in_add(value, names.join(address, key), holder, other, broken):
-            return True
-    return False

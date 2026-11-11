@@ -187,60 +187,6 @@ test("grammar: a refusal names the parts that broke the rule, and stores nothing
   }
 });
 
-test("grammar: a refused add that makes the element gives the add back as its remediation", () => {
-  const at = seeded();
-  try {
-    // The element is new and sits beneath the selector. Its `how` breaks the rule. The refused
-    // `add` stored nothing, so an `update` of the element cannot work. The remediation is the
-    // whole command in the key order the command gave, with the placeholder in the `how`.
-    const record = (how: string) => ({ how, direction: "outbound", why: "serve frames" });
-    const command = (how: string) => ({
-      add: {
-        "code.engine": {
-          cache: {
-            wants: {
-              "code.engine.store": { direction: "inbound", how: "holds frames", why: "keep frames" },
-              [GAME]: record(how),
-            },
-            role: "Supportive",
-            name: "Frame Cache",
-            technical_name: "cache",
-          },
-        },
-      },
-    });
-    const answer = at.call(command("Serving frames"));
-    assert.equal(answer.code, "GRAMMAR_CONSTRAINT_VIOLATION");
-    assert.equal(answer.message, `how does not start with a verb ending in -s. ${RULE}`);
-    assert.equal(JSON.stringify(answer.remediation), JSON.stringify(command(HOW_PLACEHOLDER)));
-    assert.equal(at.call({ "code.engine.cache": {} }).code, "NOT_FOUND");
-
-    // With the placeholder replaced by valid text, the remediation is accepted and the element
-    // is stored with its fields and both wants.
-    const corrected = answer.remediation;
-    corrected.add["code.engine"].cache.wants[GAME].how = "Serves frames";
-    assert.deepEqual(at.call(corrected), { status: "ok" });
-    assert.equal(at.call({ "code.engine.cache": {} })["code.engine.cache"].technical_name, "cache");
-    const stored = at.call({ "code.engine.cache": { wants: {} } })["code.engine.cache"];
-    assert.equal(stored.wants[GAME].how, "Serves frames");
-    assert.ok("code.engine.store" in stored.wants);
-
-    // An `add` to an element the map holds keeps the `update` remediation: the element exists,
-    // so the `update` works. The want is new, so the remediation has the whole want.
-    const existing = at.call({
-      add: { [GAME]: { wants: { "code.engine.disk": { why: "keep frames", how: "Holding frames", direction: "inbound" } } } },
-    });
-    assert.equal(
-      JSON.stringify(existing.remediation),
-      JSON.stringify({
-        update: { [GAME]: { wants: { "code.engine.disk": { why: "keep frames", how: HOW_PLACEHOLDER, direction: "inbound" } } } },
-      }),
-    );
-  } finally {
-    at.remove();
-  }
-});
-
 test("grammar: a part the command does not write is not checked", () => {
   const at = seeded();
   try {

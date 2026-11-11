@@ -284,74 +284,17 @@ fn a_written_why_or_how_follows_the_grammar() {
         refusal.to_json()["tested_sentence"],
         "code.engine.cache (Frame Cache) requires code.engine.game (Quake core) in order to to serve frames, which Serves frames."
     );
-    // The refused `add` stored nothing, so the cache does not exist and an `update` of it cannot
-    // work. The remediation is the refused `add`, whole, with a placeholder in the broken part.
     let remediation = refusal.to_json()["remediation"].clone();
     assert_eq!(
         remediation,
-        json!({"add": {"code.engine.cache": {
-            "technical_name": "cache",
-            "name": "Frame Cache",
-            "role": "Supportive",
-            "wants": {GAME: {"why": WHY_PLACEHOLDER, "how": "Serves frames.", "direction": "outbound"}},
-        }}})
+        json!({"update": {"code.engine.cache": {"wants": {GAME: {
+            "why": WHY_PLACEHOLDER, "how": "Serves frames.", "direction": "outbound",
+        }}}}})
     );
     // The remediation is a command the tool accepts once the placeholder is replaced.
     let mut corrected = remediation;
-    corrected["add"]["code.engine.cache"]["wants"][GAME]["why"] = json!("serve frames");
-    let after = write(&contract, &map, corrected);
-    assert_eq!(after.element("code.engine.cache").unwrap().fields["name"], "Frame Cache");
-}
-
-#[test]
-fn a_grammar_refusal_of_an_add_that_makes_the_element_gives_the_add_back() {
-    let contract = Contract::bundled().unwrap();
-    let map = seeded(&contract);
-
-    // The element is new and sits beneath the selector. Its `how` breaks the rule. The
-    // remediation is the whole command in the key order the command gave, with the placeholder
-    // in the `how` of the reported want and nothing else adjusted.
-    let command = json!({"add": {"code.engine": {"cache": {
-        "wants": {
-            "code.engine.store": {"direction": "inbound", "how": "holds frames", "why": "keep frames"},
-            GAME: {"how": "Serving frames", "direction": "outbound", "why": "serve frames"},
-        },
-        "role": "Supportive",
-        "name": "Frame Cache",
-        "technical_name": "cache",
-    }}}});
-    let refusal = refused(&contract, &map, command.clone());
-    assert_eq!(
-        refusal.to_json()["message"],
-        format!("how does not start with a verb ending in -s. {GRAMMAR_RULE}")
-    );
-    let remediation = refusal.to_json()["remediation"].clone();
-    let mut expected = command;
-    expected["add"]["code.engine"]["cache"]["wants"][GAME]["how"] = json!(HOW_PLACEHOLDER);
-    assert_eq!(remediation.to_string(), expected.to_string());
-    assert!(map.element("code.engine.cache").is_none());
-
-    // With the placeholder replaced by valid text, the remediation is accepted and the element
-    // is stored with its fields and both wants.
-    let mut corrected = remediation;
-    corrected["add"]["code.engine"]["cache"]["wants"][GAME]["how"] = json!("Serves frames");
-    let after = write(&contract, &map, corrected);
-    let cache = after.element("code.engine.cache").unwrap();
-    assert_eq!(cache.fields["technical_name"], "cache");
-    assert_eq!(cache.wants[GAME]["how"], "Serves frames");
-    assert!(cache.wants.contains_key("code.engine.store"));
-
-    // An `add` to an element the map holds keeps the `update` remediation: the element exists,
-    // so the `update` works. The want is new, so the remediation has the whole want.
-    let command = json!({"add": {GAME: {"wants": {"code.engine.store": {
-        "why": "keep frames", "how": "Holding frames", "direction": "inbound",
-    }}}}});
-    assert_eq!(
-        refused(&contract, &map, command).to_json()["remediation"],
-        json!({"update": {GAME: {"wants": {"code.engine.store": {
-            "why": "keep frames", "how": HOW_PLACEHOLDER, "direction": "inbound",
-        }}}}})
-    );
+    corrected["update"]["code.engine.cache"]["wants"][GAME]["why"] = json!("serve frames");
+    write(&contract, &map, corrected);
 }
 
 #[test]

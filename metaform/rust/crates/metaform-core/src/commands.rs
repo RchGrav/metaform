@@ -67,7 +67,6 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
                 elements: map.raw().clone(),
                 touched: BTreeSet::new(),
                 written_wants: Vec::new(),
-                add: (verb == "add").then_some((selector, supplied)),
             };
             match verb {
                 "add" => work.add(selector, supplied)?,
@@ -108,9 +107,6 @@ struct Work<'a> {
     /// The wants this command wrote, in the order it wrote them: the holder, the other element,
     /// and which of `why` and `how` the command supplied. `finish` checks their grammar.
     written_wants: Vec<(String, String, Vec<&'static str>)>,
-    /// The selector and the body of the command when it is an `add`. A grammar refusal for a
-    /// want of an element the command made gives the command back as its remediation.
-    add: Option<(&'a str, &'a Value)>,
 }
 
 impl Work<'_> {
@@ -345,7 +341,7 @@ impl Work<'_> {
         // was. The first want that breaks the rule, in the order the command wrote them, is
         // reported.
         for (holder, other, written) in &self.written_wants {
-            rules::check_want_grammar(self.before, &self.elements, holder, other, written, self.add)?;
+            rules::check_want_grammar(self.before, &self.elements, holder, other, written)?;
         }
         let mut effect = Effect::default();
         for address in &self.touched {

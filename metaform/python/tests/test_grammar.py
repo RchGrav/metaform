@@ -168,51 +168,6 @@ class Grammar(unittest.TestCase):
         self.assertEqual(self.call({GAME: {"wants": {}}})[GAME]["wants"][ROUTER]["how"], "Dispatches subscribed runtime event streams.")
         self.assertEqual(self.call({"code.engine.store": {}})["code"], "NOT_FOUND")
 
-    def test_a_refused_add_that_makes_the_element_gives_the_add_back_as_its_remediation(self) -> None:
-        self.seed()
-
-        # The element is new and sits beneath the selector. Its `how` breaks the rule. The refused
-        # `add` stored nothing, so an `update` of the element cannot work. The remediation is the
-        # whole command in the key order the command gave, with the placeholder in the `how`.
-        def command(how: str) -> Any:
-            return {"add": {"code.engine": {"cache": {
-                "wants": {
-                    "code.engine.store": {"direction": "inbound", "how": "holds frames", "why": "keep frames"},
-                    GAME: {"how": how, "direction": "outbound", "why": "serve frames"},
-                },
-                "role": "Supportive",
-                "name": "Frame Cache",
-                "technical_name": "cache",
-            }}}}
-
-        answer = self.call(command("Serving frames"))
-        self.assertEqual(answer["code"], "GRAMMAR_CONSTRAINT_VIOLATION")
-        self.assertEqual(answer["message"], f"how does not start with a verb ending in -s. {RULE}")
-        self.assertEqual(json.dumps(answer["remediation"]), json.dumps(command(HOW_PLACEHOLDER)))
-        self.assertEqual(self.call({"code.engine.cache": {}})["code"], "NOT_FOUND")
-
-        # With the placeholder replaced by valid text, the remediation is accepted and the
-        # element is stored with its fields and both wants.
-        corrected = answer["remediation"]
-        corrected["add"]["code.engine"]["cache"]["wants"][GAME]["how"] = "Serves frames"
-        self.assertEqual(self.call(corrected), {"status": "ok"})
-        self.assertEqual(self.call({"code.engine.cache": {}})["code.engine.cache"]["technical_name"], "cache")
-        stored = self.call({"code.engine.cache": {"wants": {}}})["code.engine.cache"]
-        self.assertEqual(stored["wants"][GAME]["how"], "Serves frames")
-        self.assertIn("code.engine.store", stored["wants"])
-
-        # An `add` to an element the map holds keeps the `update` remediation: the element
-        # exists, so the `update` works. The want is new, so the remediation has the whole want.
-        existing = self.call({"add": {GAME: {"wants": {"code.engine.disk": {
-            "why": "keep frames", "how": "Holding frames", "direction": "inbound",
-        }}}}})
-        self.assertEqual(
-            json.dumps(existing["remediation"]),
-            json.dumps({"update": {GAME: {"wants": {"code.engine.disk": {
-                "why": "keep frames", "how": HOW_PLACEHOLDER, "direction": "inbound",
-            }}}}}),
-        )
-
     def test_a_part_the_command_does_not_write_is_not_checked(self) -> None:
         self.seed()
         self.write({"update": {GAME: {"wants": {ROUTER: {"how": "Stores decoded parameters."}}}}})
