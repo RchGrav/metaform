@@ -2,679 +2,479 @@
 
 ## 1. Title and specification status
 
-**Document:** Metaform project specification and agent guide.
-**Date:** 2026-11-11. **Status:** Draft for the founder's correction. It is not definitive: section 18 lists material questions that are open.
+**Document:** Metaform project specification and agent guide. **Date:** 2026-11-11. **Status:** Draft for the founder's correction.
 
-**Evidence base.** The founder's statements in working sessions from 2026-10-30 to 2026-11-11, 1,089 messages read in full; the founder's documents (an intake procedure, a mutation framework, a semantic compilation guide, a judge module contract, a one-page query design, two interface requirement texts, an architecture note for the wider system); and the state of the repository on 2026-11-11.
+**How this document is written.** It states the design and the reasoning that produces it. A rule appears with the reason it exists, so that a reader can work out a case the document does not list. It does not record who said what or when. Where a reason is not known, the document says so and does not invent one.
 
 **Status marks.** Each consequential statement carries one mark.
 
 | Mark | Meaning |
 |---|---|
-| **[R]** | Established requirement: the founder required it. |
-| **[F]** | Established fact or description: stated or consistently observed, not necessarily required. |
-| **[I]** | Conservative interpretation: a cautious inference or a recommended practice. It binds no one. |
-| **[U]** | Unknown or unresolved: not established, in conflict, or waiting for a decision. |
+| **[R]** | Established requirement. |
+| **[F]** | Established fact or description. Not necessarily required. |
+| **[I]** | Interpretation: reasoned by an agent from the design and not confirmed. It binds no one. |
+| **[U]** | Unknown or unresolved. |
 
-**Dates.** Where the founder decided a matter more than once, the latest statement governs, and this document gives its date. Within one day the record does not show which message came first.
-
-**Limits.** The founder corrected the agents' reading of this project several times during the sessions this document draws on. Statements marked [I] are the most likely to be wrong. The founder's own wording governs wherever it differs from this document.
+**Basis.** The founder's explanations across working sessions from 2026-10-30 to 2026-11-11, read in full; the founder's intake procedure in its pure form and its earlier longer form; the founder's documents on mutation and on rendering language; the earlier Python system; and the repository on 2026-11-11.
 
 ## 2. Executive summary
 
-Metaform keeps a small map of what a project does, so that an agent can orient itself without spending its limited reasoning on working out what the project is. [F]
+An agent has a limited capacity for tracking and understanding. Working out what a project is uses that capacity before the task starts, and the task gets what is left. Metaform does that orientation once and keeps the result where every agent can read it at a glance. The saving is in reasoning. It is not in tokens or money, and Metaform does not make a model more able. [R]
 
-- The map is a set of elements at dotted addresses. Each element records what it relies on, for what purpose, and how the other element serves that purpose. [F]
-- The map describes functionality, not files or code. It is an inference, and it is never graded. [R]
-- Knowledge about the project attaches to elements as overlays: named kinds of records laid over the map without changing it. [R]
-- Agents reach the map through one tool on a Model Context Protocol (MCP) server. The tool's definition is to stay well under one kilobyte and holds a list of operations. [R]
-- Every answer follows progressive discovery: nothing is delivered before it is needed, and nothing that is not needed. [R]
-- A wrong command is answered with the reason and the command that would be accepted. That correction is how an agent learns a command's shape. [R]
-- The tool exists in Rust, Node and Python. The three serve the same purpose under one requirement. The Rust version is to take a more modern approach than the other two. [R]
-- A web interface lets a person see and move through the map. The founder requires an original interface, written from scratch, that is legible and dynamic, with a designed system of easing and zooming. No interface that meets this exists yet. [R] [F]
-
-The largest unresolved matters are: the two points of the intake procedure's gap fill that need the founder (section 18); the technology and the motion rules of the new web interface; and what reuse of the interface by another project requires. [U]
+- **What is kept is function, not material.** The map names what each part of an artifact does and for what purpose. Function outlives changes to files, and it exists in a photograph or a story as well as in software. [R]
+- **The map is small on purpose.** It is a set of reference points. Knowledge attaches at those points as overlays. A deep map would spread knowledge away from the place an agent looks. [R]
+- **The map is an inference.** Its value is that every agent reasons from the same reading. No reading is the correct one, so a map is never graded and an intake is never gated. [R]
+- **Agents reach the map through one tool** whose definition is a list of operations under one kilobyte. Everything else arrives when it is needed. [R]
+- **The system is extended by modules on an immutable chassis.** [R]
+- **Three implementations serve one purpose:** Rust, Node and Python. [R]
+- **A web interface lets a person see and move through the map.** An interface that meets the requirement does not exist yet. [F]
 
 ## 3. Purpose, scope, and intended use
 
-**Purpose of this document.** To give a technically capable reader, or an agent, enough to understand Metaform, to work on it without altering what must not be altered, and to judge proposed work against what the founder has established.
+**Purpose of this document.** To let a capable reader or an agent understand Metaform well enough to work on it, to leave unaltered what must not be altered, and to judge proposed work.
 
-**In scope:** the map and its terms; the chassis and its modules; the MCP server and its one tool; progressive discovery and task-relevant context; overlays; the three implementations; the web interface.
+**In scope:** the map and its terms; the intake procedure; overlays; the MCP server and its tool; the chassis and its modules; the three implementations; the web interface.
 
-**Out of scope, named for context only:**
+**Related and out of scope.**
 
-- A pipeline that uses a map to score an artifact from each consumer's side and to change it under rules (stages named intake, score, mutation instruction, weight decay and export, with an optional judge stage). [F] The intake gives the understanding that a mutation needs: a thing must be fully understood before it is changed, and that understanding is what protects it from becoming a different thing. [F] The interface between that pipeline and this repository is not specified. [U]
-- A wider system of which Metaform is the context engine. [F] Metaform is universal and is its own project; Topogee is a project built with it. [R] The MCP server can work alone, and it works together with the wider system's core when both are present. [R]
-- An agents module, specified after the MCP server, that owns agent names and messaging. [F]
-- Tickets. A ticket holds knowledge that does not last; the map holds knowledge that does. A ticket has a home element, and taking a ticket orients an agent as `goto` does. [F] The ticket mechanism is not a base mechanism of Metaform. [R]
-- A separate multi-agent discussion tool kept in the same repository. [F]
+- **Mutation of artifacts.** A separate pipeline scores an artifact from the side of each party that relies on it and directs changes to it. It depends on Metaform for one thing: a thing must be understood as a type before it is changed, or the change may turn it into a different thing (section 6.2). The interface between that pipeline and this repository is not specified. [U]
+- **Agents, messaging and tickets.** A later module owns agent identity and messages. Tickets hold knowledge that does not last; the map holds knowledge that does. Neither is a base mechanism of Metaform. [F]
+- **The project named Topogee** is built with Metaform. Metaform is its own project and is not designed around any one project, including itself. [R]
 
-**Intended users.** People who want to see what a project is and to direct work on it; agents that need to orient in a project and record what they learn. [F]
+**Intended users.** People who want to see what a project is and direct work on it. Agents that need to orient in a project and record what they learn.
 
 ## 4. Project intent and intake method
 
 ### 4.1 Intent
 
-- The cost Metaform saves is a reasoning cost. An agent has a limited capacity for tracking and understanding. Orientation in a project draws on that capacity. Metaform does the orientation once and keeps the result. [F]
-- Metaform does not raise a model's ability. It preserves the capacity that lets the model perform well. [F]
-- The saving is not measured in tokens or money. A document that claims otherwise misstates the project. [R]
-- The map answers one question at a glance: what is this project. [F]
-- The map is also the footing for further uses the founder plans, across artifact types that include software, photographs, stories and scripts. Those uses are not specified here. [F] [U]
+The map answers one question for an agent arriving in a project: what is this. An agent that has the answer does not spend its reasoning rebuilding it, and it does not act on a wrong guess about what a part is for. Most wrong or incomplete work by agents starts from that guess. [F]
 
-### 4.2 Two different things are called intake
+### 4.2 Two things are called intake
 
-1. **The intake procedure** is a project concept: the procedure by which an agent infers a map from an artifact (section 6.4).
-2. **The intake method of this section** is guidance for an agent that must take in information about the Metaform project itself, to maintain this specification or to prepare work.
+1. **The intake procedure** infers a map from an artifact (section 6.4).
+2. **The intake method below** is for an agent that must take in information about the Metaform project itself.
 
-### 4.3 Intake method for project information [I, except where marked]
+### 4.3 Intake method for project information
 
-1. **Find the current source before reading any.** Several versions of most documents exist, including rewrites made by agents. Ask the founder which text is current. Do not assume the copy in the repository is. [R: the founder stated that the repository's procedure is an old one and not the current one.]
-2. **Read whole documents.** Headings and summaries have misled agents on this project. [F]
-3. **Extract, for each source:** goals; scope; requirements; constraints; actors; components and how they relate; terms with their exact spelling; details of the web surface; what is said about reuse and extension; rules for selecting context; overlays; open questions.
-4. **Mark each extracted statement** with one of the four statuses in section 1.
-5. **Record the reason with the rule.** The founder asks to be interpreted correctly, with the reason, and not to be quoted. A rule without its reason has been misapplied more than once. [R]
-6. **Separate the founder's semantics from tooling.** The intake procedure's concepts, coined terms, definitions and examples are the founder's semantics. The server, schema, commands, stores and pages are tooling. [R]
-7. **Ask when two sources conflict or a term is missing.** Do not settle a conflict silently. [R]
-8. **Clarification is necessary** before any work that would touch the semantics, choose between versions of a text, name something, or define the reuse or overlay behaviour of the web interface.
+1. **Read the definitions first, and work answers out from them.** The glossary of the intake procedure contains the design for a reader who reasons from it. A question about the semantics is answered by derivation and brought to the founder as a reading to confirm. It is not brought as an open question. [R]
+2. **Write the reasoning, not the words.** An explanation given in conversation is a way to reach understanding. Copying its sentences into a document, or into the procedure, keeps the words and loses the understanding. The result reads as a list of rules to obey, which is the failure this project exists to remove. [R]
+3. **Find the current text before reading any.** Several versions of most documents exist, some rewritten by agents. [F]
+4. **Read whole documents.** Summaries and headings have misled agents here. [F]
+5. **Keep semantics and tooling apart.** The procedure's concepts, coined terms, definitions and examples are semantics. The server, schema, commands, stores and pages are tooling. Tooling is fitted to semantics. [R]
+6. **Mark what you inferred.** A reading is marked [I] until it is confirmed.
 
 ## 5. Core design principles
 
-1. **The semantics are load-bearing.** Treat the intake procedure's concepts and terms like mathematical formulas. Do not rename, reword, reorder, merge or add rules to them. Tooling is made to fit them. [R]
-2. **Functionality, not material.** The map names what an artifact does. It leaves out language, encoding, medium, genre and style. [R]
-3. **An inference, not a measurement.** No map is the correct one. A map made by a different model is a different valid reading. A map is never graded. [R]
-4. **Never gated or judged.** The intake procedure is not blocked or scored by the tool. Checking the shape of a command is permitted; judging what was inferred is not. [R]
-4a. **The glossary is sufficient.** The procedure's definitions contain the answers to questions about the semantics, for a reader who works them out. An agent derives an answer from the definitions and states it as a reading before it asks the founder. [R: 2026-11-11]
-5. **The base map is minimal.** It holds elements and their dependencies: purpose, function, direction. Everything else is an overlay. [R]
-5a. **Shallow and coarse.** The map is a light surface of reference points. A deep intake harms the project, because it moves knowledge away from where an agent will look for it. [R]
-6. **Progressive discovery.** No information before it is needed, and none that is not needed. [R]
-7. **The tool surface is small.** Well under one kilobyte, with a list of operations. [R]
-8. **Correction teaches.** A wrong command is answered with the correct shape. [R]
-9. **One purpose, three implementations.** Rust, Node and Python serve the same purpose under one requirement; Rust takes the more modern approach, which is its graph database. [R]
-10. **Honest labelling.** Simulated behaviour is labelled as simulated. Unbuilt behaviour is not described as working. [R]
-11. **Plain technical English** for project prose, with the project's own terms and no invented ones. [R]
-12. **Own code.** No new dependencies and no copies of outside libraries in the repository; outside code may be read for ideas and then written anew. [R]
-13. **No logic without an observed failure.** A check, a gate or a step is added only to fix a failure that was observed. [R]
-14. **No ceremony in the tool.** The tool has no start and no stop for an intake, and will not have one. Data lives in one place and is shown. Ceremony, where it is wanted, belongs in a prompt. [R]
-15. **The map grows.** A functionality that changes is a different functionality and a new element. Work on an artifact may mutate it and may not transform it into a different thing. [R]
-16. **Built for other projects.** Metaform is not designed around managing itself. [R]
+1. **The semantics are load-bearing.** The procedure's terms and definitions were tuned by test over months, across models and artifact types. Some terms are coined and left slightly open, so that their meaning settles from the artifact in front of the model. A reworded definition is a different instruction and gives a different inference, and nothing in the text shows that it broke. Treat the text as a formula: use it or leave it, do not adjust it. [R]
+2. **A rule comes with its reason.** A model given only a rule can obey it. A model given the reason can infer the next case, and it stops spending reasoning on ceremony. This holds for the procedure, for overlay definitions and for this document. [R]
+3. **Function, not material.** Language, encoding, medium, genre and style are ways a function is carried. Naming them would split one function into several elements and tie the map to material that changes. [R]
+4. **An inference, never graded or gated.** A check on what was inferred makes the agent satisfy the check. Checking the shape of a command is different and is permitted. [R]
+5. **The base map is minimal.** It holds elements and their dependencies. Everything else is an overlay. A base that holds little stays stable while knowledge is added and removed around it. [R]
+6. **Shallow and coarse.** Elements are reference points for the knowledge of a region. [R]
+7. **Progressive discovery.** Nothing is presented before it is needed, and nothing that is not needed. Whatever is put in front of a model is paid for in reasoning whether it is used or not. [R]
+8. **Correction teaches.** A wrong command is answered with the reason and the command that would be accepted. The moment of the error is the moment the shape is needed. [R]
+9. **No logic without an observed failure.** A check, a gate or a step that fixes nothing observed is ceremony, and ceremony costs reasoning. [R]
+10. **No ceremony in the tool.** An intake has no start and no stop. Data lives in one place and is shown as it is written. [R]
+11. **The map grows; elements mutate.** A changed function is a different function and a new element (section 6.2). [R]
+12. **Immutable core, modular extension.** Features arrive as modules and never change the chassis (section 6.6). [R]
+13. **One purpose, three implementations.** [R]
+14. **Own code.** No new dependencies and no copied libraries. Outside code is read for ideas. Code the project does not own is code it cannot keep small or correct. [R]
+15. **Honest status.** Simulated behaviour is labelled. Unbuilt behaviour is not described as working. [R]
+16. **Plain technical English** in project prose, with the project's terms and no invented ones. [R]
 
 ## 6. Concepts and architecture, including the web interface
 
 ### 6.1 The map
 
-- An **element** is a functional part of an artifact, named as a type. [F]
-- An **address** is a dotted path from general to specific. Read in reverse it is the element's ordinary name. Each prefix is itself a complete type. A segment never names a language, an encoding, a genre or a particular product. [R]
-- **Roots.** Four roots hold what is inside the artifact: code, document, media, data. These four are always local to the project they are used in. Two more hold what is outside it: upstream, for what it relies on, and downstream, for any who or what that relies on it. A downstream entry need not be a party: when the project is a software development kit, each project that uses the kit is downstream of it. An artifact outside the project is named by what it is, and the definition of the Defining Element says what an artifact is: the element whose loss would stop the artifact from being the same type, whose function sums up the combined result of the artifact. The address of an outside artifact is therefore `upstream` or `downstream` followed by the address of that artifact's Defining Element. `upstream.code.engine.game` is a game engine the project relies on. A project that relies on this one is addressed under `downstream` the same way. A downstream party, which is a who and not an artifact, is addressed by the type of party. [R: the founder pointed to this reading and confirmed the reasoning on 2026-11-11.] An earlier stored map has `upstream.service.inference`, which this rule does not produce. [F]
-- **Outside the tree.** Upstream and downstream elements are not part of the project being mapped. They do not inherit the project's overlays. An upstream element may carry a `uri` to another project; the dependency stays local and points at the local upstream element. [R: decided 2026-11-05 in the sibling project's specification] One further root is internal: it is a schema and an input validation, it holds overlay definitions, and the intake procedure does not use it. [R] The repository's code also accepts a root named `collection`. The founder's six roots do not include it, so the build departs from the design here. [F]
-- **Roles.** Each element inside the artifact has one of four roles: Definitive, Supportive, Notable, Divergent. One element is Definitive. [F] Earlier texts name the roles by the abbreviations DE, SE and NE. SE is Supportive. It was Substantial until 2026-11-03; the founder changed it because substantial and notable were too alike, and because supportive states that the element is coupled without an extra field. [R]
-- **Outside parties.** A party outside the artifact has no role. The intake's term for such a party is for inference only: it does not appear in an address or in front of a person. The address names the type of party. [R] The term is kept in the procedure because its definition makes the agent reason past the developer and the user. Asking who the project is for does not give a useful answer. [R: 2026-11-11]
-- **Element fields in the build:** `technical_name`, `name`, `role`, `uri`, an optional `status`, the dependency records, and overlay records. [F] An earlier form used `name_length` in place of `technical_name`, and one example intake also carried a `label`. [F] `technical_name` replaced `name_length` because a count does not give the name; `technical_name` is checked against the last words of the address read in reverse, and `name` is the ordinary name. [R]
-- **Stored and shown keys.** The store keeps keys in lower camel case. An agent sees snake case. [R]
-- **Dictionaries.** Anything keyed by a unique name is a dictionary and not an array. An answer to a query is a bare array. [R]
+**Element.** A constituent part of an artifact, named as a type. Naming a type lets the model's existing knowledge of that type do the work; naming an instance would give it nothing to reason from. Being nameable does not make a part worth an element. [R]
+
+**Address.** A dotted path that narrows from trunk to leaf. [R]
+
+- Read in reverse, with spaces for periods, it is the element's ordinary name: `code.bus.data.event` is an event data bus in code. An agent that sees an address therefore needs no glossary.
+- Each prefix is itself a complete type, and a child is a part or a functional kind of its parent. This is what lets knowledge placed at a prefix apply to everything beneath it.
+- A segment names a functional approach. `code.engine.game.fps` is valid because a first-person view is a distinct functionality. `code.engine.game.platformer` is not, because it names the challenge of a game and not a technical function. A product name, a language or an encoding is never a segment.
+- The address is the identity. Knowledge is bound to the address where it was inferred. If the address changes, the knowledge is inferred again and is not carried across.
+
+**Base types.** Four roots name what an artifact is made of: `code`, `document`, `media`, `data`. They are always local to the artifact being examined. [R]
+
+**Outside the artifact.** Two more roots hold what is not part of the artifact: `upstream` for what it relies on, and `downstream` for any who or what that relies on it. They exist so that an element the artifact relies on, or one that relies on it, is never mistaken for one of its parts. [R]
+
+- An outside artifact is one whole thing seen from here. What names a whole artifact as a type is its Defining Element, so its address is `upstream` or `downstream` followed by the address of its own Defining Element. A game engine the project requires is `upstream.code.engine.game`, and the entry can refer to the project that supplies it. [R]
+- A downstream who is not an artifact. It is addressed by the type of party it is. [R]
+- Outside elements are not in the project's tree. They carry no role and do not inherit the project's overlays. A dependency on something upstream is still held locally and points at the local upstream entry. [R]
+
+**An internal root** holds overlay definitions (section 6.3). The intake procedure does not use it, because an intake finds no overlays in an artifact. [R] The build also accepts a root named `collection`, which is not one of these roots. [F]
+
+**Roles.** Each element inside the artifact has one. [R]
+
+| Role | Meaning |
+|---|---|
+| Definitive | The element whose loss would stop the artifact from being the same type. Its function sums up the combined result of the artifact. There is exactly one. |
+| Supportive | An element so entangled with what the Definitive element delivers that the artifact would not be the same type without it. The role states the coupling, so no separate field for coupling is needed. |
+| Notable | An element that states an essential demand: what the artifact expects, needs or depends on to operate. |
+| Divergent | An element that is unaligned, weak or redundant. It is investigated for the purpose it serves, and then realigned or removed. |
+
+**Not in the map.** A parametric quality can be tuned and is not named in artifacts of the type, so it has no address. [R]
+
+**Fields in the build.** `technical_name` (the address words in reverse, which the server can check against the address), `name` (the ordinary name), `role`, `uri`, an optional `status`, dependencies and overlay records. [F] Stored keys are lower camel case and agents see snake case, so that neither side carries the other's convention. Anything keyed by a unique name is a dictionary. The answer to a query is a bare array. [R]
 
 ### 6.2 The dependency
 
-- A **dependency** is the record an element keeps about one element it relies on. The address of the other element is the dependency. The record holds the purpose for the dependency, the function of the dependency, and a direction. [R: named by the founder on 2026-11-11.]
-- The record belongs to the element that has the need. [F]
-- The direction is that of the substance, seen from the holder: inbound, outbound or two-way. A request or a receipt is not the direction. [F]
-- The understanding of a type is a relation of three parts: the purpose of the element that receives, the function of the element that provides, and the functionality itself. An element with no dependency of its own is still relied on by something, or it would not be a type. [F]
-- **The frozen core.** The founder's formula is C(T) = { (r_i ∧ p_i ∧ e) }, where C is the core and T the type. It permits mutation and not transformation. A mutation changes how an element does what it does. A change of what it does is a transformation, and the result is a different element. No field stores the frozen core: the protection comes from the understanding of the type that the intake records. [R] Read from the glossary and from the founder's statement that the understanding of a type has three parts: r is the receiver with its purpose, p is the provider with its function, and e is the element itself. The index runs over the element's dependencies, so the core of a type is the set of those three-part relations. [I]
-- **The first dependency.** In the founder's canonical procedure the downstream entry holds the first record: it is the receiver, and the Defining Element provides. Every other record traces back to such a root. The entry is inferred from what the artifact is; it is not found in the artifact. [F] **How many downstream entries.** One for each who or what that has a unique interest or dependency in the artifact under examination. That number is both what must be defined and the limit of what may be defined. [R: 2026-11-11] The reason, worked out from the glossary: a function is only a how until a receiver holds a purpose for it. The downstream entry is the receiver that gives the Defining Element its purpose, and every other purpose inside the artifact exists to deliver what that receiver encounters. Each unique interest is a different purpose, so a different line to trace through the artifact. The same interest held by another is the same purpose and the same record. [R: the founder confirmed this reasoning on 2026-11-11.]
-- **Text written for the procedure gives its reason.** A rule placed in the procedure without its reason can only be obeyed. With the reason, the agent can infer the next case. The founder rejected a sentence added to the proposed gap fill for this fault. [R: 2026-11-11]
-- The function belongs to the element that provides and is kept in the record of the element that receives, one for each encounter. It is not stored on the element. [R]
-- The dependency record is itself an overlay. It sits in a reserved group named for the intake, so it does not appear in the list of overlays and cannot be deleted. [R: 2026-11-03]
-- The structure was first conceived as a hypergraph whose relations are things in their own right and can hold logic. [F] The base map holds the elements and, in each dependency, the purpose, the function and the direction. That is all it holds. Everything else is an overlay. [R: 2026-11-11] The relation, the observation, the references and the combined parts that earlier procedure texts kept in the record are therefore overlay material, not part of the base map. [I]
-- The build stores this record under the name `wants`. The rename is decided and not applied. [F]
-- **Field names.** On 2026-11-07 the founder chose plain stored names, `why` and `how`, as more universal, so that agents reading a map need not learn the intake's terms; the intake's concepts were to stay in the procedure, which would say which concept is recorded in which field. [R] That design has not been run: the procedure in the repository removed the concepts. [F] Whether plain names affect intake results is therefore not known. [U]
+A **dependency** is the record an element keeps about one element it relies on. The other element's address is the dependency. The record holds three things. [R]
 
-### 6.3 Overlays (in the map)
+| Part | The procedure's term | Meaning |
+|---|---|---|
+| Purpose | Operative Purpose | The why: the active goal the receiving element holds. It belongs to the receiver. Everything specific to this one artifact is confined to it. |
+| Function | Encounter Function | The how: what the providing element does, in this meeting, that satisfies the purpose. |
+| Direction | | Which way the substance moves, seen from the holder: inbound, outbound or two-way. |
 
-- An **overlay** is a named kind of knowledge laid over the map. It was called a layer until 2026-11-11. [R]
-- An overlay is defined beneath the internal root. Being defined there is what permits its records to be written at elements, and the definition record is the overlay's schema. [R]
-- The definition is the complete input validation for the overlay's records. A definition may hold a description, a reference, a prompt, an instruction, the fields, a template and artifacts. For each field it gives the part of speech, a rule and an example. The template is one sentence whose places are filled from the record; it must read correctly, and it formats the readable report. A new overlay must have fields, a description, the template and an instruction. [R: decided 2026-11-05; not built]
-- The decided definition of the dependency itself gives the purpose as a bare infinitive verb phrase and the function as a present-tense verb phrase that reads after "which". These rules are the founder's, and they live in the definition. [R] Whether and how the server refuses a record against them is the founder's to direct; an agent's earlier check of this kind was added without instruction and removed. [F]
-- An overlay's address may have several segments beneath the internal root, and a root type may follow the internal root. A programming language is a medium and not a functionality, so it has no element in the map and is an overlay. [R]
-- After the intake, overlays are free to add. An overlay may hold the insights for one piece of work and be removed when that work ends. [R]
-- The number of overlays is not limited, so overlay schemas cannot be delivered in advance. [R]
-- An element names the overlays laid on it in `overlays` and the ones masked at it in `masked_overlays`. To remove an overlay's information from one region, mask that region. [R]
-- An overlay is linked at the element where it is needed. Defining an overlay does not turn it on: it is on when the core database, which tracks projects, lists it as enabled. An enabled overlay applies at the element it is linked to and at everything beneath that element, toward the leaves and never backward. A mask stops it from reaching further down. At each step from the root to an address, the overlays that continue are those that arrived and are not masked, together with those linked at that step; masks apply first. One overlay may not be both linked and masked at the same element. [R: 2026-11-09 and 2026-11-10, under the earlier names. Not built.]
-- The build defines one overlay for written specification and has three built-in ones: sources, skills and memory. [F]
-- An inbox for messages to an agent is to be an overlay kept in its own file. It comes after the base intake system. [F]
-- **System overlays.** Skills, memory and sources are shared by every project. [R]
-  - Memory: each address has its own memory graph, read and written only by an agent present at that address. A memory may link to any address or any memory.
-  - Skills: an agent learns that a skill exists only from the front matter delivered at the address where it applies.
-  - Sources: links to entry points in the material, not to every file or symbol. A source record stays at the one element it was linked to. It never moves and is never inherited.
-- Knowledge holds only at the address where it was inferred. The address is the identity: when an address changes, the knowledge is inferred again and is not carried across. [R]
+- **The record lives in the receiver.** The function belongs to the provider, but one provider serves different receivers in different ways. A function stored on the provider would have to be one statement for all of them. Stored in each receiver's record, it is exact for that meeting. [R]
+- **Direction is of the substance, never of the request.** Every dependency begins with a request, so the direction of the request says nothing. [R]
+- **A function is only a how until a receiver holds a why for it.** This one fact produces the rest of this section. [R]
+- **The downstream is the receiver of the whole artifact.** The Definitive element's function sums up the artifact, and nothing inside the artifact can be the receiver of that. The downstream entry holds the purpose for it. That purpose is what makes a map of types specific to this artifact, and every purpose inside the artifact exists to deliver what the downstream encounters. [R]
+- **The downstream is inferred, not found.** It is not present in the artifact. The procedure's term for it is defined so that the model reasons past the answers that fit every artifact: the user, the developer, the operator. Those identify nothing about this one. A downstream is who or what has an interest that drives the artifact to be better, and it may be a thing: the projects that use a software kit are downstream of the kit. The term is for the intake only. It is not a role and never appears in an address or in front of a person. [R]
+- **How many downstreams.** One for each unique interest or dependency in the artifact. Each is a different purpose and so a different why to trace through the artifact. The same interest held by another is the same purpose and the same record, and it adds nothing to reason about. So the count required and the count allowed are the same number. [R]
+- **Type understanding and the frozen core.** To understand an element as a type is to hold three things together: the receiver with its why, the provider with its how, and the element itself. The set of those relations for an element is its core. Work on an element may mutate it: change how it does what it does. Work that changes what it does has transformed it into a different element, and the map grows by one. Nothing stores the core as a field. The protection is the understanding the intake recorded. [R] The reading of the formula's three terms as receiver, provider and element is an agent's. [I]
+- **The record is itself an overlay,** in a reserved group that is not listed with the others and cannot be deleted, because it is the map. [R]
 
-### 6.4 The intake procedure
+**Names in the build.** The record is stored as `wants`, with fields `why`, `how` and `direction`. The name dependency is decided and not applied. The plain field names were chosen so that agents reading a map need not learn the intake's terms, with the procedure saying which concept is recorded in which field. That arrangement has not been tested, because the procedure in the repository removed the concepts. [F] [U]
 
-- It infers a map from an artifact. It is the founder's text. [R]
-- Its core is its concepts. Some of its terms are coined and slightly open in meaning by design; the meaning settles from the context of use. [R]
-- The founder tested it over months, across models and across artifact types. [F]
-- A version the founder calls pure defines a shallow operation whose result is a minimal, coarse shape; parts combined away are kept as inactive subtypes to which knowledge may still attach. [F]
-- A longer version, which the founder calls canonical, works well and restates the same rules in several ways. [F]
-- The procedure in the repository is neither. It is a rewrite that carries markers left by an AI tool, has the tool's commands merged into it, and contains none of the coined concept terms. [F]
-- **The base text, decided 2026-11-11.** The founder's pure text is the base. Its gap is the two outside roots: it defines the four base types and nothing for what is outside the project. The gap fill adds upstream and downstream. [R]
-- The pure text is in the repository unaltered at `metaform/intake/pure_intake.xml`. A proposed gap fill is beside it at `metaform/intake/intake.proposed.xml`. It adds lines and alters none. The founder confirmed its reasoning on 2026-11-11. He has not yet said that it replaces the procedure agents are given. The procedure that agents are given today is still the rewrite. [F]
-- One agent performs an intake. Several agents work at once only when they are orchestrated for other work. [R]
-- The procedure is delivered as the instructions of the intake agent (2026-11-07; before that it was a skill). On 2026-11-11 the founder said the intake is to be handled by the MCP server. The form of that is open (section 10). [F] [U]
-- The intake's terms are for the agent that expands the map. Agents that read a map are not taught them. [R]
-- After the intake the map grows: new functionality is a new element. The founder says "refining" is not the best word for this and has not chosen another. This document says "growing the map". [I]
+### 6.3 Overlays
 
-### 6.5 Components in the repository [F]
+An **overlay** is one kind of knowledge spread across the map at the places where it applies. It adds to the map and does not change it. [R]
 
-| Component | Description |
-|---|---|
-| MCP server | Three implementations of one tool: Rust, Node, Python. |
-| Stores | Rust keeps a map in a graph database, with one server process for each home folder. Node and Python keep it in SQLite, one narrow table for each field and each overlay. |
-| Conformance suite | Sends the same commands to all three and compares the answers. |
-| Host | A Rust program that serves the web interface's files and forwards reads, writes and change events between a page and the server. |
-| Web interface | Two pages exist. Neither is accepted (section 7.4). |
+- **Why overlays.** Everything that is not function still has to live somewhere: the language of the code, the insights for a port, memories, skills, sources. In the base map it would make the map deep and unstable. As overlays it can be added for a piece of work and removed when the work ends, and the map is the same before and after. [R]
+- **Definition.** An overlay is defined beneath the internal root, and the definition may sit several segments down. Being defined is what permits its records to be written. The definition is the overlay's schema and the complete validation of its records. It holds a description, an instruction, the fields and a template. Each field has a part of speech, a rule and an example. The template is one sentence that the fields fill, and it must read correctly. [R]
+- **Why the definition is in the map.** The number of overlays has no limit, so their schemas cannot be delivered in advance. An agent reads a definition when it goes to write that overlay. [R]
+- **Why a sentence and parts of speech.** Records are read by agents as language. A record whose fields fill a correct sentence can be delivered as that sentence, and the program never has to repair grammar. [R]
+- **Reach.** An overlay is linked at an element and applies there and beneath, because what is true of a type is true of its kinds and parts. It never applies upward. A mask at an element stops it from there down, which is how knowledge is removed from one region without deleting it. Along the path from the root, an overlay continues if it arrived and is not masked, or if it is linked at that step. Defining an overlay does not turn it on: the project's list of enabled overlays does. [R: not built]
+- **Arrays on an element.** `overlays` for those linked there and `masked_overlays` for those masked there. [R: the build still uses the earlier names.]
+- **System overlays,** shared by every project. [R]
+  - *Memory.* Each address has its own memory graph. An agent reads and writes it only while at that address, so a memory is always about the place it was made.
+  - *Skills.* An agent at an address is told that a skill exists there by its front matter, and opens it only if the task needs it.
+  - *Sources.* Links to entry points in the material. A source stays at the one element it was linked to and is never inherited, because a link to a place in a file is true of one element only.
 
-**Requirements on storage.**
+### 6.4 The intake procedure, decomposed
 
-- Agents see elements with their fields together. All three stores hold the data by field, not by element, and manage it properly. Convenience for the agent and performance in the store are both required. [R: 2026-11-09]
-- The graph database of the Rust implementation is the modern approach the founder means. He describes it as the state of the art and useful for certain projects, and the other two as fine. [R]
-- Writes go through a queue with fair queuing. The graph database needs a data engine in Rust that queues several writers. [R]
-- One core database lists the projects. Each project has its own database, with the same file name in every project, in a folder named from the project's path. Only the databases in use are open. [R: 2026-11-02]
-- The home folder is `~/.metaform`. Settings and the registry of projects may be JSON. [R]
-- The Node version was first made quickly and without concurrency. It must not become the design. [R]
+The intake procedure infers the base map from an artifact. It is the founder's text, held unaltered at `metaform/intake/pure_intake.xml`. This section explains why each part of it is there. It is an explanation for people who work on the project. It is not a substitute for the text, and an agent performing an intake is given the text. [R]
+
+**What the procedure is designed against.** Asked to describe a project, a model lists what it can see: files, classes, functions. That list is long, it changes with every commit, and it says nothing about why any part exists. Every part of the procedure works to turn the model away from that list. [I]
+
+**The definitions do the work.** [I, reasoned from the text]
+
+- *Element* is defined with a warning attached: a part can be named and still not deserve attention. This removes the inventory at its source.
+- *Notable* is defined by demand: an element is notable because it states what something expects, needs or depends on. So an element earns its place through a dependency, not through existing.
+- *Receiving* and *Providing* are positions in one dependency, not kinds of element. The same element receives in one record and provides in another. This is why the trace can walk: each provider becomes the next receiver.
+- *Operative Purpose* is an active goal held by the receiver. *Encounter Function* is how the provider is encountered, used or experienced. The second term is left open so that it fits what the artifact is: an interface in software, an effect on a viewer in a photograph, a turn of plot in a story. A tighter term would fit one kind of artifact and fail the others.
+- *Defining Element* is found by a test of loss: remove it and the artifact is no longer the same type. A test can be applied to anything, where a description would need to be rewritten for each kind of artifact. Its function is stated independently of medium, encoding, genre and style, so two artifacts that do the same thing get the same Defining Element whatever they are made of.
+- *Supportive* uses the same test of loss, applied to entanglement with the Defining Element.
+- *Parametric* separates what can be tuned from what can be mutated. A brightness or a buffer size has no name of its own in artifacts of the type, so it gets no address, and tuning it is never a change of function.
+
+**The namespace rules** make each name checkable by reading it. If the reversed address does not read as a well-understood name, the element is wrong. The valid and invalid examples sit in pairs that differ by one thing, so the model learns the boundary and not a list: a first-person view is a function and a platformer is not; a photo is a medium and a JPEG is an encoding. [I]
+
+**The method, step by step.** [F as to the steps; I as to the reasons]
+
+| Steps | What the agent does | Why |
+|---|---|---|
+| 1 | Takes the Defining Element as the first receiver and asks what it requires of other elements. | The Defining Element is what the artifact is. Everything the artifact needs, it needs in order to deliver that. Starting there means the trace reaches only what matters, and an element that no purpose reaches has no claim to be in the map. |
+| 2 | For each element whose function serves a purpose, writes a record in the receiver with the purpose and the provider's address. | The purpose belongs to the receiver (section 6.2). |
+| 3 to 5 | Moves to each provider, treats it as a receiver, and repeats, until no purpose is unmet and no notable element needed to understand the artifact is unnamed. | The stopping rule is understanding, not exhaustion. The trace is driven by demand, so it ends by itself where demand ends. |
+| 6 to 8 | Combines elements where the shape can be reduced without losing the categorical understanding, only when they can share one dependency, under a name that obeys the namespace rules. | The trace finds specifics; the map needs types. Two elements that can share one dependency are, to their receiver, one thing. The naming rule keeps a combined element a real type and not a bucket. |
+| 9 and 10 | Keeps what was combined away, and lists those parts as subtypes: full addresses beneath the element they were combined into. | Knowledge about a specific part still needs a place to attach. The subtypes are not in the map, so the map stays coarse, and their addresses remain valid. |
+
+**The constraints hold a balance.** One says to name an element at its most specific reusable type and never with a vague label. Another says to combine and keep the shape coarse. Together they fix the level: specific enough to be a real mechanism, general enough to be reused in another artifact of the type. A third constraint makes that possible: everything particular to this one artifact is confined to the purpose. Elements are types; the purposes are what make the map this artifact's. [I]
+
+**The goal statement says the operation is shallow, and says so twice.** It names the harm directly: a deep intake moves knowledge away from the place an agent addresses. The map is a base to extend, not a description to complete. [R]
+
+**What the pure text does not cover, and how each gap is filled.**
+
+1. *Outside the artifact.* The text defines four base types and nothing for what the artifact relies on or what relies on it. The gap fill is at `metaform/intake/intake.proposed.xml`. It adds the downstream concept and its examples from the founder's earlier text, definitions of upstream and downstream with their reasons, the two roots and one example. It adds lines and alters none, and its reasoning is confirmed. The method needs no new step: the downstream entry is a receiver, the Defining Element is its provider, and step 1 already begins there. [F]
+2. *Where the result goes.* The text ends by returning one XML document. In this system the result is written to the map through the tool. That difference is tooling, and it is settled without touching the text: the server gives the agent the procedure, and a separate tooling note, outside the procedure, says how each part of the result is written. The procedure that agents are given today did the opposite. It merged the tool's commands into the text and removed the concepts, and the maps it produced were inventories of code. [I]
+3. *Where the function is recorded.* In the text's result each element states its own function, and each join carries the purpose. The map stores the function in the receiver's record. The two agree: the element's function is what it does as a type, and the record keeps that function as it applies to one meeting. The tooling note states the mapping. [I]
+4. *What the join carries beyond the purpose.* The text's join also holds a relation, an observation, references and the combined parts. The base map holds purpose, function and direction only, so those four are written as overlays. [I]
+
+**What follows for the build.** The text agents are given should be the pure text with the gap fill, delivered by the server, with a tooling note beside it and nothing merged into it. Until that is so, an intake run in this repository is not evidence about the procedure. One agent performs an intake. [I as to the arrangement; R as to one agent]
+
+### 6.5 Storage and the three implementations
+
+- **Agents see whole elements; the store keeps fields apart.** Reasoning is easier over an element with its fields together. A store by field is faster to query, and a new overlay is a new table and not a change to every element. Both are required of all three implementations. [R]
+- **One core database lists the projects. Each project has its own database,** with the same name in every project, in a folder named from the project's path. Only databases in use are open. Nothing is written into the project's own folder. [R]
+- **Writes are queued, with fair queuing,** because several agents write at once and one process is the only writer. [R]
+- **The home folder is `~/.metaform`.** [R]
+
+| Implementation | Why it exists | Store |
+|---|---|---|
+| Rust | The modern form. A map is a graph, and a graph database stores it as one. | Graph database, one server process for each home folder. |
+| Node | The MCP ecosystem develops in this language first. | SQLite. |
+| Python | No compiled code, and the language people most easily extend. | SQLite. |
+
+A conformance suite sends the same commands to all three and compares the answers. [F] The Node form was first made quickly and without concurrency; that first form is not the design. [R]
 
 ### 6.6 The chassis and its modules
 
-The chassis is the fixed core of the system. It tracks projects across the machine, and it is the entry point through which the system is extended. Extension by modules is how the project is fitted to a person's needs. [R: 2026-11-11] All three implementations have the concept. [R]
+The chassis is the fixed core. It tracks projects across the machine, and it is the one entry point for extending the system. [R]
 
-**What the chassis is.** [R, from the founder's statements of 2026-10-31 to 2026-11-03]
+- **Immutable.** It owns the data, the settings and the database, and it is driven by events. A feature never changes it. If features could change the core, each feature would put every other feature at risk. [R]
+- **Everything else is a module,** the MCP server included. The chassis is complete with every module absent. [R]
+- **The template rule.** Anything the chassis exposes to a module is defined, placed in a template module and documented, and nothing is exposed before all three. A module author then has one complete, true statement of the contract, and the chassis has no undeclared surface for a module to lean on. The earlier Python system stayed stable for months of added features under this rule. [R]
+- **The storage boundary.** A module declares its tables and reaches them only through the chassis. A module with its own database connection can break the single writer and the queue. [R]
+- **A module adds operations, not tools.** In the earlier system each module command became a tool, and the tool list passed 150 tools and 128,000 bytes that every agent received before its first call. It destroyed the thing the system exists for. A module's operations go under one tool, and a module may add operations under another module's tool. [R]
+- **Tools and the command line.** A tool operation may be used at the command line. The reverse does not hold: the tool reads and writes data, and commands such as export stay out of it. Command-line commands are hierarchical: the module, then the command. [R]
+- **Settings.** Everything works with no switch set. A switch may be set and saved in place of a long command line. A reset returns to the defaults. A glued setting survives a reset. Defaults are declared in code and never stored. [R]
+- **The MCP server with and without a chassis.** The server works alone. When a chassis is present the server finds it at startup and uses it as the source for the data the two share. [R]
 
-- The chassis is immutable. A feature never changes it.
-- It owns the data, the settings and the database. Writes go through a queue it owns.
-- It is driven by events.
-- It keeps one core database of projects and one database for each project, and opens only the ones in use.
-- Nearly everything else is a module, the MCP server included. Parts of the core system may themselves be modules.
-- The MCP server works alone. When a chassis is present, the server finds it at startup and uses it as the source for the data that the two must share. Capabilities that need both appear only when both are present.
+**State today.** The Rust form has a registry of projects, settings and a write queue. None of the three has the module entry point, the template module or the settings pattern. [F]
 
-**The module contract.** [R as to the rule; F as demonstrated by the earlier Python system]
-
-- **The template rule.** Anything the chassis exposes to a module is defined, placed in a template module, and documented there. Nothing is exposed before all three are done. The template is the contract in practice. A new capability updates the template, its document and a demonstration module. The founder names this rule as what made the earlier system dependable.
-- **Stable under extension.** Over two months, each feature of the earlier system arrived as a module that used only services the chassis exposed.
-- **A module is removable.** The chassis is a complete command-line program with every module off or absent. A module that is unloaded loses its commands, settings and subscriptions and keeps its stored data.
-- **One declaration.** A module declares, in one descriptor: its identity and purpose, its commands, the events it subscribes to, its start and end routines, its tables, its panels for the interface, and what it provides to other modules.
-- **Discovery.** Modules are found in a system place, a user place, installed packages and the project. A module that fails to load is listed with the reason.
-- **The storage boundary.** A module declares its tables and reaches them only through the chassis. It writes no SQL and imports only the public surface. Tests enforced this in the earlier system.
-- **Commands are hierarchical** at the command line: the module, then the command.
-- **Tools collapse.** A module's operations appear under one tool. A new module may add operations under another module's tool. [R: 2026-11-03]
-
-**The settings pattern.** [R]
-
-- Everything works with no switch set.
-- A switch may be set and saved in place of a long command line.
-- A reset returns every setting to its default.
-- A glued setting survives a reset.
-- Every setting is declared in code with its default. A default is never stored. A value for a project overrides the global value.
-- The same settings are reached from the command line and from a keyboard screen.
-
-**What went wrong before, and the rule that follows.** [F] [R]
-
-- The earlier system did not constrain how modules made tools. Each command became a tool, and the tool list grew past 150 tools and 128,000 bytes. A later change brought it to one tool and 737 bytes.
-- The founder's rule is that this must not happen again: context management is the core approach, and a module adds operations, not tools.
-- An earlier rule that every command-line command is also a tool caused part of that growth. It is replaced: a tool operation may be used at the command line, and the reverse does not hold.
-- Feature logic entered the chassis, and one escape gave modules a raw database connection. Both broke the boundary. [F: read in the earlier code.]
-
-**State of the three implementations today.** [F] The Rust implementation has the tracking half: a registry of projects, settings and a write queue. Node has a registry. None of the three has the module entry point, the template module or the settings pattern.
-
-**Not established.** [U]
-
-- The language of the chassis. On 2026-11-03 the founder wanted Rust with an entity component system, and the same day said nobody had convinced him which language it should be in or whether it is part of the MCP server.
-- What "immutable" permits when the contract itself must grow.
-- Whether one module may call another directly. The earlier system left this open.
-- Whether modules written for the earlier Python system are to work again.
-- How one module contract serves three implementations in three languages.
+**Unresolved.** The language of the chassis and whether it is part of the MCP server. How one module contract serves three languages. Whether one module may call another directly. [U]
 
 ### 6.7 The web interface as a concept
 
-The web interface is the surface through which a person sees the map and moves through it. Section 7 treats it in full.
+The web interface is where a person sees the map and moves through it. Section 7 treats it.
 
 ## 7. Web interface: navigable surface and base requirements
 
-"Base navigable surface" is the term of the task that commissioned this document. It is not yet a term the project evidence defines. [U] This section uses it for the part of the web interface that every use of the interface shares.
+"Base navigable surface" is used here for the part of the interface that every use of it shares: the map and the means of moving through it.
 
 ### 7.1 Purpose
 
-- The map is the primary work surface. The interface is not a dashboard. [R]
-- The interface exists so that a person can explore the project's functional design. The map view is a way to do that, not an end in itself. [R]
-- The system is compact, and it needs a proper interface that is legible. [R]
+A person uses the interface to explore the functional design of a project. The map is the work surface. It is not a dashboard, and the picture is a means to understanding and not the product. [R]
 
-### 7.2 What the founder requires of a new interface
+### 7.2 What is required of the new interface
 
-- It is original and written from scratch. It is not a continuation of either existing page, and it is not a recovery of an earlier design. [R]
-- It surpasses both existing pages. [R]
-- It is legible and dynamic. [R]
-- It has a designed system of easing and zooming that is intuitive, smooth and professional. [R]
-- Graphics-processor effects such as shaders, refraction and themes built on them are not what was asked for. The founder describes the earlier page that has them as heavy on the processor and bloated. [F]
-- The closest existing example of the feel the founder wants is a map viewer in a sibling repository. It is an example, not a base to build on. [F]
-- It is improved by repeated iteration on one thing at a time. [R]
-- The founder's earlier interface text names React and TypeScript, with a Rust host, and asks that the Rust version be the premium experience. The later instruction, an original design from scratch, governs the design. Whether it also replaces that choice of technology is open (7.6). [F] [U]
+- **Original, from an empty page.** Two pages exist and neither is the base. One was rejected. The other, a port of an earlier page, is heavy on the processor and built around visual effects. [R]
+- **Legible first.** A person must be able to read every name and follow every line. Effects that cost legibility or processor time are not wanted. [R]
+- **A designed system of easing and zooming.** Movement is how a person keeps their place in a map larger than the screen. It has to be intuitive and smooth, and consistent enough that a person learns it once. A sibling project's map viewer is the nearest example of the feel. [R]
+- **Improved by iteration,** one thing at a time. [R]
 
-### 7.3 Established elements of the base surface
+### 7.3 The base surface
 
-From the founder's two requirement texts and from corrections given in the sessions.
+**Live.** The page follows the database continually and never needs a reload, because an intake has no start or stop and the map is simply what is stored. Changes are pushed when a command is applied; the page does not poll. New activity is marked and never moves the view or takes focus, because the person's place in the map is theirs. [R]
 
-**Identity and position**
-- The project's identity, the map's title, breadcrumbs and the zoom level are visible. [R]
-- The interface is dark first and designed for the desktop first; narrow screens keep the essential tasks usable. [R]
-- Persistent controls are few. A compact menu hides itself and can be brought back by an obvious control. [R]
+**Moving through the map.** [R]
+- Pan and zoom are smooth and predictable, with zoom in, zoom out and fit.
+- A click on a box selects it and zooms to it and its direct connections.
+- A double click moves into an element's nested content.
+- Every narrowing has a visible way back.
+- Elements are nested boxes that fold and unfold, and a folded box is distinguishable from an empty one.
+- Layout is automatic, in the manner of a flowchart, from the project's own layout code.
+- Keys drive views: one shows one feature at a time, one zooms through levels, one starts a tour, and `?` lists the keys.
 
-**Navigation**
-- Pan and zoom are smooth and predictable, with zoom in, zoom out and fit to view. [R]
-- A single click selects an element and shows its details. [R]
-- A double click moves into an element's nested content; breadcrumbs or a back action lead out. [R]
-- A control-click moves to the broader context, and a short hint makes that discoverable. [R]
-- Every narrowing of the view has a clear way back. The founder reported that one page gave no clear way to back out. [R]
-- Elements fold and unfold. An element with hidden content is distinguishable from one without, and its state is shown. [R]
-- A person can make an element the new focal point; the interface explains the change and can reverse it. [R]
+**What is drawn.** [R]
+- Lines show the direction in which substance moves, as recorded.
+- Lines turn at right angles. Curved lines could not be followed.
+- Names have room to be read. [F: intended; how is not settled.]
+- Purpose, function and direction appear in plain words. The intake's abbreviations never face a person.
 
-**Live state**
-- The map on screen follows the state of the database continually. A reload is never needed. Changes arrive because commands are applied, not because the page asks at intervals. [R]
-- The interface stays responsive while an intake writes. [R]
+**Identity and frame.** The project, the map's title, the path and the zoom level are visible. Persistent controls are few. The interface is dark first and desktop first. [R]
 
-**Direct navigation by the founder's description of 2026-11-02**
-- A click on a box zooms to that box and its direct connections. [R]
-- Elements are drawn as nested boxes; the founder liked that form. [F]
-- The layout is automatic, in the manner of a flowchart layout, from an engine the project writes itself. [R]
-- Keys change the view: one key shows one feature at a time, one zooms through the levels, one starts a tour, and `?` opens the list of keys. [R]
-- The tour goes feature by feature and then one functionality at a time. It hides the side panel and annotates the zoomed view. [R]
-- A person can send a message to an agent through the interface. [F: stated 2026-11-03; it depends on the agents module, which is not built.]
+**Projects.** One interface serves every registered project. A person can switch projects and follow a link from one to another, with a way back. [R]
 
-**Modes**
-- Three modes: the map, a focused element with its details, and presentation. Changing mode keeps the project, the path, the focal element and useful view context. [R]
+**Overlays.** A person can show, hide and isolate each overlay, and the controls say what they do in the system's terms. [R]
 
-**Projects**
-- One web interface serves several registered projects. [R]
-- A person can switch projects and follow a link from one project to another, with a clear route back. Project boundaries are explicit. [R]
+**Agents.** Presence is shown quietly: who, in what state, where. [R]
 
-**Overlays, agents and activity**
-- Controls show or hide each overlay, toggle all, and isolate one, with distinct visible, hidden and isolated states. [R] The founder found the wording of such controls on one page meaningless, so the controls must say what they do in the system's own terms. [R]
-- Agent presence is shown quietly: who, what state, and where. [R]
-- New activity is identifiable and never moves the view or takes focus. [R]
+**Entry.** The command that starts the interface prints its address, and the server tells agents to give that address to the person. [R]
 
-**Content**
-- Lines show the direction in which substance moves, and it matches the recorded direction. [R]
-- The interface shows purpose, function and direction in plain words. The intake's abbreviations never face a person. [R]
-- Unrequested text does not cover the lines. [R]
-- Lines with right-angle turns are preferred; the founder found curved lines illegible. [R]
-- The founder intends names to float into free space where they can be read. [F] How is not established. [U]
-- The map view, a structured view of the specification, and a Markdown document are views of one state. Accepted edits appear in all of them; the exported document matches what is on screen. [R]
-- A person can edit the specification; an agent can propose changes; each proposal shows its reason and evidence and can be accepted, rejected or edited first. Unaccepted proposals are never presented as fact. [R]
-- Statements are distinguished by evidence: backed by a source, inferred, proposed by an agent, accepted, rejected or unverified. [R]
+**Honesty.** No inert control. No feature added for the look of completeness. Simulated data is labelled. [R]
 
-**Honesty**
-- Simulated data and services are labelled. The map model and the event sources are replaceable, so a real service can take the place of a simulated one. [R]
-- No control is inert, and no feature is added to give an appearance of completeness. [R]
+### 7.4 What exists
 
-**Entry**
-- The command that starts the interface prints its address, and the server's instructions tell agents to give that address to the person. The address is not a feature shown inside the page. [R]
+A rejected page at the host's root, and the port at `/classic/`. The host lists projects, forwards reads, forwards writes that come from the page's own address, streams change events and serves files. [F]
 
-### 7.4 What exists [F]
+### 7.5 Not settled
 
-- A page at the host's root, written with a component framework. The founder rejected it.
-- A page at `/classic/` that is a port of an earlier Metaform page, with a two-dimensional and a three-dimensional map. The founder judges it better than the first page, and states that porting it was not what was asked.
-- The host answers a list of projects, forwards a read command, forwards a write command when the request comes from the page's own address, streams change events, and serves the page's files.
-
-### 7.5 What the base must remain independent of
-
-- Whether its data is real or simulated. [R]
-- The intake procedure's abbreviations and internal terms. [R]
-- Graphics-processor effects. [I: from the founder's description of what was not asked for.]
-- Any one project's content. [I: one interface serves several projects.]
-
-### 7.6 Not established [U]
-
-- The page's technology. The earlier text names a component framework; the later instruction is an original design from scratch, and the project's rule is its own code with no new dependencies. [I] Recommendation: plain TypeScript with no framework, drawing to SVG or canvas, with the project's own layout and motion code. The founder decides.
-- The page's layout and structure.
-- Whether three modes, dockable panels, proposals and export belong to the base or are added to it.
-- The motion system itself: its timings, its rules and its measures. An agent's proposal exists in a separate design document; it is a proposal and not a requirement.
-- Acceptance measures for legibility and performance.
+- **Technology.** Recommendation: plain TypeScript with no framework, drawing to SVG or canvas, with the project's own layout and motion code. This follows from principle 14 and from the weight of the earlier page. [I]
+- **The rules of motion.** They are the agent's to design and propose, and the founder's to accept. [U]
+- **Views of a written specification** (a structured view, a Markdown document, proposals from agents) were required of an earlier design. Whether they belong to the base or to a module is not settled. [U]
 
 ## 8. Reuse of the base surface by another project
 
-**What the evidence supports.**
+- The system is extended through the chassis and its modules. In the earlier system a module declared its own panels and toolbar items, and the interface placed them. [F]
+- By that pattern, reuse of the base surface means: the base is fixed, and another project's module adds to it by declaration, as it adds operations to a tool. [I]
+- For this to work the base must not assume Metaform's own modules, any one project's content, or whether its data is real. [I]
 
-- The founder works on several related projects, and one repository holds two of them. [F]
-- One interface is required to serve several registered Metaform projects. [R] That is several maps in one interface. It is not the same as another software project adopting the interface.
-- In an earlier Metaform system, separate modules declared tools and panels, and one page placed them. [F] This describes that system. It is not a requirement on the new one.
-- The task that commissioned this document treats reuse of the base surface by another project as a distinct concept. [F]
-- Metaform is universal, and projects other than Metaform are the point of it. Topogee is a project built with Metaform. Agents may make and own a map of their own. [R]
-- The record holds no statement that the interface, or a base part of it, is taken into another software project. [F]
-- The established way to extend the system is the chassis and its modules (section 6.6). In the earlier system a module declared its own panels and toolbar items, and the interface placed them. [F] On that evidence, reuse and extension of the interface most likely mean this: the base surface is fixed, and a module adds to it by declaration. [I]
-
-**What is not established.** [U]
-
-- Which project would adopt the base, and for what.
-- What is reusable: the motion system, the map view, the frame around it, or all of it.
-- What the adopting project supplies: its data, its terms, its views, its server.
-- How the base is taken: copied, packaged, or served.
-- What the base must not assume about the adopting project.
-- Compatibility between versions of the base and its adopters.
-
-**Conservative recommendation.** [I] Until these are decided, keep the base free of Metaform's own terms and data shapes at its edges, so that a later decision is not closed off. Do not build a packaging or integration mechanism.
+**Unresolved.** Whether this is what reuse means. What a module may declare for the interface. Whether the interface is itself a module. [U]
 
 ## 9. Feature overlays within the base surface
 
-**Defined by evidence.**
+- A feature overlay is a map overlay that tags the elements making up each feature of a project. [R]
+- The interface navigates by it: one key shows one feature at a time, and the tour goes feature by feature and then one function at a time. [R]
+- So an overlay, in the interface, selects what the base surface shows and in what order. It does not add panels or replace navigation. [I]
+- An overlay is available in the interface where it is enabled and not masked. Isolating one shows its elements and dims the rest. Two overlays cannot conflict, because neither changes the map. [I]
 
-- An overlay is a named kind of knowledge laid over the map. It does not change the map and can be masked (section 6.3). [R]
-- A feature overlay is one such overlay: it tags the elements that make up each feature of the project. [R: 2026-11-02] The repository's commit rule names features by this overlay. [F]
-- The interface uses the feature overlay to navigate. One key shows one feature at a time. The tour goes feature by feature, then one functionality at a time (section 7.3). [R]
-- The interface shows every overlay and lets a person show, hide and isolate each (section 7.3). [R]
-
-**Reading.** [I] The commissioning task's phrase "feature overlays within the base" is read here as this: the base surface is the map and its navigation, and an overlay, the feature overlay first, selects what the base shows and in what order. An overlay adds a way to look at the map. It does not add a panel or replace navigation.
-
-**Rules that follow from the map's overlay rules.** [I]
-
-- Selection: an overlay is available in the interface when it is enabled for the project and not masked at the element in view.
-- Isolation: isolating an overlay shows the elements it is linked to and dims the rest. The map beneath is the same.
-- Lifecycle: an overlay removed from the map leaves the interface with no trace.
-- Two overlays do not conflict, because neither changes the map.
-
-**Not established.** [U] Whether an overlay may bring its own view or controls into the interface. In the earlier system a module, not an overlay, brought panels (section 6.6). The order in which a tour visits features. What the interface shows when two isolated overlays share no element.
+**Unresolved.** Whether an overlay may bring its own view. The order of a tour. [U]
 
 ## 10. MCP server
 
-**Role.** The server is how agents read and write a project's map. [F]
-
-**Established.**
-
-- It offers one tool. [R]
-- The intake procedure is to be handled by the server. [R]
-- The server's instructions tell an agent to give the person the web interface's address when it finishes an intake or changes the map. [R]
-
-**As built.** [F]
-
-- At connection it sends that one instruction. It lists one tool and one resource, which is the connection's map. It lists no prompts.
-- It does not deliver the intake procedure. An agent has the procedure only when a person or another agent supplies it.
-- In the Rust implementation one server process owns each home folder, and each agent's connection is a small forwarding process.
-- It announces changes, which the host passes to an open page.
-
-- The tool is for reading and writing data. Commands of the command line, such as export, stay out of it. A tool operation may be used through the command line; the reverse does not hold. [R]
-- The server keeps no intake session: no start, no stop, no lock (section 5, principle 14). [R]
-
-**Unresolved.** [U] The form in which the server handles the intake procedure. The record has the procedure as the intake agent's instructions (2026-11-07) and the founder's later statement that the server handles intake (2026-11-11). An agent's earlier proposal of an intake operation is withdrawn: nothing may act as a start. [I] Recommendation: the server offers the procedure as an MCP prompt, which a person or an orchestrating agent selects, and which costs nothing until selected.
-
-Nothing here should be read as a statement about MCP in general.
+- The server is how agents read and write a project's map. It offers one tool. [R]
+- It keeps no intake session: no start, no stop, no lock. [R]
+- Its instructions tell an agent to give the person the interface's address after an intake or a change to the map. [R]
+- It handles the intake procedure. [R] Reasoned form: the server offers the procedure as a prompt, which a person or an orchestrating agent selects, with the tooling note of section 6.4 beside it. A prompt costs nothing until it is selected, and selecting it starts nothing in the server, so it obeys progressive discovery and the rule against ceremony. [I]
+- As built: it sends one instruction at connection, lists one tool and one resource, and announces changes. It does not deliver the procedure. [F]
 
 ## 11. Tooling model and progressive discovery
 
 ### 11.1 The tool
 
-One tool. Its input is one object with one key. The key is an operation or an address. [F] The design is the founder's: the stored form of the map is nested data, and a command is that same form under one key. [R]
+One tool. Its input is one object with one key: an operation or an address. A write is the stored form of an element under one key, so there is one shape to learn. [R]
 
-| Operation | Responsibility | Status |
-|---|---|---|
-| add, update, delete | Write. An element is written in the form it is stored in. | [F] |
-| a bare address | Read one element: its own content, without the full account of what relies on it. | [R] |
-| a key that starts with a period | Return the stored form beneath that path. A key with no period is a command. | [R: 2026-11-09] |
-| orphaned | List elements nothing relies on. | [F] |
-| map | Return the shape alone. | [F] |
-| goto | Place the agent at an address. Return who relies on the address, what it relies on, the overlays linked there, the front matter of each skill there (not the skills), and counts of records such as memories (not the records). The server notes where the agent is. A later visit in the same context returns only what changed. | [R] as to content; [F] as built |
-| search | Match anything in the map, and answer with the address where it was found and the overlay it was found in. | [R: 2026-11-03]. Not in the build. |
-| memory | Read and write the memories of the element where the agent is. Presence at the address is the only way to reach them. | [R: 2026-11-03]. The build keeps memory as an overlay. |
-| help | With nothing: the form of help, which names what can be asked. With a name: the form of that one thing, with pointers to what can be asked next. One level for each answer. | [R] as to purpose; [F] as built |
+| Operation | What it does |
+|---|---|
+| add, update, delete | Write. |
+| an address | Read one element's own content. |
+| a key that starts with a period | Return the stored form beneath that path. |
+| map | Return the shape alone: addresses and dependencies. |
+| orphaned | List elements nothing relies on. |
+| goto | Place the agent at an address and return a summary of what is there. |
+| search | Match anything in the map; answer with the address and the overlay. Not built. |
+| help | Return the form of help, or of one named thing. One level for each answer. |
 
 ### 11.2 Progressive discovery
 
-**Rule.** No information is presented before it is needed, and nothing is presented that is not needed. [R]
+1. At connection an agent receives the tool's name and its list of operations: 672 bytes in the build. An agent that never writes pays for nothing else.
+2. An agent that wants a shape asks help. Each answer names what can be asked next.
+3. An agent that sends a wrong command receives the reason and the accepted command.
+4. An overlay's definition is read when the agent goes to write that overlay.
 
-**Intended flow.** [F]
+**Validation** covers the shape and integrity of a command. It never judges what an intake inferred. [R]
 
-1. On connection an agent receives the tool's name, a short description and the list of operations: 672 bytes in the build.
-2. An agent that wants a command's shape asks help, one level at a time.
-3. An agent that sends a wrong command receives the reason and the command that would be accepted.
-4. An overlay's schema is read from the overlay's definition in the map when the agent goes to write that overlay.
-
-**Rationale.** [F] The tool's whole definition is placed in front of a model before its first call. Earlier, that definition was about twelve kilobytes and restated one simple shape for every operation. An agent that never wrote still received all of it. The correction mechanism already teaches each shape at the moment of need, so the long definition repeated it at a cost.
-
-**Boundaries.** [R] Validation concerns the shape and integrity of a command. It never judges what an intake inferred. An agent added a rule that refused a purpose for its wording; the founder rejected it, and it was removed.
-
-**Listing overlays.** On 2026-11-03 the founder described a command that lists overlay names, and the content of one overlay when named. On 2026-11-09 he stated that an overlay is a schema object and nothing more. From that, an agent decided that reading the internal root serves the purpose and no separate command is needed. That is an engineering decision, not the founder's. [I]
-
-**Known departures in the build.** [F] Two refusals hand back no usable command. `search` is absent. The root `collection` is accepted. Some answers hold counts of zero; counts are the founder's design, and whether a zero count is shown is not stated. [U]
+**Departures in the build.** Two refusals return no usable command. `search` is absent. [F]
 
 ## 12. Task-relevant context and information boundaries
 
-- **Relevance is positional.** Knowledge attaches to the element it concerns. An agent placed at an element receives what is linked there. [F]
-- **Delivered once.** What an agent has already received in a context is not sent again; a repeated visit names what is unchanged. After a reset the agent can read it again. [F]
-- **Overlays scope knowledge.** Where an overlay is laid on and where it is masked decide where its knowledge applies. This is designed and not built. [F]
-- **The shape first, detail on request.** The whole-map read gives addresses and dependencies with no detail. [F]
+- **Context is selected by address.** Knowledge is attached where it applies, so being at an address is the query. This is delivery, not search. [R]
+- **Arrival gives a summary.** Who relies on the address, what it relies on, the overlays there, the front matter of skills, and counts of records. The agent opens what the task needs. Sending the records themselves would spend the agent's reasoning on material it may not use. [R]
+- **Delivered once.** A later arrival in the same context returns only what changed. [R]
+- **By ticket as well.** A ticket tied to an element orients the agent as arrival does. Without tickets, an agent is told to locate the function in the map before working on a part of the system. [F]
 
-**Reducing irrelevant context is not the same as withholding needed information.** [R] The rule removes what an agent does not need yet. It does not remove what an agent needs to act correctly:
-
-- A command that would break the map is refused, with the correction. That is never omitted.
-- The shape of any command can always be asked for.
-- A delete that would leave a dependency pointing at nothing is refused, with the command that removes the dependency first.
-
-- **By ticket as well as by position.** A ticket is tied to a functionality, and taking the ticket selects the agent's context as going to the element does. An agent need not travel to reach context. [F: the ticket mechanism is outside the base.]
-- **Without that mechanism,** an agent is told to locate the functionality in the map before it works on a part of the system. [R]
-- **A summary, not the records.** What arrives at an element is a summary sheet: counts of records and the front matter of skills. The agent chooses what to open. [R]
-
-**Unresolved.** [U] Whether a count of zero is shown.
+**Reducing context is not withholding.** What an agent needs to act correctly is never omitted: a refusal always carries its correction, the shape of any command can always be asked for, and a delete that would leave a dependency pointing at nothing is refused with the command that removes the dependency first. [R]
 
 ## 13. End-to-end workflow
 
-This workflow is illustrative. It shows how the parts relate. It prescribes nothing beyond what the earlier sections establish.
+Illustrative only.
 
-1. A person starts the web interface. The command prints an address.
-2. An agent connects to the server and receives the short tool definition.
-3. The agent asks for the shape of the map and sees what the project is.
-4. The agent goes to the element its task concerns and receives what is linked there.
-5. To record something, the agent asks help for the operation it needs, or sends its best attempt. A wrong attempt returns the correct command, which it sends.
-6. To write an overlay record, the agent reads that overlay's definition first.
-7. The server announces the change. The open page marks the changed element and does not move the view.
-8. The person selects the element and reads its purpose, function and direction in plain words; moves into it; and comes back by the way that is always shown.
-9. The agent tells the person the interface's address.
+1. A person starts the interface; the command prints an address.
+2. An agent connects and receives the short tool definition.
+3. The agent reads the shape of the map and knows what the project is.
+4. The agent goes to the element its task concerns and receives the summary there.
+5. To write, the agent asks help or sends its best attempt; a wrong attempt returns the right command.
+6. The server announces the change. The open page marks the element and does not move.
+7. The person clicks the element, reads its purpose, function and direction, moves in, and comes back.
 
-For work scoped to part of a project, an overlay is laid on the elements the work concerns and removed when the work is done. The map is the same before and after.
+For a piece of work, an overlay is linked where the work applies and removed when it ends. The map is unchanged.
 
 ## 14. Updating and maintaining the project understanding
 
-**Established.** [R]
-
-- Settled matters are written into the project's specification. A question is recorded as open and never as a decision.
-- A statement is not decided until the founder decides it. An agent's recommendation is not a decision.
-- The founder's intent is recorded in the writer's words with its reason, not by quotation.
-- The intake procedure, the schema and the tool contract are changed only on the founder's direct instruction. The founder has stated that tooling may be made more efficient; the semantics may not be changed.
-- Preserved source material in the repository is read and not edited. The founder's own folder is not edited.
-
-**Procedure.** [I]
-
-1. State what changed and who decided it.
-2. Find every statement and component the change touches, including this document's glossary and section 17.
-3. Compare the change with the principles in section 5. Report any conflict to the founder before applying it.
-4. Apply a rename in one pass across tooling, and report each place it could not be applied.
-5. Keep what is unresolved visible in section 18. Do not remove a question because work has moved on.
-6. Record what the change did not cover.
+- A settled matter is written into the specification with its reason. A question stays a question until the founder decides it. [R]
+- The intake procedure and its semantics change only on the founder's direct instruction. Tooling may be made more efficient. [R]
+- Text proposed for the procedure is written with its reason, is shown before it is placed, and adds to the founder's text without altering it. [R]
+- A rename is applied in one pass across tooling, and each place it could not be applied is reported. [I]
+- Preserved source material and the founder's own folder are read and not edited. [R]
 
 ## 15. Building from and evaluating work against this specification
 
-### 15.1 Building
+**Method.** State what the work changes. List the requirements it touches. Classify it: **compliant** when every touched requirement is met; **non-compliant** when one is broken; **indeterminate** when the outcome depends on something unresolved. An interpretation is never counted as a requirement.
 
-- Work on the semantics is the founder's. Work on tooling fits the semantics. [R]
-- A change is committed after a test in which it works, and the commit says what was tested and what it showed. [R]
-- A claim of completion matches its evidence: proposed, attempted, completed and verified are different states. [R]
-- The three implementations are kept in agreement by the shared suite. [F]
-
-### 15.2 Evaluation method [I]
-
-For a proposed piece of work:
-
-1. State what it changes.
-2. List the requirements [R] it touches.
-3. For each, find evidence that the work satisfies or breaks it.
-4. Classify: **compliant** when every touched requirement is satisfied; **non-compliant** when any is broken; **indeterminate** when the outcome depends on something marked [U].
-5. Do not count an interpretation [I] as a requirement. Report it apart.
-
-### 15.3 The method applied
-
-| Proposed work | Finding | Basis |
+| Proposed work | Finding | Reason |
 |---|---|---|
-| Port an earlier page as the interface | Non-compliant | The interface is to be original and from scratch (7.2). |
-| Show the interface's address inside the page with a copy control | Non-compliant | The address is printed by the command and told by agents; no feature for appearance (7.3). |
-| Add a check that refuses a purpose for its wording | Non-compliant | Never gated or judged (5.4, 11.2). |
-| Tell intake agents to record more elements | Non-compliant | Shallow and coarse; the procedure is not altered (5.1, 5.5). |
-| Publish the list of operations in place of the full schema | Compliant | Small surface, progressive discovery (5.6, 5.7). |
-| Add help that returns one level for each answer | Compliant | Progressive discovery (11.2). |
-| Rename the stored dependency record | Compliant in tooling; indeterminate in the procedure | The name is decided; which procedure text receives it is not (18). |
-| Make the base surface a package for another project | Indeterminate | Reuse is not defined (8). |
-| Use the feature overlay to show one feature at a time | Compliant | The founder's description (7.3, 9). |
-| Let an overlay bring its own panel into the interface | Indeterminate | Not established (9). |
-| Define a new map overlay at a two-segment address beneath the internal root | Compliant | An overlay's address may have several segments (6.3). |
-| Give each command of a new module its own tool | Non-compliant | A module adds operations, not tools (6.6). |
-| Let a module open the database itself | Non-compliant | The storage boundary (6.6). |
-| Add a chassis capability without adding it to the template module | Non-compliant | The template rule (6.6). |
-| Add an operation that starts or ends an intake | Non-compliant | No ceremony in the tool (5, principle 14). |
-| Add a check because it seems prudent, with no observed failure | Non-compliant | Principle 13. |
-| Copy an outside library into the repository for the interface | Non-compliant | Principle 12. |
-| Give an outside party a role, or put the intake's term for it in an address | Non-compliant | Section 6.1. |
+| Reword a definition in the procedure to make it clearer | Non-compliant | Principle 1. |
+| Add a sentence to the procedure that states a rule without its reason | Non-compliant | Principle 2. |
+| Merge the tool's commands into the procedure's text | Non-compliant | Section 6.4. |
+| Add a check that refuses a purpose for its wording | Non-compliant | Principle 4. |
+| Tell intake agents to record more elements | Non-compliant | Principle 6. |
+| Add an operation that starts or ends an intake | Non-compliant | Principle 10. |
+| Add a check with no observed failure behind it | Non-compliant | Principle 9. |
+| Give each command of a new module its own tool | Non-compliant | Section 6.6. |
+| Let a module open the database itself | Non-compliant | Section 6.6. |
+| Port an earlier page as the interface | Non-compliant | Section 7.2. |
+| Copy an outside library into the repository | Non-compliant | Principle 14. |
+| Put the intake's term for a downstream into an address | Non-compliant | Section 6.2. |
+| Publish the list of operations in place of the full schema | Compliant | Principle 7. |
+| Define an overlay several segments beneath the internal root | Compliant | Section 6.3. |
+| Use the feature overlay to show one feature at a time | Compliant | Section 9. |
+| Let a module add a panel to the interface | Indeterminate | Section 8. |
 
 ## 16. Canonical terminology and glossary
 
-**Settled terms.**
-
 | Term | Meaning | Not to be confused with |
 |---|---|---|
-| Metaform | The project, and a map made by it. | |
-| Element | A functional part, named as a type. | A file, function or class. |
+| Metaform | The project, and a map made by it. | A map of code. |
+| Artifact | The thing examined: software, a photograph, a contract, a story. | |
+| Element | A constituent part, named as a type. | A file, function or class. |
 | Address | The dotted name of an element. | A file path. |
-| Dependency | The record an element keeps about an element it relies on. Decided 2026-11-11. | An imported package. A dependency here can exist in a photograph or a story. |
-| Overlay | A named kind of knowledge laid over the map. Decided 2026-11-11. | A visual layer in a drawing. |
-| Mask | A stop that keeps an overlay from applying at an element and beneath it. | Deletion. A mask hides. |
-| Progressive discovery | The rule of section 11.2. | Lazy loading in general. |
-| Chassis | The immutable core that owns data and settings, tracks projects, and is extended by modules. | The MCP server, which can work without it. |
-| Module | A removable unit that extends the system through the chassis. | An overlay, which adds knowledge to a map. |
-| Template module | The empty module that shows everything the chassis exposes. | |
+| Dependency | The record a receiver keeps about a provider. | An imported package. |
+| Operative Purpose | The why, held by the receiver. | The purpose of the project. |
+| Encounter Function | The how, of the provider in this meeting. | The element's function in general. |
+| Receiving Element, Providing Element | The two ends of a dependency. | Roles. They are not roles. |
+| Definitive, Supportive, Notable, Divergent | The four roles (section 6.1). | |
+| Upstream, downstream | What the artifact relies on; who or what relies on it. | Parts of the artifact. |
+| Overlay | One kind of knowledge spread across the map. | A panel in the interface. |
+| Mask | A stop on an overlay at an element and beneath. | Deletion. |
+| Link | To attach an overlay at an element. | |
+| Progressive discovery | Section 11.2. | |
+| Chassis, module, template module | Section 6.6. | |
 | Glue | To make a setting survive a reset. | |
-| Operative Purpose | What a receiving element seeks to accomplish through a providing element. | The purpose of the whole project. |
-| Encounter Function | What the providing element does in that meeting that satisfies the purpose. Open in meaning by design. | The element's function in general. |
+| Mutation, transformation | A change in how; a change in what. | |
 
-**Competing terms. None is silently resolved here.**
+**Names in transition.** The build stores `wants`, `layer`, `layers` and `blocked_layers`. The decided names are dependency, overlay, `overlays` and `masked_overlays`. Earlier texts say join and purpose record for the dependency, and DE, SE and NE for the first three roles.
 
-| Concept | Forms in the evidence | State |
-|---|---|---|
-| The dependency record | join; purpose record; wants; dependency | Dependency is decided. The build still stores `wants`. |
-| Knowledge over the map | layer; knowledge layer; composed element layer; overlay | Overlay is decided. The build still says layer. |
-| The two arrays on an element | `layers` and `blocked_layers`; `overlays` and `masked_overlays` | The second pair is decided, not applied. |
-| The purpose and function fields | `op` and `ef`; goal and function; `why` and `how` | `why` and `how` are the founder's choice for stored names. Not yet run as designed. [U] |
-| The direction field | an information flow direction with send, receive, both; intent; `direction` with inbound, outbound, two-way | The last is in the build. |
-| Roles | DE, SE, NE and an outside party; Definitive, Supportive, Notable, Divergent | The four words are in the build. |
-| The S role | Substantial Element; Supportive Element | Supportive, decided 2026-11-03. |
-| The outside party | named by a legal term for a beneficiary in the procedure texts; "downstream party" on pages | An intake term only. It has no role and names nothing in an address. |
-| Attaching an overlay to an element | link; block, now mask | Link is the founder's word. |
-| The person who directs the project | owner; founder | The founder prefers founder (2026-11-07). The repository's guidance files still say owner. |
-| The map | topogee map; metaform | A map is a metaform. "Topogee map" means a different thing and is rejected. |
-| The name read from the address | `name_length` (a count); `technical_name` (the words) | The second is in the build. |
-| The intake procedure's title | Two different titles in two texts | [U] |
-| The project's writing standard | TASTE, with an earlier and a later expansion | The later one, Technically Accurate, Simple, Transparent English, is the one in the repository. |
-| Adding functionality to a finished map | refine; the map grows; expanding the functional map | Refine is rejected. The founder has not chosen one word. [U] |
-| Base navigable surface | A term of the commissioning task | Not defined by project evidence. [U] |
-| Feature overlay | The overlay that tags elements by feature | Section 9. |
-
-Spelling as used in the build: `technical_name`, `masked_overlays`, `project-map` for the tool, `un_built` for the status of unbuilt functionality.
+**Avoid.** "Refine" for adding function to a map: the map grows. "Topogee map" for a map: a map is a metaform. "Owner" for the person who directs the project: the term is founder.
 
 ## 17. Requirements and behavioral expectations
 
-Each line is an established requirement unless marked otherwise.
-
 **Semantics**
-1. Do not alter the intake procedure's concepts, terms, definitions or examples.
-2. Do not add rules on top of the procedure.
-3. Hold the procedure in the repository as the founder wrote it.
-4. Do not gate or judge an intake. Do not grade a map.
+1. Do not alter the intake procedure's terms, definitions or examples.
+2. Text proposed for the procedure gives its reason and alters nothing.
+3. Do not gate or grade.
+4. The base map holds elements and dependencies only.
 5. Keep the map shallow and coarse.
+6. Keep tooling instructions out of the procedure's text.
 
 **Tool and server**
-6. One tool, with a list of operations, well under one kilobyte.
-7. Present no information before it is needed and none that is not needed.
-8. Answer a wrong command with the reason and the command that would be accepted.
-9. Provide help that shows how to ask for the form of any other operation.
-10. The server handles the intake procedure. [Form unresolved.]
-11. The server's instructions tell agents to give the person the interface's address.
-12. An overlay is defined beneath the internal root; its definition is its schema and the complete input validation for its records.
-12a. The tool has no start and no stop for an intake.
-12b. Add a check only to fix an observed failure.
-12c. `goto` returns a summary: front matter and counts, not whole skills or records.
-12d. Keys are lower camel case in the store and snake case for agents.
-12e. Anything keyed by a unique name is a dictionary.
-12f. The tool reads and writes data; command-line commands stay out of it.
+7. One tool, a list of operations, under one kilobyte.
+8. Present nothing before it is needed and nothing unneeded.
+9. Answer a wrong command with the reason and the accepted command.
+10. No start or stop for an intake.
+11. Arrival returns a summary: front matter and counts.
+12. An overlay's definition is its schema and its complete validation.
 
-**Implementations**
-13. Rust, Node and Python serve the same purpose under one requirement.
-14. Rust takes a more modern approach than the other two.
-15. All three present elements with fields together to agents and store by field.
-15a. Writes are queued, with fair queuing.
-
-**Chassis and modules**
-15b. The chassis is immutable and owns the data, the settings and the database.
-15c. The system is extended only by modules.
-15d. Anything the chassis exposes to a module is in the template module and documented.
-15e. The chassis is complete with every module absent.
-15f. A module reaches storage only through the chassis.
-15g. A module adds operations under a tool. It does not add tools.
-15h. Settings work with no switch set, and support set, reset and glue.
+**Implementations and chassis**
+13. Rust, Node and Python serve one purpose.
+14. Agents see whole elements; stores keep fields apart; writes are queued.
+15. The chassis is immutable and complete without modules.
+16. Whatever the chassis exposes is in the template module and documented.
+17. A module reaches storage through the chassis and adds operations, not tools.
+18. Settings work with none set, and support set, reset and glue.
 
 **Web interface**
-16. Original, from scratch, surpassing both existing pages.
-17. Legible and dynamic, with a designed system of easing and zooming.
-18. The map is the primary surface.
-19. A clear way back from every narrowing of the view.
-20. The view does not move when the map changes.
-21. Direction on screen matches the recorded direction.
-22. Plain words for a person; no intake abbreviations.
-23. No inert control and no feature for appearance.
-24. Simulated behaviour is labelled.
-25. One interface serves several registered projects.
-26. The map view, the structured view and the Markdown document show one state.
-26a. The page follows the database continually, with no reload.
-26b. A click on a box zooms to it and its direct connections.
-26c. Keys show one feature at a time, zoom through levels, start a tour and open the list of keys.
-26d. No outside library is copied into the repository.
+19. Original, legible, with a designed system of easing and zooming.
+20. Follows the database live; never moves the view on a change.
+21. A way back from every narrowing.
+22. Direction on screen matches the record; plain words for a person.
+23. No inert control; nothing copied in from outside.
 
 **Working practice**
-27. Record settled matters; keep questions open.
-28. Interpret the founder with the reason; do not quote.
-29. Match every claim of status to its evidence.
-30. Improve by changing one thing at a time and measuring the same things each time.
+24. Reason from the definitions before asking.
+25. Write the reasoning, not the words.
+26. Match every claim of status to its evidence.
 
 ## 18. Open questions, ambiguities, and decisions needed
 
-An earlier draft listed nineteen questions. A full reading of the founder's 1,089 messages showed that he had answered ten of them. Those answers are now in the sections above. What remains:
+**Readings to confirm.** Each is reasoned in the section named and is being built on unless corrected.
+1. The arrangement for giving agents the procedure: the pure text with the gap fill, delivered by the server as a prompt, with a tooling note beside it and nothing merged in (6.4, 10).
+2. The four things the pure text's join carries beyond the purpose are written as overlays (6.4).
+3. The three terms of the frozen core are receiver, provider and element (6.2).
+4. Reuse of the interface means modules adding to a fixed base by declaration (8).
+5. A feature overlay selects what the base surface shows; it adds no panel (9).
+6. The new interface is plain TypeScript with the project's own layout and motion code (7.5).
 
-**Semantics**
-1. The gap fill of the pure text (section 6.4) leaves two points for the founder. First, the pure text says the namespace excludes elements that answer to who. The founder stated on 2026-11-11 that downstream holds any who or what that relies on the artifact. The reading here is that the exclusion applies under the four base types and that `downstream` is where a who is addressed; the founder's sentence is not altered. [I] Second, the pure method starts at the Defining Element and has no step that records the downstream entry's purpose for it. Until the founder accepts a gap-filled text, no intake run in this repository is evidence about his procedure.
-2. Do plain stored names for purpose and function hold when the procedure keeps its concepts? One run each way on the same artifact and model would answer it. The founder asked for a hard decision on this.
-4. What is the one word for adding functionality to a finished map?
-4a. Is the reading of r, p and e in the frozen core formula (section 6.2) correct?
+**Decisions that are the founder's.**
+7. When the decided names are applied to the tooling, and whether the internal root is renamed with the overlay.
+8. Whether the root `collection` is removed from the build.
+9. Whether the stored field names stay plain. One intake each way on the same artifact and model would show the effect.
 
-**Overlays**
-5. Is the internal root renamed with the overlay? The founder renamed the concept and the two arrays; he did not name the root.
-6. Is the reading in section 6.1 right, that an outside artifact is addressed by its Defining Element's address after `upstream` or `downstream`?
-7. Is a separate command for listing overlays still wanted (section 11.2)?
-
-**Server and tool**
-8. In what form does the server handle the intake procedure? Recommendation in section 10.
-9. Is a count of zero shown in a summary?
-
-**Web interface**
-10. What technology is the new interface written in? Recommendation in section 7.6.
-11. What are the rules and measures of the easing and zooming system? The founder set the aim and asked the agent to design it and to improve it by iteration, so this is the agent's work to propose and the founder's to accept.
-12. What belongs to the base surface, and what is added to it?
-13. What does reuse by another project mean: which project, what is reused, what the adopter supplies, and how it is taken?
-14. May an overlay bring its own view or controls into the interface?
-
-**Chassis**
-16. What language is the chassis in, and is it part of the MCP server?
-17. How does one module contract serve Rust, Node and Python?
-18. May a module call another module directly?
-
-**Scope**
-15. What is the interface between this repository and the scoring and mutation pipeline?
-
-**Decided and not applied.** These are not questions. They wait for the founder's instruction on when to apply them: the names dependency, overlay, `overlays` and `masked_overlays` in the tooling; the removal of the root `collection`; the `search` operation.
+**Not yet reasoned or decided.**
+10. The language of the chassis, and how one module contract serves three languages.
+11. Whether a module may call another directly.
+12. The interface between this repository and the mutation pipeline.
+13. Whether a count of zero appears in an arrival summary.
