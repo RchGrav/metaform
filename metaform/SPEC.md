@@ -195,6 +195,10 @@ A project has exactly one Definitive element.
 
 **Status:** Decided. **Source:** "this element and the other element"; "the whole system reasons against where an agent is operating"; "lets lock it in". `originator` changes sides with the flow, so it is not used.
 
+**R-3.23** The record that an element holds for another element it relies on is called a dependency. The address of the record is the dependency. Its Operative Purpose is the purpose for the dependency, and its Encounter Function is the function of the dependency. The name replaces `wants`, and before that `join`.
+
+**Status:** Decided by the owner, 2026-11-11. Not applied: the procedure, the schema, the tool contract, the stored field and the pages still say `wants`. **Source:** "instead of join could just call it dependency"; "Everything inside of dependency is our OP for the depencency the function of the dependency and the address of the dependency"; "software doesnt have wants, So dependency lands better"; "in a story or script the plot can have a dependency in the mcguffin   it works we should just go with that". **Reasons the owner gave:** `wants` is a verb, and it was chosen because a person does not have a dependency on a photo, which the owner now calls the wrong measure; `join` is a database term, taken from the reified hypergraph the structure was first thought of as, where logic can exist in a join.
+
 **R-3.6** `direction` has three values: `inbound`, `outbound` and `two-way`. They are relative to the element that holds the want, not to the project. The request is never the direction. The field was called `intent`.
 
 **Status:** Decided. **Source:** "I thought we would make the third value send_receive"; "not including the request". The values replace `send`, `receive` and `send_receive`. **Source:** "inbound outbound two-way"; "add outside of the project to those and its all hunky dorey in my book". The field name `direction` replaces `intent`. **Source:** the founder, 2026-11-08. **Applied 2026-11-09** on the founder's instruction to the intake procedure (`Intake.md`, `Intake.xml`, `intake.mmd`), the schema, the tool contract, the proposed skill, the canonical map, `roundtable/metaform.json`, the Rust server and the Node harness. The Rust store's `WANTS` column is now `direction`. A database created before this change still has the `intent` column and must be cleared and rebuilt (§9). The Node harness keeps its `intent` column so that its old databases still open.
@@ -454,6 +458,10 @@ A written `role` must be one of the four roles, spelled exactly (R-3.13); the re
 **Status:** Decided. **Source:** "logic should not be added just to be added it has to fix an observed issue."
 
 ## 6. Layers
+
+**R-6.28** A layer is called an overlay.
+
+**Status:** Decided by the owner, 2026-11-11. Not applied: this section, the procedure, the schema, the tool contract, the `layer` root, the `layers` and `blocked_layers` arrays and the pages still say layer. **Source:** "I have a better name for layer. call it an overlay". Which names follow from it (the root, the two arrays, the phrase "knowledge layer") is open until the owner says.
 
 ### 6.0 What a layer is
 
