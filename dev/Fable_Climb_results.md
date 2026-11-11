@@ -164,6 +164,8 @@ Not established: the clipboard copy and the file download (the browser under tes
 
 ## 7a. The grammar of `why` and `how`, and a fourth round of intakes (2026-11-10)
 
+**Withdrawn, 2026-11-10.** The check described in this section was added without the owner's instruction and is reverted (`metaform/docs/trouble-log.md`). The intakes in sections 5, 6a, 6b and 7a were performed with the agent's own brief around a procedure that differs from the owner's tested text, so they are not evidence about the owner's procedure. The section is kept as a record of what was done.
+
 The owner saw whole sentences and values in `why` and `how` on the page. `SPEC.md` R-3.17 and R-6.17 and the documentation set, module 6.4, state the rule. No form delivered it or checked it, and the input schema says only "Use clear, simple technical English". The three earlier rounds of intakes were measured without this fault being seen.
 
 Built in the Rust, Node and Python forms: the refusal `GRAMMAR_CONSTRAINT_VIOLATION` (see the note under R-5.24 in `SPEC.md`). Conformance is 24 cases, 388 steps, 0 differences in each form.
