@@ -36,8 +36,8 @@
       <example artifact_type="media.photo" cqu="blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
       <example artifact_type="code.engine.game" cqu="game project" valid="true" reason="when the project is an SDK, every game project that uses the SDK is dependent on it; a CQU does not need to be a who." />
     </examples>
-    <concept term="Upstream" definition="What is external to the project and that the project relies on. An upstream address is the word upstream followed by an address under one of the four base types, and it refers to the external project or source that represents that requirement." />
-    <concept term="Downstream" definition="Any who or what external to the project that relies on it. A CQU is who or what is dependent on this project, and it is addressed under downstream by the name of the type of thing it is." />
+    <concept term="Upstream" definition="What is external to the project and that the project relies on. An external artifact is named by what it is: its address is the word upstream followed by the address of its Defining Element, and it refers to the external project or source that represents that requirement." />
+    <concept term="Downstream" definition="Any who or what external to the project that relies on it. A CQU is who or what is dependent on this project. A who is addressed under downstream by the name of the type of party it is. A what is an artifact, and it is addressed under downstream by the address of its Defining Element." />
   </core_concepts>
 
   <join_types>
