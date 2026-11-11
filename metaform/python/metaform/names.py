@@ -196,7 +196,7 @@ def check_command(command: Any) -> None:
         fixed_body = check.address(body)
     else:
         fixed_body = body
-    if verb in ("add", "update", "delete", "orphaned", "goto", "map"):
+    if verb in ("add", "update", "delete", "orphaned", "goto", "map", "help"):
         fixed_verb = verb
     elif verb == ROOT:
         fixed_verb = ROOT

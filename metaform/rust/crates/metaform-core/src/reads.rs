@@ -1,5 +1,5 @@
 //! Reads: an addressed read (R-5.10, R-5.21), the root read `.` (R-5.11), `orphaned` (R-5.23)
-//! and the `goto` summary sheet (R-5.30).
+//! and the `goto` summary sheet (R-5.30). `help` (R-5.39) reads the contract, in `contract.rs`.
 //! Reads never change the map, and every element is named by its full address (R-4.12).
 
 use serde_json::{Map as JsonMap, Value, json};

@@ -43,6 +43,9 @@ export function execute(map: MapModel, command: Json): Outcome {
   if (verb === "map") {
     return { result: reads.shallow(map) };
   }
+  if (verb === "help") {
+    return { result: reads.help(body) };
+  }
   if (verb === "goto") {
     return { result: reads.goto(map, body as string) };
   }

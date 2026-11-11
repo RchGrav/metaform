@@ -268,7 +268,7 @@ pub(crate) fn check_command(command: &Value) -> Result<(), Refusal> {
         _ => body.clone(),
     };
     let fixed_verb = match verb.as_str() {
-        "add" | "update" | "delete" | "orphaned" | "goto" | "map" => verb.clone(),
+        "add" | "update" | "delete" | "orphaned" | "goto" | "map" | "help" => verb.clone(),
         ROOT => ROOT.to_string(),
         path if path.starts_with('.') => format!(".{}", check.address(&path[1..])),
         address => check.address(address),

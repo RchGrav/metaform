@@ -10,7 +10,7 @@ only the command, never the map. Each message names a place the way an agent wri
 A command can have several problems. `check` reports the first one it finds, in this order:
 
 1. The number of entries: a command is an object with one entry.
-2. The command name: `add`, `update`, `delete`, `orphaned`, `goto` and `map` are commands. A
+2. The command name: `add`, `update`, `delete`, `orphaned`, `goto`, `map` and `help` are commands. A
    key that starts with a period is a raw dump. Any other key is an address to read.
 3. The address. For `add`, `update` and `delete` the body must first be an object with one
    entry, because that entry's key is the address.
@@ -32,7 +32,10 @@ from .names import ROOT
 from .refusal import Refusal
 from .values import copy, is_blank, is_space
 
-ONE_ENTRY = "a command has one entry: add, update, delete, orphaned, goto, map, an address to read, or a path that starts with a period for a raw dump"
+ONE_ENTRY = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump"
+HELP_FORM = "help takes {} or the name of a command"
+# The names `help` takes (H1): the same list as the enum of the contract's `help` form.
+HELP_NAMES = ("add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help")
 DELETE_FORM = 'delete takes {} to delete the element, or {"wants": ["<address>"]} to remove wants'
 # The fields that hold text (N2 to N5).
 TEXT_FIELDS = ("technical_name", "name", "role", "status", "project", "uri")
@@ -55,6 +58,10 @@ def check(command: Any) -> None:
     if entry is None:
         raise refuse(ONE_ENTRY)
     key, body = entry
+    if key == "help":
+        if is_empty_object(body) or (isinstance(body, str) and body in HELP_NAMES):
+            return
+        raise refuse(HELP_FORM, {"help": {}})
     if key in ("map", "orphaned"):
         if is_empty_object(body):
             return

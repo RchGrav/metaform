@@ -1,8 +1,10 @@
 """Reads: an addressed read (R-5.10, R-5.21), the raw dump (R-5.34), `map` (R-5.11), `orphaned`
-(R-5.23) and the `goto` summary sheet (R-5.30). Ports `reads.rs`.
+(R-5.23), the `goto` summary sheet (R-5.30) and `help` (R-5.39). Ports `reads.rs`.
 
 Reads never change the map, and every element is named by its full address (R-4.12).
 """
+import json
+from pathlib import Path
 from typing import Any
 
 from . import names, refusal, specification
@@ -10,6 +12,11 @@ from .model import Map
 from .names import ROOT
 from .refusal import Refusal
 from .values import ascii_lower, copy
+
+# The contract, two folders above this package: `metaform/mcp-tools.proposed.json`. `help` answers
+# with its schemas; nothing here copies or changes them.
+CONTRACT = Path(__file__).resolve().parents[2] / "mcp-tools.proposed.json"
+HELP_FORM = "help takes {} or the name of a command"
 
 
 def is_definitive(role: Any) -> bool:
@@ -168,3 +175,72 @@ def goto(map: Map, address: str) -> dict[str, Any]:
         # it out: the same text does not arrive twice. An addressed read still returns it.
         sheet["element"].pop("instruction", None)
     return copy(sheet)
+
+
+def help_form(schema: Any, name: str) -> dict[str, Any] | None:
+    """The entry of the input schema's top-level `oneOf` that is the form for a name `help`
+    takes. A raw dump and an addressed read are found by the start of their description; every
+    other form is found by the property it requires. No form is found by its position."""
+    starts = {
+        "raw dump": "A key that starts with a period is a raw dump",
+        "addressed read": "An addressed read",
+    }.get(name)
+    for entry in schema.get("oneOf", []):
+        if not isinstance(entry, dict):
+            continue
+        if starts is not None:
+            description = entry.get("description")
+            found = isinstance(description, str) and description.startswith(starts)
+        else:
+            found = name in entry.get("required", [])
+        if found:
+            return entry
+    return None
+
+
+def refs(schema: Any, found: list[str]) -> None:
+    """The name of each definition a schema refers to with `$ref`, added to `found`."""
+    if isinstance(schema, list):
+        for item in schema:
+            refs(item, found)
+    elif isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "$ref" and isinstance(value, str) and value.startswith("#/$defs/"):
+                found.append(value[len("#/$defs/"):].split("/")[0])
+            else:
+                refs(value, found)
+
+
+def help(body: Any) -> dict[str, Any]:
+    """`{"help": {}}` returns the schema of the `help` command itself: the names it takes.
+    `{"help": "<name>"}` returns the schema of that one command (R-5.39). Every schema is the
+    contract's own: the entry of the input schema's top-level `oneOf` that is the form for the
+    command, with a `$defs` object that holds the definitions the entry refers to, directly or
+    through other definitions, and no others. It reads nothing from the map."""
+    refused = Refusal(refusal.FIELD_MISMATCH, HELP_FORM, {"help": {}})
+    schema = json.loads(CONTRACT.read_text(encoding="utf-8"))["tools"][0]["inputSchema"]
+    if not isinstance(body, str):
+        entry = help_form(schema, "help") or {}
+        forms = entry.get("properties", {}).get("help", {}).get("anyOf", [])
+        names = next((form["enum"] for form in forms if "enum" in form), None)
+        if names is None:
+            raise refused
+        return {"help": {"type": "object", "properties": {"help": {"enum": names}}, "required": ["help"]}}
+    entry = help_form(schema, body)
+    if entry is None:
+        raise refused
+    form = dict(entry)
+    every = schema.get("$defs", {})
+    reached: set[str] = set()
+    waiting: list[str] = []
+    refs(form, waiting)
+    while waiting:
+        definition = waiting.pop()
+        if definition not in reached:
+            reached.add(definition)
+            refs(every.get(definition), waiting)
+    # The definitions keep the order the contract gives them.
+    definitions = {definition: value for definition, value in every.items() if definition in reached}
+    if definitions:
+        form["$defs"] = definitions
+    return {"help": {body: form}}

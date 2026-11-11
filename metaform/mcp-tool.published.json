@@ -22,7 +22,8 @@
       },
       "map": {
         "type": "object"
-      }
+      },
+      "help": {}
     },
     "additionalProperties": {
       "type": "object"

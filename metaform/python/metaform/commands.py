@@ -36,6 +36,8 @@ def execute(map: Map, command: Any) -> Outcome:
         return Outcome(reads.orphaned(map))
     if verb == "map":
         return Outcome(reads.shallow(map))
+    if verb == "help":
+        return Outcome(reads.help(body))
     if verb == "goto":
         return Outcome(reads.goto(map, body))
     if verb in ("add", "update", "delete"):

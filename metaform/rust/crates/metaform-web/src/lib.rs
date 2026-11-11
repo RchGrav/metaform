@@ -76,14 +76,14 @@ struct AppState {
     addr: SocketAddr,
 }
 
-/// Whether a command only reads (R-5.1): `map`, `goto`, `search`, `orphaned`, a raw dump
+/// Whether a command only reads (R-5.1): `map`, `goto`, `search`, `orphaned`, `help`, a raw dump
 /// (a key that starts with a period) or an addressed read (a key with a period whose body names
 /// only layers, each with `{}`). Everything else may write and is refused.
 pub fn is_read(command: &Value) -> bool {
     let Some(object) = command.as_object() else { return false };
     let [(key, body)] = object.iter().collect::<Vec<_>>()[..] else { return false };
     match key.as_str() {
-        "map" | "goto" | "search" | "orphaned" => true,
+        "map" | "goto" | "search" | "orphaned" | "help" => true,
         key if key.starts_with('.') => body.as_object().is_some_and(|b| b.is_empty()),
         key if key.contains('.') => body
             .as_object()

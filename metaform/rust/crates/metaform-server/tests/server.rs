@@ -19,8 +19,8 @@ use serde_json::{Value, json};
 /// since 2026-11-10, when the server began to publish the one command shape
 /// (`mcp-tool.published.json`) in place of the contract's schema, which restates it for each verb.
 /// 656 since 2026-11-11: the published schema is the list of operations only. The owner designed
-/// the tool surface to be well under 1 KB.
-const TOOLS_LIST_BYTES: usize = 656;
+/// the tool surface to be well under 1 KB. 672 since the `help` operation joined that list (R-5.39).
+const TOOLS_LIST_BYTES: usize = 672;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]

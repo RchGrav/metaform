@@ -2,11 +2,11 @@
   "tools": [
     {
       "name": "project-map",
-      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations.",
+      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "description": "A command name (add, update, delete, orphaned, goto, map) is a command. A key that starts with a period is a raw dump. Any other key is an address, and reads that element. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace.",
+        "description": "A command name (add, update, delete, orphaned, goto, map, help) is a command. A key that starts with a period is a raw dump. Any other key is an address, and reads that element. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace.",
         "oneOf": [
           {
             "type": "object",
@@ -89,6 +89,35 @@
           },
           {
             "type": "object",
+            "properties": {
+              "help": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Empty"
+                  },
+                  {
+                    "enum": [
+                      "add",
+                      "update",
+                      "delete",
+                      "orphaned",
+                      "goto",
+                      "map",
+                      "addressed read",
+                      "raw dump",
+                      "help"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "help"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
             "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
             "properties": {
               "goto": {
@@ -131,7 +160,7 @@
             "minProperties": 1,
             "maxProperties": 1,
             "propertyNames": {
-              "pattern": "^(?!(?:add|update|delete|orphaned|goto|map)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$"
+              "pattern": "^(?!(?:add|update|delete|orphaned|goto|map|help)$)[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$"
             },
             "additionalProperties": {
               "$ref": "#/$defs/LayerRead"

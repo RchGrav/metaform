@@ -5,7 +5,7 @@ use metaform_core::{Code, Contract, Map, execute};
 use serde_json::{Value, json};
 
 const NOT_AN_ADDRESS: &str = "is not an address: segments are joined by periods, with no spaces, '$', '[' or ']'";
-const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, an address to read, or a path that starts with a period for a raw dump";
+const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
 const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 const GOTO_FORM: &str = "goto takes one address, such as {\"goto\": \"code.engine.game\"}";
 
@@ -68,6 +68,9 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         ("E1", json!({"map": {"x": 1}}), "map takes {}".into(), json!({"map": {}})),
         ("E1", json!({"orphaned": []}), "orphaned takes {}".into(), json!({"orphaned": {}})),
+        ("H1", json!({"help": {"x": 1}}), "help takes {} or the name of a command".into(), json!({"help": {}})),
+        ("H1", json!({"help": "nope"}), "help takes {} or the name of a command".into(), json!({"help": {}})),
+        ("H1", json!({"help": 7}), "help takes {} or the name of a command".into(), json!({"help": {}})),
         ("G1", json!({"goto": 7}), GOTO_FORM.into(), json!({"goto": "<address>"})),
         ("G1", json!({"goto": ""}), GOTO_FORM.into(), json!({"goto": "<address>"})),
         ("G1", json!({"goto": "code engine"}), format!("'code engine' {NOT_AN_ADDRESS}"), json!(null)),
@@ -304,7 +307,7 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
     }
     assert!(map.element("code.relay.wants.queue").is_some(), "wants beneath is a branch when it holds no want fields");
     for command in [
-        json!({"map": {}}), json!({"orphaned": {}}), json!({"goto": "."}), json!({"goto": "code.engine.game"}),
+        json!({"map": {}}), json!({"orphaned": {}}), json!({"help": {}}), json!({"help": "raw dump"}), json!({"goto": "."}), json!({"goto": "code.engine.game"}),
         json!({".": {}}), json!({".code.engine": {}}), json!({"code.engine.game": {}}),
         json!({"code.engine.game": {"wants": {}, "specification": {}}}),
     ] {

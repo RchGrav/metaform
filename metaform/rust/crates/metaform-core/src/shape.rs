@@ -13,7 +13,7 @@
 //! A command can have several problems. `check` reports the first one it finds, in this order:
 //!
 //! 1. The number of entries: a command is an object with one entry.
-//! 2. The command name: `add`, `update`, `delete`, `orphaned`, `goto` and `map` are commands. A
+//! 2. The command name: `add`, `update`, `delete`, `orphaned`, `goto`, `map` and `help` are commands. A
 //!    key that starts with a period is a raw dump. Any other key is an address to read.
 //! 3. The address. For `add`, `update` and `delete` the body must first be an object with one
 //!    entry, because that entry's key is the address.
@@ -44,6 +44,7 @@
 //! | D4 | `wants` in `delete` is a list with at least one item. |
 //! | D5 | Each item is an address, not `.`, and no item repeats. |
 //! | E1 | `map` and `orphaned` take `{}`. |
+//! | H1 | `help` takes `{}` or one of the names in `HELP_NAMES`. |
 //! | G1 | `goto` takes text that is `.` or an address. |
 //! | R1 | A raw dump path is a period alone, or a period and an address. |
 //! | R2 | A raw dump takes `{}`. |
@@ -75,7 +76,11 @@ use serde_json::{Map as JsonMap, Value, json};
 use crate::names::{self, ROOT};
 use crate::refusal::{Code, Refusal};
 
-const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, an address to read, or a path that starts with a period for a raw dump";
+const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
+pub(crate) const HELP_FORM: &str = "help takes {} or the name of a command";
+/// The names `help` takes (H1): the same list as the enum of the contract's `help` form.
+pub(crate) const HELP_NAMES: [&str; 9] =
+    ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
 const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 /// The fields that hold text (N2 to N5).
 const TEXT_FIELDS: [&str; 6] = ["technical_name", "name", "role", "status", "project", "uri"];
@@ -104,6 +109,8 @@ pub(crate) fn check(command: &Value) -> Result<(), Refusal> {
     let check = Check { command };
     match key {
         "map" | "orphaned" if is_empty_object(body) => Ok(()),
+        "help" if is_empty_object(body) || body.as_str().is_some_and(|name| HELP_NAMES.contains(&name)) => Ok(()),
+        "help" => Err(refuse(HELP_FORM, Some(json!({"help": {}})))),
         "map" | "orphaned" => Err(refuse(format!("{key} takes {{}}"), Some(json!({key: {}})))),
         "goto" => match body.as_str() {
             Some(text) if text == ROOT || is_address(text) => Ok(()),

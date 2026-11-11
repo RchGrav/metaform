@@ -244,7 +244,7 @@ export function checkCommand(command: Json): void {
     fixedBody = check.address(body);
   }
   let fixedVerb: string;
-  if (["add", "update", "delete", "orphaned", "goto", "map"].includes(verb)) {
+  if (["add", "update", "delete", "orphaned", "goto", "map", "help"].includes(verb)) {
     fixedVerb = verb;
   } else if (verb === ROOT) {
     fixedVerb = ROOT;

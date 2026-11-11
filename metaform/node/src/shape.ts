@@ -11,7 +11,7 @@
 // A command can have several problems. `check` reports the first one it finds, in this order:
 //
 // 1. The number of entries: a command is an object with one entry.
-// 2. The command name: `add`, `update`, `delete`, `orphaned`, `goto` and `map` are commands. A
+// 2. The command name: `add`, `update`, `delete`, `orphaned`, `goto`, `map` and `help` are commands. A
 //    key that starts with a period is a raw dump. Any other key is an address to read.
 // 3. The address. For `add`, `update` and `delete` the body must first be an object with one
 //    entry, because that entry's key is the address.
@@ -32,7 +32,10 @@ import { ROOT, join } from "./names.ts";
 import { Code, Refusal } from "./refusal.ts";
 
 const ONE_ENTRY =
-  "a command has one entry: add, update, delete, orphaned, goto, map, an address to read, or a path that starts with a period for a raw dump";
+  "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
+const HELP_FORM = "help takes {} or the name of a command";
+/** The names `help` takes (H1): the same list as the enum of the contract's `help` form. */
+const HELP_NAMES = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
 const DELETE_FORM = 'delete takes {} to delete the element, or {"wants": ["<address>"]} to remove wants';
 /** The fields that hold text (N2 to N5). */
 const TEXT_FIELDS = ["technical_name", "name", "role", "status", "project", "uri"];
@@ -60,6 +63,12 @@ export function check(command: Json): void {
     throw refuse(ONE_ENTRY, null);
   }
   const [key, body] = entry;
+  if (key === "help") {
+    if (isEmptyObject(body) || (typeof body === "string" && HELP_NAMES.includes(body))) {
+      return;
+    }
+    throw refuse(HELP_FORM, obj(["help", obj()]));
+  }
   if (key === "map" || key === "orphaned") {
     if (isEmptyObject(body)) {
       return;

@@ -52,6 +52,7 @@ pub fn execute(contract: &Contract, map: &Map, command: &Value) -> Result<Outcom
     match verb {
         "orphaned" => Ok(Outcome::Read(reads::orphaned(map))),
         "map" => Ok(Outcome::Read(reads::shallow(map))),
+        "help" => contract.help(body).map(Outcome::Read),
         "goto" => {
             let address = body.as_str().expect("the input schema allows a string");
             reads::goto(map, address).map(Outcome::Read)

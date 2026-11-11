@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -310,5 +310,71 @@ test("the format marker: a home in another format, or with files and no marker, 
   } finally {
     other.remove();
     unmarked.remove();
+  }
+});
+
+/** The name of each definition a schema refers to. */
+function refs(schema: any, found: Set<string>): Set<string> {
+  if (Array.isArray(schema)) {
+    schema.forEach((item) => refs(item, found));
+  } else if (schema !== null && typeof schema === "object") {
+    for (const [key, value] of Object.entries(schema)) {
+      if (key === "$ref" && typeof value === "string" && value.startsWith("#/$defs/")) {
+        found.add(value.slice("#/$defs/".length).split("/")[0]);
+      } else {
+        refs(value, found);
+      }
+    }
+  }
+  return found;
+}
+
+test("help: the schema of help itself, each command's schema from the contract, and the refusal", () => {
+  const names = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
+  const contract = JSON.parse(readFileSync(new URL("../../mcp-tools.proposed.json", import.meta.url), "utf8"));
+  const input = contract.tools[0].inputSchema;
+  const at = place(false);
+  try {
+    // A project with no map yet answers, as it does for `map`.
+    assert.deepEqual(call(at, { help: {} }).answer, {
+      help: { type: "object", properties: { help: { enum: names } }, required: ["help"] },
+    });
+    for (const name of names) {
+      const answer = call(at, { help: name }).answer;
+      assert.deepEqual(Object.keys(answer.help), [name]);
+      const { $defs: held = {}, ...form } = answer.help[name];
+      // The form is one entry of the contract's own `oneOf`, as the contract writes it.
+      assert.ok(input.oneOf.some((entry: unknown) => JSON.stringify(entry) === JSON.stringify(form)), name);
+      // `$defs` holds every definition the form reaches, no other, each as the contract writes it.
+      const reached = refs(form, new Set());
+      for (let size = -1; size !== reached.size; ) {
+        size = reached.size;
+        [...reached].forEach((definition) => refs(input.$defs[definition], reached));
+      }
+      assert.deepEqual(Object.keys(held).sort(), [...reached].sort(), name);
+      for (const definition of Object.keys(held)) {
+        assert.deepEqual(held[definition], input.$defs[definition], `${name}: ${definition}`);
+      }
+    }
+    const add = call(at, { help: "add" }).answer.help.add;
+    assert.equal(add.required[0], "add");
+    for (const definition of ["AddFields", "NamespaceNode", "Wants", "WantRecord"]) {
+      assert.ok(definition in add.$defs, definition);
+    }
+    for (const definition of ["DeleteWants", "UpdateFields", "LayerRead", "Empty"]) {
+      assert.ok(!(definition in add.$defs), definition);
+    }
+    assert.match(call(at, { help: "raw dump" }).answer.help["raw dump"].description, /^A key that starts with a period is a raw dump/);
+    for (const value of ["nope", 7, { x: 1 }, [], null, ""]) {
+      assert.deepEqual(call(at, { help: value }).answer, {
+        help: value,
+        status: "error",
+        code: "FIELD_MISMATCH",
+        message: "help takes {} or the name of a command",
+        remediation: { help: {} },
+      });
+    }
+  } finally {
+    at.remove();
   }
 });

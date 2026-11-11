@@ -242,6 +242,61 @@ class StoreTests(unittest.TestCase):
         self.assertIn("holds files this store did not write (no store.format)", problem)
         self.assertEqual(os.listdir(unmarked), ["notes.txt"])
 
+    def test_help_gives_the_schema_of_help_and_of_each_command_from_the_contract(self) -> None:
+        names = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"]
+        contract = json.loads((PACKAGE.parent / "mcp-tools.proposed.json").read_text(encoding="utf-8"))
+        schema = contract["tools"][0]["inputSchema"]
+
+        def refs(value: Any, found: set[str]) -> set[str]:
+            if isinstance(value, list):
+                for item in value:
+                    refs(item, found)
+            elif isinstance(value, dict):
+                for key, item in value.items():
+                    if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/"):
+                        found.add(item[len("#/$defs/"):].split("/")[0])
+                    else:
+                        refs(item, found)
+            return found
+
+        # A project with no map yet answers, as it does for `map`.
+        _, answer, _ = call(self.home, self.project, {"help": {}})
+        self.assertEqual(
+            answer, {"help": {"type": "object", "properties": {"help": {"enum": names}}, "required": ["help"]}}
+        )
+        for name in names:
+            _, answer, _ = call(self.home, self.project, {"help": name})
+            self.assertEqual(list(answer["help"]), [name])
+            form = dict(answer["help"][name])
+            held = form.pop("$defs", {})
+            # The form is one entry of the contract's own `oneOf`, as the contract writes it.
+            self.assertIn(form, schema["oneOf"], name)
+            # `$defs` holds every definition the form reaches, no other, each as the contract writes it.
+            reached, size = refs(form, set()), -1
+            while size != len(reached):
+                size = len(reached)
+                for definition in list(reached):
+                    refs(schema["$defs"][definition], reached)
+            self.assertEqual(set(held), reached, name)
+            for definition, value in held.items():
+                self.assertEqual(value, schema["$defs"][definition], f"{name}: {definition}")
+        _, answer, _ = call(self.home, self.project, {"help": "add"})
+        held = answer["help"]["add"]["$defs"]
+        self.assertTrue({"AddFields", "NamespaceNode", "Wants", "WantRecord"} <= set(held))
+        self.assertFalse({"DeleteWants", "UpdateFields", "LayerRead", "Empty"} & set(held))
+        for value in ("nope", 7, {"x": 1}, [], None, ""):
+            _, answer, _ = call(self.home, self.project, {"help": value})
+            self.assertEqual(
+                answer,
+                {
+                    "help": value,
+                    "status": "error",
+                    "code": "FIELD_MISMATCH",
+                    "message": "help takes {} or the name of a command",
+                    "remediation": {"help": {}},
+                },
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

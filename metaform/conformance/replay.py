@@ -9,7 +9,7 @@ totals that can be compared, so a change to what the tool answers can be measure
     python3 metaform/conformance/replay.py --form rust|node|python [--trace NAME] [--parts]
 
 It prints one line for each session and a total. `--parts` also prints the bytes by kind of
-answer: successful writes, refusals, `goto`, `map`, raw dumps, `orphaned` and addressed reads.
+answer: successful writes, refusals, `goto`, `map`, `help`, raw dumps, `orphaned` and addressed reads.
 
 What it establishes: the number of bytes these sessions would have received from this build.
 What it does not establish: how an agent would have behaved with different answers. An agent
@@ -35,7 +35,7 @@ def kind(command, refused):
     key = next(iter(command), "")
     if key in ("add", "update", "delete"):
         return "write"
-    if key in ("goto", "map", "orphaned"):
+    if key in ("goto", "map", "orphaned", "help"):
         return key
     return "dump" if key.startswith(".") else "read"
 

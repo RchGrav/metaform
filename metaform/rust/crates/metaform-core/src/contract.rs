@@ -4,9 +4,10 @@
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{ValidationError, Validator};
-use serde_json::Value;
+use serde_json::{Map as JsonMap, Value, json};
 
 use crate::refusal::{Code, Refusal};
+use crate::shape;
 
 const TOOLS: &str = include_str!("../../../../mcp-tools.proposed.json");
 const STORED_SCHEMA: &str = include_str!("../../../../metaform.schema.json");
@@ -85,6 +86,49 @@ impl Contract {
         Err(Refusal::new(Code::FieldMismatch, format!("the command {detail}"), None))
     }
 
+    /// `{"help": {}}` returns the schema of the `help` command itself: the names it takes.
+    /// `{"help": "<name>"}` returns the schema of that one command (R-5.39). Every schema is the
+    /// contract's own: the entry of the input schema's top-level `oneOf` that is the form for the
+    /// command, with a `$defs` object that holds the definitions the entry refers to, directly or
+    /// through other definitions, and no others. It reads nothing from the map.
+    pub(crate) fn help(&self, body: &Value) -> Result<Value, Refusal> {
+        let refused = || Refusal::new(Code::FieldMismatch, shape::HELP_FORM, Some(json!({"help": {}})));
+        let schema = &self.tool["inputSchema"];
+        let Some(name) = body.as_str() else {
+            let names = help_form(schema, "help")
+                .and_then(|entry| entry["properties"]["help"]["anyOf"].as_array())
+                .and_then(|forms| forms.iter().find_map(|form| form.get("enum")))
+                .ok_or_else(refused)?;
+            return Ok(json!({"help": {
+                "type": "object",
+                "properties": {"help": {"enum": names}},
+                "required": ["help"],
+            }}));
+        };
+        let mut form = help_form(schema, name).and_then(Value::as_object).ok_or_else(refused)?.clone();
+        let mut reached: Vec<String> = Vec::new();
+        let mut waiting = Vec::new();
+        refs(&Value::Object(form.clone()), &mut waiting);
+        while let Some(definition) = waiting.pop() {
+            if !reached.contains(&definition) {
+                refs(&schema["$defs"][&definition], &mut waiting);
+                reached.push(definition);
+            }
+        }
+        // The definitions keep the order the contract gives them.
+        let definitions: JsonMap<String, Value> = schema["$defs"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(definition, _)| reached.contains(definition))
+            .map(|(definition, value)| (definition.clone(), value.clone()))
+            .collect();
+        if !definitions.is_empty() {
+            form.insert("$defs".into(), Value::Object(definitions));
+        }
+        Ok(json!({"help": {name: form}}))
+    }
+
     /// Refuse an element view that does not match the stored-document schema.
     pub(crate) fn check_element(&self, address: &str, view: &Value) -> Result<(), Refusal> {
         if self.stored.is_valid(view) {
@@ -93,6 +137,37 @@ impl Contract {
         let (path, detail) = explain(self.stored.iter_errors(view));
         let reason = format!("{} {detail}", place(address, &path));
         Err(Refusal::new(Code::FieldMismatch, reason, None))
+    }
+}
+
+/// The entry of the input schema's top-level `oneOf` that is the form for a name `help` takes.
+/// A raw dump and an addressed read are found by the start of their description; every other
+/// form is found by the property it requires. No form is found by its position.
+fn help_form<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
+    let starts = match name {
+        "raw dump" => Some("A key that starts with a period is a raw dump"),
+        "addressed read" => Some("An addressed read"),
+        _ => None,
+    };
+    schema["oneOf"].as_array()?.iter().find(|entry| match starts {
+        Some(text) => entry["description"].as_str().is_some_and(|description| description.starts_with(text)),
+        None => entry["required"].as_array().is_some_and(|required| required.iter().any(|property| property == name)),
+    })
+}
+
+/// The name of each definition a schema refers to with `$ref`, added to `found`.
+fn refs(schema: &Value, found: &mut Vec<String>) {
+    match schema {
+        Value::Object(entries) => {
+            for (key, value) in entries {
+                match (key.as_str(), value.as_str().and_then(|text| text.strip_prefix("#/$defs/"))) {
+                    ("$ref", Some(path)) => found.push(path.split('/').next().unwrap_or_default().to_string()),
+                    _ => refs(value, found),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| refs(item, found)),
+        _ => {}
     }
 }
 
@@ -198,7 +273,7 @@ mod tests {
     fn the_shape_check_and_the_input_schema_agree() {
         let contract = Contract::bundled().unwrap();
         let values = [
-            json!(null), json!(true), json!(7), json!(""), json!(" \u{a0}"), json!("text"), json!("todo"),
+            json!(null), json!(true), json!(7), json!(""), json!(" \u{a0}"), json!("text"), json!("add"), json!("raw dump"), json!("help"), json!("todo"),
             json!("inbound"), json!([]), json!(["code.y"]), json!(["code.y", "code.y"]), json!({}),
             json!({"x": 1}), json!({"name": "n"}), json!({"name": ""}), json!({"why": "w"}), json!({"wants": {}}),
             json!({"code.y": {"why": "w", "how": "h", "direction": "inbound"}}),
@@ -213,7 +288,7 @@ mod tests {
             "technical_name", "name", "role", "status", "project", "uri", "providers", "why", "how",
             "direction", "op", "ef", "ifd", "wants", "note", "a.b", "a b",
         ];
-        let keys = ["add", "update", "delete", "map", "orphaned", "goto", ".", ".code.x", "..", "code.x", "code..x", "a$", ""];
+        let keys = ["add", "update", "delete", "map", "orphaned", "help", "goto", ".", ".code.x", "..", "code.x", "code..x", "a$", ""];
         let mut commands = vec![json!({}), json!([]), json!("add"), json!({"add": {}, "map": {}})];
         for value in &values {
             for key in keys {
