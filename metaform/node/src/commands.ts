@@ -83,11 +83,6 @@ class Work {
   touched = new Set<string>();
   /** The addresses whose element in `elements` is this write's own copy. */
   private own = new Set<string>();
-  /**
-   * The wants this command wrote, in the order it wrote them: the holder, the other element, and
-   * which of `why` and `how` the command supplied. `finish` checks their grammar.
-   */
-  private writtenWants: [string, string, string[]][] = [];
 
   constructor(before: MapModel) {
     this.before = before;
@@ -129,9 +124,7 @@ class Work {
    */
   writeWant(holder: string, other: string, change: Json): void {
     const record: JsonObject = new Map(this.elements.get(holder)?.wants.get(other));
-    let written: string[] = [];
     if (isObject(change)) {
-      written = ["why", "how"].filter((key) => change.has(key));
       for (const [key, value] of change) {
         record.set(key, value);
       }
@@ -154,7 +147,6 @@ class Work {
     }
     this.ensure(other);
     this.elementMut(holder).wants.set(other, record);
-    this.writtenWants.push([holder, other, written]);
   }
 
   writeWants(holder: string, wants: JsonObject): void {
@@ -309,11 +301,6 @@ class Work {
       this.checkCollisions(address, element);
     }
     this.checkDefinitive();
-    // The grammar of `why` and `how` is checked last, so every earlier refusal stays as it was.
-    // The first want that breaks the rule, in the order the command wrote them, is reported.
-    for (const [holder, other, written] of this.writtenWants) {
-      rules.checkWantGrammar(this.before, this.elements, holder, other, written);
-    }
     const effect: Effect = new Sorted();
     for (const address of touched) {
       const after = this.elements.get(address);

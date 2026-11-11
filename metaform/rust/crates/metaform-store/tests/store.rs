@@ -9,7 +9,7 @@ const A: ClientId = ClientId(1);
 const B: ClientId = ClientId(2);
 
 fn want() -> Value {
-    json!({"why": "Receive the mash data to relay it.", "how": "Prepares mash data packets.", "direction": "inbound"})
+    json!({"why": "Receive the mash data to relay it.", "how": "Prepared mash data packets.", "direction": "inbound"})
 }
 
 /// The tool example's two elements, with a want between them and a native array.

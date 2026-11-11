@@ -1,7 +1,6 @@
 """Rules on an element's intake fields that need the map (R-3.11 to R-3.13), and the rule that a
 layer's value is a list (R-6.24). `commands` applies them to every element a write touched.
-The grammar of a want's `why` and `how` (R-3.17, R-6.17) is checked here too, for the parts a
-write sets. Ports `rules.rs`.
+Ports `rules.rs`.
 """
 from typing import Any, Callable
 
@@ -9,7 +8,7 @@ from . import names, refusal, specification
 from .model import Element, Map
 from .names import ROOT
 from .refusal import Refusal
-from .values import ascii_lower, copy, is_space, same, split_whitespace, trim
+from .values import copy, same, split_whitespace
 
 # The four roles (R-3.13), spelled as a write must spell them.
 ROLES = ("Definitive", "Supportive", "Notable", "Divergent")
@@ -125,136 +124,3 @@ def _layer_values(map: Map, is_layer: Callable[[str], bool], verb: str, address:
         if holds_records and is_layer(key):
             raise specification.not_a_list(verb, key, address, value)
         _layer_values(map, is_layer, verb, names.join(address, key), value)
-
-
-# The message of every grammar refusal. It is the only place an agent learns the rule, so it
-# states the whole rule and is the same in every form of Metaform.
-GRAMMAR_MESSAGE = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer."
-
-# The text an agent must replace in the remediation of a grammar refusal.
-WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>"
-HOW_PLACEHOLDER = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>"
-
-# Base verbs that end in `ing`. A `why` may start with one; any other first word that ends in
-# `ing` is taken as an `-ing` verb form.
-ING_BASE_VERBS = (
-    "bring", "cling", "ding", "fling", "ping", "ring", "sing", "sling", "spring", "sting", "string", "swing",
-    "wring", "zing",
-)
-
-# First words that make the text a clause with a subject, not a verb phrase.
-SUBJECT_WORDS = ("the", "a", "an", "this", "that", "these", "those", "it", "its", "we", "they", "each", "every")
-
-_DIGITS = "0123456789"
-
-
-def _first_word(text: str) -> str:
-    """The first word of the text: the characters before the first white space, with A to Z
-    lowered and any trailing `.,;:!?` removed."""
-    words = split_whitespace(text)
-    return ascii_lower(words[0]).rstrip(".,;:!?") if words else ""
-
-
-def _has_many_fragments(text: str) -> bool:
-    """Whether the text holds more than one fragment: `.`, `!`, `?` or `;` followed by white
-    space and then more text. One trailing full stop is not a second fragment."""
-    trimmed = trim(text)
-    return any(a in ".!?;" and is_space(b) for a, b in zip(trimmed, trimmed[1:]))
-
-
-def _is_letter(character: str) -> bool:
-    """A letter, for the number rule: A to Z in either case, or any character outside ASCII. The
-    three forms of Metaform use this one definition, so they decide the same."""
-    return "a" <= character <= "z" or "A" <= character <= "Z" or ord(character) > 127
-
-
-def _has_lone_number(text: str) -> bool:
-    """Whether the text holds a number that stands alone: a run of digits 0 to 9, with an
-    optional decimal part, that is not part of a word. The run is part of a word when a letter
-    follows it directly, or when a letter directly precedes it or precedes the digits, `/`, `-`
-    and `_` that join it to the word. `S256`, `OAuth2`, `utf-8`, `HTTP/2` and `x86-64` are words;
-    `5` and `3.9` stand alone. A want states what happens without tunable values (R-3.17)."""
-
-    def digit(at: int) -> bool:
-        return at < len(text) and text[at] in _DIGITS
-
-    at = 0
-    while at < len(text):
-        if not digit(at):
-            at += 1
-            continue
-        start = at
-        while digit(at):
-            at += 1
-        if at < len(text) and text[at] == "." and digit(at + 1):
-            at += 1
-            while digit(at):
-                at += 1
-        letter_after = at < len(text) and _is_letter(text[at])
-        word_start = start
-        while word_start > 0 and (text[word_start - 1] in _DIGITS or text[word_start - 1] in "/-_"):
-            word_start -= 1
-        letter_before = word_start > 0 and _is_letter(text[word_start - 1])
-        if not letter_after and not letter_before:
-            return True
-    return False
-
-
-def breaks_grammar(field: str, text: str) -> bool:
-    """Whether a `why` or a `how` breaks the grammar of its field (R-3.17, R-6.17). `field` is
-    `why` or `how`. The case of the first letter, one trailing full stop, length, and words
-    ending in `-ing` after the first word are not checked (`SPEC.md` D-14)."""
-    first = _first_word(text)
-    if field == "why":
-        verb_form = first == "to" or (first.endswith("ing") and first not in ING_BASE_VERBS)
-    else:
-        verb_form = not first.endswith("s")
-    return verb_form or first in SUBJECT_WORDS or _has_many_fragments(text) or _has_lone_number(text)
-
-
-def check_want_grammar(
-    before: Map, elements: dict[str, Element], holder: str, other: str, written: list[str]
-) -> None:
-    """Check the `why` and `how` that a command wrote in one want. `written` names the parts the
-    command wrote; a part it did not write is not checked, so a stored want with older text still
-    accepts an unrelated write. `elements` is the map as the command would leave it.
-
-    The refusal follows the documentation set, module 6.4. The tested sentence is the wants
-    sentence of R-6.17 with the texts as written, without their trailing full stop. The
-    remediation updates the want with a placeholder in each part that broke the rule. For a want
-    that `before` holds, it has only those parts. For a want this command made, it has the whole
-    want, because the refused command stored nothing and a want needs all of its fields (R-5.6)."""
-    element = elements.get(holder)
-    record = None if element is None else element.wants.get(other)
-    if record is None:
-        return
-
-    def text(key: str) -> str:
-        value = record.get(key)
-        return value if isinstance(value, str) else ""
-
-    broken: dict[str, Any] = {}
-    for key, placeholder in (("why", WHY_PLACEHOLDER), ("how", HOW_PLACEHOLDER)):
-        if key in written and trim(text(key)) != "" and breaks_grammar(key, text(key)):
-            broken[key] = placeholder
-    if not broken:
-        return
-    earlier = before.element(holder)
-    stored = earlier is not None and other in earlier.wants
-    parts = broken if stored else {**copy(record), **broken}
-
-    def named(address: str) -> str:
-        at = elements.get(address)
-        name = None if at is None else _text(at, "name")
-        return f"{address} ({name})" if name is not None and trim(name) != "" else address
-
-    def part(key: str) -> str:
-        return trim(text(key)).rstrip(".")
-
-    refused = Refusal(
-        refusal.GRAMMAR_CONSTRAINT_VIOLATION,
-        GRAMMAR_MESSAGE,
-        {"update": {holder: {"wants": {other: parts}}}},
-    )
-    refused.sentence = f"{named(holder)} requires {named(other)} in order to {part('why')}, which {part('how')}."
-    raise refused
