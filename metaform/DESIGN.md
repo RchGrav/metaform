@@ -1,5 +1,7 @@
 # Metaform: the design, end to end
 
+> **Superseded, 2026-11-11.** `PROJECT_SPECIFICATION.md` replaces this document. This one holds errors that the founder's record corrects: it proposes an `intake` operation on the tool, it says "placed" where the founder's word is "link", and it treats several decided matters as open. Its section 11, on the interface, is an agent's proposal and not a requirement.
+
 **Status:** Written by an agent on 2026-11-11 from the owner's explanations, the owner's documents and the code. It is an interpretation in the agent's words. The owner corrects it; where the owner and this document differ, the owner is right and this document is wrong. Section 12 lists where the build differs from this design today.
 
 **How to read it:** each part says what the thing is, then why it is that way. The reasons are part of the design. A builder who follows the rules without the reasons will rebuild the mistakes listed in section 12.
