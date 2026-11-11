@@ -461,7 +461,7 @@ A written `role` must be one of the four roles, spelled exactly (R-3.13); the re
 
 **R-6.28** A layer is called an overlay.
 
-**Status:** Decided by the owner, 2026-11-11. Not applied: this section, the procedure, the schema, the tool contract, the `layer` root, the `layers` and `blocked_layers` arrays and the pages still say layer. **Source:** "I have a better name for layer. call it an overlay". Which names follow from it (the root, the two arrays, the phrase "knowledge layer") is open until the owner says.
+**Status:** Decided by the owner, 2026-11-11. Not applied: this section, the procedure, the schema, the tool contract, the `layer` root, the `layers` and `blocked_layers` arrays and the pages still say layer. **Source:** "I have a better name for layer. call it an overlay". The two arrays on an element are `overlays` and `masked_overlays`, in place of `layers` and `blocked_layers`. **Decided by the owner, 2026-11-11. Source:** "or overlays and masked_overlays"; "in a real physical sense if you have info in an overlay the way to remove it from just a small region is to mask it". **Reason:** an array names what is written at the element, an overlay laid on or masked there. Whether an overlay is active at an element is the result of the project's list, the placement and the masks, so "active" and "inactive" stay words for that result and are not array names. The root `overlay` in place of `layer`, and "overlay" in place of "knowledge layer" in prose, follow from the name and are the agent's reading until the owner confirms them.
 
 ### 6.0 What a layer is
 
