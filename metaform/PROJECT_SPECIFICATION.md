@@ -83,7 +83,8 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 2. **Functionality, not material.** The map names what an artifact does. It leaves out language, encoding, medium, genre and style. [R]
 3. **An inference, not a measurement.** No map is the correct one. A map made by a different model is a different valid reading. A map is never graded. [R]
 4. **Never gated or judged.** The intake procedure is not blocked or scored by the tool. Checking the shape of a command is permitted; judging what was inferred is not. [R]
-5. **Shallow and coarse.** The map is a light surface of reference points. A deep intake harms the project, because it moves knowledge away from where an agent will look for it. [R]
+5. **The base map is minimal.** It holds elements and their dependencies: purpose, function, direction. Everything else is an overlay. [R]
+5a. **Shallow and coarse.** The map is a light surface of reference points. A deep intake harms the project, because it moves knowledge away from where an agent will look for it. [R]
 6. **Progressive discovery.** No information before it is needed, and none that is not needed. [R]
 7. **The tool surface is small.** Well under one kilobyte, with a list of operations. [R]
 8. **Correction teaches.** A wrong command is answered with the correct shape. [R]
@@ -116,7 +117,7 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 - The direction is that of the substance, seen from the holder: inbound, outbound or two-way. A request or a receipt is not the direction. [F]
 - The understanding of a type is a relation of three parts: the purpose of the element that receives, the function of the element that provides, and the functionality itself. An element with no dependency of its own is still relied on by something, or it would not be a type. [F]
 - The dependency record is itself an overlay. It sits in a reserved group named for the intake, so it does not appear in the list of overlays and cannot be deleted. [R: 2026-11-03]
-- The structure was first conceived as a hypergraph whose relations are things in their own right and can hold logic. [F] What logic a dependency holds beyond purpose, function and direction is not established. [U]
+- The structure was first conceived as a hypergraph whose relations are things in their own right and can hold logic. [F] The base map holds the elements and, in each dependency, the purpose, the function and the direction. That is all it holds. Everything else is an overlay. [R: 2026-11-11] The relation, the observation, the references and the combined parts that earlier procedure texts kept in the record are therefore overlay material, not part of the base map. [I]
 - The build stores this record under the name `wants`. The rename is decided and not applied. [F]
 - **Field names.** On 2026-11-07 the founder chose plain stored names, `why` and `how`, as more universal, so that agents reading a map need not learn the intake's terms; the intake's concepts were to stay in the procedure, which would say which concept is recorded in which field. [R] That design has not been run: the procedure in the repository removed the concepts. [F] Whether plain names affect intake results is therefore not known. [U]
 
@@ -637,7 +638,6 @@ An earlier draft listed nineteen questions. A full reading of the founder's 1,08
 **Semantics**
 1. The gap fill of the pure text (section 6.4) leaves two points for the founder. First, the pure text says the namespace excludes elements that answer to who. The founder stated on 2026-11-11 that downstream holds any who or what that relies on the artifact. The reading here is that the exclusion applies under the four base types and that `downstream` is where a who is addressed; the founder's sentence is not altered. [I] Second, the pure method starts at the Defining Element and has no step that records the downstream entry's purpose for it. Until the founder accepts a gap-filled text, no intake run in this repository is evidence about his procedure.
 2. Do plain stored names for purpose and function hold when the procedure keeps its concepts? One run each way on the same artifact and model would answer it. The founder asked for a hard decision on this.
-3. What does a dependency hold beyond purpose, function and direction?
 4. What is the one word for adding functionality to a finished map?
 
 **Overlays**
