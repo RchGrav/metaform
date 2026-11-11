@@ -432,7 +432,7 @@ function configure3d() {
     .onEngineTick(() => { FRAMES.engine = true; V3.ticks++; })
     .onEngineStop(() => { layoutTurnEnd(); if (V3.ticks > 30) settled3d(); V3.ticks = 0; })
     .onNodeDrag(dragNode)
-    .onNodeDragEnd(() => { nodeTurnEnd(); G.d3AlphaMin(0.001).d3VelocityDecay(PHYS.decay); })
+    .onNodeDragEnd(() => { PIVOT.held = false; if (PIVOT.id !== null) pivotOn(PIVOT.id); nodeTurnEnd(); G.d3AlphaMin(0.001).d3VelocityDecay(PHYS.decay); })
     .onNodeClick((node, event) => clickedAt3d(event))
     // a click on no node takes the nearest join's edge within reach, `linkAt3d`, as the 2D map does
     .onLinkClick((link, event) => clickedAt3d(event))
@@ -444,6 +444,7 @@ function configure3d() {
  * graph library warms it to 0.3 for a drag, which throws the whole map about; the nodes move against more friction
  * while one is held, DRAG_FRICTION, so the map follows gently. */
 function dragNode() {
+  PIVOT.held = true;  // the camera stays where it is while a node is held, `pivot3d`
   nodeTurnStart();
   G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION);
 }

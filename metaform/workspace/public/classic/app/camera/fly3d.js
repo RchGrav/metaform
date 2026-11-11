@@ -181,7 +181,7 @@ const HELD = {from: new THREE.Vector3(), to: new THREE.Vector3(), out: new THREE
  * hand that takes the camera during the flight, which then never arrives, takes the pivot up at once, `pending`,
  * `steer3d`. */
 export const PIVOT = {id: null, node: null, data: null, x: 0, y: 0, z: 0, start: -1, from: new THREE.Vector3(),
-  pending: null};
+  pending: null, held: false};
 const PIVOT_EASE = 0.35;
 export function pivotOn(id) {
   PIVOT.pending = null;
@@ -213,12 +213,17 @@ export function pivot3d(now, data) {
   const dx = node.x - PIVOT.x, dy = node.y - PIVOT.y, dz = node.z - PIVOT.z;
   PIVOT.x = node.x; PIVOT.y = node.y; PIVOT.z = node.z;
   const camera = G.camera(), target = G.controls().target;
-  if (!V3.hold && (dx !== 0 || dy !== 0 || dz !== 0)) {
+  /* While a hand holds a node, `PIVOT.held` (set by `dragNode`, cleared when it is let go), the camera does not go
+   * with the selected node. The drag places the held node from the pointer through the camera, so a camera that
+   * moved by the node's own step fed the drag its own motion: the node stayed in the middle of the screen and the
+   * rest of the map ran away from it (owner, 2026-11-10). The point is kept on the node's place meanwhile, so the
+   * camera does not jump when the hand lets go. */
+  if (!PIVOT.held && !V3.hold && (dx !== 0 || dy !== 0 || dz !== 0)) {
     target.x += dx; target.y += dy; target.z += dz;
     camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
     FRAMES.moved = true;
   }
-  if (PIVOT.start < 0) return;
+  if (PIVOT.start < 0 || PIVOT.held) return;  // the ease onto the node waits too; `pivotOn` starts it again at let-go
   const s = reduced() ? 1 : Math.min(1, (now - PIVOT.start) / (PIVOT_EASE * 1000)), e = 1 - s * s * (3 - 2 * s);
   target.set(node.x + PIVOT.from.x * e, node.y + PIVOT.from.y * e, node.z + PIVOT.from.z * e);
   camera.lookAt(target);
