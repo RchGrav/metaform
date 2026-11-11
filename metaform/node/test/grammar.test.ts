@@ -15,7 +15,7 @@ const MAIN = new URL("../src/main.ts", import.meta.url).pathname;
 const GAME = "code.engine.game";
 const ROUTER = "code.engine.router";
 const RULE =
-  "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.";
+  "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 const WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>";
 const HOW_PLACEHOLDER = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>";
 
@@ -26,7 +26,6 @@ const PASSES: Record<string, string[]> = {
     "String the tokens into one line",
     "ping the peer",
     "Verify the S256 challenge of OAuth2 over HTTP/2 as utf-8 on x86-64",
-    "receive each inbound message from the transport and pass it on to the service",
   ],
   how: [
     "Dispatches subscribed runtime event streams.",
@@ -34,8 +33,6 @@ const PASSES: Record<string, string[]> = {
     "  Stores: frames on disk  ",
     "Verifies S256 challenges for OAuth2 clients.",
     "passes checking results on",
-    "Dispatches inbound messages to the service and gives each caller a peer for requests",
-    "  Dispatches  inbound  messages  to the service and gives each caller a peer for requests.\n",
   ],
 };
 const BREAKS: Record<string, string[]> = {
@@ -53,7 +50,6 @@ const BREAKS: Record<string, string[]> = {
     "wait 3.9 seconds",
     "retry 5",
     "list items 1-5",
-    "receive each inbound message from the transport and pass it on to the service loop",
   ],
   how: [
     "holding descriptor pointers",
@@ -64,7 +60,6 @@ const BREAKS: Record<string, string[]> = {
     "Stores parameters. Decodes them first.",
     "Returns yes/no confidences and 0 to 5 scores from the JEV model.",
     "...",
-    "Dispatches inbound messages to the service and gives each caller a peer for outbound requests",
   ],
 };
 
@@ -81,9 +76,6 @@ const FAULTS: [string, string, string][] = [
   ["how", "holding descriptor pointers", "does not start with a verb ending in -s"],
   ["how", "Stores parameters. Decodes 5 first.", "holds more than one fragment"],
   ["how", "Returns 0 to 5 scores", "holds a value"],
-  ["why", "receive each inbound message from the transport and pass it on to the service loop", "is longer than 14 words"],
-  ["how", "Dispatches inbound messages to the service and gives each caller a peer for outbound requests", "is longer than 14 words"],
-  ["how", "Dispatches inbound messages to the service and gives each caller a peer for 5 requests", "holds a value"],
 ];
 
 /** A new home with the game element and the procedure's own example of a want. */
@@ -178,7 +170,7 @@ test("grammar: a refusal names the parts that broke the rule, and stores nothing
     });
     assert.equal(
       both.message,
-      "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.",
+      "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
     );
     assert.equal(at.call({ [GAME]: { wants: {} } })[GAME].wants[ROUTER].how, "Dispatches subscribed runtime event streams.");
     assert.equal(at.call({ "code.engine.store": {} }).code, "NOT_FOUND");

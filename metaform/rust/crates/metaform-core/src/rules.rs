@@ -139,11 +139,7 @@ fn layer_values(map: &Map, is_layer: &dyn Fn(&str) -> bool, verb: &str, address:
 /// The rule text that ends the message of every grammar refusal. The message is the only place
 /// an agent learns the rule, so it states the whole rule and is the same in every form of
 /// Metaform. The faults of the refused want come before it (`grammar_fault`).
-pub const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values, at most 14 words. Detail belongs in a knowledge layer.";
-
-/// The most words a `why` or a `how` may have. A word is a run of characters that are not white
-/// space. An engineering decision of 2026-11-10 that the owner may adjust (`SPEC.md` R-5.24).
-pub const GRAMMAR_WORD_LIMIT: usize = 14;
+pub const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 
 /// The text an agent must replace in the remediation of a grammar refusal.
 const WHY_PLACEHOLDER: &str = "<base verb phrase, as: drain raw frames from the network interface card>";
@@ -224,8 +220,8 @@ fn has_lone_number(text: &str) -> bool {
 /// the words of the refusal message, or `None` when the text follows the rule. `field` is `why`
 /// or `how`. The checks have a fixed order, the same in every form of Metaform. For a `how` the
 /// subject check comes before the `-s` check, so `The router stores` is reported as a subject.
-/// The length check is the last one. The case of the first letter, one trailing full stop, and
-/// words ending in `-ing` after the first word are not checked (`SPEC.md` D-14).
+/// The case of the first letter, one trailing full stop, length, and words ending in `-ing`
+/// after the first word are not checked (`SPEC.md` D-14).
 pub fn grammar_fault(field: &str, text: &str) -> Option<&'static str> {
     let first = first_word(text);
     let subject = SUBJECT_WORDS.contains(&first.as_str());
@@ -252,9 +248,6 @@ pub fn grammar_fault(field: &str, text: &str) -> Option<&'static str> {
     }
     if has_lone_number(text) {
         return Some("holds a value");
-    }
-    if text.split_whitespace().count() > GRAMMAR_WORD_LIMIT {
-        return Some("is longer than 14 words");
     }
     None
 }
@@ -337,7 +330,6 @@ mod tests {
             "String the tokens into one line",
             "ping the peer",
             "Verify the S256 challenge of OAuth2 over HTTP/2 as utf-8 on x86-64",
-            "receive each inbound message from the transport and pass it on to the service",
         ] {
             assert_eq!(grammar_fault("why", text), None, "{text}");
         }
@@ -355,7 +347,6 @@ mod tests {
             "wait 3.9 seconds",
             "retry 5",
             "list items 1-5",
-            "receive each inbound message from the transport and pass it on to the service loop",
         ] {
             assert!(grammar_fault("why", text).is_some(), "{text}");
         }
@@ -369,8 +360,6 @@ mod tests {
             "  Stores: frames on disk  ",
             "Verifies S256 challenges for OAuth2 clients.",
             "passes checking results on",
-            "Dispatches inbound messages to the service and gives each caller a peer for requests",
-            "  Dispatches  inbound  messages  to the service and gives each caller a peer for requests.\n",
         ] {
             assert_eq!(grammar_fault("how", text), None, "{text}");
         }
@@ -383,7 +372,6 @@ mod tests {
             "Stores parameters. Decodes them first.",
             "Returns yes/no confidences and 0 to 5 scores from the JEV model.",
             "...",
-            "Dispatches inbound messages to the service and gives each caller a peer for outbound requests",
         ] {
             assert!(grammar_fault("how", text).is_some(), "{text}");
         }
@@ -403,9 +391,6 @@ mod tests {
             ("how", "holding descriptor pointers", "does not start with a verb ending in -s"),
             ("how", "Stores parameters. Decodes 5 first.", "holds more than one fragment"),
             ("how", "Returns 0 to 5 scores", "holds a value"),
-            ("why", "receive each inbound message from the transport and pass it on to the service loop", "is longer than 14 words"),
-            ("how", "Dispatches inbound messages to the service and gives each caller a peer for outbound requests", "is longer than 14 words"),
-            ("how", "Dispatches inbound messages to the service and gives each caller a peer for 5 requests", "holds a value"),
         ] {
             assert_eq!(grammar_fault(field, text), Some(fault), "{field}: {text}");
         }
