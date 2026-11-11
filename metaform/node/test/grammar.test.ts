@@ -9,12 +9,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { grammarFault } from "../src/rules.ts";
+import { breaksGrammar } from "../src/rules.ts";
 
 const MAIN = new URL("../src/main.ts", import.meta.url).pathname;
 const GAME = "code.engine.game";
 const ROUTER = "code.engine.router";
-const RULE =
+const MESSAGE =
   "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 const WHY_PLACEHOLDER = "<base verb phrase, as: drain raw frames from the network interface card>";
 const HOW_PLACEHOLDER = "<verb phrase ending in -s, as: holds descriptor pointers across contiguous memory segments>";
@@ -63,21 +63,6 @@ const BREAKS: Record<string, string[]> = {
   ],
 };
 
-/** A text, and the first fault the message names for it. */
-const FAULTS: [string, string, string][] = [
-  ["why", "to keep 5 frames", "starts with 'to'"],
-  ["why", "keeping the frames. Store them", "starts with an '-ing' verb"],
-  ["why", "The router needs 5 parameters", "starts with a subject"],
-  ["why", "keep frames; store 5 of them", "holds more than one fragment"],
-  ["why", "retry 5", "holds a value"],
-  ["how", "The router stores 5 items.", "starts with a subject"],
-  ["how", "its parameters are stored", "starts with a subject"],
-  ["how", "hold 5 pointers. Free them", "does not start with a verb ending in -s"],
-  ["how", "holding descriptor pointers", "does not start with a verb ending in -s"],
-  ["how", "Stores parameters. Decodes 5 first.", "holds more than one fragment"],
-  ["how", "Returns 0 to 5 scores", "holds a value"],
-];
-
 /** A new home with the game element and the procedure's own example of a want. */
 function seeded(): { call: (command: unknown) => any; remove: () => void } {
   const work = mkdtempSync(join(tmpdir(), "metaform-node-test-"));
@@ -109,22 +94,14 @@ function seeded(): { call: (command: unknown) => any; remove: () => void } {
 test("grammar: the rule on texts", () => {
   for (const [field, texts] of Object.entries(PASSES)) {
     for (const text of texts) {
-      assert.equal(grammarFault(field, text), undefined, `${field}: ${text}`);
+      assert.equal(breaksGrammar(field, text), false, `${field}: ${text}`);
     }
   }
   for (const [field, texts] of Object.entries(BREAKS)) {
     for (const text of texts) {
-      assert.notEqual(grammarFault(field, text), undefined, `${field}: ${text}`);
+      assert.equal(breaksGrammar(field, text), true, `${field}: ${text}`);
     }
   }
-});
-
-test("grammar: the first fault of a text, in the fixed order of checks", () => {
-  for (const [field, text, fault] of FAULTS) {
-    assert.equal(grammarFault(field, text), fault, `${field}: ${text}`);
-  }
-  assert.equal(grammarFault("why", "drain raw frames."), undefined);
-  assert.equal(grammarFault("how", "Stores frames."), undefined);
 });
 
 test("grammar: a refusal names the parts that broke the rule, and stores nothing", () => {
@@ -137,7 +114,7 @@ test("grammar: a refusal names the parts that broke the rule, and stores nothing
       ...command,
       status: "error",
       code: "GRAMMAR_CONSTRAINT_VIOLATION",
-      message: `how starts with a subject. ${RULE}`,
+      message: MESSAGE,
       tested_sentence:
         "code.engine.game (Quake core) requires code.engine.router in order to Receive player input and collision telemetry for frame simulation, which The router stores parameters.",
       remediation: { update: { [GAME]: { wants: { [ROUTER]: { how: HOW_PLACEHOLDER } } } } },
@@ -161,16 +138,6 @@ test("grammar: a refusal names the parts that broke the rule, and stores nothing
     assert.equal(
       several.tested_sentence,
       "code.engine.game (Quake core) requires code.engine.zeta in order to to keep frames, which holding frames.",
-    );
-    // The message names each part and its first fault, `why` first, then states the rule.
-    assert.equal(several.message, `why starts with 'to'; how does not start with a verb ending in -s. ${RULE}`);
-    // For a `how`, the subject check comes before the `-s` check and the value check.
-    const both = at.call({
-      update: { [GAME]: { wants: { [ROUTER]: { why: "to drain frames", how: "The router stores 5 items." } } } },
-    });
-    assert.equal(
-      both.message,
-      "why starts with 'to'; how starts with a subject. why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.",
     );
     assert.equal(at.call({ [GAME]: { wants: {} } })[GAME].wants[ROUTER].how, "Dispatches subscribed runtime event streams.");
     assert.equal(at.call({ "code.engine.store": {} }).code, "NOT_FOUND");

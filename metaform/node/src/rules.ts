@@ -148,11 +148,10 @@ function layerValues(
 }
 
 /**
- * The rule text that ends the message of every grammar refusal. The message is the only place
- * an agent learns the rule, so it states the whole rule and is the same in every form of
- * Metaform. The faults of the refused want come before it (`grammarFault`).
+ * The message of every grammar refusal. It is the only place an agent learns the rule, so it
+ * states the whole rule and is the same in every form of Metaform.
  */
-export const GRAMMAR_RULE =
+export const GRAMMAR_MESSAGE =
   "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 
 /** The text an agent must replace in the remediation of a grammar refusal. */
@@ -245,41 +244,17 @@ function hasLoneNumber(text: string): boolean {
 }
 
 /**
- * The first fault of a `why` or a `how` against the grammar of its field (R-3.17, R-6.17), in
- * the words of the refusal message, or `undefined` when the text follows the rule. `field` is
- * `why` or `how`. The checks have a fixed order, the same in every form of Metaform. For a `how`
- * the subject check comes before the `-s` check, so `The router stores` is reported as a
- * subject. The case of the first letter, one trailing full stop, length, and words ending in
+ * Whether a `why` or a `how` breaks the grammar of its field (R-3.17, R-6.17). `field` is `why`
+ * or `how`. The case of the first letter, one trailing full stop, length, and words ending in
  * `-ing` after the first word are not checked (`SPEC.md` D-14).
  */
-export function grammarFault(field: string, text: string): string | undefined {
+export function breaksGrammar(field: string, text: string): boolean {
   const first = firstWord(text);
-  const subject = SUBJECT_WORDS.includes(first);
-  if (field === "why") {
-    if (first === "to") {
-      return "starts with 'to'";
-    }
-    if (first.endsWith("ing") && !ING_BASE_VERBS.includes(first)) {
-      return "starts with an '-ing' verb";
-    }
-    if (subject) {
-      return "starts with a subject";
-    }
-  } else {
-    if (subject) {
-      return "starts with a subject";
-    }
-    if (!first.endsWith("s")) {
-      return "does not start with a verb ending in -s";
-    }
-  }
-  if (hasManyFragments(text)) {
-    return "holds more than one fragment";
-  }
-  if (hasLoneNumber(text)) {
-    return "holds a value";
-  }
-  return undefined;
+  const verbForm =
+    field === "why"
+      ? first === "to" || (first.endsWith("ing") && !ING_BASE_VERBS.includes(first))
+      : !first.endsWith("s");
+  return verbForm || SUBJECT_WORDS.includes(first) || hasManyFragments(text) || hasLoneNumber(text);
 }
 
 /**
@@ -287,10 +262,9 @@ export function grammarFault(field: string, text: string): string | undefined {
  * command wrote; a part it did not write is not checked, so a stored want with older text still
  * accepts an unrelated write. `elements` is the map as the command would leave it.
  *
- * The refusal follows the documentation set, module 6.4. The message names each part that
- * broke the rule and its first fault, `why` before `how`, and then states the rule. The tested
- * sentence is the wants sentence of R-6.17 with the texts as written, without their trailing
- * full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
+ * The refusal follows the documentation set, module 6.4. The tested sentence is the wants
+ * sentence of R-6.17 with the texts as written, without their trailing full stop. The
+ * remediation updates the want with a placeholder in each part that broke the rule. For a want
  * that `before` holds, it has only those parts. For a want this command made, it has the whole
  * want, because the refused command stored nothing and a want needs all of its fields (R-5.6).
  */
@@ -310,15 +284,9 @@ export function checkWantGrammar(
     return typeof value === "string" ? value : "";
   };
   const broken = obj();
-  const faults: string[] = [];
   for (const [key, placeholder] of [["why", WHY_PLACEHOLDER], ["how", HOW_PLACEHOLDER]]) {
-    if (!written.includes(key) || trim(text(key)) === "") {
-      continue;
-    }
-    const fault = grammarFault(key, text(key));
-    if (fault !== undefined) {
+    if (written.includes(key) && trim(text(key)) !== "" && breaksGrammar(key, text(key))) {
       broken.set(key, placeholder);
-      faults.push(`${key} ${fault}`);
     }
   }
   if (broken.size === 0) {
@@ -333,7 +301,7 @@ export function checkWantGrammar(
   const part = (key: string): string => trim(text(key)).replace(/\.+$/, "");
   const refusal = new Refusal(
     Code.GrammarConstraintViolation,
-    `${faults.join("; ")}. ${GRAMMAR_RULE}`,
+    GRAMMAR_MESSAGE,
     obj(["update", obj([holder, obj(["wants", obj([other, parts])])])]),
   );
   refusal.sentence = `${named(holder)} requires ${named(other)} in order to ${part("why")}, which ${part("how")}.`;

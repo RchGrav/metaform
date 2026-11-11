@@ -136,10 +136,9 @@ fn layer_values(map: &Map, is_layer: &dyn Fn(&str) -> bool, verb: &str, address:
     Ok(())
 }
 
-/// The rule text that ends the message of every grammar refusal. The message is the only place
-/// an agent learns the rule, so it states the whole rule and is the same in every form of
-/// Metaform. The faults of the refused want come before it (`grammar_fault`).
-pub const GRAMMAR_RULE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
+/// The message of every grammar refusal. It is the only place an agent learns the rule, so it
+/// states the whole rule and is the same in every form of Metaform.
+pub const GRAMMAR_MESSAGE: &str = "why is one fragment that starts with a base verb; how is one fragment that starts with a verb ending in -s. No leading 'to', no subject, no '-ing' verb, no values. Detail belongs in a knowledge layer.";
 
 /// The text an agent must replace in the remediation of a grammar refusal.
 const WHY_PLACEHOLDER: &str = "<base verb phrase, as: drain raw frames from the network interface card>";
@@ -216,50 +215,26 @@ fn has_lone_number(text: &str) -> bool {
     false
 }
 
-/// The first fault of a `why` or a `how` against the grammar of its field (R-3.17, R-6.17), in
-/// the words of the refusal message, or `None` when the text follows the rule. `field` is `why`
-/// or `how`. The checks have a fixed order, the same in every form of Metaform. For a `how` the
-/// subject check comes before the `-s` check, so `The router stores` is reported as a subject.
-/// The case of the first letter, one trailing full stop, length, and words ending in `-ing`
-/// after the first word are not checked (`SPEC.md` D-14).
-pub fn grammar_fault(field: &str, text: &str) -> Option<&'static str> {
+/// Whether a `why` or a `how` breaks the grammar of its field (R-3.17, R-6.17). `field` is `why`
+/// or `how`. The case of the first letter, one trailing full stop, length, and words ending in
+/// `-ing` after the first word are not checked (`SPEC.md` D-14).
+pub fn breaks_grammar(field: &str, text: &str) -> bool {
     let first = first_word(text);
-    let subject = SUBJECT_WORDS.contains(&first.as_str());
-    if field == "why" {
-        if first == "to" {
-            return Some("starts with 'to'");
-        }
-        if first.ends_with("ing") && !ING_BASE_VERBS.contains(&first.as_str()) {
-            return Some("starts with an '-ing' verb");
-        }
-        if subject {
-            return Some("starts with a subject");
-        }
+    let verb_form = if field == "why" {
+        first == "to" || (first.ends_with("ing") && !ING_BASE_VERBS.contains(&first.as_str()))
     } else {
-        if subject {
-            return Some("starts with a subject");
-        }
-        if !first.ends_with('s') {
-            return Some("does not start with a verb ending in -s");
-        }
-    }
-    if has_many_fragments(text) {
-        return Some("holds more than one fragment");
-    }
-    if has_lone_number(text) {
-        return Some("holds a value");
-    }
-    None
+        !first.ends_with('s')
+    };
+    verb_form || SUBJECT_WORDS.contains(&first.as_str()) || has_many_fragments(text) || has_lone_number(text)
 }
 
 /// Check the `why` and `how` that a command wrote in one want. `written` names the parts the
 /// command wrote; a part it did not write is not checked, so a stored want with older text
 /// still accepts an unrelated write. `elements` is the map as the command would leave it.
 ///
-/// The refusal follows the documentation set, module 6.4. The message names each part that
-/// broke the rule and its first fault, `why` before `how`, and then states the rule. The tested
-/// sentence is the wants sentence of R-6.17 with the texts as written, without their trailing
-/// full stop. The remediation updates the want with a placeholder in each part that broke the rule. For a want
+/// The refusal follows the documentation set, module 6.4. The tested sentence is the wants
+/// sentence of R-6.17 with the texts as written, without their trailing full stop. The
+/// remediation updates the want with a placeholder in each part that broke the rule. For a want
 /// that `before` holds, it has only those parts. For a want this command made, it has the whole
 /// want, because the refused command stored nothing and a want needs all of its fields (R-5.6).
 pub(crate) fn check_want_grammar(
@@ -274,14 +249,9 @@ pub(crate) fn check_want_grammar(
     };
     let text = |key: &str| record.get(key).and_then(Value::as_str).unwrap_or_default();
     let mut broken = JsonMap::new();
-    let mut faults = Vec::new();
     for (key, placeholder) in [("why", WHY_PLACEHOLDER), ("how", HOW_PLACEHOLDER)] {
-        if !written.contains(&key) || text(key).trim().is_empty() {
-            continue;
-        }
-        if let Some(fault) = grammar_fault(key, text(key)) {
+        if written.contains(&key) && !text(key).trim().is_empty() && breaks_grammar(key, text(key)) {
             broken.insert(key.to_string(), json!(placeholder));
-            faults.push(format!("{key} {fault}"));
         }
     }
     if broken.is_empty() {
@@ -305,7 +275,7 @@ pub(crate) fn check_want_grammar(
     let part = |key: &str| text(key).trim().trim_end_matches('.').to_string();
     let mut refusal = Refusal::new(
         Code::GrammarConstraintViolation,
-        format!("{}. {GRAMMAR_RULE}", faults.join("; ")),
+        GRAMMAR_MESSAGE,
         Some(json!({"update": {holder: {"wants": {other: parts}}}})),
     );
     refusal.sentence = Some(format!(
@@ -320,7 +290,7 @@ pub(crate) fn check_want_grammar(
 
 #[cfg(test)]
 mod tests {
-    use super::grammar_fault;
+    use super::breaks_grammar;
 
     #[test]
     fn a_why_starts_with_a_base_verb() {
@@ -331,7 +301,7 @@ mod tests {
             "ping the peer",
             "Verify the S256 challenge of OAuth2 over HTTP/2 as utf-8 on x86-64",
         ] {
-            assert_eq!(grammar_fault("why", text), None, "{text}");
+            assert!(!breaks_grammar("why", text), "{text}");
         }
         for text in [
             "to drain raw frames",
@@ -348,7 +318,7 @@ mod tests {
             "retry 5",
             "list items 1-5",
         ] {
-            assert!(grammar_fault("why", text).is_some(), "{text}");
+            assert!(breaks_grammar("why", text), "{text}");
         }
     }
 
@@ -361,7 +331,7 @@ mod tests {
             "Verifies S256 challenges for OAuth2 clients.",
             "passes checking results on",
         ] {
-            assert_eq!(grammar_fault("how", text), None, "{text}");
+            assert!(!breaks_grammar("how", text), "{text}");
         }
         for text in [
             "holding descriptor pointers",
@@ -373,28 +343,7 @@ mod tests {
             "Returns yes/no confidences and 0 to 5 scores from the JEV model.",
             "...",
         ] {
-            assert!(grammar_fault("how", text).is_some(), "{text}");
+            assert!(breaks_grammar("how", text), "{text}");
         }
-    }
-
-    #[test]
-    fn the_first_fault_of_a_text_in_the_fixed_order_of_checks() {
-        for (field, text, fault) in [
-            ("why", "to keep 5 frames", "starts with 'to'"),
-            ("why", "keeping the frames. Store them", "starts with an '-ing' verb"),
-            ("why", "The router needs 5 parameters", "starts with a subject"),
-            ("why", "keep frames; store 5 of them", "holds more than one fragment"),
-            ("why", "retry 5", "holds a value"),
-            ("how", "The router stores 5 items.", "starts with a subject"),
-            ("how", "its parameters are stored", "starts with a subject"),
-            ("how", "hold 5 pointers. Free them", "does not start with a verb ending in -s"),
-            ("how", "holding descriptor pointers", "does not start with a verb ending in -s"),
-            ("how", "Stores parameters. Decodes 5 first.", "holds more than one fragment"),
-            ("how", "Returns 0 to 5 scores", "holds a value"),
-        ] {
-            assert_eq!(grammar_fault(field, text), Some(fault), "{field}: {text}");
-        }
-        assert_eq!(grammar_fault("why", "drain raw frames."), None);
-        assert_eq!(grammar_fault("how", "Stores frames."), None);
     }
 }
