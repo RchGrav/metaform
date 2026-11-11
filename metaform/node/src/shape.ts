@@ -33,9 +33,9 @@ import { Code, Refusal } from "./refusal.ts";
 
 const ONE_ENTRY =
   "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
-const HELP_FORM = "help takes {} or the name of a command";
-/** The names `help` takes (H1): the same list as the enum of the contract's `help` form. */
-const HELP_NAMES = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
+export const HELP_FORM = "help takes {}, the name of a command, or the name of a definition a schema refers to";
+/** The command names `help` takes, in the order `{"help": {}}` lists them. */
+export const HELP_NAMES = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
 const DELETE_FORM = 'delete takes {} to delete the element, or {"wants": ["<address>"]} to remove wants';
 /** The fields that hold text (N2 to N5). */
 const TEXT_FIELDS = ["technical_name", "name", "role", "status", "project", "uri"];
@@ -64,7 +64,7 @@ export function check(command: Json): void {
   }
   const [key, body] = entry;
   if (key === "help") {
-    if (isEmptyObject(body) || (typeof body === "string" && HELP_NAMES.includes(body))) {
+    if (isEmptyObject(body) || (typeof body === "string" && body !== "")) {
       return;
     }
     throw refuse(HELP_FORM, obj(["help", obj()]));

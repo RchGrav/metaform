@@ -33,8 +33,8 @@ from .refusal import Refusal
 from .values import copy, is_blank, is_space
 
 ONE_ENTRY = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump"
-HELP_FORM = "help takes {} or the name of a command"
-# The names `help` takes (H1): the same list as the enum of the contract's `help` form.
+HELP_FORM = "help takes {}, the name of a command, or the name of a definition a schema refers to"
+# The command names `help` takes, in the order `{"help": {}}` lists them.
 HELP_NAMES = ("add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help")
 DELETE_FORM = 'delete takes {} to delete the element, or {"wants": ["<address>"]} to remove wants'
 # The fields that hold text (N2 to N5).
@@ -59,7 +59,7 @@ def check(command: Any) -> None:
         raise refuse(ONE_ENTRY)
     key, body = entry
     if key == "help":
-        if is_empty_object(body) or (isinstance(body, str) and body in HELP_NAMES):
+        if is_empty_object(body) or (isinstance(body, str) and body != ""):
             return
         raise refuse(HELP_FORM, {"help": {}})
     if key in ("map", "orphaned"):

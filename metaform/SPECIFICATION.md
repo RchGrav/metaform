@@ -960,17 +960,8 @@ Machine-readable file: [mcp-tools.proposed.json](mcp-tools.proposed.json). It de
                 "$ref": "#/$defs/Empty"
               },
               {
-                "enum": [
-                  "add",
-                  "update",
-                  "delete",
-                  "orphaned",
-                  "goto",
-                  "map",
-                  "addressed read",
-                  "raw dump",
-                  "help"
-                ]
+                "type": "string",
+                "minLength": 1
               }
             ]
           }

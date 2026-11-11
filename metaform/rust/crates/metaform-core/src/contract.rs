@@ -4,7 +4,7 @@
 
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::{ValidationError, Validator};
-use serde_json::{Map as JsonMap, Value, json};
+use serde_json::{Value, json};
 
 use crate::refusal::{Code, Refusal};
 use crate::shape;
@@ -86,47 +86,26 @@ impl Contract {
         Err(Refusal::new(Code::FieldMismatch, format!("the command {detail}"), None))
     }
 
-    /// `{"help": {}}` returns the schema of the `help` command itself: the names it takes.
-    /// `{"help": "<name>"}` returns the schema of that one command (R-5.39). Every schema is the
-    /// contract's own: the entry of the input schema's top-level `oneOf` that is the form for the
-    /// command, with a `$defs` object that holds the definitions the entry refers to, directly or
-    /// through other definitions, and no others. It reads nothing from the map.
+    /// `help` answers one level at a time (R-5.39), and reads nothing from the map.
+    /// `{"help": {}}` returns the schema of the `help` command itself, with the command names.
+    /// `{"help": "<command name>"}` returns the contract's `oneOf` entry for that command.
+    /// `{"help": "<definition>"}` returns that entry of the contract's `$defs`. Each answer is the
+    /// contract's own node, as the contract holds it: a `$ref` inside it stays a `$ref`, and names
+    /// the definition an agent can ask for next. A command name comes before a definition name.
     pub(crate) fn help(&self, body: &Value) -> Result<Value, Refusal> {
-        let refused = || Refusal::new(Code::FieldMismatch, shape::HELP_FORM, Some(json!({"help": {}})));
         let schema = &self.tool["inputSchema"];
         let Some(name) = body.as_str() else {
-            let names = help_form(schema, "help")
-                .and_then(|entry| entry["properties"]["help"]["anyOf"].as_array())
-                .and_then(|forms| forms.iter().find_map(|form| form.get("enum")))
-                .ok_or_else(refused)?;
             return Ok(json!({"help": {
                 "type": "object",
-                "properties": {"help": {"enum": names}},
+                "properties": {"help": {"enum": shape::HELP_NAMES}},
                 "required": ["help"],
             }}));
         };
-        let mut form = help_form(schema, name).and_then(Value::as_object).ok_or_else(refused)?.clone();
-        let mut reached: Vec<String> = Vec::new();
-        let mut waiting = Vec::new();
-        refs(&Value::Object(form.clone()), &mut waiting);
-        while let Some(definition) = waiting.pop() {
-            if !reached.contains(&definition) {
-                refs(&schema["$defs"][&definition], &mut waiting);
-                reached.push(definition);
-            }
+        let command = shape::HELP_NAMES.contains(&name).then(|| help_form(schema, name)).flatten();
+        match command.or_else(|| schema["$defs"].get(name)) {
+            Some(node) => Ok(json!({"help": {name: node}})),
+            None => Err(Refusal::new(Code::FieldMismatch, shape::HELP_FORM, Some(json!({"help": {}})))),
         }
-        // The definitions keep the order the contract gives them.
-        let definitions: JsonMap<String, Value> = schema["$defs"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .filter(|(definition, _)| reached.contains(definition))
-            .map(|(definition, value)| (definition.clone(), value.clone()))
-            .collect();
-        if !definitions.is_empty() {
-            form.insert("$defs".into(), Value::Object(definitions));
-        }
-        Ok(json!({"help": {name: form}}))
     }
 
     /// Refuse an element view that does not match the stored-document schema.
@@ -140,7 +119,7 @@ impl Contract {
     }
 }
 
-/// The entry of the input schema's top-level `oneOf` that is the form for a name `help` takes.
+/// The entry of the input schema's top-level `oneOf` that is the form for a command name.
 /// A raw dump and an addressed read are found by the start of their description; every other
 /// form is found by the property it requires. No form is found by its position.
 fn help_form<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
@@ -153,22 +132,6 @@ fn help_form<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
         Some(text) => entry["description"].as_str().is_some_and(|description| description.starts_with(text)),
         None => entry["required"].as_array().is_some_and(|required| required.iter().any(|property| property == name)),
     })
-}
-
-/// The name of each definition a schema refers to with `$ref`, added to `found`.
-fn refs(schema: &Value, found: &mut Vec<String>) {
-    match schema {
-        Value::Object(entries) => {
-            for (key, value) in entries {
-                match (key.as_str(), value.as_str().and_then(|text| text.strip_prefix("#/$defs/"))) {
-                    ("$ref", Some(path)) => found.push(path.split('/').next().unwrap_or_default().to_string()),
-                    _ => refs(value, found),
-                }
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| refs(item, found)),
-        _ => {}
-    }
 }
 
 /// A place in an element, named the way an agent writes it: `status at 'code.engine.game'`,

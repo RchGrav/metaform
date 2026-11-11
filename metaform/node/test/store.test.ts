@@ -329,48 +329,52 @@ function refs(schema: any, found: Set<string>): Set<string> {
   return found;
 }
 
-test("help: the schema of help itself, each command's schema from the contract, and the refusal", () => {
+test("help: the schema of help itself, one node of the contract for each name, and the refusal", () => {
   const names = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
   const contract = JSON.parse(readFileSync(new URL("../../mcp-tools.proposed.json", import.meta.url), "utf8"));
   const input = contract.tools[0].inputSchema;
   const at = place(false);
+  /** The node that `help` answers with for one name. */
+  const help = (name: string): any => {
+    const answer = call(at, { help: name }).answer;
+    assert.deepEqual(Object.keys(answer.help), [name], JSON.stringify(answer));
+    return answer.help[name];
+  };
   try {
     // A project with no map yet answers, as it does for `map`.
     assert.deepEqual(call(at, { help: {} }).answer, {
       help: { type: "object", properties: { help: { enum: names } }, required: ["help"] },
     });
+    // A command name answers with the contract's own entry, and no `$defs`.
+    const found = new Set<string>();
     for (const name of names) {
-      const answer = call(at, { help: name }).answer;
-      assert.deepEqual(Object.keys(answer.help), [name]);
-      const { $defs: held = {}, ...form } = answer.help[name];
-      // The form is one entry of the contract's own `oneOf`, as the contract writes it.
-      assert.ok(input.oneOf.some((entry: unknown) => JSON.stringify(entry) === JSON.stringify(form)), name);
-      // `$defs` holds every definition the form reaches, no other, each as the contract writes it.
-      const reached = refs(form, new Set());
-      for (let size = -1; size !== reached.size; ) {
-        size = reached.size;
-        [...reached].forEach((definition) => refs(input.$defs[definition], reached));
+      const entry = help(name);
+      assert.ok(input.oneOf.some((form: unknown) => JSON.stringify(form) === JSON.stringify(entry)), name);
+      assert.ok(!("$defs" in entry), name);
+      refs(entry, found);
+    }
+    const add = input.oneOf.find((form: any) => form.required?.[0] === "add");
+    assert.equal(JSON.stringify(help("add")), JSON.stringify(add));
+    assert.match(help("raw dump").description, /^A key that starts with a period is a raw dump/);
+    // A definition name answers with the contract's own definition.
+    assert.equal(JSON.stringify(help("NamespaceNode")), JSON.stringify(input.$defs.NamespaceNode));
+    // Every `$ref` in any answer names a definition that help answers.
+    const seen = new Set<string>();
+    for (let waiting = [...found]; waiting.length > 0; waiting = [...found].filter((name) => !seen.has(name))) {
+      for (const definition of waiting) {
+        seen.add(definition);
+        const node = help(definition);
+        assert.equal(JSON.stringify(node), JSON.stringify(input.$defs[definition]), definition);
+        refs(node, found);
       }
-      assert.deepEqual(Object.keys(held).sort(), [...reached].sort(), name);
-      for (const definition of Object.keys(held)) {
-        assert.deepEqual(held[definition], input.$defs[definition], `${name}: ${definition}`);
-      }
     }
-    const add = call(at, { help: "add" }).answer.help.add;
-    assert.equal(add.required[0], "add");
-    for (const definition of ["AddFields", "NamespaceNode", "Wants", "WantRecord"]) {
-      assert.ok(definition in add.$defs, definition);
-    }
-    for (const definition of ["DeleteWants", "UpdateFields", "LayerRead", "Empty"]) {
-      assert.ok(!(definition in add.$defs), definition);
-    }
-    assert.match(call(at, { help: "raw dump" }).answer.help["raw dump"].description, /^A key that starts with a period is a raw dump/);
-    for (const value of ["nope", 7, { x: 1 }, [], null, ""]) {
+    assert.ok(seen.size > 5, [...seen].join(" "));
+    for (const value of ["nope", "$defs", 7, { x: 1 }, [], null, ""]) {
       assert.deepEqual(call(at, { help: value }).answer, {
         help: value,
         status: "error",
         code: "FIELD_MISMATCH",
-        message: "help takes {} or the name of a command",
+        message: "help takes {}, the name of a command, or the name of a definition a schema refers to",
         remediation: { help: {} },
       });
     }

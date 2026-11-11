@@ -9339,7 +9339,7 @@
  },
  {
   "name": "help",
-  "about": "help returns the schema of the help command, or of one named command, from the contract (R-5.39).",
+  "about": "help answers one level at a time: the schema of help, the contract's entry for a command, or one definition (R-5.39).",
   "steps": [
    {
     "call": {
@@ -9394,254 +9394,194 @@
        "required": [
         "add"
        ],
-       "additionalProperties": false,
-       "$defs": {
-        "NamespaceValue": {
-         "title": "Value at a namespace address",
-         "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
-         "oneOf": [
+       "additionalProperties": false
+      }
+     }
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "help": "update"
+    },
+    "answer": {
+     "help": {
+      "update": {
+       "type": "object",
+       "properties": {
+        "update": {
+         "type": "object",
+         "minProperties": 1,
+         "maxProperties": 1,
+         "propertyNames": {
+          "pattern": "^(?:\\.|[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)$"
+         },
+         "additionalProperties": {
+          "$ref": "#/$defs/UpdateFields"
+         }
+        }
+       },
+       "required": [
+        "update"
+       ],
+       "additionalProperties": false
+      }
+     }
+    },
+    "refused": false
+   },
+   {
+    "call": {
+     "help": "NamespaceNode"
+    },
+    "answer": {
+     "help": {
+      "NamespaceNode": {
+       "title": "Namespace branch or receiving element",
+       "description": "Namespace branch or receiving element. Its properties and layers are directly on the element. The same word can name metadata or a namespace branch according to its value and context.",
+       "type": "object",
+       "properties": {
+        "name": {
+         "anyOf": [
+          {
+           "type": "string",
+           "description": "The name used for this functionality in project documentation or specifications, such as Metaform.",
+           "minLength": 1,
+           "pattern": "\\S"
+          },
           {
            "$ref": "#/$defs/NamespaceNode"
           },
           {
            "$ref": "#/$defs/ComposedElementLayer"
-          },
-          {
-           "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-           ]
           }
          ]
         },
-        "NamespaceNode": {
-         "title": "Namespace branch or receiving element",
-         "description": "Namespace branch or receiving element. Its properties and layers are directly on the element. The same word can name metadata or a namespace branch according to its value and context.",
-         "type": "object",
-         "properties": {
-          "name": {
-           "anyOf": [
-            {
-             "type": "string",
-             "description": "The name used for this functionality in project documentation or specifications, such as Metaform.",
-             "minLength": 1,
-             "pattern": "\\S"
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-             "$ref": "#/$defs/ComposedElementLayer"
-            }
-           ]
-          },
-          "role": {
-           "anyOf": [
-            {
-             "type": "string",
-             "description": "Systemic role: Definitive (the element whose loss means the artifact can no longer remain what it is), Supportive (an indivisibly coupled element meant to assist the Definitive element), Notable (a discrete, structurally independent feature or specialized exception with unique systemic significance) or Divergent (an unaligned, weak or redundant element to be realigned or ejected)."
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-             "$ref": "#/$defs/ComposedElementLayer"
-            }
-           ]
-          },
-          "status": {
-           "anyOf": [
-            {
-             "type": "string",
-             "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema.",
-             "minLength": 1,
-             "pattern": "\\S",
-             "not": {
-              "enum": [
-               "missing",
-               "MISSING",
-               "BKN",
-               "broken",
-               "todo",
-               "TODO"
-              ]
-             }
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-             "$ref": "#/$defs/ComposedElementLayer"
-            }
-           ]
-          },
-          "technical_name": {
-           "anyOf": [
-            {
-             "type": "string",
-             "description": "The well-understood practitioner short name derived from the leaf segments. Must exactly match the same number of leading words of the reversed, space-separated namespace address, and must not match `name`.",
-             "minLength": 1,
-             "pattern": "\\S"
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-             "$ref": "#/$defs/ComposedElementLayer"
-            }
-           ]
-          },
-          "wants": {
-           "anyOf": [
-            {
-             "$ref": "#/$defs/Wants"
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            }
-           ],
-           "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
-          },
-          "why": {
-           "$ref": "#/$defs/RelationshipWord"
-          },
-          "how": {
-           "$ref": "#/$defs/RelationshipWord"
-          },
-          "project": {
-           "anyOf": [
-            {
-             "type": "string",
-             "minLength": 1,
-             "pattern": "\\S",
-             "description": "Optional project metadata; does not introduce a required wrapper."
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            },
-            {
-             "$ref": "#/$defs/ComposedElementLayer"
-            }
-           ]
-          },
-          "uri": {
-           "anyOf": [
-            {
-             "type": "string",
-             "minLength": 1,
-             "pattern": "\\S",
-             "description": "One source link to the entry point for this functionality. A relative file path is allowed."
-            },
-            {
-             "$ref": "#/$defs/NamespaceNode"
-            }
-           ]
-          },
-          "providers": {
-           "$ref": "#/$defs/NamespaceNode",
-           "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
-          },
-          "op": {
-           "$ref": "#/$defs/RelationshipWord"
-          },
-          "ef": {
-           "$ref": "#/$defs/RelationshipWord"
-          },
-          "direction": {
-           "$ref": "#/$defs/RelationshipWord"
-          },
-          "ifd": {
-           "$ref": "#/$defs/RelationshipWord"
-          }
-         },
-         "additionalProperties": {
-          "$ref": "#/$defs/NamespaceValue"
-         },
-         "propertyNames": {
-          "pattern": "^[^.$\\[\\]\\s]+$",
-          "description": "One namespace segment, never a dotted reference or JSONPath expression."
-         }
-        },
-        "ComposedElementLayer": {
-         "title": "Array-valued composed element layer",
-         "description": "An array at an element is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
-         "type": "array",
-         "items": true
-        },
-        "Wants": {
-         "title": "Functional knowledge layer",
-         "type": "object",
-         "description": "Relationships owned by this receiver, keyed by the provider's address: one relationship per provider. Each key refers to the actual provider in the nested tree. The provider keeps its properties and knowledge at its own location.",
-         "propertyNames": {
-          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
-          "description": "Project-relative reference to an element in the actual nested namespace."
-         },
-         "additionalProperties": {
-          "$ref": "#/$defs/WantRecord"
-         }
-        },
-        "WantRecord": {
-         "title": "Want record",
-         "description": "Why this receiver wants this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
-         "type": "object",
-         "properties": {
-          "direction": {
-           "type": "string",
-           "description": "The direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound from the receiver, inbound to the receiver, or two-way.",
-           "enum": [
-            "outbound",
-            "inbound",
-            "two-way"
-           ]
-          },
-          "why": {
-           "type": "string",
-           "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English.",
-           "minLength": 1,
-           "pattern": "\\S"
-          },
-          "how": {
-           "type": "string",
-           "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
-           "minLength": 1,
-           "pattern": "\\S"
-          }
-         },
-         "required": [
-          "direction",
-          "why",
-          "how"
-         ],
-         "additionalProperties": false
-        },
-        "AddFields": {
-         "allOf": [
-          {
-           "$ref": "#/$defs/NamespaceNode"
-          }
-         ],
-         "type": "object",
-         "minProperties": 1,
-         "properties": {
-          "wants": {
-           "$ref": "#/$defs/Wants"
-          }
-         },
-         "description": "Fields supplied for one receiving element. Command addresses select actual nested elements."
-        },
-        "RelationshipWord": {
+        "role": {
          "anyOf": [
+          {
+           "type": "string",
+           "description": "Systemic role: Definitive (the element whose loss means the artifact can no longer remain what it is), Supportive (an indivisibly coupled element meant to assist the Definitive element), Notable (a discrete, structurally independent feature or specialized exception with unique systemic significance) or Divergent (an unaligned, weak or redundant element to be realigned or ejected)."
+          },
           {
            "$ref": "#/$defs/NamespaceNode"
           },
           {
            "$ref": "#/$defs/ComposedElementLayer"
           }
+         ]
+        },
+        "status": {
+         "anyOf": [
+          {
+           "type": "string",
+           "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema.",
+           "minLength": 1,
+           "pattern": "\\S",
+           "not": {
+            "enum": [
+             "missing",
+             "MISSING",
+             "BKN",
+             "broken",
+             "todo",
+             "TODO"
+            ]
+           }
+          },
+          {
+           "$ref": "#/$defs/NamespaceNode"
+          },
+          {
+           "$ref": "#/$defs/ComposedElementLayer"
+          }
+         ]
+        },
+        "technical_name": {
+         "anyOf": [
+          {
+           "type": "string",
+           "description": "The well-understood practitioner short name derived from the leaf segments. Must exactly match the same number of leading words of the reversed, space-separated namespace address, and must not match `name`.",
+           "minLength": 1,
+           "pattern": "\\S"
+          },
+          {
+           "$ref": "#/$defs/NamespaceNode"
+          },
+          {
+           "$ref": "#/$defs/ComposedElementLayer"
+          }
+         ]
+        },
+        "wants": {
+         "anyOf": [
+          {
+           "$ref": "#/$defs/Wants"
+          },
+          {
+           "$ref": "#/$defs/NamespaceNode"
+          }
          ],
-         "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+         "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
+        },
+        "why": {
+         "$ref": "#/$defs/RelationshipWord"
+        },
+        "how": {
+         "$ref": "#/$defs/RelationshipWord"
+        },
+        "project": {
+         "anyOf": [
+          {
+           "type": "string",
+           "minLength": 1,
+           "pattern": "\\S",
+           "description": "Optional project metadata; does not introduce a required wrapper."
+          },
+          {
+           "$ref": "#/$defs/NamespaceNode"
+          },
+          {
+           "$ref": "#/$defs/ComposedElementLayer"
+          }
+         ]
+        },
+        "uri": {
+         "anyOf": [
+          {
+           "type": "string",
+           "minLength": 1,
+           "pattern": "\\S",
+           "description": "One source link to the entry point for this functionality. A relative file path is allowed."
+          },
+          {
+           "$ref": "#/$defs/NamespaceNode"
+          }
+         ]
+        },
+        "providers": {
+         "$ref": "#/$defs/NamespaceNode",
+         "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
+        },
+        "op": {
+         "$ref": "#/$defs/RelationshipWord"
+        },
+        "ef": {
+         "$ref": "#/$defs/RelationshipWord"
+        },
+        "direction": {
+         "$ref": "#/$defs/RelationshipWord"
+        },
+        "ifd": {
+         "$ref": "#/$defs/RelationshipWord"
         }
+       },
+       "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+       },
+       "propertyNames": {
+        "pattern": "^[^.$\\[\\]\\s]+$",
+        "description": "One namespace segment, never a dotted reference or JSONPath expression."
        }
       }
      }
@@ -9650,21 +9590,41 @@
    },
    {
     "call": {
-     "help": "goto"
+     "help": "WantRecord"
     },
     "answer": {
      "help": {
-      "goto": {
+      "WantRecord": {
+       "title": "Want record",
+       "description": "Why this receiver wants this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
        "type": "object",
-       "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
        "properties": {
-        "goto": {
+        "direction": {
          "type": "string",
-         "pattern": "^(?:\\.|[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*)$"
+         "description": "The direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound from the receiver, inbound to the receiver, or two-way.",
+         "enum": [
+          "outbound",
+          "inbound",
+          "two-way"
+         ]
+        },
+        "why": {
+         "type": "string",
+         "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English.",
+         "minLength": 1,
+         "pattern": "\\S"
+        },
+        "how": {
+         "type": "string",
+         "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
+         "minLength": 1,
+         "pattern": "\\S"
         }
        },
        "required": [
-        "goto"
+        "direction",
+        "why",
+        "how"
        ],
        "additionalProperties": false
       }
@@ -9688,12 +9648,6 @@
        },
        "additionalProperties": {
         "$ref": "#/$defs/Empty"
-       },
-       "$defs": {
-        "Empty": {
-         "type": "object",
-         "maxProperties": 0
-        }
        }
       }
      }
@@ -9715,17 +9669,8 @@
            "$ref": "#/$defs/Empty"
           },
           {
-           "enum": [
-            "add",
-            "update",
-            "delete",
-            "orphaned",
-            "goto",
-            "map",
-            "addressed read",
-            "raw dump",
-            "help"
-           ]
+           "type": "string",
+           "minLength": 1
           }
          ]
         }
@@ -9733,13 +9678,7 @@
        "required": [
         "help"
        ],
-       "additionalProperties": false,
-       "$defs": {
-        "Empty": {
-         "type": "object",
-         "maxProperties": 0
-        }
-       }
+       "additionalProperties": false
       }
      }
     },
@@ -9753,7 +9692,7 @@
      "help": "nope",
      "status": "error",
      "code": "FIELD_MISMATCH",
-     "message": "help takes {} or the name of a command",
+     "message": "help takes {}, the name of a command, or the name of a definition a schema refers to",
      "remediation": {
       "help": {}
      }

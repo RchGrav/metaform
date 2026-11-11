@@ -11,12 +11,12 @@ from . import names, refusal, specification
 from .model import Map
 from .names import ROOT
 from .refusal import Refusal
+from .shape import HELP_FORM, HELP_NAMES
 from .values import ascii_lower, copy
 
 # The contract, two folders above this package: `metaform/mcp-tools.proposed.json`. `help` answers
 # with its schemas; nothing here copies or changes them.
 CONTRACT = Path(__file__).resolve().parents[2] / "mcp-tools.proposed.json"
-HELP_FORM = "help takes {} or the name of a command"
 
 
 def is_definitive(role: Any) -> bool:
@@ -178,9 +178,9 @@ def goto(map: Map, address: str) -> dict[str, Any]:
 
 
 def help_form(schema: Any, name: str) -> dict[str, Any] | None:
-    """The entry of the input schema's top-level `oneOf` that is the form for a name `help`
-    takes. A raw dump and an addressed read are found by the start of their description; every
-    other form is found by the property it requires. No form is found by its position."""
+    """The entry of the input schema's top-level `oneOf` that is the form for a command name. A
+    raw dump and an addressed read are found by the start of their description; every other form
+    is found by the property it requires. No form is found by its position."""
     starts = {
         "raw dump": "A key that starts with a period is a raw dump",
         "addressed read": "An addressed read",
@@ -198,49 +198,19 @@ def help_form(schema: Any, name: str) -> dict[str, Any] | None:
     return None
 
 
-def refs(schema: Any, found: list[str]) -> None:
-    """The name of each definition a schema refers to with `$ref`, added to `found`."""
-    if isinstance(schema, list):
-        for item in schema:
-            refs(item, found)
-    elif isinstance(schema, dict):
-        for key, value in schema.items():
-            if key == "$ref" and isinstance(value, str) and value.startswith("#/$defs/"):
-                found.append(value[len("#/$defs/"):].split("/")[0])
-            else:
-                refs(value, found)
-
-
 def help(body: Any) -> dict[str, Any]:
-    """`{"help": {}}` returns the schema of the `help` command itself: the names it takes.
-    `{"help": "<name>"}` returns the schema of that one command (R-5.39). Every schema is the
-    contract's own: the entry of the input schema's top-level `oneOf` that is the form for the
-    command, with a `$defs` object that holds the definitions the entry refers to, directly or
-    through other definitions, and no others. It reads nothing from the map."""
-    refused = Refusal(refusal.FIELD_MISMATCH, HELP_FORM, {"help": {}})
-    schema = json.loads(CONTRACT.read_text(encoding="utf-8"))["tools"][0]["inputSchema"]
+    """`help` answers one level at a time (R-5.39), and reads nothing from the map.
+    `{"help": {}}` returns the schema of the `help` command itself, with the command names.
+    `{"help": "<command name>"}` returns the contract's `oneOf` entry for that command.
+    `{"help": "<definition>"}` returns that entry of the contract's `$defs`. Each answer is the
+    contract's own node, as the contract holds it: a `$ref` inside it stays a `$ref`, and names
+    the definition an agent can ask for next. A command name comes before a definition name."""
     if not isinstance(body, str):
-        entry = help_form(schema, "help") or {}
-        forms = entry.get("properties", {}).get("help", {}).get("anyOf", [])
-        names = next((form["enum"] for form in forms if "enum" in form), None)
-        if names is None:
-            raise refused
-        return {"help": {"type": "object", "properties": {"help": {"enum": names}}, "required": ["help"]}}
-    entry = help_form(schema, body)
-    if entry is None:
-        raise refused
-    form = dict(entry)
-    every = schema.get("$defs", {})
-    reached: set[str] = set()
-    waiting: list[str] = []
-    refs(form, waiting)
-    while waiting:
-        definition = waiting.pop()
-        if definition not in reached:
-            reached.add(definition)
-            refs(every.get(definition), waiting)
-    # The definitions keep the order the contract gives them.
-    definitions = {definition: value for definition, value in every.items() if definition in reached}
-    if definitions:
-        form["$defs"] = definitions
-    return {"help": {body: form}}
+        return {"help": {"type": "object", "properties": {"help": {"enum": list(HELP_NAMES)}}, "required": ["help"]}}
+    schema = json.loads(CONTRACT.read_text(encoding="utf-8"))["tools"][0]["inputSchema"]
+    node = help_form(schema, body) if body in HELP_NAMES else None
+    if node is None:
+        node = schema.get("$defs", {}).get(body)
+    if node is None:
+        raise Refusal(refusal.FIELD_MISMATCH, HELP_FORM, {"help": {}})
+    return {"help": {body: node}}

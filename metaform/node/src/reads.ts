@@ -9,6 +9,7 @@ import { get, isArray, isObject, obj, parse } from "./json.ts";
 import type { MapModel } from "./model.ts";
 import { ROOT, inProject } from "./names.ts";
 import { Code, Refusal } from "./refusal.ts";
+import { HELP_FORM, HELP_NAMES } from "./shape.ts";
 import * as specification from "./specification.ts";
 
 /**
@@ -227,10 +228,9 @@ export function goto(map: MapModel, address: string): Json {
 // The contract, beside this package: `metaform/mcp-tools.proposed.json`. `help` answers with its
 // schemas; nothing here copies or adjusts them.
 const CONTRACT = new URL("../../mcp-tools.proposed.json", import.meta.url);
-const HELP_FORM = "help takes {} or the name of a command";
 
 /**
- * The entry of the input schema's top-level `oneOf` that is the form for a name `help` takes. A
+ * The entry of the input schema's top-level `oneOf` that is the form for a command name. A
  * raw dump and an addressed read are found by the start of their description; every other form
  * is found by the property it requires. No form is found by its position.
  */
@@ -259,69 +259,26 @@ function helpForm(schema: Json | undefined, name: string): JsonObject | null {
   return null;
 }
 
-/** The name of each definition a schema refers to with `$ref`, added to `found`. */
-function refs(schema: Json | undefined, found: string[]): void {
-  if (isArray(schema)) {
-    for (const item of schema) {
-      refs(item, found);
-    }
-  } else if (isObject(schema)) {
-    for (const [key, value] of schema) {
-      if (key === "$ref" && typeof value === "string" && value.startsWith("#/$defs/")) {
-        found.push(value.slice("#/$defs/".length).split("/")[0] ?? "");
-      } else {
-        refs(value, found);
-      }
-    }
-  }
-}
-
 /**
- * `{"help": {}}` returns the schema of the `help` command itself: the names it takes.
- * `{"help": "<name>"}` returns the schema of that one command (R-5.39). Every schema is the
- * contract's own: the entry of the input schema's top-level `oneOf` that is the form for the
- * command, with a `$defs` object that holds the definitions the entry refers to, directly or
- * through other definitions, and no others. It reads nothing from the map.
+ * `help` answers one level at a time (R-5.39), and reads nothing from the map.
+ * `{"help": {}}` returns the schema of the `help` command itself, with the command names.
+ * `{"help": "<command name>"}` returns the contract's `oneOf` entry for that command.
+ * `{"help": "<definition>"}` returns that entry of the contract's `$defs`. Each answer is the
+ * contract's own node, as the contract holds it: a `$ref` inside it stays a `$ref`, and names
+ * the definition an agent can ask for next. A command name comes before a definition name.
  */
 export function help(body: Json): Json {
-  const refused = (): Refusal => new Refusal(Code.FieldMismatch, HELP_FORM, obj(["help", obj()]));
-  const tools = get(parse(readFileSync(CONTRACT, "utf8")), "tools");
-  const schema = get(isArray(tools) ? tools[0] : undefined, "inputSchema");
   if (typeof body !== "string") {
-    const forms = get(get(get(helpForm(schema, "help") ?? undefined, "properties"), "help"), "anyOf");
-    const names = (isArray(forms) ? forms : []).map((form) => get(form, "enum")).find((found) => found !== undefined);
-    if (names === undefined) {
-      throw refused();
-    }
     return obj([
       "help",
-      obj(["type", "object"], ["properties", obj(["help", obj(["enum", names])])], ["required", ["help"]]),
+      obj(["type", "object"], ["properties", obj(["help", obj(["enum", [...HELP_NAMES]])])], ["required", ["help"]]),
     ]);
   }
-  const entry = helpForm(schema, body);
-  if (entry === null) {
-    throw refused();
+  const tools = get(parse(readFileSync(CONTRACT, "utf8")), "tools");
+  const schema = get(isArray(tools) ? tools[0] : undefined, "inputSchema");
+  const node = (HELP_NAMES.includes(body) ? helpForm(schema, body) : null) ?? get(get(schema, "$defs"), body);
+  if (node === undefined) {
+    throw new Refusal(Code.FieldMismatch, HELP_FORM, obj(["help", obj()]));
   }
-  const form: JsonObject = new Map(entry);
-  const all = get(schema, "$defs");
-  const reached = new Set<string>();
-  const waiting: string[] = [];
-  refs(form, waiting);
-  for (let definition = waiting.pop(); definition !== undefined; definition = waiting.pop()) {
-    if (!reached.has(definition)) {
-      reached.add(definition);
-      refs(get(all, definition), waiting);
-    }
-  }
-  // The definitions keep the order the contract gives them.
-  const definitions: JsonObject = new Map();
-  for (const [definition, value] of isObject(all) ? all : []) {
-    if (reached.has(definition)) {
-      definitions.set(definition, value);
-    }
-  }
-  if (definitions.size > 0) {
-    form.set("$defs", definitions);
-  }
-  return obj(["help", obj([body, form])]);
+  return obj(["help", obj([body, node])]);
 }
