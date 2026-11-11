@@ -22,7 +22,11 @@ file names, 7 to 11 elements, 1 or 2 downstream parties, the same three types ea
 | `intake.d3.xml` | d2 with grouping by artifact type removed | unstable Defining Element |
 | `intake.v4-noanneal.xml` | v4 with annealing removed, nothing else | 13 to 17 elements; fans out |
 | `intake.v5.xml` | v4-noanneal plus one sentence: the same function is one element | 10 to 11 elements |
+| `intake.d1s.xml` | v4 with eleven restatements deleted, none inside a step | 9 to 16 elements; not shown to be safe |
+| `intake.v6.xml` | v4 with the annealing decision moved into step 6, before an element is recorded | 7 to 12 elements; nothing recorded and later removed |
+| `intake.v7.xml` | v4 with the word entity replaced by element; the Entity definition and namespace rule 2 removed | 7 to 9 elements; the same three types |
+| `intake.v7-inline.xml` | v6 with the same replacement | not run |
 | `abl-*.xml`, `intake.min1.xml` | whole blocks removed (superseded approach) | survey and CQU hold; technique named as elements |
 
-Decided by the founder on 2026-11-11: annealing stays. Findings are from three runs each on one
+Decided by the founder on 2026-11-11: annealing stays; the word entity is replaced by element, because every entity is an element. Findings are from three runs each on one
 artifact and one model, and are not established beyond that.
