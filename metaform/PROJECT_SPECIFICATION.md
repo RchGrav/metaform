@@ -103,7 +103,8 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 
 - An **element** is a functional part of an artifact, named as a type. [F]
 - An **address** is a dotted path from general to specific. Read in reverse it is the element's ordinary name. Each prefix is itself a complete type. A segment never names a language, an encoding, a genre or a particular product. [R]
-- **Roots.** Four roots hold what is inside the artifact: code, document, media, data. These four are always local to the project they are used in. Two more hold what is outside it: upstream, for what it relies on, and downstream, for any who or what that relies on it. A downstream entry need not be a party: when the project is a software development kit, each project that uses the kit is downstream of it. An upstream address continues with one of the four base types, as in `upstream.code.engine.game`, and can refer to the outside project that meets the requirement. [R: 2026-11-11] One further root is internal: it is a schema and an input validation, it holds overlay definitions, and the intake procedure does not use it. [R] The repository's code also accepts a root named `collection`. The founder's six roots do not include it, so the build departs from the design here. [F]
+- **Roots.** Four roots hold what is inside the artifact: code, document, media, data. These four are always local to the project they are used in. Two more hold what is outside it: upstream, for what it relies on, and downstream, for any who or what that relies on it. A downstream entry need not be a party: when the project is a software development kit, each project that uses the kit is downstream of it. The founder's example of an upstream address continues with a base type, `upstream.code.engine.game`, and can refer to the outside project that meets the requirement. [R: 2026-11-11] An earlier stored map also has upstream addresses with no base type, such as `upstream.service.inference`, so whether a base type must always follow is not settled. [U]
+- **Outside the tree.** Upstream and downstream elements are not part of the project being mapped. They do not inherit the project's overlays. An upstream element may carry a `uri` to another project; the dependency stays local and points at the local upstream element. [R: decided 2026-11-05 in the sibling project's specification] One further root is internal: it is a schema and an input validation, it holds overlay definitions, and the intake procedure does not use it. [R] The repository's code also accepts a root named `collection`. The founder's six roots do not include it, so the build departs from the design here. [F]
 - **Roles.** Each element inside the artifact has one of four roles: Definitive, Supportive, Notable, Divergent. One element is Definitive. [F] Earlier texts name the roles by the abbreviations DE, SE and NE. SE is Supportive. It was Substantial until 2026-11-03; the founder changed it because substantial and notable were too alike, and because supportive states that the element is coupled without an extra field. [R]
 - **Outside parties.** A party outside the artifact has no role. The intake's term for such a party is for inference only: it does not appear in an address or in front of a person. The address names the type of party. [R] The term is kept in the procedure because its definition makes the agent reason past the developer and the user. Asking who the project is for does not give a useful answer. [R: 2026-11-11]
 - **Element fields in the build:** `technical_name`, `name`, `role`, `uri`, an optional `status`, the dependency records, and overlay records. [F] An earlier form used `name_length` in place of `technical_name`, and one example intake also carried a `label`. [F] `technical_name` replaced `name_length` because a count does not give the name; `technical_name` is checked against the last words of the address read in reverse, and `name` is the ordinary name. [R]
@@ -116,6 +117,9 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 - The record belongs to the element that has the need. [F]
 - The direction is that of the substance, seen from the holder: inbound, outbound or two-way. A request or a receipt is not the direction. [F]
 - The understanding of a type is a relation of three parts: the purpose of the element that receives, the function of the element that provides, and the functionality itself. An element with no dependency of its own is still relied on by something, or it would not be a type. [F]
+- **The frozen core.** The founder's formula is C(T) = { (r_i ∧ p_i ∧ e) }, where C is the core and T the type. It permits mutation and not transformation. A mutation changes how an element does what it does. A change of what it does is a transformation, and the result is a different element. No field stores the frozen core: the protection comes from the understanding of the type that the intake records. [R] The expansion of r, p and e is not given in the sources read. [U]
+- **The first dependency.** In the founder's canonical procedure the downstream entry holds the first record: it is the receiver, and the Defining Element provides. Every other record traces back to such a root. The entry is inferred from what the artifact is; it is not found in the artifact. [F] A second downstream entry is defined only when it holds a distinct purpose that a distinct function of the Defining Element serves. [I: a peer session's reading, not confirmed by the founder.]
+- The function belongs to the element that provides and is kept in the record of the element that receives, one for each encounter. It is not stored on the element. [R]
 - The dependency record is itself an overlay. It sits in a reserved group named for the intake, so it does not appear in the list of overlays and cannot be deleted. [R: 2026-11-03]
 - The structure was first conceived as a hypergraph whose relations are things in their own right and can hold logic. [F] The base map holds the elements and, in each dependency, the purpose, the function and the direction. That is all it holds. Everything else is an overlay. [R: 2026-11-11] The relation, the observation, the references and the combined parts that earlier procedure texts kept in the record are therefore overlay material, not part of the base map. [I]
 - The build stores this record under the name `wants`. The rename is decided and not applied. [F]
@@ -125,15 +129,20 @@ The largest unresolved matters are: the two points of the intake procedure's gap
 
 - An **overlay** is a named kind of knowledge laid over the map. It was called a layer until 2026-11-11. [R]
 - An overlay is defined beneath the internal root. Being defined there is what permits its records to be written at elements, and the definition record is the overlay's schema. [R]
-- The definition is the complete input validation for the overlay's records. For each field it holds a sentence and the grammar rules of that field, and it holds one sentence that must read correctly when the fields are placed in it. [R]
+- The definition is the complete input validation for the overlay's records. A definition may hold a description, a reference, a prompt, an instruction, the fields, a template and artifacts. For each field it gives the part of speech, a rule and an example. The template is one sentence whose places are filled from the record; it must read correctly, and it formats the readable report. A new overlay must have fields, a description, the template and an instruction. [R: decided 2026-11-05; not built]
+- The decided definition of the dependency itself gives the purpose as a bare infinitive verb phrase and the function as a present-tense verb phrase that reads after "which". These rules are the founder's, and they live in the definition. [R] Whether and how the server refuses a record against them is the founder's to direct; an agent's earlier check of this kind was added without instruction and removed. [F]
 - An overlay's address may have several segments beneath the internal root, and a root type may follow the internal root. A programming language is a medium and not a functionality, so it has no element in the map and is an overlay. [R]
 - After the intake, overlays are free to add. An overlay may hold the insights for one piece of work and be removed when that work ends. [R]
 - The number of overlays is not limited, so overlay schemas cannot be delivered in advance. [R]
 - An element names the overlays laid on it in `overlays` and the ones masked at it in `masked_overlays`. To remove an overlay's information from one region, mask that region. [R]
-- An overlay is linked at the element where it is needed. Defining an overlay does not turn it on: it is on when the core database, which tracks projects, lists it as enabled. An enabled overlay applies at the element it is linked to and at everything beneath that element, toward the leaves and never backward. A mask stops it from reaching further down. One overlay may not be both linked and masked at the same element. [R: 2026-11-09 and 2026-11-10, under the earlier names. Not built.]
+- An overlay is linked at the element where it is needed. Defining an overlay does not turn it on: it is on when the core database, which tracks projects, lists it as enabled. An enabled overlay applies at the element it is linked to and at everything beneath that element, toward the leaves and never backward. A mask stops it from reaching further down. At each step from the root to an address, the overlays that continue are those that arrived and are not masked, together with those linked at that step; masks apply first. One overlay may not be both linked and masked at the same element. [R: 2026-11-09 and 2026-11-10, under the earlier names. Not built.]
 - The build defines one overlay for written specification and has three built-in ones: sources, skills and memory. [F]
 - An inbox for messages to an agent is to be an overlay kept in its own file. It comes after the base intake system. [F]
-- How the sources overlay fits this scheme is not stated in the record. [U]
+- **System overlays.** Skills, memory and sources are shared by every project. [R]
+  - Memory: each address has its own memory graph, read and written only by an agent present at that address. A memory may link to any address or any memory.
+  - Skills: an agent learns that a skill exists only from the front matter delivered at the address where it applies.
+  - Sources: links to entry points in the material, not to every file or symbol. A source record stays at the one element it was linked to. It never moves and is never inherited.
+- Knowledge holds only at the address where it was inferred. The address is the identity: when an address changes, the knowledge is inferred again and is not carried across. [R]
 
 ### 6.4 The intake procedure
 
@@ -184,7 +193,7 @@ The chassis is the fixed core of the system. It tracks projects across the machi
 
 **The module contract.** [R as to the rule; F as demonstrated by the earlier Python system]
 
-- **The template rule.** Anything the chassis exposes to a module is defined in a template module and documented there. The template is the contract in practice. A new capability updates the template, its document and a demonstration module. The founder names this rule as what made the earlier system dependable.
+- **The template rule.** Anything the chassis exposes to a module is defined, placed in a template module, and documented there. Nothing is exposed before all three are done. The template is the contract in practice. A new capability updates the template, its document and a demonstration module. The founder names this rule as what made the earlier system dependable.
 - **Stable under extension.** Over two months, each feature of the earlier system arrived as a module that used only services the chassis exposed.
 - **A module is removable.** The chassis is a complete command-line program with every module off or absent. A module that is unloaded loses its commands, settings and subscriptions and keeps its stored data.
 - **One declaration.** A module declares, in one descriptor: its identity and purpose, its commands, the events it subscribes to, its start and end routines, its tables, its panels for the interface, and what it provides to other modules.
@@ -199,6 +208,7 @@ The chassis is the fixed core of the system. It tracks projects across the machi
 - A switch may be set and saved in place of a long command line.
 - A reset returns every setting to its default.
 - A glued setting survives a reset.
+- Every setting is declared in code with its default. A default is never stored. A value for a project overrides the global value.
 - The same settings are reached from the command line and from a keyboard screen.
 
 **What went wrong before, and the rule that follows.** [F] [R]
@@ -639,10 +649,12 @@ An earlier draft listed nineteen questions. A full reading of the founder's 1,08
 1. The gap fill of the pure text (section 6.4) leaves two points for the founder. First, the pure text says the namespace excludes elements that answer to who. The founder stated on 2026-11-11 that downstream holds any who or what that relies on the artifact. The reading here is that the exclusion applies under the four base types and that `downstream` is where a who is addressed; the founder's sentence is not altered. [I] Second, the pure method starts at the Defining Element and has no step that records the downstream entry's purpose for it. Until the founder accepts a gap-filled text, no intake run in this repository is evidence about his procedure.
 2. Do plain stored names for purpose and function hold when the procedure keeps its concepts? One run each way on the same artifact and model would answer it. The founder asked for a hard decision on this.
 4. What is the one word for adding functionality to a finished map?
+4a. What do r, p and e stand for in the frozen core formula?
+4b. Is the reading of when a second downstream entry is defined (section 6.2) correct?
 
 **Overlays**
 5. Is the internal root renamed with the overlay? The founder renamed the concept and the two arrays; he did not name the root.
-6. How do sources fit as an overlay?
+6. Must a base type always follow `upstream`? What is the address of a downstream entry that is a thing and not a party?
 7. Is a separate command for listing overlays still wanted (section 11.2)?
 
 **Server and tool**
