@@ -1,83 +1,31 @@
 {
-  "note": "The input schema the server publishes to agents in tools/list: the one command shape, with each part described once. Every description is the contract's own text (mcp-tools.proposed.json). The server checks each command against the full contract and answers a wrong one with the reason and a corrected command, so this schema does not restate the forms for each verb.",
+  "note": "The input schema the server publishes to agents in tools/list: one key, which is one of the listed operations or an address to read. The owner designed the tool surface to be well under 1 KB, with a list of operations. The shape of an element is the form the map stores, which every read shows; the server checks each command against the full contract (mcp-tools.proposed.json) and answers a wrong one with the reason and a corrected command.",
   "inputSchema": {
     "type": "object",
-    "description": "A command name (add, update, delete, orphaned, goto, map) is a command. A key that starts with a period is a raw dump. Any other key is an address, and reads that element. The selected project comes from caller context. Addresses in commands are selectors; storage remains a nested namespace.",
     "minProperties": 1,
     "maxProperties": 1,
     "properties": {
       "add": {
-        "$ref": "#/$defs/at"
+        "type": "object"
       },
       "update": {
-        "$ref": "#/$defs/at"
+        "type": "object"
       },
       "delete": {
-        "$ref": "#/$defs/at"
+        "type": "object"
       },
       "orphaned": {
         "type": "object"
       },
       "goto": {
-        "type": "string",
-        "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed."
+        "type": "string"
       },
       "map": {
-        "type": "object",
-        "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and the one Definitive element. No fields and no layers."
+        "type": "object"
       }
     },
     "additionalProperties": {
-      "description": "A key that starts with a period is a raw dump: the stored nested JSON at that path, which is the JSON path $.<project><path> with $.<project> left off. \".\" dumps the whole project; \".code.server\" dumps that element and everything beneath it. Every layer is included. An addressed read: the element's own fields, plus each layer named with {} as its value."
-    },
-    "$defs": {
-      "at": {
-        "type": "object",
-        "minProperties": 1,
-        "maxProperties": 1,
-        "additionalProperties": {
-          "$ref": "#/$defs/element"
-        }
-      },
-      "element": {
-        "type": "object",
-        "properties": {
-          "technical_name": {
-            "description": "The well-understood practitioner short name derived from the leaf segments. Must exactly match the same number of leading words of the reversed, space-separated namespace address, and must not match `name`."
-          },
-          "name": {
-            "description": "The name used for this functionality in project documentation or specifications, such as Metaform."
-          },
-          "role": {
-            "description": "Systemic role: Definitive (the element whose loss means the artifact can no longer remain what it is), Supportive (an indivisibly coupled element meant to assist the Definitive element), Notable (a discrete, structurally independent feature or specialized exception with unique systemic significance) or Divergent (an unaligned, weak or redundant element to be realigned or ejected)."
-          },
-          "status": {
-            "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema."
-          },
-          "uri": {
-            "description": "One source link to the entry point for this functionality. A relative file path is allowed."
-          },
-          "wants": {
-            "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules.",
-            "additionalProperties": {
-              "$ref": "#/$defs/want"
-            }
-          }
-        }
-      },
-      "want": {
-        "properties": {
-          "why": {
-            "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English."
-          },
-          "how": {
-            "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English."
-          },
-          "direction": {
-            "description": "The direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound from the receiver, inbound to the receiver, or two-way."
-          }
-        }
-      }
+      "type": "object"
     }
   }
 }
