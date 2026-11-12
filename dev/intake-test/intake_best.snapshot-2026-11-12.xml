@@ -6,7 +6,7 @@
     </goal>
     <prompt text="{prompt}" note="The prompt may be a simple stated target or a task.  Assume the target as being this project folders contexts if not stated otherwise. Prompts can refine the process in many ways such as refining, correction layer construction, blind spot analysis, to define new features enhancements, or any other prompt the user might provide." />
     <core_concepts>
-        <concept term="AUE" full="Artifact Under Examination" definition="The element being examined, created, or used. An artifact represents the identity of a singular whole, in software this means the project source, specifications and documentation as an artifact, or a single document which has no relation to code, a collection of artifacts, such as photographs, contracts, stories, or datasets are each a single AUE when they are not seen as an asset of another AUE, these must be treated as individual AUE and analyzed as such. Whether an AUE serves as an asset depends on its use in that context." />
+        <concept term="AUE" full="Artifact Under Examination" definition="A software tool, plugin, utility, or independant part, include its file assets which can be reasoned as a separate thing can be an AUE in the same parger project, but must be mapped into the whole properly, when there is multiple documents, photos, or individual files these must be analyzed individually, multiple items  and its assets is an AUETreat each photograph, document" />
         <concept term="Join" definition="A dictionary object that exists in the Receiving Element (RE); it contains a dictionary of objects containing type specific or AUE specific references and logic." />
         <concept term="Element" definition="An element is anything nameable as a type; however, just because an element can be named doesn't mean it is interesting, remarkable, or deserving of special attention. Many elements can be immediately seen, or are easily inferred." />
         <concept term="OP" full="Operative Purpose" definition="The **why**. This is the active goal held in an RE's dependency dictionary — that an element's encounter function intends to accomplish as a sentence fragment." />
@@ -22,66 +22,13 @@
         <concept term="DD" full="Downstream Dependant" definition="An element outside the AUE that depends on an element as a PE and is not a person. A person who depends on the AUE is a CQU; a thing that depends on it, such as a project built on this one, is a DD." />
         <concept term="Parametric" definition="A quality or quantity that can be tuned but does not carry a specific name in the scope of the namespace of this AUE. We do not name parametrics with a namespace address in this graph or as part of this operation." />
         <concept term="NS" full="Namespace Scope" definition="The scope of the Artifact Type. The five base valid types are code, document, media, data, upstream and downstream." />
+        <concept term="IFD" full="Information Flow Direction" definition="A direction [send|receive|both] assigned to a movement of substance as a requirement that satisfies the OP of the RE." />
     </core_concepts>
-        <method deliverable_format="one document in the form of the schema">
-        <steps>
-            <step n="1" text="THIS IS LOAD BEARING. This project must live with your choices; they will shape how every new context stores memory and navigates here. You are an archeologist of encounter, purpose, and function, and a forward scout. You go first so the agents who come in behind you, blind, spend their higher-order reasoning on their work instead of getting ensnared in anything small because they didn't have the big picture coming in. You are not building the project; you are finding understanding. You must not assume you understand the intent before reading the intent. Load your context with this project the way you understand your own system prompt, until things click and you can see the forest for the trees. Don't assume this is code; it might be someone's novel, a folder of documents, or photos. If it is code, understand it deeply; that is not wasted effort. Some artifacts don't exist yet, in full or at all: map the understanding. Form a model of what you expect to see, express what you don't see but infer should exist, and mark drift where something doesn't match intent. If you see a problem, don't solve it; mark it and move on. You are creating the base layer of a long-lived navigation surface: road signs, and open lots where memories, knowledge, medium, style, and the deeper intent beyond functionality can live and prompts can point. Create only what is long lived and foundational. Never say in words what can change tomorrow; point with a uri. Every word beyond the expression of this system's function costs every agent that comes after you. Saying more on one thing is not helping; saying less on many things is." />
-            <step n="2" text="While enumerating the OPs, EFs, and their relationships, be vigilant for drift and apparent errors. Drift may occur between documentation, specifications, and code in either direction. This is functionality capture; record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references. Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination. " />
-            <step n="3" text="FOR each AUE; ORGANIZE into AT groups capable of generating a useful imperative for an agent based on the (OP of the CQU) and the (EF of the PE) of the AUE's DE in service of the CQU's OP as the stakeholder; NEXT AUE. IF the intake receives a folder or collection; SURVEY every member before grouping is finalized: OBSERVE each member; RECORD its uri in line, at the moment it is observed, because a uri written later is written from memory; REASON its AT, its DE, its SE and NE elements, and the OP and EF relationships that distinguish its functionality; GROUP only members whose shared functionality supports the same AT-level imperative; END IF." />
-            <step n="4" text="FOR each AT; CREATE a namespace entry for the CQU; ADD a join; SET purpose = its OP from step 3; SET ef = its EF from step 3; CHECK BKN; CHECK MISS; NEXT AT." />
-            <step n="5" text="FOR each AUE; FOR each AT; OBSERVE DE as an RE; DECOMPOSE its requirements and dependencies as EF of other elements. The DE simultaneously remains the PE serving the external CQU's OP where that relationship exists. IF an encountered element itself bears an OP; TRACE it as an RE without creating a duplicate namespace record; END IF; CHECK BKN; CHECK MISS; NEXT AT; NEXT AUE." />
-            <step n="6" text="FOR each element with an EF that serves the intent of an OP; CREATE a dependency record in the RE of type purpose; SET purpose = the OP statement; SET ef = the Providing Element's Encounter Function; SET ifd = the primary flow of information: outbound from the OP to the EF, inbound from the EF to the OP, two-way for equal need; SET provider = the Providing Element's namespace address; RECORD each element and dependency as soon as it is reasoned, one object at a time, rather than holding the map until the end; CHECK BKN; CHECK MISS; NEXT element." />
-            <step n="7" text="RECURSE through this task, starting with the element named in the first OP; MOVE to the next element; TREAT it as an RE where it bears requirements or an OP of its own." />
-            <step n="8" text="FIND that element's OPs: what it needs and wants from the rest of the AUE, or from outside it, in order to deliver its own EF. Element functionality serves the OP of elements, so every OP found traces back through its receivers to the OP of the external CQU." />
-            <step n="9" text="CONTINUE UNTIL there are no more unsatisfied OPs, or NEs of this AUE that must be named to understand the artifact. Parametric Elements are never NEs and are not part of intake — a tunable quality or quantity that doesn't carry its own name in artifacts of this type is not named or enumerated here, no matter how many of them exist." />
-            <step n="10" text="WHEN the trace ends; RETURN to the survey of step 1. No aspect of the functionality of the AUE is left out: FOR each functionality the trace has not reached; FIND the RE whose OP it serves; RECORD the join. Where it is only a part of a functionality already named, the function of that parent's dependency states it; NEXT functionality." />
-            <step n="11" text="Whenever possible, AGGREGATE PE subfunctions into a RE's parent function by mapping their shared integration dependencies. ANNEAL and COMBINE elements into a macro-function that further refines the structure by logically ENCAPSULATING subparts sharing the same join. ENCAPSULATE a subpart ONLY WHEN the parent's purpose can carry its purpose; otherwise, KEEP it as an independent functional element. KEEP each encapsulated subpart's purpose as a refinement of the parent's and RECORD it in its own subtype join. LET the purpose dependency carry the combined encounter without optimizing any functionality away." />
-            <step n="12" text="PROOF the recorded map; READ it back whole; CHECK it against the artifact and this document; CORRECT it; ANNEAL it; COMPLETE it; THEN FINISH the intake." />
-        </steps>
-    </method>
-    <constraints>
-        <constraint>Elements represent discrete functional roles actively instantiated by this artifact, named and described at their most specific reusable type level.</constraint>
-        <constraint>Never use vague top-level labels where a specific functional mechanism exists.</constraint>
-        <constraint>Keep namespace identity type-level; the dependencies carry the AUE-specific Operative Purpose and Encounter Function.</constraint>
-        <constraint>After working through the process and the closure pass, attempt to anneal dependencies and combine elements to a final shape that speaks to the artifact type.</constraint>
-        <constraint>You must seek to create a thorough and complete map of the parent functionalities.</constraint>
-        <constraint>Keep the graph shape limited to artifact's functional elements as a type, while speaking to the function of the AUE as a whole in its dependencies.</constraint>
-        <constraint>Focus on the notable elements of interest and observe that just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention.</constraint>
-        <constraint>A dependency speaks about this artifact. Its purpose and function state what this AUE actually does, in its own particulars.</constraint>
-        <constraint>The dependency data must speak to the AUE. Where an AUE represents something, describe the function of that representation within the AUE rather than substituting the independent real-world functionality of what is represented.</constraint>
-        <constraint>For every AUE, seek SE elements as defined in core concepts.</constraint>
-        <constraint>Intake is never gated or judged; only the resulting map may be graded and the intake refined contextually afterward.</constraint>
-    </constraints>
-    <cqu_rules>
-        <rules>
-            <rule>We call the explicit party for whose benefit a piece of property or work is held, modified, and managed the CQU (Cestui Que Use) a term that specifically highlights their role as the "receiver of consideration" who drives the value-adding work. </rule>
-            <rule>Assume an artifact is converted into a metaform to improve it. The CQUs that matter are the ones whose purpose drives changes or improvements to the artifact. Enumerate each of them.</rule>
-            <rule>The CQU that drives the most improvement gives the best inference.</rule>
-            <rule>Never the person who asked for the intake, and never the simply the end user, the term is too general.</rule>
-            <rule>The CQU is especially important because it forms the tripartite root dependency that makes the map artifact specific: the CQU as receiver, its Operative Purpose as the why, and the Providing Element's Encounter Function as the how. Every other dependency in the map traces back to a root dependency through its receivers.</rule>
-            <rule>Elements are types, so the CQU is a type: the type of party that holds an objective purpose for this type of object, named at its most specific reusable type level.</rule>
-            <rule>When one person can hold several roles, name the role that changes the artifact, by the title that role carries.</rule>
-            <rule>Identify the CQU by asking who drives the most improvement in an artifact of this type.</rule>
-            <rule>Deciding on the CQU takes deep consideration because it is not a present element in what you are examining. Infer it from what the artifact is; do not look for it in the artifact.</rule>
-            <rule>The CQU is not the developer, the user, or anyone performing the operation. That could be said of every artifact, so it identifies nothing about this one, and it is the wrong way to be reasoning.</rule>
-        </rules>
-        <examples type="cqu">
-            <example artifact_type="media.photo" cqu="downstream.seller" valid="true" reason="the seller goes out of its way to present the photo in the best possible way to facilitate a sale." />
-            <example artifact_type="media.photo" cqu="downstream.operator" valid="false" reason="the party performing the operation could be named for every artifact, so it identifies nothing about this one." />
-            <example artifact_type="code.[not a programming tool]" cqu="downstream.developer" valid="false" reason="Never state the user or the developer sitting on the other side of the screen; it's not the answer we are looking for, because it doesn't present unique reasoning." />
-            <example artifact_type="code.ide" cqu="downstream.developer" valid="true" reason="The developer is the party who the project is targetting, so this is valid." />
-            <example artifact_type="code.sdk" cqu="downstream.code.*" valid="true" reason="The downstream project type that this project is targetting, so this is valid." />
-            <example artifact_type="*" cqu="downstream.user" valid="false" reason="This is a non answer, it says nothing worthwhile to reason about." />
-            <example artifact_type="document.story" cqu="downstream.reader" valid="true" reason="The reader is true because they are vested in reading a good story; they will be spending their time to read the story, and they want it to be good. Vested does not always mean money." />
-            <example artifact_type="media.photo" cqu="downstream.buyer" valid="false" reason="the buyer judges the photo; judging does not change or improve it" />
-            <example artifact_type="media.photo" cqu="downstream.company.insurance" valid="false" reason="the insurance company records the photo and does not want it changed" />
-            <example artifact_type="media.photo" cqu="downstream.influencer.media.social" valid="true" reason="a social media post drives changes or improvements to the photo" />
-            <example artifact_type="media.photo" cqu="downstream.blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
-        </examples>
-    </cqu_rules>
-    <join_types>
-        <join_type name="purpose" scope="intake" />
-    </join_types>
+    <examples concept="ifd">
+            <example id="ifd1" scenario="Receiving Element (RE) has operative purpose (OP) to encounter -> function (EF) of Providing Element (PE)" requirement="{ifd} data completing a goal" ifd="receives" reasoning="RE's goal is not to send parameters, they are not the information that satisfied RE's OP."/>
+            <example id="ifd2" scenario="Continued from ifd1, the PE which provided information is now an (RE) and has an (OP) to log the request with the logger (PE)" requirement="{ifd} logs completing its goal" ifd="sends" reasoning="sending log data satisfied the OP of the RE." />
+            <example id="ifd3" scenario="Email Client (RE) calls Email Server (PE) using SMTP and IMAP" requirement="direction of substantial flow" ifd="both" reasoning="RE as an email client has a goal of sends and receives email, sending or receiving only cannot satisfy RE's OP."/>
+    </examples>
     <namespace_rules>
         <note>This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per element.</note>
         <root_types>
@@ -121,10 +68,66 @@
             <example namespace_address="document.story.conflict" valid="true" reason="represents story conflict as a document element" />
         </examples>
     </namespace_rules>
+    <cqu_rules>
+        <rules>
+            <rule>We call the explicit party for whose benefit a piece of property or work is held, modified, and managed the CQU (Cestui Que Use) a term that specifically highlights their role as the "receiver of consideration" who drives the value-adding work. </rule>
+            <rule>Assume an artifact is converted into a metaform to improve it. The CQUs that matter are the ones whose purpose drives changes or improvements to the artifact. Enumerate each of them.</rule>
+            <rule>The CQU that drives the most improvement gives the best inference.</rule>
+            <rule>Never the person who asked for the intake, and never the simply the end user, the term is too general.</rule>
+            <rule>The CQU is especially important because it forms the tripartite root dependency that makes the map artifact specific: the CQU as receiver, its Operative Purpose as the why, and the Providing Element's Encounter Function as the how. Every other dependency in the map traces back to a root dependency through its receivers.</rule>
+            <rule>Elements are types, so the CQU is a type: the type of party that holds an objective purpose for this type of object, named at its most specific reusable type level.</rule>
+            <rule>When one person can hold several roles, name the role that changes the artifact, by the title that role carries.</rule>
+            <rule>Identify the CQU by asking who drives the most improvement in an artifact of this type.</rule>
+            <rule>Deciding on the CQU takes deep consideration because it is not a present element in what you are examining. Infer it from what the artifact is; do not look for it in the artifact.</rule>
+            <rule>The CQU is not the developer, the user, or anyone performing the operation. That could be said of every artifact, so it identifies nothing about this one, and it is the wrong way to be reasoning.</rule>
+        </rules>
+        <examples type="cqu">
+            <example artifact_type="media.photo" cqu="downstream.seller" valid="true" reason="the seller goes out of its way to present the photo in the best possible way to facilitate a sale." />
+            <example artifact_type="media.photo" cqu="downstream.operator" valid="false" reason="the party performing the operation could be named for every artifact, so it identifies nothing about this one." />
+            <example artifact_type="code.[not a programming tool]" cqu="downstream.developer" valid="false" reason="Never state the user or the developer sitting on the other side of the screen; it's not the answer we are looking for, because it doesn't present unique reasoning." />
+            <example artifact_type="code.ide" cqu="downstream.developer" valid="true" reason="The developer is the party who the project is targetting, so this is valid." />
+            <example artifact_type="code.sdk" cqu="downstream.code.*" valid="true" reason="The downstream project type that this project is targetting, so this is valid." />
+            <example artifact_type="*" cqu="downstream.user" valid="false" reason="This is a non answer, it says nothing worthwhile to reason about." />
+            <example artifact_type="document.story" cqu="downstream.reader" valid="true" reason="The reader is true because they are vested in reading a good story; they will be spending their time to read the story, and they want it to be good. Vested does not always mean money." />
+            <example artifact_type="media.photo" cqu="downstream.buyer" valid="false" reason="the buyer judges the photo; judging does not change or improve it" />
+            <example artifact_type="media.photo" cqu="downstream.company.insurance" valid="false" reason="the insurance company records the photo and does not want it changed" />
+            <example artifact_type="media.photo" cqu="downstream.influencer.media.social" valid="true" reason="a social media post drives changes or improvements to the photo" />
+            <example artifact_type="media.photo" cqu="downstream.blogger" valid="true" reason="a blogger drives changes or improvements to the photo" />
+        </examples>
+    </cqu_rules>
+    <constraints>
+        <constraint>Elements represent discrete functional roles actively instantiated by this artifact, named and described at their most specific reusable type level.</constraint>
+        <constraint>Never use vague top-level labels where a specific functional mechanism exists.</constraint>
+        <constraint>Keep namespace identity type-level; the dependencies carry the AUE-specific Operative Purpose and Encounter Function.</constraint>
+        <constraint>After working through the process and the closure pass, attempt to anneal dependencies and combine elements to a final shape that speaks to the artifact type.</constraint>
+        <constraint>You must seek to create a thorough and complete map of the parent functionalities.</constraint>
+        <constraint>Keep the graph shape limited to artifact's functional elements as a type, while speaking to the function of the AUE as a whole in its dependencies.</constraint>
+        <constraint>Focus on the notable elements of interest and observe that just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention.</constraint>
+        <constraint>A dependency speaks about this artifact. Its purpose and function state what this AUE actually does, in its own particulars.</constraint>
+        <constraint>The dependency data must speak to the AUE. Where an AUE represents something, describe the function of that representation within the AUE rather than substituting the independent real-world functionality of what is represented.</constraint>
+        <constraint>For every AUE, seek SE elements as defined in core concepts.</constraint>
+        <constraint>Intake is never gated or judged; only the resulting map may be graded and the intake refined contextually afterward.</constraint>
+    </constraints>
+    <method deliverable_format="one document in the form of the schema">
+        <steps>
+            <step n="1" text="THIS IS LOAD BEARING. This project must live with your choices; they will shape how every new context stores memory and navigates here. You are an archeologist of encounter, purpose, and function, and a forward scout. You go first so the agents who come in behind you, blind, spend their higher-order reasoning on their work instead of getting ensnared in anything small because they didn't have the big picture coming in. You are not building the project; you are finding understanding. You must not assume you understand the intent before reading the intent. Load your context with this project the way you understand your own system prompt, until things click and you can see the forest for the trees. Don't assume this is code; it might be someone's novel, a folder of documents, or photos. If it is code, understand it deeply; that is not wasted effort. Some artifacts don't exist yet, in full or at all: map the understanding. Form a model of what you expect to see, express what you don't see but infer should exist, and mark drift where something doesn't match intent. If you see a problem, don't solve it; mark it and move on. You are creating the base layer of a long-lived navigation surface: road signs, and open lots where memories, knowledge, medium, style, and the deeper intent beyond functionality can live and prompts can point. Create only what is long lived and foundational. Never say in words what can change tomorrow; point with a uri. Every word beyond the expression of this system's function costs every agent that comes after you. Saying more on one thing is not helping; saying less on many things is." />
+            <step n="2" text="While enumerating the OPs, EFs, and their relationships, be vigilant for drift and apparent errors. Drift may occur between documentation, specifications, and code in either direction. This is functionality capture; record obvious concerns encountered during the trace so they can be examined. Identify the unique element type each concern belongs to and attach the finding with its references. Where intended functionality is absent, mark it `missing` (`MISS`). Where code is incorrect or not working, mark it `broken` (`BKN`). Where something appears not to belong, mark it `exclude` for examination. " />
+            <step n="3" text="FOR each AUE; ORGANIZE into AT groups capable of generating a useful imperative for an agent based on the (OP of the CQU) and the (EF of the PE) of the AUE's DE in service of the CQU's OP as the stakeholder; NEXT AUE. IF the intake receives a folder or collection; SURVEY every member before grouping is finalized: OBSERVE each member; RECORD its uri in line, at the moment it is observed, because a uri written later is written from memory; REASON its AT, its DE, its SE and NE elements, and the OP and EF relationships that distinguish its functionality; GROUP only members whose shared functionality supports the same AT-level imperative; END IF." />
+            <step n="4" text="FOR each AT; CREATE a namespace entry for the CQU; ADD a join; SET purpose = its OP from step 3; SET ef = its EF from step 3; CHECK MISS; NEXT AT." />
+            <step n="5" text="FOR each AUE; FOR each AT; OBSERVE DE as an RE; DECOMPOSE its requirements and dependencies as EF of other elements. The DE simultaneously remains the PE serving the external CQU's OP where that relationship exists. IF an encountered element itself bears an OP; TRACE it as an RE without creating a duplicate namespace record; END IF; CHECK MISS; NEXT AT; NEXT AUE." />
+            <step n="6" text="FOR each element with an EF that serves the intent of an OP; CREATE a dependency record in the RE of type purpose; SET purpose = the OP statement; SET ef = the Providing Element's Encounter Function; SET ifd = the primary flow of information: sends from the OP to the EF, receives from the EF to the OP, both for equal need; SET provider = the Providing Element's namespace address; RECORD each element and dependency as soon as it is reasoned, one object at a time, rather than holding the map until the end; CHECK MISS; NEXT element." />
+            <step n="7" text="RECURSE through this task, starting with the element named in the first OP; MOVE to the next element; TREAT it as an RE where it bears requirements or an OP of its own." />
+            <step n="8" text="FIND that element's OPs: what it needs and wants from the rest of the AUE, or from outside it, in order to deliver its own EF. Element functionality serves the OP of elements, so every OP found traces back through its receivers to the OP of the external CQU." />
+            <step n="9" text="CONTINUE UNTIL there are no more unsatisfied OPs, or NEs of this AUE that must be named to understand the artifact. Parametric Elements are never NEs and are not part of intake — a tunable quality or quantity that doesn't carry its own name in artifacts of this type is not named or enumerated here, no matter how many of them exist." />
+            <step n="10" text="WHEN the trace ends; RETURN to the survey of step 1. No aspect of the functionality of the AUE is left out: FOR each functionality the trace has not reached; FIND the RE whose OP it serves; RECORD the join. Where it is only a part of a functionality already named, the function of that parent's dependency states it; NEXT functionality." />
+            <step n="11" text="Whenever possible, AGGREGATE PE subfunctions into a RE's parent function by mapping their shared integration dependencies. ANNEAL and COMBINE elements into a macro-function that further refines the structure by logically ENCAPSULATING subparts sharing the same join. ENCAPSULATE a subpart ONLY WHEN the parent's purpose can carry its purpose; otherwise, KEEP it as an independent functional element. KEEP each encapsulated subpart's purpose as a refinement of the parent's and RECORD it in its own subtype join. LET the purpose dependency carry the combined encounter without optimizing any functionality away." />
+            <step n="12" text="PROOF the recorded map; READ it back whole; CHECK it against the artifact and this document; CORRECT it; ANNEAL it; COMPLETE it; THEN FINISH the intake." />
+        </steps>
+    </method>
     <completion_condition>
     The task is complete when the final result is a singular root with all elements and dependencies beneath it. You have performed a second final pass to review your graph as being well formed and complete realizing the load bearing as being importance of the process you just performed.  Ensure that an appropriately name spaced core node contains all other elements and there is nothing free floating or disconnected.
-  </completion_condition>
-   <response_protocol>
+    </completion_condition>
+    <response_protocol>
        <instructions>
            <instruction>When the intake is finished, the recorded elements and dependencies express the final annealed shape after Method step 12. Keep the root element list minimal, coarse, and shallow per Goal and Constraints by absorbing subparts. Do not leave absorbed subparts recorded as independent root elements; instead, remove them and preserve their atomic realities exclusively as subtype dependencies inside the load-bearing parent's matching purpose join.</instruction>
            <instruction>An element's identity is its namespace_address attribute, not its readable name. "tool registry" is prose; code.registry.tool is the element. Any reference to an element, in a dependency or anywhere else, must use that namespace_address value, never the name alone. A name with no matching namespace_address isn't a valid reference to anything.</instruction>
@@ -136,21 +139,66 @@
        </instructions>
        <schema format="json"><![CDATA[
 {
-  "[dotted namespace address]": {
-    "functional_name": "[the systemic role (must match leading words of the namespace reversal)]",
-    "name": "[proper common name]",
-    "role": "[AUE|DE|SE|NE|CQU|UD|DD]",
-    "uri": "[the single uri that best represents the element]",
-    "dependencies": [
-      {
-        "pe": "[namespace address of the providing element]",
-        "op": "[the operative purpose of this receiving element]",
-        "ef": "[encounter function of the providing element within the receiving element context]",
-        "ifd": "[inbound|outbound|two-way]"
+  "$schema": "https://json-schema.org",
+  "type": "object",
+  "patternProperties": {
+    "^[a-zA-Z0-9._-]+$": {
+      "type": "object",
+      "required": ["technical_name", "name", "role", "refs", "dependencies"],
+      "additionalProperties": false,
+      "properties": {
+        "technical_name": {
+          "type": "string",
+          "description": "Must match leading words of the namespace reversal"
+        },
+        "name": {
+          "type": "string",
+          "description": "Common name alias"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["AT", "DE", "SE", "NE", "CQU", "UD", "DD"]
+        },
+        "refs": {
+          "type": "array",
+          "description": "One URI per AUE when they are the same type.",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pe", "op", "ef", "ifd"],
+            "additionalProperties": false,
+            "properties": {
+              "pe": {
+                "type": "string",
+                "description": "Providing element address"
+              },
+              "op": {
+                "type": "string",
+                "description": "The active goal as a sentence fragment"
+              },
+              "ef": {
+                "type": "string",
+                "description": "Sentence fragment which satisfies the active goal"
+              },
+              "ifd": {
+                "type": "string",
+                "enum": ["send", "receive", "both"]
+              }
+            }
+          }
+        }
       }
-    ]
-  }
+    }
+  },
+  "additionalProperties": false
 }
+
 ]]></schema>
    </response_protocol>
 </process>
