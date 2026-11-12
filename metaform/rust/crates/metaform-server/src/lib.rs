@@ -297,6 +297,14 @@ pub(crate) async fn connect_or_start(home: &Path, server_exe: &Path) -> Result<U
     for _ in 0..100 {
         tokio::time::sleep(Duration::from_millis(50)).await;
         if let Ok(stream) = UnixStream::connect(&socket).await {
+            // The server runs on after this call returns. Wait for it on a thread of its own,
+            // so that when it ends it is collected and does not stay in the process table as a
+            // defunct process for as long as this forwarder runs.
+            if let start::Started::Direct(mut server) = started {
+                std::thread::spawn(move || {
+                    let _ = server.wait();
+                });
+            }
             return Ok(stream);
         }
         if let start::Started::Direct(server) = &mut started
