@@ -138,7 +138,7 @@ A **dependency** is the record an element keeps about one element it relies on. 
 - **Type understanding and the frozen core.** To understand an element as a type is to hold three things together: the receiver with its why, the provider with its how, and the element itself. The set of those relations for an element is its core. Work on an element may mutate it: change how it does what it does. Work that changes what it does has transformed it into a different element, and the map grows by one. Nothing stores the core as a field. The protection is the understanding the intake recorded. [R] The reading of the formula's three terms as receiver, provider and element is an agent's. [I]
 - **The record is itself an overlay,** in a reserved group that is not listed with the others and cannot be deleted, because it is the map. [R]
 
-**Names in the build.** The record is stored as `wants`, with fields `why`, `how` and `direction`. The name dependency is decided and not applied. The plain field names were chosen so that agents reading a map need not learn the intake's terms, with the procedure saying which concept is recorded in which field. That arrangement has not been tested, because the procedure in the repository removed the concepts. [F] [U]
+**Field names.** In the intake procedure a dependency is recorded with the procedure's own terms as field names: `op`, `ef` and `pe`. Those terms were chosen because a model infers from them. A second set of plain names, `why` and `how`, would make the agent translate between two vocabularies while it performs the intake, which spends reasoning for nothing. The interface shows the full names to a person: Operative Purpose, Encounter Function, Providing Element. [R: decided 2026-11-12] The build still stores the record as `wants` with `why`, `how` and `direction`; the change is not applied. [F]
 
 ### 6.3 Overlays
 
@@ -472,7 +472,6 @@ For a piece of work, an overlay is linked where the work applies and removed whe
 **Decisions that are the founder's.**
 7. When the decided names are applied to the tooling, and whether the internal root is renamed with the overlay.
 8. Whether the root `collection` is removed from the build.
-9. Whether the stored field names stay plain. One intake each way on the same artifact and model would show the effect.
 
 **Not yet reasoned or decided.**
 10. The language of the chassis, and how one module contract serves three languages.
