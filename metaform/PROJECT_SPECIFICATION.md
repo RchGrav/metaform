@@ -112,7 +112,8 @@ The map answers one question for an agent arriving in a project: what is this. A
 | Definitive | The element whose loss would stop the artifact from being the same type. Its function sums up the combined result of the artifact. There is exactly one. |
 | Supportive | An element so entangled with what the Definitive element delivers that the artifact would not be the same type without it. The role states the coupling, so no separate field for coupling is needed. |
 | Notable | An element that states an essential demand: what the artifact expects, needs or depends on to operate. |
-| Divergent | An element that is unaligned, weak or redundant. It is investigated for the purpose it serves, and then realigned or removed. |
+
+There are three roles. A fourth, Divergent, was dropped. The build, the schema and the tool contract still accept it, which is a departure from the design. [F]
 
 **Not in the map.** A parametric quality can be tuned and is not named in artifacts of the type, so it has no address. [R]
 
@@ -406,7 +407,7 @@ For a piece of work, an overlay is linked where the work applies and removed whe
 | Operative Purpose | The why, held by the receiver. | The purpose of the project. |
 | Encounter Function | The how, of the provider in this meeting. | The element's function in general. |
 | Receiving Element, Providing Element | The two ends of a dependency. | Roles. They are not roles. |
-| Definitive, Supportive, Notable, Divergent | The four roles (section 6.1). | |
+| Definitive, Supportive, Notable | The three roles (section 6.1). | |
 | Upstream, downstream | What the artifact relies on; who or what relies on it. | Parts of the artifact. |
 | Overlay | One kind of knowledge spread across the map. | A panel in the interface. |
 | Mask | A stop on an overlay at an element and beneath. | Deletion. |
