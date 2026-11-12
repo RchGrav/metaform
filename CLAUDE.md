@@ -18,6 +18,10 @@ Read `START_HERE.md` first. It explains how this folder is laid out, which docum
 
 The intake procedure and its semantics (`metaform/Intake.md`, the schema and the tool contract) are protected. Do not change them without the owner's direct instruction (from the original repository's `AGENTS.md`, kept in `context/topogee-repo/AGENTS.md`).
 
+The founder alone edits the intake procedure. Its text is the folder `metaform/intake/procedure/`, and the founder's working copy is `rich/`. Do not change a word, a name, a section or the order there, even to correct a typing error or to match a term the tool uses. Report what you think is wrong and leave the edit to the founder. The reason: agents that edited the procedure changed its meaning, and the founder spent a week repairing it (founder, 2026-11-12).
+
+Do not write a test, a check or a build step that reads the content of the procedure: its section names, its required marks or its text. The founder must be able to edit it without anything failing. The reason: in an earlier project agents wrote tests against the prompt text and added tags of their own, and the founder could no longer edit the prompts and started over (founder, 2026-11-12).
+
 `context/` holds preserved source material. Read it; do not edit it.
 
 ## Feature commits
