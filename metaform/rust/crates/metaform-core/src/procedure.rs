@@ -2,7 +2,8 @@
 //!
 //! The procedure is a folder of Markdown files, `metaform/intake/procedure/`: one file for each
 //! section (`goal.md`, `core_concepts.md`, `namespace_rules.md`, `method.md` and the others), and
-//! `sections.md`, which names the sections in reading order and marks the required ones. The
+//! `sections.md`, which names the sections in reading order, marks the required ones, and says
+//! when to read a section that applies to one kind of artifact only. The
 //! sections follow the organization of the founder's XML procedure; the files hold no XML.
 //! `build.rs` reads the folder when the server is built, so the server reads no file while it
 //! runs. This file names no section and knows nothing of what a section holds, so a change to
@@ -24,13 +25,15 @@ pub struct Section {
     pub name: &'static str,
     pub text: &'static str,
     pub required: bool,
+    /// When an agent reads this section, in the words of `sections.md`; empty if it gives none.
+    pub when: &'static str,
 }
 
 /// The sections of the intake procedure, in reading order.
 pub fn sections() -> Vec<Section> {
     SECTIONS
         .iter()
-        .map(|(name, required, text)| Section { name, text: text.trim(), required: *required })
+        .map(|(name, required, when, text)| Section { name, text: text.trim(), required: *required, when })
         .collect()
 }
 

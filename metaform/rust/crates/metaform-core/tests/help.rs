@@ -43,6 +43,9 @@ fn help_serves_the_intake_procedure_one_section_at_a_time() {
     let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name).collect();
     assert_eq!(listing.result()["help"]["intake"]["sections"], json!(names));
     assert_eq!(listing.result()["help"]["intake"]["required"], json!(required));
+    for section in sections.iter().filter(|s| !s.when.is_empty()) {
+        assert_eq!(listing.result()["help"]["intake"]["when"][section.name], json!(section.when));
+    }
     for section in &sections {
         let key = format!("intake/{}", section.name);
         let answer = execute(&contract, &Map::new(), &json!({"help": key})).unwrap();

@@ -106,10 +106,14 @@ impl Contract {
             let sections = crate::procedure::sections();
             let names: Vec<&str> = sections.iter().map(|s| s.name).collect();
             let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name).collect();
+            // A section that applies to one kind of artifact says when to read it.
+            let when: serde_json::Map<String, Value> =
+                sections.iter().filter(|s| !s.when.is_empty()).map(|s| (s.name.to_string(), json!(s.when))).collect();
             return Ok(json!({"help": {"intake": {
                 "sections": names,
                 "required": required,
-                "read": "Read one section with {\"help\": \"intake/<section>\"}. Read each required section before any work on the map. To perform an intake, read every section in this order before you start. For other work, read another section only when you need the rules in it.",
+                "when": when,
+                "read": "Read one section with {\"help\": \"intake/<section>\"}. Read each required section before any work on the map. To perform an intake, read every section in this order before you start, except a section listed under when: read that one only if its condition holds. For other work, read another section only when you need the rules in it.",
             }}}));
         }
         if let Some(wanted) = name.strip_prefix("intake/") {
