@@ -95,11 +95,12 @@ fn help_serves_the_intake_procedure_one_section_at_a_time() {
         let key = format!("intake/{name}");
         let answer = execute(&contract, &Map::new(), &json!({"help": key})).unwrap();
         let text = answer.result()["help"][&key].as_str().unwrap().to_string();
-        assert!(text.starts_with(&format!("<{}", name.split("_2").next().unwrap())) || text.starts_with('<'), "{name}");
+        assert!(!text.is_empty() && !text.starts_with('<'), "{name} is Markdown, served without its tags");
         whole += text.len();
     }
+    assert_eq!(listing.result()["help"]["intake"]["required"], json!(["core_concepts"]));
     let listing_bytes = listing.result().to_string().len();
-    assert!(listing_bytes < 600, "the listing is short: {listing_bytes} bytes");
+    assert!(listing_bytes < 700, "the listing is short: {listing_bytes} bytes");
     assert!(whole > 20_000, "the sections together hold the procedure: {whole} bytes");
     let unknown = execute(&contract, &Map::new(), &json!({"help": "intake/nothing"})).unwrap_err();
     assert_eq!(unknown.code, Code::FieldMismatch);

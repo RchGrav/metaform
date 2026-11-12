@@ -104,10 +104,13 @@ impl Contract {
         // `intake` lists the sections of the intake procedure, and `intake/<section>` returns
         // one. An agent reads a section when it needs the rules in it, and no sooner.
         if name == "intake" {
-            let names: Vec<String> = crate::procedure::sections().into_iter().map(|s| s.name).collect();
+            let sections = crate::procedure::sections();
+            let names: Vec<&str> = sections.iter().map(|s| s.name.as_str()).collect();
+            let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name.as_str()).collect();
             return Ok(json!({"help": {"intake": {
                 "sections": names,
-                "read": "Read one section with {\"help\": \"intake/<section>\"}. To perform an intake, read every section in this order before you start. For other work, read only the section that holds the rules you need.",
+                "required": required,
+                "read": "Read one section with {\"help\": \"intake/<section>\"}. Read each required section before any work on the map. To perform an intake, read every section in this order before you start. For other work, read another section only when you need the rules in it.",
             }}}));
         }
         if let Some(wanted) = name.strip_prefix("intake/") {

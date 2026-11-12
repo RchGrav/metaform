@@ -206,7 +206,11 @@ impl ServerHandler for MapTool {
         for section in metaform_core::procedure::sections() {
             let name = format!("intake/{}", section.name);
             resources.push(Resource::new(format!("{INTAKE_URI}{}", section.name), name).with_description(
-                format!("The {} section of the intake procedure.", section.name),
+                if section.required {
+                    format!("The {} section of the intake procedure. Required reading before any work on the map.", section.name)
+                } else {
+                    format!("The {} section of the intake procedure.", section.name)
+                },
             ));
         }
         Ok(ListResourcesResult::with_all_items(resources))
