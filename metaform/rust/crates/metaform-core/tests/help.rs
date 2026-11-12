@@ -8,7 +8,7 @@ use metaform_core::{Code, Contract, Map, execute};
 use serde_json::{Value, json};
 
 const NAMES: [&str; 9] = ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
-const MESSAGE: &str = "help takes {}, the name of a command, or the name of a definition a schema refers to";
+const MESSAGE: &str = "help takes {}, the name of a command, the name of a definition a schema refers to, or intake";
 
 fn fixture(name: &str) -> Value {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").join(name);
@@ -64,10 +64,46 @@ fn assembled(contract: &Contract, name: &str) -> Value {
 #[test]
 fn help_with_no_name_returns_the_schema_of_help() {
     let contract = Contract::bundled().unwrap();
+    // The command names, then `intake`, which lists the sections of the intake procedure.
+    let listed: Vec<&str> = NAMES.into_iter().chain(["intake"]).collect();
     assert_eq!(
         execute(&contract, &Map::new(), &json!({"help": {}})).unwrap().result(),
-        &json!({"help": {"type": "object", "properties": {"help": {"enum": NAMES}}, "required": ["help"]}})
+        &json!({"help": {"type": "object", "properties": {"help": {"enum": listed}}, "required": ["help"]}})
     );
+}
+
+/// `{"help": "intake"}` lists the sections of the intake procedure in the file's order, and
+/// `{"help": "intake/<section>"}` returns one section's text. A name the procedure does not
+/// hold is refused with the command that lists the sections.
+#[test]
+fn help_serves_the_intake_procedure_one_section_at_a_time() {
+    let contract = Contract::bundled().unwrap();
+    let listing = execute(&contract, &Map::new(), &json!({"help": "intake"})).unwrap();
+    let names: Vec<String> = listing.result()["help"]["intake"]["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap().to_string())
+        .collect();
+    let expected: Vec<String> = metaform_core::procedure::sections().into_iter().map(|s| s.name).collect();
+    assert_eq!(names, expected);
+    for wanted in ["goal", "core_concepts", "namespace_rules", "cqu_rules", "constraints", "method"] {
+        assert!(names.iter().any(|name| name == wanted), "the procedure has a {wanted} section");
+    }
+    let mut whole = 0;
+    for name in &names {
+        let key = format!("intake/{name}");
+        let answer = execute(&contract, &Map::new(), &json!({"help": key})).unwrap();
+        let text = answer.result()["help"][&key].as_str().unwrap().to_string();
+        assert!(text.starts_with(&format!("<{}", name.split("_2").next().unwrap())) || text.starts_with('<'), "{name}");
+        whole += text.len();
+    }
+    let listing_bytes = listing.result().to_string().len();
+    assert!(listing_bytes < 600, "the listing is short: {listing_bytes} bytes");
+    assert!(whole > 20_000, "the sections together hold the procedure: {whole} bytes");
+    let unknown = execute(&contract, &Map::new(), &json!({"help": "intake/nothing"})).unwrap_err();
+    assert_eq!(unknown.code, Code::FieldMismatch);
+    assert_eq!(unknown.remediation.as_deref(), Some(&json!({"help": "intake"})));
 }
 
 #[test]

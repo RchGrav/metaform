@@ -78,10 +78,10 @@ use crate::names::{self, ROOT};
 use crate::refusal::{Code, Refusal};
 
 const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
-pub(crate) const HELP_FORM: &str = "help takes {}, the name of a command, or the name of a definition a schema refers to";
+pub(crate) const HELP_FORM: &str = "help takes {}, the name of a command, the name of a definition a schema refers to, or intake";
 /// The command names `help` takes, in the order `{"help": {}}` lists them.
-pub(crate) const HELP_NAMES: [&str; 9] =
-    ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
+pub(crate) const HELP_NAMES: [&str; 10] =
+    ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help", "intake"];
 const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 /// The fields that hold text (N2 to N5).
 const TEXT_FIELDS: [&str; 5] = ["technical_name", "name", "role", "status", "project"];

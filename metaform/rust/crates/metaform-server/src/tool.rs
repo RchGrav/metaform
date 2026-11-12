@@ -37,6 +37,9 @@ pub struct MapTool {
     legacy: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
+/// The start of the URI of each section of the intake procedure. The section's name follows.
+pub const INTAKE_URI: &str = "metaform://intake/";
+
 /// Where the agent is, and what `goto` already delivered in this context.
 #[derive(Default)]
 struct Presence {
@@ -187,7 +190,9 @@ impl ServerHandler for MapTool {
         Ok(ListToolsResult::with_all_items(vec![self.tool.clone()]))
     }
 
-    /// One resource: this connection's map. Reading it gives the shallow graph, `{"map": {}}`.
+    /// This connection's map, then one resource for each section of the intake procedure.
+    /// Reading the map gives the shallow graph, `{"map": {}}`. Reading a section gives its text.
+    /// A client lists the sections and reads one only when an agent needs the rules in it.
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
@@ -197,7 +202,14 @@ impl ServerHandler for MapTool {
             "This connection's functional map. Reading it returns the shallow graph: every address \
              and every want as an edge. Subscribe to hear of each commit.",
         );
-        Ok(ListResourcesResult::with_all_items(vec![map]))
+        let mut resources = vec![map];
+        for section in metaform_core::procedure::sections() {
+            let name = format!("intake/{}", section.name);
+            resources.push(Resource::new(format!("{INTAKE_URI}{}", section.name), name).with_description(
+                format!("The {} section of the intake procedure.", section.name),
+            ));
+        }
+        Ok(ListResourcesResult::with_all_items(resources))
     }
 
     async fn read_resource(
@@ -205,6 +217,18 @@ impl ServerHandler for MapTool {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
+        if let Some(name) = request.uri.strip_prefix(INTAKE_URI) {
+            return match metaform_core::procedure::section(name) {
+                Some(section) => {
+                    let contents = ResourceContents::text(section.text.to_string(), request.uri.clone());
+                    Ok(ReadResourceResult::new(vec![contents]).into())
+                }
+                None => Err(ErrorData::invalid_params(
+                    format!("the intake procedure has no section {name}; resources/list names its sections"),
+                    None,
+                )),
+            };
+        }
         if request.uri != self.uri {
             return Err(ErrorData::invalid_params(
                 format!(

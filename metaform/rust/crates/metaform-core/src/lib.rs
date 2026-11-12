@@ -17,6 +17,7 @@ mod commands;
 mod contract;
 mod model;
 mod names;
+pub mod procedure;
 mod reads;
 mod refusal;
 mod rules;

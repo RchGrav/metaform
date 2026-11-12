@@ -101,6 +101,25 @@ impl Contract {
                 "required": ["help"],
             }}));
         };
+        // `intake` lists the sections of the intake procedure, and `intake/<section>` returns
+        // one. An agent reads a section when it needs the rules in it, and no sooner.
+        if name == "intake" {
+            let names: Vec<String> = crate::procedure::sections().into_iter().map(|s| s.name).collect();
+            return Ok(json!({"help": {"intake": {
+                "sections": names,
+                "read": "Read one section with {\"help\": \"intake/<section>\"}. To perform an intake, read every section in this order before you start. For other work, read only the section that holds the rules you need.",
+            }}}));
+        }
+        if let Some(wanted) = name.strip_prefix("intake/") {
+            return match crate::procedure::section(wanted) {
+                Some(section) => Ok(json!({"help": {name: section.text}})),
+                None => Err(Refusal::new(
+                    Code::FieldMismatch,
+                    format!("the intake procedure has no section '{wanted}'; {{\"help\": \"intake\"}} lists its sections"),
+                    Some(json!({"help": "intake"})),
+                )),
+            };
+        }
         let command = shape::HELP_NAMES.contains(&name).then(|| help_form(schema, name)).flatten();
         match command.or_else(|| schema["$defs"].get(name)) {
             Some(node) => Ok(json!({"help": {name: node}})),
