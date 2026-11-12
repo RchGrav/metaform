@@ -22,7 +22,7 @@ fn refused(contract: &Contract, map: &Map, command: Value) -> Refusal {
 }
 
 fn seeded(contract: &Contract) -> Map {
-    let game = json!({"technical_name": "game engine", "name": "Quake core", "role": "Definitive"});
+    let game = json!({"technical_name": "game engine", "name": "Quake core", "role": "DE"});
     write(contract, &Map::new(), json!({"add": {GAME: game}}))
 }
 
@@ -50,95 +50,90 @@ fn name_may_equal_technical_name() {
     write(
         &contract,
         &map,
-        json!({"add": {"downstream.reader": {"technical_name": "reader", "name": "reader", "role": "Notable"}}}),
+        json!({"add": {"downstream.reader": {"technical_name": "reader", "name": "reader", "role": "NE"}}}),
     );
 }
 
 #[test]
 fn a_deletion_leaves_no_empty_element() {
-    // A want creates the element it names (R-5.4). When the want is removed and the element was
+    // A dependency creates the element it names (R-5.4). When the dependency is removed and the element was
     // never filled in, the element and its empty branches go too.
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let want = json!({"update": {GAME: {"wants": {"code.nothing.here": {"why": "a", "how": "b", "direction": "inbound"}}}}});
-    let with_stub = write(&contract, &map, want.clone());
+    let dependency = json!({"update": {GAME: {"dependencies": {"code.nothing.here": {"op": "a", "ef": "b", "ifd": "receive"}}}}});
+    let with_stub = write(&contract, &map, dependency.clone());
     assert!(with_stub.element("code.nothing.here").is_some());
-    let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
+    let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"dependencies": ["code.nothing.here"]}}}));
     assert!(removed.element("code.nothing.here").is_none());
     assert!(removed.element("code.nothing").is_none());
-    // An element that was filled in stays when the last want that names it goes.
+    // An element that was filled in stays when the last dependency that names it goes.
     let filled = write(
         &contract,
         &with_stub,
-        json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "Notable"}}}),
+        json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "NE"}}}),
     );
-    let kept = write(&contract, &filled, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
+    let kept = write(&contract, &filled, json!({"delete": {GAME: {"dependencies": ["code.nothing.here"]}}}));
     assert!(kept.element("code.nothing.here").is_some());
 }
 
+/// A map may hold several Defining Elements: the intake gives one to each artifact type.
 #[test]
-fn a_second_definitive_is_refused_without_touching_the_first() {
+fn a_second_defining_element_is_accepted() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let refusal = refused(
+    let map = write(
         &contract,
         &map,
-        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "Definitive"}}}),
+        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "DE"}}}),
     );
-    assert_eq!(refusal.code, Code::RoleTaxonomyFailure);
-    assert_eq!(
-        refusal.to_json()["remediation"],
-        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "<Supportive, Notable or Divergent>"}}})
-    );
+    let index = execute(&contract, &map, &json!({"map": {}})).unwrap();
+    assert_eq!(index.result()["defining"], json!(["code.engine.game", "code.loop.main"]));
 }
 
 #[test]
-fn a_written_role_is_one_of_the_four() {
+fn a_written_role_is_one_of_the_roles() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    for role in ["Helper", "definitive", "DE", "SE", "NE", "CQU", "Supportive "] {
+    for role in ["Helper", "de", "Definitive", "Supportive", "Notable", "Divergent", "AUE", "SE "] {
         let refusal = refused(&contract, &map, json!({"update": {GAME: {"role": role}}}));
         assert_eq!(refusal.code, Code::RoleTaxonomyFailure, "{role}");
         assert_eq!(
             refusal.reason,
-            format!("'code.engine.game': role \"{role}\" is not one of: Definitive, Supportive, Notable, Divergent")
+            format!("'code.engine.game': role \"{role}\" is not one of: AT, DE, SE, NE, CQU, UD, DD")
         );
         assert_eq!(
             refusal.to_json()["remediation"],
-            json!({"update": {GAME: {"role": "<Definitive, Supportive, Notable or Divergent>"}}})
+            json!({"update": {GAME: {"role": "<AT, DE, SE, NE, CQU, UD or DD>"}}})
         );
     }
     let created = refused(&contract, &map, json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "Helper"}}}));
     assert_eq!(
         created.to_json()["remediation"],
-        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<Definitive, Supportive, Notable or Divergent>"}}}),
+        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<AT, DE, SE, NE, CQU, UD or DD>"}}}),
         "a refused add stored nothing, so the remediation adds the element again"
     );
-    for role in ["Supportive", "Notable", "Divergent", "Definitive"] {
+    for role in ["AT", "SE", "NE", "CQU", "UD", "DD", "DE"] {
         write(&contract, &map, json!({"update": {GAME: {"role": role}}}));
     }
-    // A stored map with older role names loads, keeps its Definitive element and accepts writes
-    // that do not change a role. A write that changes one must use the four names.
+    // A stored map with older role names loads and accepts writes that do not change a role.
+    // A write that changes one must use the current names.
     let stored = json!({"demo": {"code": {
-        "relay": {"name": "Relay", "role": "DE"},
-        "queue": {"name": "Queue", "role": "SE"},
-        "cache": {"name": "Cache", "role": "CQU"}
+        "relay": {"name": "Relay", "role": "Definitive"},
+        "queue": {"name": "Queue", "role": "Supportive"}
     }}});
     let (_, old) = Map::from_document(&stored).unwrap();
     let old = write(&contract, &old, json!({"update": {"code.queue": {"status": "un_built"}}}));
+    assert_eq!(refused(&contract, &old, json!({"update": {"code.queue": {"role": "Notable"}}})).code, Code::RoleTaxonomyFailure);
     let old = write(&contract, &old, json!({"update": {"code.relay": {"name": "Relay station", "role": "DE"}}}));
     let index = execute(&contract, &old, &json!({"map": {}})).unwrap();
-    assert_eq!(index.result()["definitive"], "code.relay");
-    assert_eq!(refused(&contract, &old, json!({"update": {"code.queue": {"role": "NE"}}})).code, Code::RoleTaxonomyFailure);
-    let second = refused(&contract, &old, json!({"update": {"code.queue": {"role": "Definitive"}}}));
-    assert!(second.reason.contains("'code.relay' already is"), "{}", second.reason);
+    assert_eq!(index.result()["defining"], json!(["code.relay"]));
 }
 
 #[test]
 fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let layer = json!({"technical_name": "cpp code layer", "name": "C++ notes", "role": "Supportive", "instruction": "Record what the C++ realization requires."});
+    let layer = json!({"technical_name": "cpp code layer", "name": "C++ notes", "role": "SE", "instruction": "Record what the C++ realization requires."});
     let map = write(&contract, &map, json!({"add": {"layer.code.cpp": layer}}));
     let records = json!([{"note": "owns the frame allocator"}]);
     let map = write(&contract, &map, json!({"update": {GAME: {"cpp": records, "memory": [{"note": "kept"}]}}}));
@@ -162,17 +157,17 @@ fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
     let added = write(&contract, &map, json!({"add": {GAME: {"cpp": [{"note": "an object"}]}}}));
     assert_eq!(added.element(GAME).unwrap().fields["cpp"].as_array().unwrap().len(), 2, "add keeps the stored record");
     // Where the element holds no records of the layer, an object is still an element beneath.
-    let beneath = write(&contract, &map, json!({"add": {"code.pool": {"memory": {"technical_name": "memory pool", "name": "Arena", "role": "Supportive"}}}}));
+    let beneath = write(&contract, &map, json!({"add": {"code.pool": {"memory": {"technical_name": "memory pool", "name": "Arena", "role": "SE"}}}}));
     assert!(beneath.element("code.pool.memory").is_some());
 }
 
 #[test]
-fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
+fn an_empty_dependencies_and_a_system_layer_that_is_not_a_list_are_refused() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let empty = refused(&contract, &map, json!({"update": {GAME: {"wants": {}}}}));
+    let empty = refused(&contract, &map, json!({"update": {GAME: {"dependencies": {}}}}));
     assert_eq!(empty.code, Code::FieldMismatch);
-    assert_eq!(empty.reason, "wants at 'code.engine.game' holds no want record");
+    assert_eq!(empty.reason, "dependencies at 'code.engine.game' holds no dependency record");
     let text = refused(&contract, &map, json!({"update": {GAME: {"sources": "./docs/engine.md"}}}));
     assert_eq!(text.code, Code::FieldMismatch);
     assert_eq!(

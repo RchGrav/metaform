@@ -133,7 +133,7 @@ async fn the_write_route_forwards_a_write_only_from_the_hosts_own_page() {
     assert_eq!(status, 200, "{text}");
     let id = parsed(&text)[0]["id"].as_str().unwrap().to_string();
     let (call_path, write_path) = (format!("/api/projects/{id}/call"), format!("/api/projects/{id}/write"));
-    let add = json!({"add": {"code.x": {"technical_name": "x code", "name": "Example", "role": "Supportive"}}});
+    let add = json!({"add": {"code.x": {"technical_name": "x code", "name": "Example", "role": "SE"}}});
 
     // With the host's own Origin the write is forwarded, and the element is in the map.
     let (status, text) = request(addr, "POST", &write_path, host.clone(), own.clone(), Some(add.clone())).await;
@@ -151,7 +151,7 @@ async fn the_write_route_forwards_a_write_only_from_the_hosts_own_page() {
     assert!(refusal["code"].is_string() && refusal["message"].is_string() && refusal.get("remediation").is_some(), "{text}");
 
     // Without an Origin, and with another one, the write is refused and nothing is stored.
-    let other = json!({"add": {"code.y": {"technical_name": "y code", "name": "Other", "role": "Supportive"}}});
+    let other = json!({"add": {"code.y": {"technical_name": "y code", "name": "Other", "role": "SE"}}});
     let (status, text) = request(addr, "POST", &write_path, host.clone(), None, Some(other.clone())).await;
     assert_eq!(status, 403, "{text}");
     assert!(parsed(&text)["error"].as_str().unwrap().contains("needs an Origin"), "{text}");

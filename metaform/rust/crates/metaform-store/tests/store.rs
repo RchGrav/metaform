@@ -8,18 +8,18 @@ use serde_json::{Value, json};
 const A: ClientId = ClientId(1);
 const B: ClientId = ClientId(2);
 
-fn want() -> Value {
-    json!({"why": "Receive the mash data to relay it.", "how": "Prepared mash data packets.", "direction": "inbound"})
+fn dependency() -> Value {
+    json!({"op": "Receive the mash data to relay it.", "ef": "Prepared mash data packets.", "ifd": "receive"})
 }
 
-/// The tool example's two elements, with a want between them and a native array.
+/// The tool example's two elements, with a dependency between them and a native array.
 fn seed(store: &Store, map: &MapKey) {
     let commands = [
         json!({"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox",
-            "role": "Supportive", "uri": "./src/widgets/mashbox.c"}}}),
+            "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
-            "name": "mashtrac", "role": "Definitive", "uri": "./src/network/mashtrac.c",
-            "memory": [{"fact": "relays mash data"}], "wants": {"code.masher.widget": want()}}}}),
+            "name": "mashtrac", "role": "DE", "refs": ["./src/network/mashtrac.c"],
+            "memory": [{"fact": "relays mash data"}], "dependencies": {"code.masher.widget": dependency()}}}}),
     ];
     for c in commands {
         store
@@ -64,7 +64,7 @@ fn map_persists_across_reopen() {
         assert_eq!(
             orphans,
             ["code.protocol.network.tracker.cs"],
-            "the widget is wanted; the tracker is not"
+            "the tracker depends on the widget; nothing depends on the tracker"
         );
         (map, before)
     };
@@ -129,12 +129,12 @@ fn refused_write_changes_nothing() {
                     "delete": {"code.masher.widget": {}},
                     "status": "error",
                     "code": "DEPENDENCY_LOCK",
-                    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
-                    "remediation": {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}}
+                    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still depends on it. Remove that dependency first.",
+                    "remediation": {"delete": {"code.protocol.network.tracker.cs": {"dependencies": ["code.masher.widget"]}}}
                 });
                 assert_eq!(answer.to_string(), expected.to_string(), "fields and their order");
             }
-            other => panic!("deleting a wanted element must be refused, got {other:?}"),
+            other => panic!("deleting an element that another depends on must be refused, got {other:?}"),
         }
         assert_eq!(reads(&store, &map), before);
         (map, before)
@@ -274,8 +274,8 @@ fn a_setting_survives_a_reopen_and_bounds_open_databases() {
     assert!(store.open_databases() <= 2, "the setting bounds open databases: {}", store.open_databases());
 }
 
-/// R-009: a database made before a property rename (R-3.6, `intent` to `direction`) opens with its
-/// wants intact. A database whose tables differ in any other way is refused before anything in it
+/// R-009: a database made before the dependency renames (table `WANTS`; fields `why`, `how`, `intent`) opens with its
+/// dependencies intact. A database whose tables differ in any other way is refused before anything in it
 /// is changed, and the refusal says so.
 #[test]
 fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
@@ -293,11 +293,16 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
         seed(&store, &map);
         reads(&store, &map)
     };
-    raw("ALTER TABLE WANTS RENAME direction TO intent");
+    // Put back the names an earlier build stored: the fields `why`, `how` and `intent`, in a
+    // table named `WANTS`.
+    raw("ALTER TABLE DEPENDS_ON RENAME op TO why");
+    raw("ALTER TABLE DEPENDS_ON RENAME ef TO how");
+    raw("ALTER TABLE DEPENDS_ON RENAME ifd TO intent");
+    raw("ALTER TABLE DEPENDS_ON RENAME TO WANTS");
     {
         let store = Store::open(&home).unwrap();
-        assert_eq!(reads(&store, &map), before, "the wants survive the rename");
-        let want = store
+        assert_eq!(reads(&store, &map), before, "the dependencies survive the rename");
+        let dependency = store
             .execute(
                 B,
                 &map,
@@ -305,8 +310,8 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
             )
             .unwrap();
         assert!(
-            want.to_string().contains("\"direction\":\"inbound\""),
-            "{want}"
+            dependency.to_string().contains("\"ifd\":\"receive\""),
+            "{dependency}"
         );
     }
     raw("ALTER TABLE Element ADD later STRING");
@@ -417,7 +422,7 @@ fn a_batch_is_stored_whole_or_not_at_all() {
     let map = project(&store, dir.path());
     store.execute(B, &map, &json!({".": {}})).unwrap(); // seeds the definition first
     let announced = store.subscribe(&map);
-    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Frame mover", "role": "Definitive"}}});
+    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Frame mover", "role": "DE"}}});
     let blocks = |code: &str| {
         json!({"update": {"code.pipeline": {"specification": [{"level": 1, "code": code, "title": "Purpose", "text": "Moves frames."}]}}})
     };
@@ -477,13 +482,13 @@ fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
         let define = json!({"update": {"layer.knowledge.features": {"instruction": "Tag each element with the groups it belongs to."}}});
         store.execute(A, &map, &define).unwrap();
         let add = json!({"add": {"code.alpha": {
-            "role": "Supportive", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
+            "role": "SE", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
             "features": [{"b": 1, "a": {"y": 2, "x": [1, 2]}}, "naïve ✓ \"quoted\"", 3],
             "sources": [], "memory": [{"fact": "one"}, {"fact": "two"}]}}});
         store.execute(A, &map, &add).unwrap();
         let written = dump(&store);
         assert!(
-            written.contains(r#"{"technical_name":"alpha","name":"Alpha part","role":"Supportive","features""#),
+            written.contains(r#"{"technical_name":"alpha","name":"Alpha part","role":"SE","features""#),
             "intake fields first, then the rest by name: {written}"
         );
         written

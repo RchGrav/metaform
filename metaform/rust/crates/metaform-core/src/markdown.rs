@@ -13,14 +13,14 @@
 //!
 //! Role: <role>. Technical name: <technical name>. Status: <status>.
 //!
-//! - `<address>` (<name>) requires `<other>` (<other name>) in order to <why>, which <how>.
+//! - `<address>` (<name>) requires `<other>` (<other name>) in order to <op>, which <ef>.
 //!
 //! <intro>
 //!
 //! ### <element block, level 1>       element blocks: Markdown level = block level + 2
 //! ```
 //!
-//! The role line and the wants are the skeleton facts. They come from the map, so a parse
+//! The role line and the dependencies are the skeleton facts. They come from the map, so a parse
 //! regenerates them from the current map and removes them. A document whose facts differ from the
 //! map is stale, and the parse refuses it, because the skeleton changes through intake, not
 //! through the prose.
@@ -135,7 +135,7 @@ fn element_heading(map: &Map, address: &str) -> String {
     format!("{} {} (`{address}`)", "#".repeat(ELEMENT_HASHES), display_name(map, address))
 }
 
-/// A stored `why` or `how` fitted into the wants sentence: no trailing full stop, and a first
+/// A stored `op` or `ef` fitted into the dependencies sentence: no trailing full stop, and a first
 /// capital lowered when the next letter is lower case, so "Receive" becomes "receive" while "ACP"
 /// stays as written.
 fn fragment(text: &str) -> String {
@@ -149,8 +149,8 @@ fn fragment(text: &str) -> String {
     }
 }
 
-/// The skeleton facts of an element as document paragraphs: the role line, then the wants as a
-/// list, each want as the sentence of R-6.17. The root has none.
+/// The skeleton facts of an element as document paragraphs: the role line, then the dependencies as a
+/// list, each dependency as the sentence of R-6.17. The root has none.
 fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
     let Some(element) = map.element(address).filter(|_| address != ROOT) else {
         return Vec::new();
@@ -164,21 +164,21 @@ fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
         paragraphs.push(details.join(" "));
     }
     let name = display_name(map, address);
-    let wants: Vec<String> = element
-        .wants
+    let dependencies: Vec<String> = element
+        .dependencies
         .iter()
         .map(|(other, record)| {
             let field = |key: &str| fragment(record.get(key).and_then(Value::as_str).unwrap_or(""));
             format!(
                 "- `{address}` ({name}) requires `{other}` ({}) in order to {}, which {}.",
                 display_name(map, other),
-                field("why"),
-                field("how"),
+                field("op"),
+                field("ef"),
             )
         })
         .collect();
-    if !wants.is_empty() {
-        paragraphs.push(wants.join("\n"));
+    if !dependencies.is_empty() {
+        paragraphs.push(dependencies.join("\n"));
     }
     paragraphs
 }
@@ -477,23 +477,23 @@ mod tests {
             "code": {
                 "technical_name": "code",
                 "name": "Packet Lab",
-                "role": "Definitive",
+                "role": "DE",
                 "pipeline": {
                     "technical_name": "pipeline code",
                     "name": "Packet Pipeline",
-                    "role": "Supportive",
+                    "role": "SE",
                     "status": "un_built",
-                    "wants": {"code.store": {"why": "Keep frames.", "how": "holds frames on disk", "direction": "outbound"}},
+                    "dependencies": {"code.store": {"op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}},
                     "specification": [
                         {"level": 1, "code": "PL-2.a", "title": "Purpose", "text": "The pipeline moves frames, as `PL-1` limits.\n\n```text\n## not a heading (`code.x`)\n```"},
                         {"level": 2, "title": "Limits", "text": "- At most 10 Gbit/s."},
                         {"level": 1, "title": "Errors", "text": ""}
                     ]
                 },
-                "pipeline-tools": {"technical_name": "pipeline-tools code", "name": "Pipeline Tools", "role": "Notable"},
-                "store": {"technical_name": "store code", "name": "Frame Store", "role": "Supportive"}
+                "pipeline-tools": {"technical_name": "pipeline-tools code", "name": "Pipeline Tools", "role": "NE"},
+                "store": {"technical_name": "store code", "name": "Frame Store", "role": "SE"}
             },
-            "upstream": {"nic": {"technical_name": "nic upstream", "name": "Network Card", "role": "Supportive"}}
+            "upstream": {"nic": {"technical_name": "nic upstream", "name": "Network Card", "role": "SE"}}
         }))
         .unwrap()
     }
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(render(&again, "packet-lab"), first);
         assert!(first.starts_with("# packet-lab\n\nPacket Lab records network traffic for later study.\n\n## `PL-1` Scope\n\n"));
         assert!(first.contains("### Out of scope"));
-        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: Supportive. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### `PL-2.a` Purpose"));
+        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: SE. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### `PL-2.a` Purpose"));
         assert!(first.contains("#### Limits"));
     }
 
@@ -531,7 +531,7 @@ mod tests {
         // `layer` becomes a root scope on specification-layer-core; add its element directly.
         let mut elements: BTreeMap<String, Element> =
             map().elements().map(|(a, e)| (a.to_string(), e.clone())).collect();
-        let listed = Map::from_tree(&json!({"code": {"technical_name": "specification document layer", "name": "Specification", "role": "Supportive"}})).unwrap();
+        let listed = Map::from_tree(&json!({"code": {"technical_name": "specification document layer", "name": "Specification", "role": "SE"}})).unwrap();
         for prefix in ["layer", "layer.document"] {
             elements.insert(prefix.into(), Element::default());
         }
@@ -542,7 +542,7 @@ mod tests {
         assert!(at("(`code.pipeline`)") < at("(`code.pipeline-tools`)"));
         assert!(at("(`code.store`)") < at("(`upstream.nic`)"));
         assert!(!document.contains("(`layer."), "the layer scope is not part of the document");
-        let older = Map::from_tree(&json!({"code": {"name": "Old", "role": "Notable", "part": {"name": "Part"}}})).unwrap();
+        let older = Map::from_tree(&json!({"code": {"name": "Old", "role": "NE", "part": {"name": "Part"}}})).unwrap();
         assert_eq!(left_out(&older), vec!["code", "code.part"]);
     }
 
@@ -563,7 +563,7 @@ mod tests {
         let map = map();
         let document = render(&map, "packet-lab");
         let cases = [
-            (document.replace("Role: Supportive. Technical name: pipeline code", "Role: Notable. Technical name: pipeline code"), "skeleton facts"),
+            (document.replace("Role: SE. Technical name: pipeline code", "Role: NE. Technical name: pipeline code"), "skeleton facts"),
             (format!("{document}\n## Ghost (`code.ghost`)\n"), "not an element"),
             (document.replace("## Frame Store (`code.store`)", "## Store (`code.store`)"), "must read"),
             (document.replace("#### Limits", "##### Limits"), "level 3 follows level 1"),

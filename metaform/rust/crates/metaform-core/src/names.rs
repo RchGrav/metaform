@@ -26,7 +26,7 @@ pub const ROOT_SCOPES: [&str; 8] = [
 pub const ROOT_PREFIXES: [&str; 3] = ["upstream", "downstream", "layer"];
 
 /// Whether an address belongs to the project itself: the root, or an element not under a root
-/// prefix. The one-Definitive rule (R-3.13) counts only these elements.
+/// prefix. A Defining Element (role DE) counts only among these elements.
 pub fn in_project(address: &str) -> bool {
     address == ROOT || !ROOT_PREFIXES.contains(&address.split('.').next().unwrap_or_default())
 }
@@ -194,8 +194,8 @@ impl NameCheck {
         let mut out = JsonMap::new();
         for (key, value) in fields {
             let fixed = match value {
-                Value::Array(groups) if key == "wants" => {
-                    Value::Array(groups.iter().map(|group| self.want_group(group)).collect())
+                Value::Array(groups) if key == "dependencies" => {
+                    Value::Array(groups.iter().map(|group| self.dependency_group(group)).collect())
                 }
                 Value::Object(child) => self.fields(child, &join(address, key)),
                 other => other.clone(),
@@ -205,7 +205,7 @@ impl NameCheck {
         Value::Object(out)
     }
 
-    fn want_group(&mut self, group: &Value) -> Value {
+    fn dependency_group(&mut self, group: &Value) -> Value {
         let Value::Object(group) = group else {
             return group.clone();
         };
@@ -253,9 +253,9 @@ pub(crate) fn check_command(command: &Value) -> Result<(), Refusal> {
                 .iter()
                 .map(|(address, supplied)| {
                     let mut supplied = supplied.clone();
-                    if let Some(Value::Array(wants)) = supplied.get_mut("wants") {
-                        for want in wants.iter_mut() {
-                            if let Value::String(provider) = want {
+                    if let Some(Value::Array(dependencies)) = supplied.get_mut("dependencies") {
+                        for dependency in dependencies.iter_mut() {
+                            if let Value::String(provider) = dependency {
                                 *provider = check.address(provider);
                             }
                         }

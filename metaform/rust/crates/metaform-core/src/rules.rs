@@ -8,8 +8,10 @@ use crate::names::{self, ROOT};
 use crate::refusal::{Code, Refusal};
 use crate::specification;
 
-/// The four roles (R-3.13), spelled as a write must spell them.
-pub const ROLES: [&str; 4] = ["Definitive", "Supportive", "Notable", "Divergent"];
+/// The roles of the intake procedure, spelled as a write must spell them: Artifact Type,
+/// Defining Element, Supportive Element, Notable Element, Cestui Que Use, Upstream Dependency
+/// and Downstream Dependant.
+pub const ROLES: [&str; 7] = ["AT", "DE", "SE", "NE", "CQU", "UD", "DD"];
 
 /// Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the
 /// map before the write.
@@ -85,9 +87,9 @@ fn check_technical_name(before: &Map, address: &str, element: &Element) -> Resul
     ))
 }
 
-/// A write that sets or changes `role` must set one of the four roles (R-3.13). A role the write
-/// did not change is not checked, so a stored map with older role names (`DE`, `SE`, `NE`, `CQU`)
-/// still accepts unrelated writes.
+/// A write that sets or changes `role` must set one of `ROLES` (R-3.13). A role the write
+/// did not change is not checked, so a stored map with older role names (`Definitive`,
+/// `Supportive`, `Notable`, `Divergent`) still accepts unrelated writes.
 fn check_role(before: &Map, address: &str, element: &Element) -> Result<(), Refusal> {
     let Some(role) = element.fields.get("role").and_then(Value::as_str) else {
         return Ok(());
@@ -99,7 +101,7 @@ fn check_role(before: &Map, address: &str, element: &Element) -> Result<(), Refu
     Err(Refusal::new(
         Code::RoleTaxonomyFailure,
         format!("'{address}': role \"{role}\" is not one of: {}", ROLES.join(", ")),
-        Some(correction(before, address, element, "role", "<Definitive, Supportive, Notable or Divergent>")),
+        Some(correction(before, address, element, "role", "<AT, DE, SE, NE, CQU, UD or DD>")),
     ))
 }
 

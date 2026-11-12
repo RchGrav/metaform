@@ -1,11 +1,11 @@
 {
   "code": {
     "application": {
-      "wants": {
+      "dependencies": {
         "code.sdk": {
-          "why": "Use the required SDK capabilities.",
-          "how": "Provides the required SDK capabilities.",
-          "direction": "inbound"
+          "op": "Use the required SDK capabilities.",
+          "ef": "Provides the required SDK capabilities.",
+          "ifd": "receive"
         }
       }
     },

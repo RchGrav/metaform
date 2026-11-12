@@ -118,7 +118,7 @@ fn a_schema_assembled_from_help_answers_takes_the_owners_example() {
             "map" => vec![json!({"map": {}})],
             "addressed read" => vec![requests[5].clone()],
             "raw dump" => vec![json!({".": {}})],
-            _ => vec![json!({"help": {}}), json!({"help": "add"}), json!({"help": "WantRecord"})],
+            _ => vec![json!({"help": {}}), json!({"help": "add"}), json!({"help": "DependencyRecord"})],
         };
         for example in &own {
             assert!(validator.is_valid(example), "{name}: {example}");

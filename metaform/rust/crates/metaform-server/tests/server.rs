@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 /// (`mcp-tool.published.json`) in place of the contract's schema, which restates it for each verb.
 /// 656 since 2026-11-11: the published schema is the list of operations only. The owner designed
 /// the tool surface to be well under 1 KB. 672 since the `help` operation joined that list (R-5.39).
-const TOOLS_LIST_BYTES: usize = 672;
+const TOOLS_LIST_BYTES: usize = 686;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]
@@ -82,18 +82,18 @@ fn two_agents_share_one_project() {
     first.request("server/discover", json!({}));
     let mut second = Agent::start(&home, &project);
     second.request("server/discover", json!({}));
-    let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
+    let dependency =
+        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
     assert!(
         !first
             .call(json!({"update": {"code.provider.part": {"name": "provider"}}}))
             .0
     );
-    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "wants": {"code.provider.part": want}}}})).0);
+    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "dependencies": {"code.provider.part": dependency}}}})).0);
     let (refused, refusal) = first.call(json!({"delete": {"code.provider.part": {}}}));
     assert!(
         refused,
-        "the provider is wanted by the second agent's element"
+        "the second agent's element depends on the provider's element"
     );
     assert!(refusal["remediation"].is_object(), "{refusal}");
     assert_eq!(
@@ -266,13 +266,13 @@ fn only_commits_are_announced() {
     let home = dir.path().join("home");
     let mut a = Agent::on_map(&home, "notes");
     a.request("server/discover", json!({}));
-    let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
-    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "wants": {"code.base.part": want}}}})).0);
+    let dependency =
+        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
+    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "dependencies": {"code.base.part": dependency}}}})).0);
     a.listen_to_map();
     assert!(
         a.call(json!({"delete": {"code.base.part": {}}})).0,
-        "deleting a wanted element is refused"
+        "deleting an element that another depends on is refused"
     );
     assert!(
         a.notice(
@@ -547,7 +547,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     let mut agent = Agent::start(&home, &project);
     agent.request("server/discover", json!({}));
     let (refused, said) = agent.call(json!({"add": {"code": {
-        "technical_name": "code", "name": "Packet Lab", "role": "Definitive",
+        "technical_name": "code", "name": "Packet Lab", "role": "DE",
         "specification": [
             {"text": "Packet Lab records frames from the network card."},
             {"level": 1, "title": "Scope", "text": "It MUST record every frame."}
@@ -564,7 +564,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     assert_eq!(code, 0, "{document}");
     assert_eq!(
         document,
-        "# lab\n\n## Packet Lab (`code`)\n\nRole: Definitive. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
+        "# lab\n\n## Packet Lab (`code`)\n\nRole: DE. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
     );
     let (code, checked, reports) = run(&["specification", "export", "--check", "--project", folder]);
     assert_eq!((code, checked), (0, document), "--check leaves stdout as the document");
@@ -595,8 +595,8 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     let (refused, answer) = agent.call(seed);
     assert!(!refused, "{answer}");
     for (address, technical, name, role) in [
-        ("code.engine", "engine", "main loop", "Definitive"),
-        ("code.render", "render", "painter", "Supportive"),
+        ("code.engine", "engine", "main loop", "DE"),
+        ("code.render", "render", "painter", "SE"),
     ] {
         let fields = json!({"technical_name": technical, "name": name, "role": role});
         let (refused, answer) = agent.call(json!({"update": {address: fields}}));
@@ -639,9 +639,9 @@ fn an_edited_specification_imports_all_or_nothing() {
     let mut agent = Agent::start(&home, &project);
     agent.request("server/discover", json!({}));
     for command in [
-        json!({"add": {"code": {"technical_name": "code", "name": "Packet Lab", "role": "Definitive",
+        json!({"add": {"code": {"technical_name": "code", "name": "Packet Lab", "role": "DE",
             "specification": [{"level": 1, "code": "PL-1", "title": "Scope", "text": "Packet Lab records frames."}]}}}),
-        json!({"add": {"code.store": {"technical_name": "store code", "name": "Frame Store", "role": "Supportive",
+        json!({"add": {"code.store": {"technical_name": "store code", "name": "Frame Store", "role": "SE",
             "specification": [{"level": 1, "title": "Retention", "text": "The store keeps frames for a week."}]}}}),
     ] {
         let (refused, said) = agent.call(command);
@@ -708,8 +708,8 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
     let seed = json!({"update": {definition: serde_json::Value::Object(metaform_core::specification::definition())}});
     for command in [
         seed,
-        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "Definitive"}}}),
-        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "Supportive"}}}),
+        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "DE"}}}),
+        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "SE"}}}),
     ] {
         let (refused, answer) = agent.call(command);
         assert!(!refused, "{answer}");
@@ -723,7 +723,7 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
     let (_, again) = agent.call(json!({"goto": "code.engine"}));
     assert_eq!(
         again,
-        json!({"at": "code.engine", "unchanged": ["element", "wants", "wanted_by", "layers", "memory", "instructions"]}),
+        json!({"at": "code.engine", "unchanged": ["element", "dependencies", "dependents", "layers", "memory", "instructions"]}),
         "a repeat arrival names every part it holds back"
     );
     let (_, other) = agent.call(json!({"goto": "code.render"}));

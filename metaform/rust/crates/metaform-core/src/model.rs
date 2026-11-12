@@ -23,8 +23,8 @@ pub struct MapRef(pub String);
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Element {
     pub fields: Fields,
-    /// Want records keyed by the address of the other element (R-3.5).
-    pub wants: BTreeMap<String, Fields>,
+    /// Dependency records keyed by the address of the other element (R-3.5).
+    pub dependencies: BTreeMap<String, Fields>,
     /// The element's own child map, if it has one. The store saves and loads it, but no command
     /// sets it yet.
     pub child_map: Option<MapRef>,
@@ -33,9 +33,12 @@ pub struct Element {
 /// The intake fields, in R-6.15's order. They come first in an element; every other field follows,
 /// sorted by name. One order makes an element's JSON the same after every reload and in every
 /// form of Metaform, whatever order its fields were written in.
-pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
-/// The want-record fields, in R-6.17's order, first in a want record; any other follows by name.
-pub const WANT_ORDER: [&str; 3] = ["why", "how", "direction"];
+pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "refs", "status"];
+/// The element's source links: a list with one uri for each artifact that has this address. It
+/// is a field of the element, not a layer, so every read of the element returns it.
+pub const REFS: &str = "refs";
+/// The dependency-record fields, in R-6.17's order, first in a dependency record; any other follows by name.
+pub const DEPENDENCY_ORDER: [&str; 3] = ["op", "ef", "ifd"];
 
 /// Put `fields` in canonical order: the names in `first`, in that order, then the rest by name.
 fn put_in_order(fields: &mut Fields, first: &[&str]) {
@@ -51,44 +54,51 @@ fn put_in_order(fields: &mut Fields, first: &[&str]) {
 }
 
 impl Element {
-    /// Put the fields and every want record in canonical order (`FIELD_ORDER`, `WANT_ORDER`).
+    /// Put the fields and every dependency record in canonical order (`FIELD_ORDER`, `DEPENDENCY_ORDER`).
     pub fn put_in_order(&mut self) {
+        // A map stored before `refs` held one link in `uri`. It is read as a list of one.
+        if let Some(uri) = self.fields.get("uri").filter(|uri| uri.is_string()).cloned()
+            && !self.fields.contains_key(REFS)
+        {
+            self.fields.shift_remove("uri");
+            self.fields.insert(REFS.to_string(), Value::Array(vec![uri]));
+        }
         put_in_order(&mut self.fields, &FIELD_ORDER);
-        for record in self.wants.values_mut() {
-            put_in_order(record, &WANT_ORDER);
+        for record in self.dependencies.values_mut() {
+            put_in_order(record, &DEPENDENCY_ORDER);
         }
     }
 
     /// An element with nothing in it: a namespace branch that a write created.
     pub fn is_empty(&self) -> bool {
-        self.fields.is_empty() && self.wants.is_empty() && self.child_map.is_none()
+        self.fields.is_empty() && self.dependencies.is_empty() && self.child_map.is_none()
     }
 
-    /// The wants as the contract writes them: one dictionary keyed by provider address.
-    pub fn wants_json(&self) -> Value {
+    /// The dependencies as the contract writes them: one dictionary keyed by provider address.
+    pub fn dependencies_json(&self) -> Value {
         Value::Object(
-            self.wants
+            self.dependencies
                 .iter()
                 .map(|(other, record)| (other.clone(), Value::Object(record.clone())))
                 .collect(),
         )
     }
 
-    /// The fields an addressed read returns (R-5.10, R-5.21): scalar values only. Wants and
-    /// array-valued layers come back only when a read names them.
+    /// The fields an addressed read returns (R-5.10, R-5.21): scalar values and `refs`.
+    /// Dependencies and array-valued layers come back only when a read names them.
     pub fn base_fields(&self) -> Fields {
         self.fields
             .iter()
-            .filter(|(_, value)| !value.is_array())
+            .filter(|(name, value)| !value.is_array() || name.as_str() == REFS)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
 
-    /// The element's fields and wants, without child elements, in the agent's form.
+    /// The element's fields and dependencies, without child elements, in the agent's form.
     pub fn view(&self) -> Value {
         let mut out = self.fields.clone();
-        if !self.wants.is_empty() {
-            out.insert("wants".to_string(), self.wants_json());
+        if !self.dependencies.is_empty() {
+            out.insert("dependencies".to_string(), self.dependencies_json());
         }
         Value::Object(out)
     }
@@ -190,7 +200,7 @@ impl Map {
     }
 
     /// Load a document (R-4.2): one top-level key, the project name, over the nested map in the
-    /// agent's form. Wants may be the contract's array or one address-keyed object.
+    /// agent's form. Dependencies may be the contract's array or one address-keyed object.
     pub fn from_document(document: &Value) -> Result<(String, Map), MapError> {
         let object = document.as_object().filter(|object| object.len() == 1);
         let Some((name, root)) = object.and_then(|object| object.iter().next()) else {
@@ -207,7 +217,7 @@ impl Map {
     }
 
     /// Load a nested map in the agent's form. Every name must survive storage (R-4.11), every
-    /// top-level element must be in a root scope (R-3.3) and every want must name an element.
+    /// top-level element must be in a root scope (R-3.3) and every dependency must name an element.
     pub fn from_tree(root: &Value) -> Result<Map, MapError> {
         let Value::Object(root) = root else {
             return Err(MapError::Invalid("a map must be a JSON object".into()));
@@ -233,11 +243,11 @@ impl Map {
                 problems.push(refusal.reason);
             }
             for other in element
-                .wants
+                .dependencies
                 .keys()
                 .filter(|other| !elements.contains_key(*other))
             {
-                problems.push(format!("'{address}' wants '{other}', which does not exist"));
+                problems.push(format!("'{address}' depends on '{other}', which does not exist"));
             }
         }
         if problems.is_empty() {
@@ -269,43 +279,43 @@ impl Map {
         Value::Object(root)
     }
 
-    /// The addresses of the elements whose wants name `address`.
+    /// The addresses of the elements whose dependencies name `address`.
     pub(crate) fn receivers(elements: &BTreeMap<String, Element>, address: &str) -> Vec<String> {
         elements
             .iter()
             .filter(|(holder, element)| {
-                holder.as_str() != address && element.wants.contains_key(address)
+                holder.as_str() != address && element.dependencies.contains_key(address)
             })
             .map(|(holder, _)| holder.clone())
             .collect()
     }
 
-    /// Every address that some element wants.
-    pub(crate) fn wanted(&self) -> BTreeSet<&str> {
+    /// Every address that some element dependencies.
+    pub(crate) fn depended(&self) -> BTreeSet<&str> {
         self.elements
             .values()
-            .flat_map(|element| element.wants.keys().map(String::as_str))
+            .flat_map(|element| element.dependencies.keys().map(String::as_str))
             .collect()
     }
 }
 
-/// A wants update: a dictionary keyed by provider address whose values change want fields.
+/// A dependencies update: a dictionary keyed by provider address whose values change dependency fields.
 pub(crate) fn is_want_updates(map: &JsonMap<String, Value>) -> bool {
     !map.is_empty()
         && map.values().all(|change| {
             change
                 .as_object()
-                .is_some_and(|c| ["why", "how", "direction"].iter().any(|f| c.contains_key(*f)))
+                .is_some_and(|c| ["op", "ef", "ifd"].iter().any(|f| c.contains_key(*f)))
         })
 }
 
-/// A value read as want records: one dictionary keyed by provider address whose values are all
-/// want records (the contract's and the canonical map's form), or an older list of such objects.
-/// Anything else named `wants` is a namespace branch, as in the stored-document schema.
-fn read_wants(value: &Value) -> Option<BTreeMap<String, Fields>> {
+/// A value read as dependency records: one dictionary keyed by provider address whose values are all
+/// dependency records (the contract's and the canonical map's form), or an older list of such objects.
+/// Anything else named `dependencies` is a namespace branch, as in the stored-document schema.
+fn read_dependencies(value: &Value) -> Option<BTreeMap<String, Fields>> {
     let is_record = |record: &Value| {
-        record.get("why").is_some_and(Value::is_string)
-            && record.get("how").is_some_and(Value::is_string)
+        record.get("op").is_some_and(Value::is_string)
+            && record.get("ef").is_some_and(Value::is_string)
     };
     let groups: Vec<&JsonMap<String, Value>> = match value {
         Value::Array(items) => items.iter().map(Value::as_object).collect::<Option<_>>()?,
@@ -314,11 +324,11 @@ fn read_wants(value: &Value) -> Option<BTreeMap<String, Fields>> {
         }
         _ => return None,
     };
-    let mut wants = BTreeMap::new();
+    let mut dependencies = BTreeMap::new();
     for (other, record) in groups.into_iter().flatten() {
-        wants.insert(other.clone(), record.as_object()?.clone());
+        dependencies.insert(other.clone(), record.as_object()?.clone());
     }
-    Some(wants)
+    Some(dependencies)
 }
 
 /// Split a nested object into one element per address. An object value is a child element.
@@ -330,10 +340,10 @@ pub(crate) fn flatten(
     let mut element = Element::default();
     let mut children = Vec::new();
     for (key, value) in node {
-        if key == "wants"
-            && let Some(wants) = read_wants(value)
+        if key == "dependencies"
+            && let Some(dependencies) = read_dependencies(value)
         {
-            element.wants = wants;
+            element.dependencies = dependencies;
         } else if let Value::Object(child) = value {
             children.push((names::join(address, key), child));
         } else {

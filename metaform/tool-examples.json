@@ -4,11 +4,11 @@
     {
       "add": {
         "code.protocol.network.tracker.cs": {
-          "wants": {
+          "dependencies": {
             "code.masher.widget": {
-              "why": "Receive the mash data to relay it.",
-              "how": "Prepared mash data packets.",
-              "direction": "inbound"
+              "op": "Receive the mash data to relay it.",
+              "ef": "Prepared mash data packets.",
+              "ifd": "receive"
             }
           }
         }
@@ -22,7 +22,7 @@
     {
       "delete": {
         "code.protocol.network.tracker.cs": {
-          "wants": [
+          "dependencies": [
             "code.masher.widget"
           ]
         }
@@ -52,11 +52,11 @@
       "code.masher.widget": {}
     },
     "status": "error",
-    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
+    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still depends on it. Remove that dependency first.",
     "remediation": {
       "delete": {
         "code.protocol.network.tracker.cs": {
-          "wants": [
+          "dependencies": [
             "code.masher.widget"
           ]
         }
@@ -67,21 +67,21 @@
     "code.masher.widget": {
       "technical_name": "widget masher code",
       "name": "mashbox",
-      "role": "Supportive",
-      "uri": "./src/widgets/mashbox.c"
+      "role": "SE",
+      "refs": ["./src/widgets/mashbox.c"]
     },
     "code.protocol.network.tracker.cs": {
       "technical_name": "cs tracker network protocol",
       "name": "mashtrac",
-      "role": "Definitive",
-      "uri": "./src/network/mashtrac.c"
+      "role": "DE",
+      "refs": ["./src/network/mashtrac.c"]
     }
   },
   "read_after_role_removal": {
     "code.masher.widget": {
       "technical_name": "widget masher code",
       "name": "mashbox",
-      "uri": "./src/widgets/mashbox.c"
+      "refs": ["./src/widgets/mashbox.c"]
     }
   },
   "goto_example": {
@@ -94,15 +94,15 @@
       "element": {
         "technical_name": "widget masher code",
         "name": "mashbox",
-        "role": "Supportive",
-        "uri": "./src/widgets/mashbox.c"
+        "role": "SE",
+        "refs": ["./src/widgets/mashbox.c"]
       },
-      "wants": {},
-      "wanted_by": {
+      "dependencies": {},
+      "dependents": {
         "code.protocol.network.tracker.cs": {
-          "why": "Receive the mash data to relay it.",
-          "how": "Prepared mash data packets.",
-          "direction": "inbound"
+          "op": "Receive the mash data to relay it.",
+          "ef": "Prepared mash data packets.",
+          "ifd": "receive"
         }
       },
       "layers": {},

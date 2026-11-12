@@ -4,6 +4,18 @@
 
 This document is the specification that the build follows. It starts with the part being built now and grows section by section. Material from `metaform/SPECIFICATION.md` enters only when a section is built and the founder accepts it. Until then, `metaform/SPECIFICATION.md` is a draft and this document does not depend on it.
 
+## Changes of 2026-11-12, which the sections below do not yet show
+
+The founder's instruction of 2026-11-12 aligned the tool with the intake procedure (`rich/intake_best.xml`). The Rust form is changed. The Node form, the Python form and the conformance set are not changed yet. Where a requirement below disagrees with this list, this list governs.
+
+- **Dependency.** The record that R-3.5 and R-3.6 call a want is a dependency. An element holds its dependencies in `dependencies`, an object keyed by the address of each providing element (PE). **Reason:** the founder's instruction: the word "wants" is no longer used anywhere.
+- **Dependency fields.** A dependency has `op` (Operative Purpose), `ef` (Encounter Function) and `ifd` (Information Flow Direction). They replace `why`, `how` and `direction`. `ifd` is `send`, `receive` or `both`, relative to the receiving element. **Reason:** these are the procedure's own terms, and a model infers from them.
+- **Roles.** A role is `AT`, `DE`, `SE`, `NE`, `CQU`, `UD` or `DD`. They replace Definitive, Supportive, Notable and Divergent (R-3.13). A map may hold several Defining Elements, so the rule of one Definitive element is removed. `map` returns `defining`, the list of the project's Defining Elements, in place of `definitive`. **Reason:** the intake gives a Defining Element to each artifact type it finds.
+- **`refs`.** An element holds `refs`, a list with one uri for each artifact that has the element's address. It replaces `uri`. A code project is one artifact and has one uri. Several photos of one type share one address, and each has its own uri. `refs` is a field of the element, not a layer, so every read of the element returns it. **Reason:** the map holds each address once, so the artifacts that share an address must be listed at that address.
+- **Refusals that return the corrected command.** A command with `uri` is refused with the same command using `refs`. A command that gives `dependencies` as a list of records with `pe` is refused with the same records keyed by `pe`. An `ifd` of `sends` or `receives` is refused with `send` or `receive`.
+- **Stored maps.** A database made by an earlier build is brought up to date when it is opened: the relationship `WANTS` becomes `DEPENDS_ON`, and its fields `why`, `how` and `direction` become `op`, `ef` and `ifd`. A stored `uri` is read as `refs` with one item. Stored role values and `ifd` values are not changed.
+- **Open, for the founder.** An element holds one dependency for each providing element, because the dependencies are keyed by that address. The schema in the procedure's save of 2026-11-12 07:43 wrote dependencies as a list, which would allow two dependencies on the same providing element. The keyed form is kept because the procedure defines a join as a dictionary held in the receiving element, and because the store, `delete` and `update` identify a dependency by its two addresses.
+
 ## How to read this document
 
 Every requirement carries one status:

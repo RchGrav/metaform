@@ -26,7 +26,7 @@ pub enum Code {
     NameRoundTripFailure,
     NotFound,
     ElementsBeneath,
-    WantIncomplete,
+    DependencyIncomplete,
     ElementNotInSkeleton,
     HeadingLevelInvalid,
     HeadingInText,
@@ -52,7 +52,7 @@ impl Code {
             Code::NameRoundTripFailure => "NAME_ROUND_TRIP_FAILURE",
             Code::NotFound => "NOT_FOUND",
             Code::ElementsBeneath => "ELEMENTS_BENEATH",
-            Code::WantIncomplete => "WANT_INCOMPLETE",
+            Code::DependencyIncomplete => "DEPENDENCY_INCOMPLETE",
             Code::ElementNotInSkeleton => "ELEMENT_NOT_IN_SKELETON",
             Code::HeadingLevelInvalid => "HEADING_LEVEL_INVALID",
             Code::HeadingInText => "HEADING_IN_TEXT",
@@ -71,10 +71,10 @@ impl Code {
             }
             Code::CanonicalNameCollisionFailure => "R-3.12: name must not equal technical_name.",
             Code::RoleTaxonomyFailure => {
-                "R-3.13: a role is Definitive, Supportive, Notable or Divergent, and a map has exactly one Definitive element."
+                "R-3.13: a role is AT, DE, SE, NE, CQU, UD or DD."
             }
             Code::GrammarConstraintViolation => {
-                "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
+                "Module 6.4: op is a bare infinitive verb phrase, ef is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
             }
             Code::FieldMismatch => {
                 "The command must match the project-map input schema, and every element must match the stored-document schema."
@@ -86,7 +86,7 @@ impl Code {
             Code::LayerNotRegistered => {
                 "R-6.24, R-6.15: a list is written only to a layer defined beneath layer, or to a system layer (skills, memory, sources)."
             }
-            Code::DependencyLock => "R-5.7: delete refuses an element that something still wants.",
+            Code::DependencyLock => "R-5.7: delete refuses an element that another element still depends on.",
             Code::NameRoundTripFailure => {
                 "R-4.11: a name must convert to camelCase and back exactly, and a name in uppercase is refused, not lowercased."
             }
@@ -94,9 +94,9 @@ impl Code {
             Code::ElementsBeneath => {
                 "R-3.1: an element with elements beneath it cannot be deleted before them."
             }
-            Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
+            Code::DependencyIncomplete => "R-5.6: a dependency needs all of its fields: op, ef and ifd.",
             Code::ElementNotInSkeleton => {
-                "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Definitive element."
+                "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Defining Element (role DE)."
             }
             Code::HeadingLevelInvalid => {
                 "R-6.25: the first titled block is level 1, each level is at most one more than the level before it, and no level is above 4."

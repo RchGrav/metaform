@@ -50,7 +50,7 @@ fn blocks(map: &Map, address: &str) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// Blocks are accepted only at skeleton elements, and at the root once a Definitive element
+/// Blocks are accepted only at skeleton elements, and at the root once a Defining Element
 /// exists (R-6.26). Text is normalized, update replaces, add appends, and `[]` removes the field.
 #[test]
 fn blocks_follow_the_skeleton_and_are_normalized() {
@@ -78,7 +78,7 @@ fn blocks_follow_the_skeleton_and_are_normalized() {
     assert_eq!(
         root.code,
         Code::ElementNotInSkeleton,
-        "no Definitive element yet"
+        "no Defining Element yet"
     );
     let (map, _) = run(
         &contract,
@@ -273,12 +273,12 @@ fn the_layer_is_readable_and_listed_by_goto() {
     let (_, trunk) = run(
         &contract,
         &map,
-        json!({"code.masher": {"specification": {}, "wants": {}}}),
+        json!({"code.masher": {"specification": {}, "dependencies": {}}}),
     )
     .unwrap();
     assert_eq!(
         trunk["code.masher"],
-        json!({"wants": {}}),
+        json!({"dependencies": {}}),
         "the layer does not apply at a trunk"
     );
 
@@ -349,7 +349,7 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
 
-    let features = json!({"technical_name": "features knowledge layer", "name": "Features", "role": "Supportive",
+    let features = json!({"technical_name": "features knowledge layer", "name": "Features", "role": "SE",
         "instruction": "Tag the element with each feature it belongs to."});
     let (map, _) = run(
         &contract,

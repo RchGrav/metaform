@@ -12,7 +12,7 @@ use serde_json::{Map as JsonMap, Value, json};
 use crate::contract::Contract;
 use crate::model::{Effect, Element, Map, flatten, is_want_updates};
 use crate::names::{self, ROOT};
-use crate::reads::{self, is_project_definitive};
+use crate::reads;
 use crate::refusal::{Code, Refusal};
 use crate::{rules, shape, specification};
 
@@ -124,11 +124,11 @@ impl Work<'_> {
         self.elements.get_mut(address).expect("ensured before use")
     }
 
-    /// Write a want. Supplied fields change the current record; the result needs every field
-    /// (R-5.6). The element the want names is created if it is not there (R-5.4).
-    fn write_want(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
+    /// Write a dependency. Supplied fields change the current record; the result needs every field
+    /// (R-5.6). The element the dependency names is created if it is not there (R-5.4).
+    fn write_dependency(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
         let mut record = self.elements[holder]
-            .wants
+            .dependencies
             .get(other)
             .cloned()
             .unwrap_or_default();
@@ -141,7 +141,7 @@ impl Work<'_> {
                 .and_then(Value::as_str)
                 .is_some_and(|text| !text.trim().is_empty())
         };
-        let missing: Vec<&str> = ["why", "how", "direction"]
+        let missing: Vec<&str> = ["op", "ef", "ifd"]
             .into_iter()
             .filter(|key| !filled(key))
             .collect();
@@ -151,24 +151,24 @@ impl Work<'_> {
                 complete.insert((*key).into(), json!(format!("<{key}>")));
             }
             return Err(Refusal::new(
-                Code::WantIncomplete,
+                Code::DependencyIncomplete,
                 format!(
-                    "'{holder}' wants '{other}': the want has no {}",
+                    "'{holder}' depends on '{other}': the dependency has no {}",
                     missing.join(", ")
                 ),
-                Some(json!({"update": {holder: {"wants": {other: complete}}}})),
+                Some(json!({"update": {holder: {"dependencies": {other: complete}}}})),
             ));
         }
         self.ensure(other)?;
         self.element_mut(holder)
-            .wants
+            .dependencies
             .insert(other.to_string(), record);
         Ok(())
     }
 
-    fn write_wants(&mut self, holder: &str, wants: &JsonMap<String, Value>) -> Result<(), Refusal> {
-        for (other, change) in wants {
-            self.write_want(holder, other, change)?;
+    fn write_dependencies(&mut self, holder: &str, dependencies: &JsonMap<String, Value>) -> Result<(), Refusal> {
+        for (other, change) in dependencies {
+            self.write_dependency(holder, other, change)?;
         }
         Ok(())
     }
@@ -199,8 +199,8 @@ impl Work<'_> {
             }
         }
         for (at, supplied) in &supplied_elements {
-            for (other, record) in &supplied.wants {
-                self.write_want(at, other, &Value::Object(record.clone()))?;
+            for (other, record) in &supplied.dependencies {
+                self.write_dependency(at, other, &Value::Object(record.clone()))?;
             }
         }
         Ok(())
@@ -211,8 +211,8 @@ impl Work<'_> {
         self.ensure(address)?;
         for (key, value) in supplied.as_object().expect("checked by the input schema") {
             match value {
-                Value::Object(wants) if key == "wants" && is_want_updates(wants) => {
-                    self.write_wants(address, wants)?
+                Value::Object(dependencies) if key == "dependencies" && is_want_updates(dependencies) => {
+                    self.write_dependencies(address, dependencies)?
                 }
                 Value::Null => {
                     self.element_mut(address).fields.remove(key);
@@ -228,16 +228,16 @@ impl Work<'_> {
         Ok(())
     }
 
-    /// `delete` removes the named wants, or the element. An element that something still wants is
-    /// refused, with the command that removes the want (R-5.7, R-5.25).
+    /// `delete` removes the named dependencies, or the element. An element that something still dependencies is
+    /// refused, with the command that removes the dependency (R-5.7, R-5.25).
     fn delete(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
         if !self.elements.contains_key(address) {
             return Ok(());
         }
-        if let Some(Value::Array(wants)) = supplied.get("wants") {
-            for other in wants.iter().filter_map(Value::as_str) {
-                if self.elements[address].wants.contains_key(other) {
-                    self.element_mut(address).wants.remove(other);
+        if let Some(Value::Array(dependencies)) = supplied.get("dependencies") {
+            for other in dependencies.iter().filter_map(Value::as_str) {
+                if self.elements[address].dependencies.contains_key(other) {
+                    self.element_mut(address).dependencies.remove(other);
                     self.prune(other);
                 }
             }
@@ -250,16 +250,16 @@ impl Work<'_> {
             // structure and code are unchanged.
             let message = if receivers.len() > 1 {
                 format!(
-                    "cannot delete '{address}': these elements still want it: {}. Remove their wants first.",
+                    "cannot delete '{address}': these elements still depend on it: {}. Remove their dependencies first.",
                     receivers.iter().map(|r| format!("'{r}'")).collect::<Vec<_>>().join(", ")
                 )
             } else {
-                format!("cannot delete '{address}': '{first}' still wants it. Remove that want first.")
+                format!("cannot delete '{address}': '{first}' still depends on it. Remove that dependency first.")
             };
             return Err(Refusal::new(
                 Code::DependencyLock,
                 message,
-                Some(json!({"delete": {first: {"wants": [address]}}})),
+                Some(json!({"delete": {first: {"dependencies": [address]}}})),
             ));
         }
         let beneath = self
@@ -273,20 +273,20 @@ impl Work<'_> {
                 Some(json!({"delete": {deepest.as_str(): {}}})),
             ));
         }
-        let wanted: Vec<String> = self.elements[address].wants.keys().cloned().collect();
+        let depended: Vec<String> = self.elements[address].dependencies.keys().cloned().collect();
         self.remove(address);
         if let Some(parent) = names::parent(address) {
             self.prune(parent);
         }
-        for other in wanted {
+        for other in depended {
             self.prune(&other);
         }
         Ok(())
     }
 
     /// Remove an element that a deletion left with nothing in it, and then each branch above it
-    /// that is left the same way: no fields, no wants, nothing beneath it and nothing that wants
-    /// it. A write creates the element a want names (R-5.4); when the last want that names it is
+    /// that is left the same way: no fields, no dependencies, nothing beneath it and nothing that dependencies
+    /// it. A write creates the element a dependency names (R-5.4); when the last dependency that names it is
     /// gone and it was never filled in, it goes too, so no empty address stays in the map.
     fn prune(&mut self, address: &str) {
         let mut branch = Some(address.to_string());
@@ -330,7 +330,6 @@ impl Work<'_> {
             self.check_collisions(address, element)?;
             self.contract.check_element(address, &element.view())?;
         }
-        self.check_definitive()?;
         let mut effect = Effect::default();
         for address in &self.touched {
             let after = self.elements.get(address);
@@ -352,7 +351,7 @@ impl Work<'_> {
             let after = self.elements.get(specification::DEFINITION_ADDRESS);
             let before = self.before.element(specification::DEFINITION_ADDRESS);
             if after != before
-                && after.is_none_or(|e| e.fields != specification::definition() || !e.wants.is_empty())
+                && after.is_none_or(|e| e.fields != specification::definition() || !e.dependencies.is_empty())
             {
                 return Err(Refusal::new(
                     Code::LayerDefinitionLocked,
@@ -439,6 +438,7 @@ impl Work<'_> {
         let before = self.before.element(address);
         for (name, value) in &element.fields {
             if !value.is_array()
+                || name == crate::model::REFS
                 || specification::SYSTEM_LAYERS.contains(&name.as_str())
                 || defined.iter().any(|layer| layer == name)
                 || before.and_then(|e| e.fields.get(name)) == Some(value)
@@ -489,45 +489,4 @@ impl Work<'_> {
         }
     }
 
-    /// A project has one Definitive element (R-3.13). A write that would make a second is refused.
-    /// Elements under a root prefix do not count, because those prefixes are outside the project
-    /// (R-3.3, R-3.7).
-    fn check_definitive(&self) -> Result<(), Refusal> {
-        let definitive: Vec<&String> = self
-            .elements
-            .iter()
-            .filter(|(address, element)| is_project_definitive(address, element.fields.get("role")))
-            .map(|(address, _)| address)
-            .collect();
-        if definitive.len() < 2 {
-            return Ok(());
-        }
-        let existing = definitive
-            .iter()
-            .find(|address| !self.touched.contains(**address))
-            .unwrap_or(&definitive[0]);
-        let added = definitive
-            .iter()
-            .find(|address| *address != existing)
-            .unwrap_or(&definitive[1]);
-        // The remediation gives the new element another role. It never removes the role of the
-        // element that is Definitive already: an agent that followed it would lose the one
-        // element that says what the project is.
-        let other_role = "<Supportive, Notable or Divergent>";
-        let remediation = match (self.before.element(added), self.elements.get(*added)) {
-            (None, Some(element)) => {
-                let mut view = element.view();
-                view["role"] = json!(other_role);
-                json!({"add": {added.as_str(): view}})
-            }
-            _ => json!({"update": {added.as_str(): {"role": other_role}}}),
-        };
-        Err(Refusal::new(
-            Code::RoleTaxonomyFailure,
-            format!(
-                "'{added}' cannot be Definitive: '{existing}' already is, and a map has one Definitive element"
-            ),
-            Some(remediation),
-        ))
-    }
 }

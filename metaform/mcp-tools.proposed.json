@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "project-map",
-      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. wants records refer to providers at their own locations.",
+      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. Dependency records refer to providing elements at their own locations.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -64,7 +64,7 @@
                       "$ref": "#/$defs/Empty"
                     },
                     {
-                      "$ref": "#/$defs/DeleteWants"
+                      "$ref": "#/$defs/DeleteDependencies"
                     }
                   ]
                 }
@@ -109,7 +109,7 @@
           },
           {
             "type": "object",
-            "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
+            "description": "goto places the agent at an address and returns its summary sheet: the element and its dependencies, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
             "properties": {
               "goto": {
                 "type": "string",
@@ -123,7 +123,7 @@
           },
           {
             "type": "object",
-            "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and the one Definitive element. No fields and no layers.",
+            "description": "map returns the shallow graph: every element address, each dependency as an edge from the element that holds it to the element it names, and each Defining Element. No fields and no layers.",
             "properties": {
               "map": {
                 "$ref": "#/$defs/Empty"
@@ -205,7 +205,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "description": "Systemic role: Definitive (the element whose loss means the artifact can no longer remain what it is), Supportive (an indivisibly coupled element meant to assist the Definitive element), Notable (a discrete, structurally independent feature or specialized exception with unique systemic significance) or Divergent (an unaligned, weak or redundant element to be realigned or ejected)."
+                    "description": "The element's role in the intake: AT (Artifact Type, the type that groups the artifacts examined), DE (Defining Element, whose loss would prevent the artifact from remaining the same type), SE (Supportive Element, whose Encounter Function helps a Defining Element serve the purpose of the CQU), NE (Notable Element, which states an essential demand or requirement), CQU (Cestui Que Use, the party outside the artifact whose purpose drives improvement of it), UD (Upstream Dependency, an element outside the artifact that an element depends on) or DD (Downstream Dependant, an element outside the artifact that depends on it and is not a person). A map may hold several Defining Elements."
                   },
                   {
                     "$ref": "#/$defs/NamespaceNode"
@@ -257,21 +257,21 @@
                   }
                 ]
               },
-              "wants": {
+              "dependencies": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/Wants"
+                    "$ref": "#/$defs/Dependencies"
                   },
                   {
                     "$ref": "#/$defs/NamespaceNode"
                   }
                 ],
-                "description": "An object keyed by provider addresses, each holding a want record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
+                "description": "An object keyed by provider addresses, each holding a dependency record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
               },
-              "why": {
+              "op": {
                 "$ref": "#/$defs/RelationshipWord"
               },
-              "how": {
+              "ef": {
                 "$ref": "#/$defs/RelationshipWord"
               },
               "project": {
@@ -290,31 +290,30 @@
                   }
                 ]
               },
-              "uri": {
+              "refs": {
                 "anyOf": [
                   {
-                    "type": "string",
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "description": "One source link to the entry point for this functionality. A relative file path is allowed."
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "description": "The source links for this element: one uri for each artifact that has this address. A code project is one artifact, so it has one uri, the entry point for this functionality. When several artifacts share the address, such as photos of one type, list the uri of each. A relative file path is allowed."
                   },
                   {
-                    "$ref": "#/$defs/NamespaceNode"
+                    "type": "null"
                   }
                 ]
               },
+              "uri": {
+                "not": {},
+                "description": "Not a field. Use refs."
+              },
               "providers": {
                 "$ref": "#/$defs/NamespaceNode",
-                "description": "This word may name a namespace branch. The functional relationship array is wants, not providers."
-              },
-              "op": {
-                "$ref": "#/$defs/RelationshipWord"
-              },
-              "ef": {
-                "$ref": "#/$defs/RelationshipWord"
-              },
-              "direction": {
-                "$ref": "#/$defs/RelationshipWord"
+                "description": "This word may name a namespace branch. The functional relationships are in dependencies, not providers."
               },
               "ifd": {
                 "$ref": "#/$defs/RelationshipWord"
@@ -334,7 +333,7 @@
             "type": "array",
             "items": true
           },
-          "Wants": {
+          "Dependencies": {
             "title": "Functional knowledge layer",
             "type": "object",
             "description": "Relationships owned by this receiver, keyed by the provider's address: one relationship per provider. Each key refers to the actual provider in the nested tree. The provider keeps its properties and knowledge at its own location.",
@@ -343,30 +342,30 @@
               "description": "Project-relative reference to an element in the actual nested namespace."
             },
             "additionalProperties": {
-              "$ref": "#/$defs/WantRecord"
+              "$ref": "#/$defs/DependencyRecord"
             }
           },
-          "WantRecord": {
-            "title": "Want record",
-            "description": "Why this receiver wants this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
+          "DependencyRecord": {
+            "title": "Dependency record",
+            "description": "Why this receiver depends on this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
             "type": "object",
             "properties": {
-              "direction": {
+              "ifd": {
                 "type": "string",
-                "description": "The direction of the substantial flow of information which satisfies the (OP) goal, relative to the receiver, not including the request: outbound from the receiver, inbound to the receiver, or two-way.",
+                "description": "The Information Flow Direction (IFD): the direction of the movement of substance that satisfies the receiver's Operative Purpose, relative to the receiver and not including the request: send, receive or both.",
                 "enum": [
-                  "outbound",
-                  "inbound",
-                  "two-way"
+                  "send",
+                  "receive",
+                  "both"
                 ]
               },
-              "why": {
+              "op": {
                 "type": "string",
                 "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English.",
                 "minLength": 1,
                 "pattern": "\\S"
               },
-              "how": {
+              "ef": {
                 "type": "string",
                 "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
                 "minLength": 1,
@@ -374,9 +373,9 @@
               }
             },
             "required": [
-              "direction",
-              "why",
-              "how"
+              "ifd",
+              "op",
+              "ef"
             ],
             "additionalProperties": false
           },
@@ -386,7 +385,7 @@
           },
           "LayerRead": {
             "type": "object",
-            "description": "Name each layer to read at the address where it is written, with {} as its value, such as {\"wants\": {}} or {\"specification\": {}}. An empty object reads only the element's own fields.",
+            "description": "Name each layer to read at the address where it is written, with {} as its value, such as {\"dependencies\": {}} or {\"specification\": {}}. An empty object reads only the element's own fields.",
             "propertyNames": {
               "pattern": "^[^.$\\[\\]\\s]+$",
               "description": "One layer name: one namespace segment."
@@ -404,37 +403,37 @@
             "type": "object",
             "minProperties": 1,
             "properties": {
-              "wants": {
-                "$ref": "#/$defs/Wants"
+              "dependencies": {
+                "$ref": "#/$defs/Dependencies"
               }
             },
             "description": "Fields supplied for one receiving element. Command addresses select actual nested elements."
           },
-          "WantUpdate": {
+          "DependencyUpdate": {
             "type": "object",
             "minProperties": 1,
             "properties": {
-              "direction": {
-                "$ref": "#/$defs/WantRecord/properties/direction"
+              "ifd": {
+                "$ref": "#/$defs/DependencyRecord/properties/ifd"
               },
-              "why": {
-                "$ref": "#/$defs/WantRecord/properties/why"
+              "op": {
+                "$ref": "#/$defs/DependencyRecord/properties/op"
               },
-              "how": {
-                "$ref": "#/$defs/WantRecord/properties/how"
+              "ef": {
+                "$ref": "#/$defs/DependencyRecord/properties/ef"
               }
             },
             "additionalProperties": false,
-            "description": "Supplied fields change one want."
+            "description": "Supplied fields change one dependency."
           },
-          "WantsUpdate": {
+          "DependenciesUpdate": {
             "type": "object",
-            "description": "Like Wants; each record holds only the fields to change.",
+            "description": "Like Dependencies; each record holds only the fields to change.",
             "propertyNames": {
               "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$"
             },
             "additionalProperties": {
-              "$ref": "#/$defs/WantUpdate"
+              "$ref": "#/$defs/DependencyUpdate"
             }
           },
           "UpdateFields": {
@@ -485,58 +484,8 @@
                   }
                 ]
               },
-              "wants": {
-                "$ref": "#/$defs/WantsUpdate"
-              },
-              "why": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/NamespaceNode/properties/why"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "how": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/NamespaceNode/properties/how"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "project": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/NamespaceNode/properties/project"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "uri": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/NamespaceNode/properties/uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "providers": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/NamespaceNode/properties/providers"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+              "dependencies": {
+                "$ref": "#/$defs/DependenciesUpdate"
               },
               "op": {
                 "anyOf": [
@@ -558,10 +507,34 @@
                   }
                 ]
               },
-              "direction": {
+              "project": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/NamespaceNode/properties/direction"
+                    "$ref": "#/$defs/NamespaceNode/properties/project"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "refs": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/NamespaceNode/properties/refs"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uri": {
+                "not": {},
+                "description": "Not a field. Use refs."
+              },
+              "providers": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/NamespaceNode/properties/providers"
                   },
                   {
                     "type": "null"
@@ -582,12 +555,12 @@
             "additionalProperties": {
               "$ref": "#/$defs/NamespaceValue"
             },
-            "description": "Update supplied fields on one receiving element. Null removes a property; omission leaves it unchanged. Delete individual wants with delete."
+            "description": "Update supplied fields on one receiving element. Null removes a property; omission leaves it unchanged. Delete individual dependencies with delete."
           },
-          "DeleteWants": {
+          "DeleteDependencies": {
             "type": "object",
             "properties": {
-              "wants": {
+              "dependencies": {
                 "type": "array",
                 "minItems": 1,
                 "uniqueItems": true,
@@ -598,7 +571,7 @@
               }
             },
             "required": [
-              "wants"
+              "dependencies"
             ],
             "additionalProperties": false
           },
@@ -611,7 +584,7 @@
                 "$ref": "#/$defs/ComposedElementLayer"
               }
             ],
-            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside wants, not on the element."
+            "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside dependencies, not on the element."
           }
         }
       }

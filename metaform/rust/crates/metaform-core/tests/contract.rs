@@ -64,12 +64,12 @@ fn tool_examples_give_the_documented_results() {
     let added = write(&contract, &Map::new(), requests[0].clone());
     let holder = added.element("code.protocol.network.tracker.cs").unwrap();
     assert_eq!(
-        holder.wants_json(),
-        requests[0]["add"]["code.protocol.network.tracker.cs"]["wants"]
+        holder.dependencies_json(),
+        requests[0]["add"]["code.protocol.network.tracker.cs"]["dependencies"]
     );
     assert!(
         added.element("code.masher.widget").is_some(),
-        "the want creates the element it names"
+        "the dependency creates the element it names"
     );
 
     enum Expect {
@@ -171,13 +171,13 @@ fn documents_round_trip_through_the_map() {
 fn refusals_name_the_rule_and_change_nothing() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
-    let want =
-        |direction: &str| json!({"why": "Relay it.", "how": "Supplies data.", "direction": direction});
+    let dependency =
+        |direction: &str| json!({"op": "Relay it.", "ef": "Supplies data.", "ifd": direction});
     let table = [
         (
-            json!({"add": {"Code.relay": {"role": "Supportive"}}}),
+            json!({"add": {"Code.relay": {"role": "SE"}}}),
             Code::NameRoundTripFailure,
-            Some(json!({"add": {"code.relay": {"role": "Supportive"}}})),
+            Some(json!({"add": {"code.relay": {"role": "SE"}}})),
         ),
         (
             json!({"update": {"code.queue_2": {"name": "q"}}}),
@@ -190,7 +190,7 @@ fn refusals_name_the_rule_and_change_nothing() {
             None,
         ),
         (
-            json!({"add": {"code.relay": {"wants": {"code.masher.widget": want("push")}}}}),
+            json!({"add": {"code.relay": {"dependencies": {"code.masher.widget": dependency("push")}}}}),
             Code::FieldMismatch,
             None,
         ),
@@ -206,10 +206,10 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"update": {"code.masher.widget": {"name": null}}})),
         ),
         (
-            json!({"update": {"code.relay": {"wants": {"code.other": {"direction": "outbound"}}}}}),
-            Code::WantIncomplete,
+            json!({"update": {"code.relay": {"dependencies": {"code.other": {"ifd": "send"}}}}}),
+            Code::DependencyIncomplete,
             Some(
-                json!({"update": {"code.relay": {"wants": {"code.other": {"direction": "outbound", "why": "<why>", "how": "<how>"}}}}}),
+                json!({"update": {"code.relay": {"dependencies": {"code.other": {"ifd": "send", "op": "<op>", "ef": "<ef>"}}}}}),
             ),
         ),
         (
@@ -235,7 +235,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"add": {"code.relay": {"role": "Definitive"}}}),
             Code::RoleTaxonomyFailure,
-            Some(json!({"add": {"code.relay": {"role": "<Supportive, Notable or Divergent>"}}})),
+            Some(json!({"add": {"code.relay": {"role": "<AT, DE, SE, NE, CQU, UD or DD>"}}})),
         ),
         (
             json!({"delete": {"code.protocol": {}}}),
@@ -280,18 +280,18 @@ fn refusals_name_the_rule_and_change_nothing() {
 #[test]
 fn writes_create_paths_and_reads_return_each_form() {
     let contract = Contract::bundled().unwrap();
-    let want =
-        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "inbound"});
+    let dependency =
+        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
     let mut map = Map::new();
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"name": "part", "wants": {"code.other.part": want}}}}),
+        json!({"update": {"code.new.part": {"name": "part", "dependencies": {"code.other.part": dependency}}}}),
     );
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "wants": {"code.third.part": want}}}}),
+        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "dependencies": {"code.third.part": dependency}}}}),
     );
     map = write(
         &contract,
@@ -328,7 +328,7 @@ fn writes_create_paths_and_reads_return_each_form() {
             ["code.new.part", "code.third.part"]
         ])
     );
-    assert_eq!(index["definitive"], Value::Null);
+    assert_eq!(index["defining"], json!([]));
     assert!(
         index.get("code.new.part").is_none() && !index.to_string().contains("renamed"),
         "map is the shallow graph: no fields"
@@ -339,25 +339,25 @@ fn writes_create_paths_and_reads_return_each_form() {
     let whole = read(&contract, &map, json!({".": {}}));
     assert_eq!(whole["."]["code"]["new"]["part"]["name"], "renamed");
     assert_eq!(
-        whole["."]["code"]["new"]["part"]["wants"]["code.other.part"],
-        want
+        whole["."]["code"]["new"]["part"]["dependencies"]["code.other.part"],
+        dependency
     );
     let part = read(&contract, &map, json!({".code.new": {}}));
     assert_eq!(part[".code.new"]["part"], whole["."]["code"]["new"]["part"]);
     let entry = read(&contract, &map, json!({"code.new.part": {}}));
     assert_eq!(entry["code.new.part"]["name"], "renamed");
-    assert!(entry["code.new.part"].get("wants").is_none());
+    assert!(entry["code.new.part"].get("dependencies").is_none());
     let missing = refused(&contract, &map, &json!({".code.nowhere": {}}));
     assert_eq!(missing.code, Code::NotFound);
     assert_eq!(missing.remediation.as_deref(), Some(&json!({"map": {}})));
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"role": "Definitive"}}}),
+        json!({"update": {"code.new.part": {"role": "DE"}}}),
     );
     assert_eq!(
-        read(&contract, &map, json!({"map": {}}))["definitive"],
-        "code.new.part"
+        read(&contract, &map, json!({"map": {}}))["defining"],
+        json!(["code.new.part"])
     );
 
     let remediation = refused(&contract, &map, &json!({"delete": {"code.other.part": {}}}))
@@ -367,7 +367,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(&contract, &map, remediation);
     assert_eq!(
         read(&contract, &map, json!({"orphaned": {}})),
-        json!({"code.new.part": {"name": "renamed", "role": "Definitive"}})
+        json!({"code.new.part": {"name": "renamed", "role": "DE"}})
     );
     map = write(&contract, &map, json!({"delete": {"code.other.part": {}}}));
     assert!(
@@ -377,20 +377,17 @@ fn writes_create_paths_and_reads_return_each_form() {
     assert_eq!(map.element(".").unwrap().fields["name"], "demo");
 }
 
-/// R-3.13 counts only the project's own elements (R-3.3, R-3.7): an element under `upstream` with
-/// a Definitive role sits beside the project's Definitive, writes to either pass, a second
-/// Definitive inside the project is still refused, and `map` names the project's Definitive.
+/// A Defining Element counts only among the project's own elements (R-3.3, R-3.7): an element
+/// under `upstream` with the role DE is not listed by `map`. A second DE inside the project is
+/// accepted, and `map` lists both.
 #[test]
-fn one_definitive_rule_counts_only_the_project() {
+fn map_lists_the_defining_elements_of_the_project_only() {
     let contract = Contract::bundled().unwrap();
-    let project = json!({"technical_name": "game engine code", "name": "Game Engine", "role": "Definitive"});
-    let chained = json!({"technical_name": "game engine code upstream", "name": "Physics", "role": "Definitive",
-        "uri": "https://example.com/physics.git"});
+    let project = json!({"technical_name": "game engine code", "name": "Game Engine", "role": "DE"});
+    let chained = json!({"technical_name": "game engine code upstream", "name": "Physics", "role": "DE",
+        "refs": ["https://example.com/physics.git"]});
     let map = write(&contract, &Map::new(), json!({"add": {"code.engine.game": project}}));
     let map = write(&contract, &map, json!({"add": {"upstream.code.engine.game": chained}}));
-    let map = write(&contract, &map, json!({"update": {"upstream.code.engine.game": {"status": "built"}}}));
-    let map = write(&contract, &map, json!({"update": {"code.engine.game": {"status": "built"}}}));
-    let second = refused(&contract, &map, &json!({"add": {"code.engine.audio": {"technical_name": "audio engine code", "name": "Audio", "role": "Definitive"}}}));
-    assert_eq!(second.code, Code::RoleTaxonomyFailure, "{second:?}");
-    assert_eq!(read(&contract, &map, json!({"map": {}}))["definitive"], json!("code.engine.game"));
+    let map = write(&contract, &map, json!({"add": {"code.engine.audio": {"technical_name": "audio engine code", "name": "Audio", "role": "DE"}}}));
+    assert_eq!(read(&contract, &map, json!({"map": {}}))["defining"], json!(["code.engine.audio", "code.engine.game"]));
 }

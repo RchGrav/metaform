@@ -8,8 +8,8 @@
         "widget": {
           "technical_name": "widget masher code",
           "name": "mashbox",
-          "role": "Supportive",
-          "uri": "./src/widgets/mashbox.c"
+          "role": "SE",
+          "refs": ["./src/widgets/mashbox.c"]
         }
       },
       "protocol": {
@@ -18,13 +18,13 @@
             "cs": {
               "technical_name": "cs tracker network protocol",
               "name": "mashtrac",
-              "role": "Definitive",
-              "uri": "./src/network/mashtrac.c",
-              "wants": {
+              "role": "DE",
+              "refs": ["./src/network/mashtrac.c"],
+              "dependencies": {
                 "code.masher.widget": {
-                  "why": "Receive the mash data to relay it.",
-                  "how": "Prepared mash data packets.",
-                  "direction": "inbound"
+                  "op": "Receive the mash data to relay it.",
+                  "ef": "Prepared mash data packets.",
+                  "ifd": "receive"
                 }
               }
             }

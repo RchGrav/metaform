@@ -2,7 +2,7 @@
 //!
 //! `check` refuses a command that does not have the form the `project-map` tool takes. It reads
 //! only the command, never the map. Each message names a place the way an agent writes it:
-//! `'code.engine.game'`, `status at 'code.engine.game'`, `the want 'code.bus.data.event' at
+//! `'code.engine.game'`, `status at 'code.engine.game'`, `the dependency 'code.bus.data.event' at
 //! 'code.engine.game'`. The schema check in `contract.rs` stays after this check as a backstop.
 //!
 //! The Python and TypeScript forms port this module line for line. Nothing here depends on a
@@ -21,8 +21,8 @@
 //! 5. Each field, in the order the command gives them. An object value is an element beneath;
 //!    its fields are checked, in order, before the next field of the element above.
 //!
-//! In a want record the order is: the record is an object, the names it does not take, each field
-//! in the command's order, then the fields that are missing. In `delete`, the items of `wants` are
+//! In a dependency record the order is: the record is an object, the names it does not take, each field
+//! in the command's order, then the fields that are missing. In `delete`, the items of `dependencies` are
 //! checked in the command's order; for each item: it is text, it is not the root, it is an
 //! address, it is not a repeat.
 //!
@@ -40,8 +40,8 @@
 //! | A3 | Its value is an object with at least one field. |
 //! | D1 | The body of `delete` is an object with exactly one entry. |
 //! | D2 | Its key is an address, and not `.`. |
-//! | D3 | Its value is `{}` or `{"wants": [...]}` with no other entry. |
-//! | D4 | `wants` in `delete` is a list with at least one item. |
+//! | D3 | Its value is `{}` or `{"dependencies": [...]}` with no other entry. |
+//! | D4 | `dependencies` in `delete` is a list with at least one item. |
 //! | D5 | Each item is an address, not `.`, and no item repeats. |
 //! | E1 | `map` and `orphaned` take `{}`. |
 //! | H1 | `help` takes `{}` or text that is not empty. `Contract::help` refuses a name it does not hold. |
@@ -56,20 +56,20 @@
 //! | N2 | `technical_name`, `name` and `project` hold text that is not blank, an object or a list. |
 //! | N3 | `role` holds text, an object or a list. This check also refuses blank text. |
 //! | N4 | `status` follows N2 and is not `missing`, `MISSING`, `BKN`, `broken`, `todo` or `TODO`. |
-//! | N5 | `uri` holds text that is not blank, or an object. |
-//! | N6 | `why`, `how`, `direction`, `op`, `ef` and `ifd` at an element hold an object or a list. |
+//! | N5 | `refs` holds a list of at least one uri, each text that is not blank. `uri` is not a field. |
+//! | N6 | `pe`, `op`, `ef` and `ifd` at an element hold an object or a list. |
 //! | N7 | `providers` holds an object. |
 //! | N8 | `null` is taken by the fields of `update`'s own element, and by a field N2 to N7 do not name. |
 //! | N9 | An object value is an element beneath, and N1 to N10 hold for it. |
-//! | N10 | `wants` beneath the command's own element holds want records (W1 to W6) or elements beneath. |
-//! | W1 | `wants` at the command's own element is an object keyed by address, and not by `.`. |
-//! | W2 | A want record is an object. |
-//! | W3 | A want record takes only `why`, `how` and `direction`. |
-//! | W4 | `why` and `how` hold text that is not blank. |
-//! | W5 | `direction` is `inbound`, `outbound` or `two-way`. |
-//! | W6 | A want record outside `update`'s own element has all three fields (WANT_INCOMPLETE). |
-//! | W7 | A want record at `update`'s own element has at least one field. |
-//! | W8 | `wants` at the command's own element holds at least one want record. |
+//! | N10 | `dependencies` beneath the command's own element holds dependency records (W1 to W6) or elements beneath. |
+//! | W1 | `dependencies` at the command's own element is an object keyed by address, and not by `.`. A list of records that each name `pe` is refused with the same records keyed by `pe`. |
+//! | W2 | A dependency record is an object. |
+//! | W3 | A dependency record takes only `op`, `ef` and `ifd`. |
+//! | W4 | `op` and `ef` hold text that is not blank. |
+//! | W5 | `ifd` is `send`, `receive` or `both`. |
+//! | W6 | A dependency record outside `update`'s own element has all three fields (DEPENDENCY_INCOMPLETE). |
+//! | W7 | A dependency record at `update`'s own element has at least one field. |
+//! | W8 | `dependencies` at the command's own element holds at least one dependency record. |
 
 use serde_json::{Map as JsonMap, Value, json};
 
@@ -81,13 +81,15 @@ pub(crate) const HELP_FORM: &str = "help takes {}, the name of a command, or the
 /// The command names `help` takes, in the order `{"help": {}}` lists them.
 pub(crate) const HELP_NAMES: [&str; 9] =
     ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
-const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
+const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"dependencies\": [\"<address>\"]} to remove dependencies";
 /// The fields that hold text (N2 to N5).
-const TEXT_FIELDS: [&str; 6] = ["technical_name", "name", "role", "status", "project", "uri"];
-/// The words that belong to a want, not to an element (N6). `op`, `ef` and `ifd` are older names.
-const WANT_WORDS: [&str; 6] = ["why", "how", "direction", "op", "ef", "ifd"];
-const WANT_FIELDS: [&str; 3] = ["why", "how", "direction"];
-const DIRECTIONS: [&str; 3] = ["inbound", "outbound", "two-way"];
+const TEXT_FIELDS: [&str; 5] = ["technical_name", "name", "role", "status", "project"];
+const REFS_FORM: &str = "a list with one uri for each artifact that has this address";
+/// The words that belong to a dependency, not to an element (N6).
+const DEPENDENCY_WORDS: [&str; 4] = ["pe", "op", "ef", "ifd"];
+const DEPENDENCY_FIELDS: [&str; 3] = ["op", "ef", "ifd"];
+/// The values of `ifd`, the Information Flow Direction, in the intake's order.
+const FLOWS: [&str; 3] = ["send", "receive", "both"];
 const LEGACY_STATUS: [&str; 6] = ["missing", "MISSING", "BKN", "broken", "todo", "TODO"];
 
 /// Where a set of fields sits in the command.
@@ -172,28 +174,55 @@ impl Check<'_> {
                 ));
             }
             let here = [path, &[key.as_str()]].concat();
-            if key == "wants" {
-                self.wants(value, address, &here, level)?;
+            if key == "dependencies" {
+                self.dependencies(value, address, &here, level)?;
                 continue;
+            }
+            if key == "uri" {
+                // The one link an element held is now the first item of `refs`.
+                let refs = match value.as_str().filter(|text| !is_blank(text)) {
+                    Some(uri) => json!([uri]),
+                    None => json!(["<uri>"]),
+                };
+                let moved = replaced(&replaced(self.command, &here, None), &[path, &["refs"]].concat(), Some(refs));
+                return Err(refuse(
+                    format!("uri at '{address}' is not a field; refs holds {REFS_FORM}"),
+                    Some(moved),
+                ));
+            }
+            if key == "refs" {
+                let listed = value.as_array().filter(|items| !items.is_empty());
+                let good = listed.is_some_and(|items| items.iter().all(|item| item.as_str().is_some_and(|text| !is_blank(text))));
+                if good || (value.is_null() && level == Level::Update) {
+                    continue;
+                }
+                let refs = match value.as_str().filter(|text| !is_blank(text)) {
+                    Some(uri) => json!([uri]),
+                    None => json!(["<uri>"]),
+                };
+                return Err(refuse(
+                    format!("refs at '{address}' must be {REFS_FORM}"),
+                    Some(replaced(self.command, &here, Some(refs))),
+                ));
             }
             match value {
                 Value::Object(beneath) => self.fields(beneath, &names::join(address, key), &here, Level::Beneath)?,
                 Value::Null if level == Level::Update => {}
-                Value::Array(_) if key != "uri" && key != "providers" => {}
+                Value::Array(_) if key != "providers" => {}
                 _ if TEXT_FIELDS.contains(&key.as_str()) => self.text(key, value, address, &here)?,
-                _ if WANT_WORDS.contains(&key.as_str()) => {
-                    let mut record = want_placeholder();
-                    if let (true, Some(text)) = (WANT_FIELDS.contains(&key.as_str()), value.as_str()) {
+                _ if DEPENDENCY_WORDS.contains(&key.as_str()) => {
+                    let mut record = dependency_placeholder();
+                    if let (true, Some(text)) = (DEPENDENCY_FIELDS.contains(&key.as_str()), value.as_str()) {
                         record[key.as_str()] = json!(text);
                     }
                     return Err(refuse(
-                        format!("{key} at '{address}' is not a field of an element; why, how and direction belong in a want"),
-                        Some(json!({"update": {address: {"wants": {"<address>": record}}}})),
+                        format!("{key} at '{address}' is not a field of an element; op, ef and ifd belong in a dependency"),
+                        Some(json!({"update": {address: {"dependencies": {"<address>": record}}}})),
                     ));
                 }
                 _ if key == "providers" => {
                     return Err(refuse(
-                        format!("providers at '{address}' can hold only elements beneath it; wants holds what an element wants"),
+                        format!("providers at '{address}' can hold only elements beneath it; dependencies holds what an element depends on"),
                         None,
                     ));
                 }
@@ -213,7 +242,7 @@ impl Check<'_> {
             Some(_) => Ok(()),
             None => {
                 let placeholder = if key == "role" {
-                    "<Definitive, Supportive, Notable or Divergent>".to_string()
+                    "<AT, DE, SE, NE, CQU, UD or DD>".to_string()
                 } else {
                     format!("<{key}>")
                 };
@@ -225,58 +254,67 @@ impl Check<'_> {
         }
     }
 
-    /// The value of `wants` at an element (W1, N10).
-    fn wants(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
-        let Some(wants) = value.as_object() else {
+    /// The value of `dependencies` at an element (W1, N10).
+    fn dependencies(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
+        // The intake's schema writes a dependency as a record that names its providing element in
+        // `pe`. The map keys each dependency by that address, so the answer is the same records
+        // keyed by `pe`.
+        if let Some(keyed) = keyed_by_pe(value) {
             return Err(refuse(
-                format!("wants at '{holder}' must be an object of want records keyed by address"),
-                Some(replaced(self.command, path, Some(json!({"<address>": want_placeholder()})))),
+                format!("dependencies at '{holder}' must be an object keyed by the address of each providing element (pe)"),
+                Some(replaced(self.command, path, Some(keyed))),
+            ));
+        }
+        let Some(dependencies) = value.as_object() else {
+            return Err(refuse(
+                format!("dependencies at '{holder}' must be an object of dependency records keyed by address"),
+                Some(replaced(self.command, path, Some(json!({"<address>": dependency_placeholder()})))),
             ));
         };
-        // Beneath the command's own element, `wants` may also be a branch of elements. It holds
-        // want records when a value in it gives why, how or direction as a plain value.
-        let holds_records = wants.values().any(|record| {
-            WANT_FIELDS
+        // Beneath the command's own element, `dependencies` may also be a branch of elements. It holds
+        // dependency records when a value in it gives op, ef or ifd as a plain value.
+        let holds_records = dependencies.values().any(|record| {
+            DEPENDENCY_FIELDS
                 .iter()
                 .any(|field| record.get(field).is_some_and(|v| !v.is_object() && !v.is_array()))
         });
         if level == Level::Beneath && !holds_records {
-            return self.fields(wants, &names::join(holder, "wants"), path, Level::Beneath);
+            return self.fields(dependencies, &names::join(holder, "dependencies"), path, Level::Beneath);
         }
-        if wants.is_empty() {
-            // W8: an empty `wants` would be read as an element named "wants" beneath the holder.
+        if dependencies.is_empty() {
+            // W8: an empty `dependencies` would be read as an element named "dependencies" beneath the holder.
             return Err(refuse(
-                format!("wants at '{holder}' holds no want record"),
-                Some(replaced(self.command, path, Some(json!({"<address>": want_placeholder()})))),
+                format!("dependencies at '{holder}' holds no dependency record"),
+                Some(replaced(self.command, path, Some(json!({"<address>": dependency_placeholder()})))),
             ));
         }
-        for (other, record) in wants {
+        for (other, record) in dependencies {
             if other == ROOT {
-                return Err(refuse("the root cannot be wanted", None));
+                return Err(refuse("the root cannot be depended on", None));
             }
             if !is_address(other) {
                 return Err(not_an_address(other));
             }
             let here = [path, &[other.as_str()]].concat();
-            self.want(record, other, holder, &here, level == Level::Update)?;
+            self.dependency(record, other, holder, &here, level == Level::Update)?;
         }
         Ok(())
     }
 
-    /// One want record (W2 to W7). `partial` is true at `update`'s own element, where a record
+    /// One dependency record (W2 to W7). `partial` is true at `update`'s own element, where a record
     /// holds only the fields to adjust.
-    fn want(&self, record: &Value, other: &str, holder: &str, path: &[&str], partial: bool) -> Result<(), Refusal> {
-        let place = format!("the want '{other}' at '{holder}'");
+    fn dependency(&self, record: &Value, other: &str, holder: &str, path: &[&str], partial: bool) -> Result<(), Refusal> {
+        let place = format!("the dependency '{other}' at '{holder}'");
         let Some(fields) = record.as_object() else {
             return Err(refuse(
-                format!("{place} must be a record with why, how and direction"),
-                Some(replaced(self.command, path, Some(want_placeholder()))),
+                format!("{place} must be a record with op, ef and ifd"),
+                Some(replaced(self.command, path, Some(dependency_placeholder()))),
             ));
         };
         let extra: Vec<&str> = fields
             .keys()
             .map(String::as_str)
-            .filter(|name| !WANT_FIELDS.contains(name))
+            .filter(|name| !DEPENDENCY_FIELDS.contains(name))
             .collect();
         if !extra.is_empty() {
             let mut fixed = self.command.clone();
@@ -287,11 +325,17 @@ impl Check<'_> {
         }
         for (field, value) in fields {
             let here = [path, &[field.as_str()]].concat();
-            if field == "direction" {
-                if !value.as_str().is_some_and(|direction| DIRECTIONS.contains(&direction)) {
+            if field == "ifd" {
+                if !value.as_str().is_some_and(|flow| FLOWS.contains(&flow)) {
+                    // The intake's examples say "sends" and "receives"; the value is the bare verb.
+                    let meant = match value.as_str() {
+                        Some("sends") => "send",
+                        Some("receives") => "receive",
+                        _ => "<send, receive or both>",
+                    };
                     return Err(refuse(
-                        format!("direction at {place} must be inbound, outbound or two-way"),
-                        Some(replaced(self.command, &here, Some(json!("<inbound, outbound or two-way>")))),
+                        format!("ifd at {place} must be send, receive or both"),
+                        Some(replaced(self.command, &here, Some(json!(meant)))),
                     ));
                 }
             } else if !value.as_str().is_some_and(|text| !is_blank(text)) {
@@ -301,25 +345,25 @@ impl Check<'_> {
                 ));
             }
         }
-        let missing: Vec<&str> = WANT_FIELDS
+        let missing: Vec<&str> = DEPENDENCY_FIELDS
             .into_iter()
             .filter(|field| !fields.contains_key(*field))
             .collect();
         if partial && fields.is_empty() {
             return Err(refuse(
-                format!("{place} has no fields; give why, how or direction"),
-                Some(replaced(self.command, path, Some(want_placeholder()))),
+                format!("{place} has no fields; give op, ef or ifd"),
+                Some(replaced(self.command, path, Some(dependency_placeholder()))),
             ));
         }
         if !partial && !missing.is_empty() {
-            // The same code and message as a want that an update leaves incomplete (R-5.6).
+            // The same code and message as a dependency that an update leaves incomplete (R-5.6).
             let mut fixed = self.command.clone();
             for field in &missing {
                 fixed = replaced(&fixed, &[path, &[*field]].concat(), Some(json!(format!("<{field}>"))));
             }
             return Err(Refusal::new(
-                Code::WantIncomplete,
-                format!("'{holder}' wants '{other}': the want has no {}", missing.join(", ")),
+                Code::DependencyIncomplete,
+                format!("'{holder}' depends on '{other}': the dependency has no {}", missing.join(", ")),
                 Some(fixed),
             ));
         }
@@ -341,11 +385,11 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
     if fields.is_empty() {
         return Ok(());
     }
-    let (Some(wants), 1) = (fields.get("wants"), fields.len()) else {
+    let (Some(dependencies), 1) = (fields.get("dependencies"), fields.len()) else {
         return Err(refuse(DELETE_FORM, None));
     };
-    let remove = |wants: Vec<&str>| json!({"delete": {address: {"wants": wants}}});
-    let items = match wants {
+    let remove = |dependencies: Vec<&str>| json!({"delete": {address: {"dependencies": dependencies}}});
+    let items = match dependencies {
         Value::Array(items) if !items.is_empty() => items,
         Value::String(one) if is_address(one) => return Err(refuse(DELETE_FORM, Some(remove(vec![one])))),
         _ => return Err(refuse(DELETE_FORM, Some(remove(vec!["<address>"])))),
@@ -356,7 +400,7 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
             return Err(refuse(DELETE_FORM, Some(remove(vec!["<address>"]))));
         };
         if text == ROOT {
-            return Err(refuse("the root cannot be wanted", None));
+            return Err(refuse("the root cannot be depended on", None));
         }
         if !is_address(text) {
             return Err(not_an_address(text));
@@ -369,7 +413,7 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
                 }
             }
             return Err(refuse(
-                format!("delete names the want '{text}' more than once"),
+                format!("delete names the dependency '{text}' more than once"),
                 accepted(remove(once)),
             ));
         }
@@ -384,7 +428,7 @@ fn read(address: &str, body: &Value) -> Result<(), Refusal> {
         return Err(not_an_address(address));
     }
     let form = format!(
-        "a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"wants\": {{}}}}}}"
+        "a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"dependencies\": {{}}}}}}"
     );
     let Some(layers) = body.as_object() else {
         return Err(refuse(form, Some(json!({address: {}}))));
@@ -420,9 +464,27 @@ fn accepted(command: Value) -> Option<Value> {
     check(&command).is_ok().then_some(command)
 }
 
-/// A want record with a placeholder for each value only the agent can supply.
-fn want_placeholder() -> Value {
-    json!({"why": "<why>", "how": "<how>", "direction": "<direction>"})
+/// A list of dependency records that each name their providing element in `pe`, as one object
+/// keyed by `pe`. `None` if the value is not such a list. When two records name the same `pe`,
+/// the first is kept: an element holds one dependency for each providing element.
+fn keyed_by_pe(value: &Value) -> Option<Value> {
+    let records = value.as_array().filter(|records| !records.is_empty())?;
+    let mut keyed = JsonMap::new();
+    for record in records {
+        let fields = record.as_object()?;
+        let pe = fields.get("pe")?.as_str()?;
+        let mut rest = fields.clone();
+        rest.shift_remove("pe");
+        if !keyed.contains_key(pe) {
+            keyed.insert(pe.to_string(), Value::Object(rest));
+        }
+    }
+    Some(Value::Object(keyed))
+}
+
+/// A dependency record with a placeholder for each value only the agent can supply.
+fn dependency_placeholder() -> Value {
+    json!({"op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
 }
 
 /// The single entry of an object, or `None` if the value is not an object with one entry.

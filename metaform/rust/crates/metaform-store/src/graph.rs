@@ -2,8 +2,8 @@
 //! `docs/designs/storage.md` 2.2).
 //!
 //! Every element is an `Element` node keyed by `<map id>|<stored address>`. Nesting is a
-//! `CONTAINS` relationship from each element to its children. Each want is a `WANTS`
-//! relationship from receiver to provider carrying `why`, `how` and `direction`. Each item of a
+//! `CONTAINS` relationship from each element to its children. Each dependency is a `DEPENDS_ON`
+//! relationship from receiver to provider carrying `op`, `ef` and `ifd`. Each item of a
 //! layer (a non-empty array field, R-6.24) is a `Record` node reached by `HOLDS` from its element,
 //! with its position in `ordinal` and the item itself as JSON in `data`. Ladybug stores every
 //! property as its own column, so the data is a structure of arrays (R-4.6): a write changes only
@@ -29,8 +29,8 @@ const THREADS: u64 = 4;
 /// Element fields with their own column. A non-empty array field is a layer, kept as `Record`
 /// nodes. Every other field is kept, camelCase, in `extra`.
 const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
-/// Want-record fields with their own property. Any other is kept in the record's `extra`.
-const WANT_COLUMNS: [&str; 3] = ["why", "how", "direction"];
+/// Dependency-record fields with their own property. Any other is kept in the record's `extra`.
+const DEPENDENCY_COLUMNS: [&str; 3] = ["op", "ef", "ifd"];
 
 /// What a table connects: a node table keyed by its first property, or a relationship table.
 enum Shape {
@@ -99,15 +99,15 @@ const TABLES: &[Table] = &[
         properties: &[],
     },
     Table {
-        name: "WANTS",
+        name: "DEPENDS_ON",
         shape: Shape::Rel {
             from: "Element",
             to: "Element",
         },
         properties: &[
-            ("why", "STRING"),
-            ("how", "STRING"),
-            ("direction", "STRING"),
+            ("op", "STRING"),
+            ("ef", "STRING"),
+            ("ifd", "STRING"),
             ("extra", "STRING"),
         ],
     },
@@ -125,8 +125,19 @@ const TABLES: &[Table] = &[
 /// `(table, old name, new name)`. Each runs only when the old name is present and the new one
 /// is not, so it runs once.
 const RENAMES: &[(&str, &str, &str)] = &[
-    // R-3.6: the want field `intent` became `direction` (commit 020b65b).
-    ("WANTS", "intent", "direction"),
+    // The dependency fields took the intake's names (founder, 2026-11-12): `why` became `op`,
+    // `how` became `ef`, and `direction` became `ifd`. `intent` is an earlier name of `direction`.
+    ("DEPENDS_ON", "why", "op"),
+    ("DEPENDS_ON", "how", "ef"),
+    ("DEPENDS_ON", "direction", "ifd"),
+    ("DEPENDS_ON", "intent", "ifd"),
+];
+
+/// Table renames since the first store, applied on open before `RENAMES`: `(old name, new name)`.
+/// Each runs only when the old table is present and the new one is not.
+const TABLE_RENAMES: &[(&str, &str)] = &[
+    // A want record became a dependency (founder, 2026-11-12).
+    ("WANTS", "DEPENDS_ON"),
 ];
 
 impl Table {
@@ -214,13 +225,26 @@ fn properties(conn: &Connection, table: &str) -> Result<Vec<(String, String)>, S
 /// applied in memory. Returns the renames to apply, or refuses without changing anything.
 /// A table that does not exist yet is not compared; `open` creates it.
 fn check_schema(conn: &Connection, path: &std::path::Path) -> Result<Vec<String>, StoreError> {
-    let existing = existing_tables(conn)?;
+    let mut existing = existing_tables(conn)?;
     let mut renames = Vec::new();
+    // The name each table has in this database now, before any rename runs.
+    let mut current: Vec<(&str, &str)> = Vec::new();
+    for (old, new) in TABLE_RENAMES {
+        let has_new = existing.iter().any(|e| e == new);
+        if let Some(name) = existing.iter_mut().find(|e| e == old)
+            && !has_new
+        {
+            *name = new.to_string();
+            current.push((new, old));
+            renames.push(format!("ALTER TABLE {old} RENAME TO {new}"));
+        }
+    }
     for table in TABLES
         .iter()
         .filter(|t| existing.iter().any(|e| e == t.name))
     {
-        let mut found = properties(conn, table.name)?;
+        let stored = current.iter().find(|(new, _)| *new == table.name).map_or(table.name, |(_, old)| old);
+        let mut found = properties(conn, stored)?;
         for (_, old, new) in RENAMES.iter().filter(|(t, _, _)| *t == table.name) {
             let has_new = found.iter().any(|(name, _)| name == new);
             if let Some(column) = found.iter_mut().find(|(name, _)| name == old)
@@ -300,23 +324,23 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
             address,
             Element {
                 fields,
-                wants: BTreeMap::new(),
+                dependencies: BTreeMap::new(),
                 child_map,
             },
         );
     }
-    let wants = rows(
+    let dependencies = rows(
         conn,
-        "MATCH (a:Element)-[w:WANTS]->(b:Element) WHERE a.mapId = $m \
-         RETURN a.address, b.address, w.why, w.how, w.direction, w.extra",
+        "MATCH (a:Element)-[w:DEPENDS_ON]->(b:Element) WHERE a.mapId = $m \
+         RETURN a.address, b.address, w.op, w.ef, w.ifd, w.extra",
         vec![("m", map.into())],
     )?;
-    for row in wants {
+    for row in dependencies {
         let mut it = row.into_iter();
         let receiver = agent_name(&text(it.next())?.unwrap_or_default());
         let provider = agent_name(&text(it.next())?.unwrap_or_default());
         let mut record = Fields::new();
-        for column in WANT_COLUMNS {
+        for column in DEPENDENCY_COLUMNS {
             if let Some(v) = text(it.next())? {
                 record.insert(column.to_string(), Json::String(v));
             }
@@ -328,8 +352,8 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
         }
         elements
             .get_mut(&receiver)
-            .ok_or_else(|| StoreError::Corrupt(format!("want from missing element {receiver}")))?
-            .wants
+            .ok_or_else(|| StoreError::Corrupt(format!("dependency from missing element {receiver}")))?
+            .dependencies
             .insert(provider, record);
     }
     let found = rows(
@@ -378,9 +402,9 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
 }
 
 /// Write an effect inside the caller's transaction. `before` is the map the effect was computed
-/// from, so only what changed is written: an element's columns when they changed, each want that
+/// from, so only what changed is written: an element's columns when they changed, each dependency that
 /// was added, changed or removed, and each layer record that was added, changed or removed.
-/// Nodes first, then wants and records, then nesting, then removals, so every relationship finds
+/// Nodes first, then dependencies and records, then nesting, then removals, so every relationship finds
 /// both of its ends.
 pub fn persist(
     conn: &Connection,
@@ -404,7 +428,7 @@ pub fn persist(
     for (address, element) in &effect.elements {
         let Some(element) = element else { continue };
         let old = before.element(address).unwrap_or(&empty);
-        persist_wants(conn, map, address, old, element)?;
+        persist_dependencies(conn, map, address, old, element)?;
         persist_layers(conn, map, address, old, element)?;
     }
     for address in created {
@@ -446,7 +470,7 @@ pub fn persist(
 }
 
 /// What the `Element` node holds for an element: its columns, `extra` and child map. Layers and
-/// wants are stored apart.
+/// dependencies are stored apart.
 fn node_values(element: &Element) -> (Vec<Option<String>>, Option<String>, Option<&str>) {
     let (columns, extra) = split(&element.fields, &COLUMNS);
     (
@@ -456,9 +480,9 @@ fn node_values(element: &Element) -> (Vec<Option<String>>, Option<String>, Optio
     )
 }
 
-/// Store the wants that differ between `old` and `new`: a removed or changed want's edge is
-/// deleted, and an added or changed want's edge is created.
-fn persist_wants(
+/// Store the dependencies that differ between `old` and `new`: a removed or changed dependency's edge is
+/// deleted, and an added or changed dependency's edge is created.
+fn persist_dependencies(
     conn: &Connection,
     map: &str,
     address: &str,
@@ -466,11 +490,11 @@ fn persist_wants(
     new: &Element,
 ) -> Result<(), StoreError> {
     let k = key(map, address);
-    for (provider, record) in &old.wants {
-        if new.wants.get(provider) != Some(record) {
+    for (provider, record) in &old.dependencies {
+        if new.dependencies.get(provider) != Some(record) {
             run(
                 conn,
-                "MATCH (:Element {key: $a})-[w:WANTS]->(:Element {key: $b}) DELETE w",
+                "MATCH (:Element {key: $a})-[w:DEPENDS_ON]->(:Element {key: $b}) DELETE w",
                 vec![
                     ("a", k.as_str().into()),
                     ("b", key(map, provider).as_str().into()),
@@ -478,23 +502,23 @@ fn persist_wants(
             )?;
         }
     }
-    for (provider, record) in &new.wants {
-        if old.wants.get(provider) == Some(record) {
+    for (provider, record) in &new.dependencies {
+        if old.dependencies.get(provider) == Some(record) {
             continue;
         }
-        let (columns, extra) = split(record, &WANT_COLUMNS);
+        let (columns, extra) = split(record, &DEPENDENCY_COLUMNS);
         let mut params = vec![
             ("a", Value::from(k.as_str())),
             ("b", Value::from(key(map, provider).as_str())),
             ("extra", opt(extra)),
         ];
-        for (name, value) in WANT_COLUMNS.iter().zip(columns) {
+        for (name, value) in DEPENDENCY_COLUMNS.iter().zip(columns) {
             params.push((name, opt(value)));
         }
         run(
             conn,
             "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
-             CREATE (a)-[:WANTS {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
+             CREATE (a)-[:DEPENDS_ON {op: $op, ef: $ef, ifd: $ifd, extra: $extra}]->(b)",
             params,
         )?;
     }

@@ -21,7 +21,7 @@ use serde_json::{Map as JsonMap, Value, json};
 
 use crate::model::{Element, Fields, Map};
 use crate::names::{ROOT, ROOT_SCOPES};
-use crate::reads::is_project_definitive;
+use crate::reads::is_project_defining;
 use crate::refusal::{Code, Refusal};
 
 /// The system layers (R-6.15): defined in code, shared by every project, written by agents at an
@@ -46,7 +46,7 @@ pub const MAX_LEVEL: u8 = 4;
 
 /// The specification layer's writing guidance: the short form of `TASTE.md` prepared for this
 /// layer by the TASTE auditor (metaform-38), used as written.
-pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.
+pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and dependencies already say.
 - Start with what the element does or holds. Then give the detail that explains it.
 - Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.
 - Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.
@@ -70,7 +70,7 @@ pub fn definition() -> Fields {
     for (key, value) in [
         ("technical_name", "specification document layer"),
         ("name", "Specification"),
-        ("role", "Supportive"),
+        ("role", "SE"),
         (
             "description",
             "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
@@ -238,11 +238,11 @@ pub fn is_skeleton(element: &Element) -> bool {
 }
 
 /// Whether layer records may sit at an address: a skeleton element outside the `layer` scope, or
-/// the root once the map has a Definitive element (R-6.26). This holds for every defined layer.
+/// the root once the map has a Defining Element (R-6.26). This holds for every defined layer.
 pub fn records_allowed(map: &Map, address: &str) -> bool {
     if address == ROOT {
         map.elements()
-            .any(|(at, element)| is_project_definitive(at, element.fields.get("role")))
+            .any(|(at, element)| is_project_defining(at, element.fields.get("role")))
     } else {
         address != LAYER_SCOPE
             && !is_beneath_layer_scope(address)
@@ -644,7 +644,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
     if !records_allowed(map, address) {
         // No command lets a layer definition hold records, so that refusal has no remediation.
         let remediation = if address == ROOT {
-            Some(json!({"update": {"<definitive address>": {"role": "Definitive"}}}))
+            Some(json!({"update": {"<address of a Defining Element>": {"role": "DE"}}}))
         } else if in_layer_scope(address) {
             None
         } else {
@@ -662,7 +662,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
             Some(json!({"update": {address: fix}}))
         };
         let reason = if address == ROOT {
-            format!("'.': {layer} records at the root need a Definitive element in the map first")
+            format!("'.': {layer} records at the root need a Defining Element (role DE) in the map first")
         } else if in_layer_scope(address) {
             format!("'{address}': {layer} records do not go on layer definitions")
         } else {
