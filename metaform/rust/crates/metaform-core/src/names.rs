@@ -205,7 +205,7 @@ impl NameCheck {
         Value::Object(out)
     }
 
-    /// One want record: the address in `pe` and each field name are checked.
+    /// One want record: the address in `element` and each field name are checked.
     fn want_record(&mut self, record: &Value, holder: &str) -> Value {
         let Value::Object(fields) = record else {
             return record.clone();
@@ -214,7 +214,7 @@ impl NameCheck {
             fields
                 .iter()
                 .map(|(key, value)| match value {
-                    Value::String(provider) if key == "pe" => (key.clone(), Value::String(self.address(provider))),
+                    Value::String(provider) if key == "element" => (key.clone(), Value::String(self.address(provider))),
                     _ => (self.segment(key, holder), value.clone()),
                 })
                 .collect(),

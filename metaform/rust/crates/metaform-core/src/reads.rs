@@ -126,7 +126,7 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 const NON_LAYER_FIELDS: [&str; 3] = ["memory", "skills", "refs"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
-/// own fields and wants, every want that names it (`wanted_by`, each with its receiving element in `re`), each layer
+/// own fields and wants, every want that names it (`wanted_by`, each with its receiving element in `element`), each layer
 /// held there with its record count, the frontmatter of the skills at the address (only when it
 /// has some), and its memory count. Counts, not records. The root's skills are the base skills an
 /// agent learns when it joins the server, so `goto` does not repeat them (R-5.30).
@@ -136,14 +136,14 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let Some(element) = map.element(address) else {
         return Err(not_found(address));
     };
-    // Each want that names this element, with its receiving element in `re`.
+    // Each want that names this element, with its receiving element in `element`.
     let wanted_by: Vec<Value> = map
         .elements()
         .filter_map(|(holder, holder_element)| {
             (holder != address)
                 .then(|| holder_element.wants.get(address))
                 .flatten()
-                .map(|record| crate::model::want_json("re", holder, record))
+                .map(|record| crate::model::want_json("element", holder, record))
         })
         .collect();
     let mut layers: JsonMap<String, Value> = element

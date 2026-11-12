@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use metaform_core::{Code, Contract, Effect, Map, MapRef, Outcome, Refusal, execute};
 use serde_json::{Value, json};
 
-/// A want record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`element` or `element`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -183,7 +183,7 @@ fn refusals_name_the_rule_and_change_nothing() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
     let want =
-        |direction: &str| json!({"op": "Relay it.", "ef": "Supplies data.", "ifd": direction});
+        |direction: &str| json!({"why": "Relay it.", "how": "Supplies data.", "direction": direction});
     let table = [
         (
             json!({"add": {"Code.relay": {"role": "SE"}}}),
@@ -201,7 +201,7 @@ fn refusals_name_the_rule_and_change_nothing() {
             None,
         ),
         (
-            json!({"add": {"code.relay": {"wants": [with_end("pe", "code.masher.widget", want("push"))]}}}),
+            json!({"add": {"code.relay": {"wants": [with_end("element", "code.masher.widget", want("push"))]}}}),
             Code::FieldMismatch,
             None,
         ),
@@ -217,10 +217,10 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"update": {"code.masher.widget": {"name": null}}})),
         ),
         (
-            json!({"update": {"code.relay": {"wants": [{"pe": "code.other", "ifd": "send"}]}}}),
+            json!({"update": {"code.relay": {"wants": [{"element": "code.other", "direction": "send"}]}}}),
             Code::WantIncomplete,
             Some(
-                json!({"update": {"code.relay": {"wants": [{"pe": "code.other", "ifd": "send", "op": "<op>", "ef": "<ef>"}]}}}),
+                json!({"update": {"code.relay": {"wants": [{"element": "code.other", "direction": "send", "why": "<why>", "how": "<how>"}]}}}),
             ),
         ),
         (
@@ -292,17 +292,17 @@ fn refusals_name_the_rule_and_change_nothing() {
 fn writes_create_paths_and_reads_return_each_form() {
     let contract = Contract::bundled().unwrap();
     let want =
-        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "receive"});
     let mut map = Map::new();
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"name": "part", "wants": [with_end("pe", "code.other.part", &want)]}}}),
+        json!({"update": {"code.new.part": {"name": "part", "wants": [with_end("element", "code.other.part", &want)]}}}),
     );
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "wants": [with_end("pe", "code.third.part", &want)]}}}),
+        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "wants": [with_end("element", "code.third.part", &want)]}}}),
     );
     map = write(
         &contract,
@@ -351,7 +351,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     assert_eq!(whole["."]["code"]["new"]["part"]["name"], "renamed");
     assert_eq!(
         whole["."]["code"]["new"]["part"]["wants"][0],
-        with_end("pe", "code.other.part", &want)
+        with_end("element", "code.other.part", &want)
     );
     let part = read(&contract, &map, json!({".code.new": {}}));
     assert_eq!(part[".code.new"]["part"], whole["."]["code"]["new"]["part"]);

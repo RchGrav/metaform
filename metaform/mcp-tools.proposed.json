@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "project-map",
-      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. Want records refer to providing elements at their own locations.",
+      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. A want names the wanted element by its address.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -260,10 +260,10 @@
               "wants": {
                 "$ref": "#/$defs/Wants"
               },
-              "op": {
+              "why": {
                 "$ref": "#/$defs/RelationshipWord"
               },
-              "ef": {
+              "how": {
                 "$ref": "#/$defs/RelationshipWord"
               },
               "project": {
@@ -307,7 +307,7 @@
                 "$ref": "#/$defs/NamespaceNode",
                 "description": "This word may name a namespace branch. The functional relationships are in wants, not providers."
               },
-              "ifd": {
+              "direction": {
                 "$ref": "#/$defs/RelationshipWord"
               }
             },
@@ -332,33 +332,33 @@
             "items": {
               "$ref": "#/$defs/WantRecord"
             },
-            "description": "The wants this receiving element holds: a list with one record for each providing element."
+            "description": "What this receiving element wants: a list with one record for each wanted element. The intake procedure calls these dependency records."
           },
           "WantRecord": {
             "title": "Want record",
-            "description": "One want of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
+            "description": "One want of this receiving element: the element it wants, why it wants it, how that element serves the purpose, and the direction of the flow. These four are one set. An element appears once in the list.",
             "type": "object",
             "properties": {
-              "pe": {
+              "element": {
                 "type": "string",
                 "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
-                "description": "The address of the Providing Element (PE): the element whose Encounter Function serves this receiving element's Operative Purpose. It refers to the actual element in the nested tree, which keeps its own fields at its own location."
+                "description": "The address of the element that this receiving element wants. The intake procedure calls it the Providing Element (PE). It refers to the actual element in the nested tree, which keeps its own fields at its own location."
               },
-              "op": {
+              "why": {
                 "type": "string",
-                "description": "What this receiver seeks to accomplish through this provider. This is its Operative Purpose (OP). Use clear, simple technical English.",
+                "description": "What this receiving element seeks to accomplish through the wanted element. The intake procedure calls it the Operative Purpose (OP). Use clear, simple technical English.",
                 "minLength": 1,
                 "pattern": "\\S"
               },
-              "ef": {
+              "how": {
                 "type": "string",
-                "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
+                "description": "How the wanted element serves that purpose in this encounter. The intake procedure calls it the Encounter Function (EF). Use clear, simple technical English.",
                 "minLength": 1,
                 "pattern": "\\S"
               },
-              "ifd": {
+              "direction": {
                 "type": "string",
-                "description": "The Information Flow Direction (IFD): the direction of the movement of substance that satisfies the receiver's Operative Purpose, relative to the receiver and not including the request: send, receive or both.",
+                "description": "The direction of the movement of substance that satisfies the purpose, relative to the receiving element and not including the request: send, receive or both. The intake procedure calls it the Information Flow Direction (IFD).",
                 "enum": [
                   "send",
                   "receive",
@@ -367,10 +367,10 @@
               }
             },
             "required": [
-              "pe",
-              "op",
-              "ef",
-              "ifd"
+              "element",
+              "why",
+              "how",
+              "direction"
             ],
             "additionalProperties": false
           },
@@ -408,24 +408,24 @@
             "type": "object",
             "minProperties": 2,
             "required": [
-              "pe"
+              "element"
             ],
             "properties": {
-              "pe": {
-                "$ref": "#/$defs/WantRecord/properties/pe"
+              "element": {
+                "$ref": "#/$defs/WantRecord/properties/element"
               },
-              "op": {
-                "$ref": "#/$defs/WantRecord/properties/op"
+              "why": {
+                "$ref": "#/$defs/WantRecord/properties/why"
               },
-              "ef": {
-                "$ref": "#/$defs/WantRecord/properties/ef"
+              "how": {
+                "$ref": "#/$defs/WantRecord/properties/how"
               },
-              "ifd": {
-                "$ref": "#/$defs/WantRecord/properties/ifd"
+              "direction": {
+                "$ref": "#/$defs/WantRecord/properties/direction"
               }
             },
             "additionalProperties": false,
-            "description": "The record names one want by its providing element (pe). The other fields supplied change that want."
+            "description": "The record names one want by its element. The other fields supplied change that want."
           },
           "WantsUpdate": {
             "type": "array",
@@ -433,7 +433,7 @@
             "items": {
               "$ref": "#/$defs/WantUpdate"
             },
-            "description": "Like Wants; each record holds pe and only the fields to change."
+            "description": "Like Wants; each record holds element and only the fields to change."
           },
           "UpdateFields": {
             "type": "object",
@@ -486,20 +486,20 @@
               "wants": {
                 "$ref": "#/$defs/WantsUpdate"
               },
-              "op": {
+              "why": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/NamespaceNode/properties/op"
+                    "$ref": "#/$defs/NamespaceNode/properties/why"
                   },
                   {
                     "type": "null"
                   }
                 ]
               },
-              "ef": {
+              "how": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/NamespaceNode/properties/ef"
+                    "$ref": "#/$defs/NamespaceNode/properties/how"
                   },
                   {
                     "type": "null"
@@ -540,10 +540,10 @@
                   }
                 ]
               },
-              "ifd": {
+              "direction": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/NamespaceNode/properties/ifd"
+                    "$ref": "#/$defs/NamespaceNode/properties/direction"
                   },
                   {
                     "type": "null"
@@ -583,7 +583,7 @@
                 "$ref": "#/$defs/ComposedElementLayer"
               }
             ],
-            "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a want record, not on the element."
+            "description": "This word may name a namespace branch or native layer. The fields element, why, how and direction belong inside a want record, not on the element."
           }
         }
       }

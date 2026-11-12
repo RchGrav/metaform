@@ -13,7 +13,7 @@
 //!
 //! Role: <role>. Technical name: <technical name>. Status: <status>.
 //!
-//! - `<address>` (<name>) requires `<other>` (<other name>) in order to <op>, which <ef>.
+//! - `<address>` (<name>) requires `<other>` (<other name>) in order to <why>, which <how>.
 //!
 //! <intro>
 //!
@@ -135,7 +135,7 @@ fn element_heading(map: &Map, address: &str) -> String {
     format!("{} {} (`{address}`)", "#".repeat(ELEMENT_HASHES), display_name(map, address))
 }
 
-/// A stored `op` or `ef` fitted into the wants sentence: no trailing full stop, and a first
+/// A stored `why` or `how` fitted into the wants sentence: no trailing full stop, and a first
 /// capital lowered when the next letter is lower case, so "Receive" becomes "receive" while "ACP"
 /// stays as written.
 fn fragment(text: &str) -> String {
@@ -172,8 +172,8 @@ fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
             format!(
                 "- `{address}` ({name}) requires `{other}` ({}) in order to {}, which {}.",
                 display_name(map, other),
-                field("op"),
-                field("ef"),
+                field("why"),
+                field("how"),
             )
         })
         .collect();
@@ -483,7 +483,7 @@ mod tests {
                     "name": "Packet Pipeline",
                     "role": "SE",
                     "status": "un_built",
-                    "wants": [{"pe": "code.store", "op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}],
+                    "wants": [{"element": "code.store", "why": "Keep frames.", "how": "holds frames on disk", "direction": "send"}],
                     "specification": [
                         {"level": 1, "code": "PL-2.a", "title": "Purpose", "text": "The pipeline moves frames, as `PL-1` limits.\n\n```text\n## not a heading (`code.x`)\n```"},
                         {"level": 2, "title": "Limits", "text": "- At most 10 Gbit/s."},

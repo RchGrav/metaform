@@ -4,7 +4,7 @@
 use metaform_core::{Code, Contract, Map, execute};
 use serde_json::{Value, json};
 
-/// A want record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`element` or `element`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -21,11 +21,11 @@ const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\":
 const GOTO_FORM: &str = "goto takes one address, such as {\"goto\": \"code.engine.game\"}";
 
 fn want() -> Value {
-    json!({"op": "receive input", "ef": "dispatches events", "ifd": "receive"})
+    json!({"why": "receive input", "how": "dispatches events", "direction": "receive"})
 }
 
 fn placeholder() -> Value {
-    json!({"op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
+    json!({"why": "<why>", "how": "<how>", "direction": "<direction>"})
 }
 
 /// Rule, command, message, remediation.
@@ -136,29 +136,48 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
             format!("refs at '{game}' must be a list with one uri for each artifact that has this address"),
             json!({"add": {game: {"refs": ["<uri>"]}}}),
         ),
+        // The intake procedure's words are answered with the same command in the tool's words.
+        (
+            "W3",
+            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
+            format!("a want at '{game}' takes element, why, how and direction; the command used pe, op, ef, ifd"),
+            json!({"add": {game: {"wants": [with_end("element", bus, want())]}}}),
+        ),
+        (
+            "W3",
+            json!({"add": {game: {"dependencies": [{"provider": bus, "purpose": "receive input", "ef": "dispatches events", "ifd": "receives"}]}}}),
+            format!("dependencies at '{game}' is not a field; wants holds what the procedure calls dependency records"),
+            json!({"add": {game: {"wants": [with_end("element", bus, want())]}}}),
+        ),
+        (
+            "N6",
+            json!({"update": {game: {"purpose": "receive input", "ef": "dispatches events", "provider": bus, "ifd": "receive"}}}),
+            format!("purpose at '{game}' is not a field of an element; element, why, how and direction belong in a want"),
+            json!({"update": {game: {"wants": [with_end("element", bus, want())]}}}),
+        ),
         (
             "W5",
-            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receives"}]}}}),
-            format!("ifd at the want '{bus}' at '{game}' must be send, receive or both"),
-            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
+            json!({"add": {game: {"wants": [{"element": bus, "why": "receive input", "how": "dispatches events", "direction": "receives"}]}}}),
+            format!("direction at the want '{bus}' at '{game}' must be send, receive or both"),
+            json!({"add": {game: {"wants": [{"element": bus, "why": "receive input", "how": "dispatches events", "direction": "receive"}]}}}),
         ),
         (
             "W1",
-            json!({"add": {game: {"wants": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive"}}}}}),
-            format!("wants at '{game}' must be a list of want records; each record names its providing element in pe"),
-            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
+            json!({"add": {game: {"wants": {bus: {"why": "receive input", "how": "dispatches events", "direction": "receive"}}}}}),
+            format!("wants at '{game}' must be a list of want records; each record names the element it wants in element"),
+            json!({"add": {game: {"wants": [{"element": bus, "why": "receive input", "how": "dispatches events", "direction": "receive"}]}}}),
         ),
         (
             "N6",
-            json!({"update": {game: {"op": "receive input"}}}),
-            format!("op at '{game}' is not a field of an element; pe, op, ef and ifd belong in a want"),
-            json!({"update": {game: {"wants": [{"pe": "<address>", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}}),
+            json!({"update": {game: {"why": "receive input"}}}),
+            format!("why at '{game}' is not a field of an element; element, why, how and direction belong in a want"),
+            json!({"update": {game: {"wants": [{"element": "<address>", "why": "receive input", "how": "<how>", "direction": "<direction>"}]}}}),
         ),
         (
             "N6",
-            json!({"add": {game: {"ifd": "receive"}}}),
-            format!("ifd at '{game}' is not a field of an element; pe, op, ef and ifd belong in a want"),
-            json!({"update": {game: {"wants": [{"pe": "<address>", "op": "<op>", "ef": "<ef>", "ifd": "receive"}]}}}),
+            json!({"add": {game: {"direction": "receive"}}}),
+            format!("direction at '{game}' is not a field of an element; element, why, how and direction belong in a want"),
+            json!({"update": {game: {"wants": [{"element": "<address>", "why": "<why>", "how": "<how>", "direction": "receive"}]}}}),
         ),
         (
             "N7",
@@ -186,71 +205,71 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         (
             "N10",
-            json!({"add": {"code.engine": {"game": {"wants": [{"pe": bus, "op": "receive input", "ef": "", "ifd": "receive"}]}}}}),
-            format!("ef at the want '{bus}' at '{game}' must be text that is not blank"),
-            json!({"add": {"code.engine": {"game": {"wants": [{"pe": bus, "op": "receive input", "ef": "<ef>", "ifd": "receive"}]}}}}),
+            json!({"add": {"code.engine": {"game": {"wants": [{"element": bus, "why": "receive input", "how": "", "direction": "receive"}]}}}}),
+            format!("how at the want '{bus}' at '{game}' must be text that is not blank"),
+            json!({"add": {"code.engine": {"game": {"wants": [{"element": bus, "why": "receive input", "how": "<how>", "direction": "receive"}]}}}}),
         ),
         (
             "N10",
             json!({"add": {"code.engine": {"game": {"wants": ["code.bus"]}}}}),
-            format!("a want at '{game}' must be a record with pe, op, ef and ifd"),
-            json!({"add": {"code.engine": {"game": {"wants": [with_end("pe", "<address>", placeholder())]}}}}),
+            format!("a want at '{game}' must be a record with element, why, how and direction"),
+            json!({"add": {"code.engine": {"game": {"wants": [with_end("element", "<address>", placeholder())]}}}}),
         ),
         (
             "W1",
             json!({"add": {"code.x": {"wants": ["code.y"]}}}),
-            "a want at 'code.x' must be a record with pe, op, ef and ifd".into(),
-            json!({"add": {"code.x": {"wants": [with_end("pe", "<address>", placeholder())]}}}),
+            "a want at 'code.x' must be a record with element, why, how and direction".into(),
+            json!({"add": {"code.x": {"wants": [with_end("element", "<address>", placeholder())]}}}),
         ),
-        ("W1", json!({"update": {game: {"wants": [with_end("pe", "code y", want())]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
-        ("W1", json!({"update": {game: {"wants": [with_end("pe", ".", want())]}}}), "the root cannot be wanted".into(), json!(null)),
+        ("W1", json!({"update": {game: {"wants": [with_end("element", "code y", want())]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
+        ("W1", json!({"update": {game: {"wants": [with_end("element", ".", want())]}}}), "the root cannot be wanted".into(), json!(null)),
         (
             "W2",
-            json!({"add": {"code.x": {"wants": [{"op": "receive input"}]}}}),
-            "a want at 'code.x' must name its providing element in pe".into(),
-            json!({"add": {"code.x": {"wants": [{"pe": "<address>", "op": "receive input"}]}}}),
+            json!({"add": {"code.x": {"wants": [{"why": "receive input"}]}}}),
+            "a want at 'code.x' must name the element it wants in element".into(),
+            json!({"add": {"code.x": {"wants": [{"element": "<address>", "why": "receive input"}]}}}),
         ),
         (
             "W8",
             json!({"add": {"code.x": {"wants": []}}}),
-            "wants at 'code.x' must be a list of want records, each with pe, op, ef and ifd".into(),
-            json!({"add": {"code.x": {"wants": [with_end("pe", "<address>", placeholder())]}}}),
+            "wants at 'code.x' must be a list of want records, each with element, why, how and direction".into(),
+            json!({"add": {"code.x": {"wants": [with_end("element", "<address>", placeholder())]}}}),
         ),
         (
             "W9",
-            json!({"add": {"code.x": {"wants": [with_end("pe", "code.y", want()), with_end("pe", "code.y", want())]}}}),
+            json!({"add": {"code.x": {"wants": [with_end("element", "code.y", want()), with_end("element", "code.y", want())]}}}),
             "wants at 'code.x' names 'code.y' more than once; an element holds one want for each providing element".into(),
             json!(null),
         ),
         (
             "W3",
-            json!({"update": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive", "note": "extra"}]}}}),
+            json!({"update": {game: {"wants": [{"element": bus, "why": "receive input", "how": "dispatches events", "direction": "receive", "note": "extra"}]}}}),
             format!("{at_want} does not take: note"),
-            json!({"update": {game: {"wants": [with_end("pe", bus, want())]}}}),
+            json!({"update": {game: {"wants": [with_end("element", bus, want())]}}}),
         ),
         (
             "W3",
-            json!({"update": {game: {"wants": [{"pe": bus, "goal": "x", "function": "y"}]}}}),
+            json!({"update": {game: {"wants": [{"element": bus, "goal": "x", "function": "y"}]}}}),
             format!("{at_want} does not take: goal, function"),
             json!(null),
         ),
         (
             "W5",
-            json!({"update": {game: {"wants": [{"pe": bus, "ifd": "sideways"}]}}}),
-            format!("ifd at {at_want} must be send, receive or both"),
-            json!({"update": {game: {"wants": [{"pe": bus, "ifd": "<send, receive or both>"}]}}}),
+            json!({"update": {game: {"wants": [{"element": bus, "direction": "sideways"}]}}}),
+            format!("direction at {at_want} must be send, receive or both"),
+            json!({"update": {game: {"wants": [{"element": bus, "direction": "<send, receive or both>"}]}}}),
         ),
         (
             "W4",
-            json!({"update": {game: {"wants": [{"pe": bus, "op": "   "}]}}}),
-            format!("op at {at_want} must be text that is not blank"),
-            json!({"update": {game: {"wants": [{"pe": bus, "op": "<op>"}]}}}),
+            json!({"update": {game: {"wants": [{"element": bus, "why": "   "}]}}}),
+            format!("why at {at_want} must be text that is not blank"),
+            json!({"update": {game: {"wants": [{"element": bus, "why": "<why>"}]}}}),
         ),
         (
             "W7",
-            json!({"update": {game: {"wants": [{"pe": bus}]}}}),
-            format!("{at_want} has no fields; give op, ef or ifd"),
-            json!({"update": {game: {"wants": [with_end("pe", bus, placeholder())]}}}),
+            json!({"update": {game: {"wants": [{"element": bus}]}}}),
+            format!("{at_want} has no fields; give why, how or direction"),
+            json!({"update": {game: {"wants": [with_end("element", bus, placeholder())]}}}),
         ),
     ];
     // N2, N4, N5: a blank or non-text value at each field that holds text.
@@ -317,15 +336,15 @@ fn the_first_problem_in_the_fixed_order_is_reported() {
     // An element beneath is checked before the next field of the element above.
     assert!(reason(json!({"add": {"code.x": {"part": {"refs": 7}, "name": ""}}})).starts_with("refs at 'code.x.part'"));
     // In a want: names it does not take, then fields in order, then missing fields.
-    let record = json!({"ifd": "up", "op": "", "note": 1});
-    assert!(reason(json!({"add": {"code.x": {"wants": [with_end("pe", "code.y", &record)]}}})).contains("does not take: note"));
-    assert!(reason(json!({"add": {"code.x": {"wants": [{"pe": "code.y", "ifd": "up", "op": ""}]}}})).starts_with("ifd at"));
-    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"wants": [{"pe": "code.y", "op": "receive input"}]}}})).unwrap_err();
+    let record = json!({"direction": "up", "why": "", "note": 1});
+    assert!(reason(json!({"add": {"code.x": {"wants": [with_end("element", "code.y", &record)]}}})).contains("does not take: note"));
+    assert!(reason(json!({"add": {"code.x": {"wants": [{"element": "code.y", "direction": "up", "why": ""}]}}})).starts_with("direction at"));
+    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"wants": [{"element": "code.y", "why": "receive input"}]}}})).unwrap_err();
     assert_eq!(incomplete.code, Code::WantIncomplete);
-    assert_eq!(incomplete.reason, "'code.x' wants 'code.y': the want has no ef, ifd");
+    assert_eq!(incomplete.reason, "'code.x' wants 'code.y': the want has no how, direction");
     assert_eq!(
         incomplete.to_json()["remediation"],
-        json!({"add": {"code.x": {"wants": [{"pe": "code.y", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}})
+        json!({"add": {"code.x": {"wants": [{"element": "code.y", "why": "receive input", "how": "<how>", "direction": "<direction>"}]}}})
     );
 }
 
@@ -337,10 +356,10 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
     let mut map = Map::new();
     for command in [
         json!({"add": {"code.engine.game": {"technical_name": "game engine", "name": "Quake core", "role": "DE", "refs": ["./src/engine.c"], "status": "un_built"}}}),
-        json!({"update": {"code.engine.game": {"status": null, "refs": null, "note": null, "op": null}}}),
-        json!({"update": {"code.engine.game": {"wants": [with_end("pe", "code.bus", want())]}}}),
-        json!({"update": {"code.engine.game": {"wants": [{"pe": "code.bus", "ifd": "both"}]}}}),
-        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "wants": [with_end("pe", "code.bus", want())]}}}}}),
+        json!({"update": {"code.engine.game": {"status": null, "refs": null, "note": null, "why": null}}}),
+        json!({"update": {"code.engine.game": {"wants": [with_end("element", "code.bus", want())]}}}),
+        json!({"update": {"code.engine.game": {"wants": [{"element": "code.bus", "direction": "both"}]}}}),
+        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "wants": [with_end("element", "code.bus", want())]}}}}}),
         json!({"update": {".": {"note": "the project"}}}),
         json!({"delete": {"code.engine.game": {"wants": ["code.bus"]}}}),
         json!({"delete": {"code.engine.audio": {}}}),

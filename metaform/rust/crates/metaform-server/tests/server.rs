@@ -14,7 +14,7 @@ use std::time::Duration;
 use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
-/// A want record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`element` or `element`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -31,7 +31,7 @@ fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -
 /// (`mcp-tool.published.json`) in place of the contract's schema, which restates it for each verb.
 /// 656 since 2026-11-11: the published schema is the list of operations only. The owner designed
 /// the tool surface to be well under 1 KB. 672 since the `help` operation joined that list (R-5.39).
-const TOOLS_LIST_BYTES: usize = 680;
+const TOOLS_LIST_BYTES: usize = 663;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]
@@ -94,13 +94,13 @@ fn two_agents_share_one_project() {
     let mut second = Agent::start(&home, &project);
     second.request("server/discover", json!({}));
     let want =
-        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "receive"});
     assert!(
         !first
             .call(json!({"update": {"code.provider.part": {"name": "provider"}}}))
             .0
     );
-    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "wants": [with_end("pe", "code.provider.part", &want)]}}})).0);
+    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "wants": [with_end("element", "code.provider.part", &want)]}}})).0);
     let (refused, refusal) = first.call(json!({"delete": {"code.provider.part": {}}}));
     assert!(
         refused,
@@ -278,8 +278,8 @@ fn only_commits_are_announced() {
     let mut a = Agent::on_map(&home, "notes");
     a.request("server/discover", json!({}));
     let want =
-        json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
-    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "wants": [with_end("pe", "code.base.part", &want)]}}})).0);
+        json!({"why": "Receive the part.", "how": "Supplies the part.", "direction": "receive"});
+    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "wants": [with_end("element", "code.base.part", &want)]}}})).0);
     a.listen_to_map();
     assert!(
         a.call(json!({"delete": {"code.base.part": {}}})).0,

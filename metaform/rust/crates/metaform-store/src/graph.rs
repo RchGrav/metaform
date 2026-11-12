@@ -3,7 +3,7 @@
 //!
 //! Every element is an `Element` node keyed by `<map id>|<stored address>`. Nesting is a
 //! `CONTAINS` relationship from each element to its children. Each want is a `DEPENDS_ON`
-//! relationship from receiver to provider carrying `op`, `ef` and `ifd`. Each item of a
+//! relationship from receiver to provider carrying `why`, `how` and `direction`. Each item of a
 //! layer (a non-empty array field, R-6.24) is a `Record` node reached by `HOLDS` from its element,
 //! with its position in `ordinal` and the item itself as JSON in `data`. Ladybug stores every
 //! property as its own column, so the data is a structure of arrays (R-4.6): a write changes only
@@ -30,7 +30,7 @@ const THREADS: u64 = 4;
 /// nodes. Every other field is kept, camelCase, in `extra`.
 const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
 /// Want-record fields with their own property. Any other is kept in the record's `extra`.
-const WANT_COLUMNS: [&str; 3] = ["op", "ef", "ifd"];
+const WANT_COLUMNS: [&str; 3] = ["why", "how", "direction"];
 
 /// What a table connects: a node table keyed by its first property, or a relationship table.
 enum Shape {
@@ -105,9 +105,9 @@ const TABLES: &[Table] = &[
             to: "Element",
         },
         properties: &[
-            ("op", "STRING"),
-            ("ef", "STRING"),
-            ("ifd", "STRING"),
+            ("why", "STRING"),
+            ("how", "STRING"),
+            ("direction", "STRING"),
             ("extra", "STRING"),
         ],
     },
@@ -125,12 +125,12 @@ const TABLES: &[Table] = &[
 /// `(table, old name, new name)`. Each runs only when the old name is present and the new one
 /// is not, so it runs once.
 const RENAMES: &[(&str, &str, &str)] = &[
-    // The want fields took the intake's names (founder, 2026-11-12): `why` became `op`,
-    // `how` became `ef`, and `direction` became `ifd`. `intent` is an earlier name of `direction`.
-    ("DEPENDS_ON", "why", "op"),
-    ("DEPENDS_ON", "how", "ef"),
-    ("DEPENDS_ON", "direction", "ifd"),
-    ("DEPENDS_ON", "intent", "ifd"),
+    // For part of 2026-11-12 a build stored the want fields as `op`, `ef` and `ifd`. The fields
+    // are `why`, `how` and `direction`. `intent` is an earlier name of `direction`.
+    ("DEPENDS_ON", "op", "why"),
+    ("DEPENDS_ON", "ef", "how"),
+    ("DEPENDS_ON", "ifd", "direction"),
+    ("DEPENDS_ON", "intent", "direction"),
 ];
 
 /// Table renames since the first store, applied on open before `RENAMES`: `(old name, new name)`.
@@ -332,7 +332,7 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
     let wants = rows(
         conn,
         "MATCH (a:Element)-[w:DEPENDS_ON]->(b:Element) WHERE a.mapId = $m \
-         RETURN a.address, b.address, w.op, w.ef, w.ifd, w.extra",
+         RETURN a.address, b.address, w.why, w.how, w.direction, w.extra",
         vec![("m", map.into())],
     )?;
     for row in wants {
@@ -518,7 +518,7 @@ fn persist_wants(
         run(
             conn,
             "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
-             CREATE (a)-[:DEPENDS_ON {op: $op, ef: $ef, ifd: $ifd, extra: $extra}]->(b)",
+             CREATE (a)-[:DEPENDS_ON {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
             params,
         )?;
     }

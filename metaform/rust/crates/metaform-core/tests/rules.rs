@@ -60,7 +60,7 @@ fn a_deletion_leaves_no_empty_element() {
     // never filled in, the element and its empty branches go too.
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let want = json!({"update": {GAME: {"wants": [{"pe": "code.nothing.here", "op": "a", "ef": "b", "ifd": "receive"}]}}});
+    let want = json!({"update": {GAME: {"wants": [{"element": "code.nothing.here", "why": "a", "how": "b", "direction": "receive"}]}}});
     let with_stub = write(&contract, &map, want.clone());
     assert!(with_stub.element("code.nothing.here").is_some());
     let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
@@ -168,7 +168,7 @@ fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
     for empty in [json!([]), json!({})] {
         let empty = refused(&contract, &map, json!({"update": {GAME: {"wants": empty}}}));
         assert_eq!(empty.code, Code::FieldMismatch);
-        assert_eq!(empty.reason, "wants at 'code.engine.game' must be a list of want records, each with pe, op, ef and ifd");
+        assert_eq!(empty.reason, "wants at 'code.engine.game' must be a list of want records, each with element, why, how and direction");
     }
     let text = refused(&contract, &map, json!({"update": {GAME: {"sources": "./docs/engine.md"}}}));
     assert_eq!(text.code, Code::FieldMismatch);

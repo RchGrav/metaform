@@ -1,0 +1,74 @@
+{
+  "note": "What {\"help\": \"<command>\"} returns: what the command does, its fields, and examples. Every example is the founder's, from tool-examples.json, in the tool's current words. Do not add an example of your own: an example changes what a model infers.",
+  "add": {
+    "does": "Adds an element, or adds fields and wants to an element that exists. The key is the element's address. A list grows; any other field is written. One command names one element.",
+    "fields": {
+      "technical_name": "The short practitioner name: the leading words of the address read in reverse.",
+      "name": "The name this project gives the element.",
+      "role": "AT, DE, SE, NE, CQU, UD or DD. {\"help\": \"intake/core_concepts\"} defines them.",
+      "refs": "A list with one uri for each artifact that has this address.",
+      "status": "un_built for functionality that is intended and not built.",
+      "wants": "A list with one record for each element this element wants. A record holds element (the wanted element's address), why, how and direction (send, receive or both). The wanted element is created at its own address if it is not there."
+    },
+    "examples": [
+      {"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox", "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}},
+      {"add": {"code.protocol.network.tracker.cs": {"wants": [{"element": "code.masher.widget", "why": "Receive the mash data to relay it.", "how": "Prepared mash data packets.", "direction": "receive"}]}}}
+    ]
+  },
+  "update": {
+    "does": "Changes fields of an element. A field set to null is removed; a field left out is unchanged. A wants record names its element and gives only the fields to change.",
+    "fields": {
+      "technical_name, name, role, refs, status": "As in add. A list replaces the list that is there.",
+      "wants": "A list of records. Each holds element and the fields to change: why, how or direction."
+    },
+    "examples": [
+      {"update": {"code.masher.widget": {"role": null}}}
+    ]
+  },
+  "delete": {
+    "does": "Deletes an element with {}, or removes wants by naming their elements. An element that another element wants is not deleted; the refusal returns the command that removes that want.",
+    "examples": [
+      {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}},
+      {"delete": {"code.masher.widget": {}}}
+    ]
+  },
+  "orphaned": {
+    "does": "Returns the elements that no element wants, each with its own fields. Being orphaned does not mean an element should be deleted.",
+    "examples": [
+      {"orphaned": {}}
+    ]
+  },
+  "goto": {
+    "does": "Places you at an element and returns its fields, its wants, the wants that name it (wanted_by), and the layers that hold records there. A later goto to the same address returns only what changed.",
+    "examples": [
+      {"goto": "code.masher.widget"}
+    ]
+  },
+  "map": {
+    "does": "Returns every address, each want as a pair (the element that holds it, then the wanted element), and the Defining Elements. It returns no fields. The layers are the addresses beneath layer.",
+    "examples": [
+      {"map": {}}
+    ]
+  },
+  "addressed read": {
+    "does": "A key that is an address reads that element's own fields. To add a layer to the answer, name it with {} as its value.",
+    "examples": [
+      {"code.masher.widget": {}},
+      {"code.masher.widget": {"wants": {}}}
+    ]
+  },
+  "raw dump": {
+    "does": "A key that starts with a period returns the stored JSON at that path, with everything beneath it. A period alone returns the whole project.",
+    "examples": [
+      {".code.masher": {}}
+    ]
+  },
+  "help": {
+    "does": "{} lists the names help takes. A command name returns what the command does, its fields and examples. intake lists the sections of the intake procedure, and intake/<section> returns one.",
+    "examples": [
+      {"help": {}},
+      {"help": "add"},
+      {"help": "intake"}
+    ]
+  }
+}

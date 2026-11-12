@@ -1,9 +1,9 @@
 {
   "code": {
     "application": {
-      "wants": [{"pe": "code.sdk", "op": "Use the required SDK capabilities.",
-          "ef": "Provides the required SDK capabilities.",
-          "ifd": "receive"}]
+      "wants": [{"element": "code.sdk", "why": "Use the required SDK capabilities.",
+          "how": "Provides the required SDK capabilities.",
+          "direction": "receive"}]
     },
     "sdk": {}
   }

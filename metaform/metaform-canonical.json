@@ -25,25 +25,25 @@
           "module": {
             "technical_name": "module developer",
             "name": "Module developer",
-            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
-                "op": "Add and maintain project-specific Metaform capabilities using a stable extension contract and distributable modules.",
-                "ef": "Supplies the public chassis contract, runnable examples and template, contextual command and MCP exposure, module-owned storage, and fork checks and packaging over the released chassis."}]
+            "wants": [{"element": "code.system.management.knowledge", "direction": "both",
+                "why": "Add and maintain project-specific Metaform capabilities using a stable extension contract and distributable modules.",
+                "how": "Supplies the public chassis contract, runnable examples and template, contextual command and MCP exposure, module-owned storage, and fork checks and packaging over the released chassis."}]
           }
         },
         "engineer": {
           "automation": {
             "technical_name": "automation engineer",
             "name": "Automation engineer",
-            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
-                "op": "Run repeatable improvement procedures with the workpiece's actual context, durable handoffs and visible responsibility for unfinished work.",
-                "ef": "Binds callable Axiom procedures to the functional map, transports agent-interpreted calls and returns, and coordinates ticket-based agent sessions through the work board and dispatch."}]
+            "wants": [{"element": "code.system.management.knowledge", "direction": "both",
+                "why": "Run repeatable improvement procedures with the workpiece's actual context, durable handoffs and visible responsibility for unfinished work.",
+                "how": "Binds callable Axiom procedures to the functional map, transports agent-interpreted calls and returns, and coordinates ticket-based agent sessions through the work board and dispatch."}]
           },
           "knowledge": {
             "technical_name": "knowledge engineer",
             "name": "Knowledge engineer",
-            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
-                "op": "Keep a workpiece's functional identity, receiving purposes and encounter functions reusable as context so later analysis and improvement start from retained understanding.",
-                "ef": "Records the Inference Metaform as addressed elements and receiver-owned purpose joins, then serves the relevant map, selected knowledge, provenance and memories through agent and human interfaces."}]
+            "wants": [{"element": "code.system.management.knowledge", "direction": "both",
+                "why": "Keep a workpiece's functional identity, receiving purposes and encounter functions reusable as context so later analysis and improvement start from retained understanding.",
+                "how": "Records the Inference Metaform as addressed elements and receiver-owned purpose joins, then serves the relevant map, selected knowledge, provenance and memories through agent and human interfaces."}]
           }
         }
       }
@@ -55,29 +55,29 @@
             "technical_name": "knowledge management system",
             "name": "Metaform",
             "role": "DE",
-            "wants": [{"pe": "code.service.decision", "ifd": "receive",
-                "op": "Reuse typed judgments for agent allocation, knowledge ordering, triage, intake coverage and session diagnostics.",
-                "ef": "Asks typed decisions, caches answers and records actionable judgments at their addresses while preserving ordinary behavior when disabled or unavailable."}, {"pe": "code.interface.graphical", "ifd": "both",
-                "op": "Let the person inspect the functional map and direct knowledge, work and agent activity from one persistent view.",
-                "ef": "Serves live graph, node and layer views, source and memory inspection, work board, agent chat, attachments, diagrams, embedded apps, permissions, workspaces and build downloads."}, {"pe": "code.interface.telephone", "ifd": "both",
-                "op": "Keep project conversation and requests for attention available away from the screen.",
-                "ef": "Bridges authenticated calls and texts to the system agent and sends selected project notifications to configured owner numbers."}, {"pe": "code.coordinator.discussion", "ifd": "both",
-                "op": "Examine project questions through agent discussion and preserve inspectable outcomes for later decisions.",
-                "ef": "Opens discussions through the bundled Roundtable engine, streams events, preserves inspectable results and commissions Planner proposals for the person's decision."}, {"pe": "code.server.hosting", "ifd": "both",
-                "op": "Expose project context from a host controlled by its owner.",
-                "ef": "Deploys the container host and manages TLS, authenticated MCP and web access, passkeys, accounts and relays."}, {"pe": "code.framework.plugin", "ifd": "receive",
-                "op": "Extend Metaform's capabilities while retaining one consistent command, context, settings and lifecycle contract.",
-                "ef": "Discovers bundled, user, entry-point and project modules, reads declarations, loads enabled modules and withdraws their resources on unload. Shared context, settings, grammar, result formatting, reports, owned tasks and event delivery let modules supply features through the same surfaces."}, {"pe": "code.graph.knowledge", "ifd": "both",
-                "op": "Provide a stable functional representation that relates each workpiece element to the receiving purpose its encounter serves.",
-                "ef": "Stores canonical names, type addresses and CQU/DE/SE/NE roles, receiver-owned purpose joins, and versioned refinements. Reads expose entry roots, requirements, providers, namespace children, references, history, textual export and Cypher queries. Knowledge-layer operations and critic/challenge prompts support contextual analysis and recorded answers without treating semantic analysis as a storage gate."}, {"pe": "code.interface.speech", "ifd": "both",
-                "op": "Converse with project agents through speech.",
-                "ef": "Transcribes microphone utterances into editable agent messages and speaks replies through selected speech engines."}, {"pe": "code.proxy.tunnel", "ifd": "both",
-                "op": "Let cloud AI tools reach the local map through an outbound connection.",
-                "ef": "Signs the machine into the broker and carries authorized MCP requests over an outbound tunnel with local auditing and revocation."}, {"pe": "document.specification", "ifd": "receive",
-                "op": "Preserve the settled semantics, reasons and observable requirements that determine which changes retain Metaform's intended behavior.",
-                "ef": "Defines map identity, layers, storage, chassis modules, CLI, MCP installation, quality, projects and viewer behavior, with acceptance conditions, status and open decisions. Trace, capture, change orders and build/review records preserve the decision trail."}, {"pe": "code.engine.workflow", "ifd": "both",
-                "op": "Keep authored procedures callable and resumable with each call's map and folder context.",
-                "ef": "Registers addressed prompts. Binds variables and element values. Persists call frames, child handoffs and parallel results in project run records."}]
+            "wants": [{"element": "code.service.decision", "direction": "receive",
+                "why": "Reuse typed judgments for agent allocation, knowledge ordering, triage, intake coverage and session diagnostics.",
+                "how": "Asks typed decisions, caches answers and records actionable judgments at their addresses while preserving ordinary behavior when disabled or unavailable."}, {"element": "code.interface.graphical", "direction": "both",
+                "why": "Let the person inspect the functional map and direct knowledge, work and agent activity from one persistent view.",
+                "how": "Serves live graph, node and layer views, source and memory inspection, work board, agent chat, attachments, diagrams, embedded apps, permissions, workspaces and build downloads."}, {"element": "code.interface.telephone", "direction": "both",
+                "why": "Keep project conversation and requests for attention available away from the screen.",
+                "how": "Bridges authenticated calls and texts to the system agent and sends selected project notifications to configured owner numbers."}, {"element": "code.coordinator.discussion", "direction": "both",
+                "why": "Examine project questions through agent discussion and preserve inspectable outcomes for later decisions.",
+                "how": "Opens discussions through the bundled Roundtable engine, streams events, preserves inspectable results and commissions Planner proposals for the person's decision."}, {"element": "code.server.hosting", "direction": "both",
+                "why": "Expose project context from a host controlled by its owner.",
+                "how": "Deploys the container host and manages TLS, authenticated MCP and web access, passkeys, accounts and relays."}, {"element": "code.framework.plugin", "direction": "receive",
+                "why": "Extend Metaform's capabilities while retaining one consistent command, context, settings and lifecycle contract.",
+                "how": "Discovers bundled, user, entry-point and project modules, reads declarations, loads enabled modules and withdraws their resources on unload. Shared context, settings, grammar, result formatting, reports, owned tasks and event delivery let modules supply features through the same surfaces."}, {"element": "code.graph.knowledge", "direction": "both",
+                "why": "Provide a stable functional representation that relates each workpiece element to the receiving purpose its encounter serves.",
+                "how": "Stores canonical names, type addresses and CQU/DE/SE/NE roles, receiver-owned purpose joins, and versioned refinements. Reads expose entry roots, requirements, providers, namespace children, references, history, textual export and Cypher queries. Knowledge-layer operations and critic/challenge prompts support contextual analysis and recorded answers without treating semantic analysis as a storage gate."}, {"element": "code.interface.speech", "direction": "both",
+                "why": "Converse with project agents through speech.",
+                "how": "Transcribes microphone utterances into editable agent messages and speaks replies through selected speech engines."}, {"element": "code.proxy.tunnel", "direction": "both",
+                "why": "Let cloud AI tools reach the local map through an outbound connection.",
+                "how": "Signs the machine into the broker and carries authorized MCP requests over an outbound tunnel with local auditing and revocation."}, {"element": "document.specification", "direction": "receive",
+                "why": "Preserve the settled semantics, reasons and observable requirements that determine which changes retain Metaform's intended behavior.",
+                "how": "Defines map identity, layers, storage, chassis modules, CLI, MCP installation, quality, projects and viewer behavior, with acceptance conditions, status and open decisions. Trace, capture, change orders and build/review records preserve the decision trail."}, {"element": "code.engine.workflow", "direction": "both",
+                "why": "Keep authored procedures callable and resumable with each call's map and folder context.",
+                "how": "Registers addressed prompts. Binds variables and element values. Persists call frames, child handoffs and parallel results in project run records."}]
           }
         }
       },
@@ -86,9 +86,9 @@
           "technical_name": "decision service",
           "name": "Jev",
           "role": "SE",
-          "wants": [{"pe": "upstream.service.inference", "ifd": "receive",
-              "op": "Obtain typed judgments over supplied project state.",
-              "ef": "Returns Choice, Noul or Score answers with probabilities and confidence through the configured decision endpoint."}]
+          "wants": [{"element": "upstream.service.inference", "direction": "receive",
+              "why": "Obtain typed judgments over supplied project state.",
+              "how": "Returns Choice, Noul or Score answers with probabilities and confidence through the configured decision endpoint."}]
         },
         "provisioning": {
           "technical_name": "provisioning service",
@@ -114,9 +114,9 @@
           "technical_name": "speech service",
           "name": "elevenlabs",
           "role": "SE",
-          "wants": [{"pe": "upstream.service.speech", "ifd": "both",
-              "op": "Obtain account-selected remote voices and transcription.",
-              "ef": "Streams synthesized speech and Scribe transcription through authenticated API calls."}]
+          "wants": [{"element": "upstream.service.speech", "direction": "both",
+              "why": "Obtain account-selected remote voices and transcription.",
+              "how": "Streams synthesized speech and Scribe transcription through authenticated API calls."}]
         }
       },
       "interface": {
@@ -124,19 +124,19 @@
           "technical_name": "graphical interface",
           "name": "Web GUI",
           "role": "SE",
-          "wants": [{"pe": "code.assistant.navigation", "ifd": "both",
-              "op": "Coordinate project conversation and attention on the person's current view.",
-              "ef": "Lets agents inspect the shared view and pointer, indicate map parts, capture evidence and act through a visible figure."}, {"pe": "upstream.code.browser.web", "ifd": "both",
-              "op": "Present and interact with the live workbench on the person's machine.",
-              "ef": "Executes the local page, renders graph and agent views with bundled visualization libraries, sends user actions to the local server and receives streamed updates and downloadable artifacts."}]
+          "wants": [{"element": "code.assistant.navigation", "direction": "both",
+              "why": "Coordinate project conversation and attention on the person's current view.",
+              "how": "Lets agents inspect the shared view and pointer, indicate map parts, capture evidence and act through a visible figure."}, {"element": "upstream.code.browser.web", "direction": "both",
+              "why": "Present and interact with the live workbench on the person's machine.",
+              "how": "Executes the local page, renders graph and agent views with bundled visualization libraries, sends user actions to the local server and receives streamed updates and downloadable artifacts."}]
         },
         "telephone": {
           "technical_name": "telephone interface",
           "name": "twilio",
           "role": "SE",
-          "wants": [{"pe": "upstream.service.telephony", "ifd": "both",
-              "op": "Carry project calls, texts and notifications through a telephone service.",
-              "ef": "Delivers signed call and message webhooks and places configured outbound notifications through Twilio."}]
+          "wants": [{"element": "upstream.service.telephony", "direction": "both",
+              "why": "Carry project calls, texts and notifications through a telephone service.",
+              "how": "Delivers signed call and message webhooks and places configured outbound notifications through Twilio."}]
         },
         "command_line": {
           "technical_name": "command line interface",
@@ -147,9 +147,9 @@
           "technical_name": "speech interface",
           "name": "voice",
           "role": "SE",
-          "wants": [{"pe": "code.service.speech", "ifd": "both",
-              "op": "Offer service transcription and synthesis alongside local speech engines.",
-              "ef": "Provides account-selected streaming voices and Scribe transcription through the voice.engine contract."}]
+          "wants": [{"element": "code.service.speech", "direction": "both",
+              "why": "Offer service transcription and synthesis alongside local speech engines.",
+              "how": "Provides account-selected streaming voices and Scribe transcription through the voice.engine contract."}]
         }
       },
       "assistant": {
@@ -176,13 +176,13 @@
           "technical_name": "tool server",
           "name": "MCP server",
           "role": "SE",
-          "wants": [{"pe": "code.gateway.messaging", "ifd": "both",
-              "op": "Exchange project-addressed work with external agents while retaining requests, progress and returns.",
-              "ef": "Receives A2A messages as tracked tickets, sends addressed work to configured peers, and retains exchange status, cancellation, input requests and returned artifacts."}, {"pe": "code.scheduler.tool", "ifd": "both",
-              "op": "Keep long-running tool results observable without holding an interactive call open.",
-              "ef": "Creates asynchronous tool tasks with progress, status, cancellation and retained results."}, {"pe": "code.host.application", "ifd": "both",
-              "op": "Present interactive tool results with the map and agent conversation.",
-              "ef": "Serves embedded map, node, trace and glossary views and transports application context and tool interactions."}]
+          "wants": [{"element": "code.gateway.messaging", "direction": "both",
+              "why": "Exchange project-addressed work with external agents while retaining requests, progress and returns.",
+              "how": "Receives A2A messages as tracked tickets, sends addressed work to configured peers, and retains exchange status, cancellation, input requests and returned artifacts."}, {"element": "code.scheduler.tool", "direction": "both",
+              "why": "Keep long-running tool results observable without holding an interactive call open.",
+              "how": "Creates asynchronous tool tasks with progress, status, cancellation and retained results."}, {"element": "code.host.application", "direction": "both",
+              "why": "Present interactive tool results with the map and agent conversation.",
+              "how": "Serves embedded map, node, trace and glossary views and transports application context and tool interactions."}]
         }
       },
       "framework": {
@@ -190,25 +190,25 @@
           "technical_name": "plugin framework",
           "name": "Chassis",
           "role": "SE",
-          "wants": [{"pe": "code.store.prompt", "ifd": "both",
-              "op": "Serve authored agent instructions with traceable revisions and permit deliberate review of the text a process receives.",
-              "ef": "Versions shipped and edited text, retains provenance uses, fills declared resource placeholders, and provides prompt review, packet editing, source update and structural notices without substituting code for semantic judgment."}, {"pe": "code.manager.configuration", "ifd": "receive",
-              "op": "Resolve each operation's module-owned settings with declared defaults and folder inheritance.",
-              "ef": "Declares typed settings, validates values, resolves folder and global inheritance, and supplies settings to command, MCP, help and settings views."}, {"pe": "code.server.tool", "ifd": "both",
-              "op": "Expose the current modules and project context to an agent host without requiring the agent to infer command syntax.",
-              "ef": "Derives tools, command schemas, resources, slash prompts and live instructions from declarations, validates calls with the shared grammar, dispatches each through its own context and preserves stdio service across supported code upgrades."}, {"pe": "code.manager.repository", "ifd": "both",
-              "op": "Maintain user-authored modules against the released chassis without requiring a fork of the chassis implementation.",
-              "ef": "Initializes module repositories, records source-bound cross-platform checks, dispatches per-module quality reviews before wheel assembly, and starts template upkeep as pull requests. Demonstrates the module contract through template and hello. Runs upkeep manually and after successful newer installations for registered module repositories."}, {"pe": "code.installer.package", "ifd": "send",
-              "op": "Connect Metaform's declared capabilities to supported agent hosts from either the source checkout or a built distribution.",
-              "ef": "Detects host configuration locations, stages versions without downgrading, merges MCP registration, writes the Metaform pointer skill and passive reminders, probes the server, records installed ownership and supports backed-up removal."}, {"pe": "code.bus.event", "ifd": "both",
-              "op": "Deliver module events and retain each subscriber's outcome.",
-              "ef": "Runs synchronous or asynchronous subscriptions with separate contexts and payload copies, returning completed, failed or cancelled delivery records."}, {"pe": "code.builder.package", "ifd": "send",
-              "op": "Distribute the selected Metaform capabilities and, when requested, carry a workpiece and assignment to another execution environment.",
-              "ef": "Assembles installer, full, project-wheel and archive outputs, carries declared wants, emits stage progress and includes an isolated wheel bootstrap. Project wheels import their carried map and print the bound remote assignment on first run."}, {"pe": "code.interface.command_line", "ifd": "both",
-              "op": "Make the active project's available operations and settings discoverable and executable with consistent contextual help.",
-              "ef": "Parses declared operations, resolves project, folder and session context, and supplies contextual help, settings views, reports, builds and installation commands."}, {"pe": "code.registry.project", "ifd": "both",
-              "op": "Resolve the intended workpiece and its active metaform while keeping project records separate from its source files.",
-              "ef": "Registers project source locations, maps folders to projects, keeps settings and active bases, and supports backup, restore and clearing of project stores. Origins, variants and extraction retain and reconstruct artifact history."}]
+          "wants": [{"element": "code.store.prompt", "direction": "both",
+              "why": "Serve authored agent instructions with traceable revisions and permit deliberate review of the text a process receives.",
+              "how": "Versions shipped and edited text, retains provenance uses, fills declared resource placeholders, and provides prompt review, packet editing, source update and structural notices without substituting code for semantic judgment."}, {"element": "code.manager.configuration", "direction": "receive",
+              "why": "Resolve each operation's module-owned settings with declared defaults and folder inheritance.",
+              "how": "Declares typed settings, validates values, resolves folder and global inheritance, and supplies settings to command, MCP, help and settings views."}, {"element": "code.server.tool", "direction": "both",
+              "why": "Expose the current modules and project context to an agent host without requiring the agent to infer command syntax.",
+              "how": "Derives tools, command schemas, resources, slash prompts and live instructions from declarations, validates calls with the shared grammar, dispatches each through its own context and preserves stdio service across supported code upgrades."}, {"element": "code.manager.repository", "direction": "both",
+              "why": "Maintain user-authored modules against the released chassis without requiring a fork of the chassis implementation.",
+              "how": "Initializes module repositories, records source-bound cross-platform checks, dispatches per-module quality reviews before wheel assembly, and starts template upkeep as pull requests. Demonstrates the module contract through template and hello. Runs upkeep manually and after successful newer installations for registered module repositories."}, {"element": "code.installer.package", "direction": "send",
+              "why": "Connect Metaform's declared capabilities to supported agent hosts from either the source checkout or a built distribution.",
+              "how": "Detects host configuration locations, stages versions without downgrading, merges MCP registration, writes the Metaform pointer skill and passive reminders, probes the server, records installed ownership and supports backed-up removal."}, {"element": "code.bus.event", "direction": "both",
+              "why": "Deliver module events and retain each subscriber's outcome.",
+              "how": "Runs synchronous or asynchronous subscriptions with separate contexts and payload copies, returning completed, failed or cancelled delivery records."}, {"element": "code.builder.package", "direction": "send",
+              "why": "Distribute the selected Metaform capabilities and, when requested, carry a workpiece and assignment to another execution environment.",
+              "how": "Assembles installer, full, project-wheel and archive outputs, carries declared wants, emits stage progress and includes an isolated wheel bootstrap. Project wheels import their carried map and print the bound remote assignment on first run."}, {"element": "code.interface.command_line", "direction": "both",
+              "why": "Make the active project's available operations and settings discoverable and executable with consistent contextual help.",
+              "how": "Parses declared operations, resolves project, folder and session context, and supplies contextual help, settings views, reports, builds and installation commands."}, {"element": "code.registry.project", "direction": "both",
+              "why": "Resolve the intended workpiece and its active metaform while keeping project records separate from its source files.",
+              "how": "Registers project source locations, maps folders to projects, keeps settings and active bases, and supports backup, restore and clearing of project stores. Origins, variants and extraction retain and reconstruct artifact history."}]
         }
       },
       "store": {
@@ -216,9 +216,9 @@
           "technical_name": "prompt store",
           "name": "Prompt store",
           "role": "SE",
-          "wants": [{"pe": "code.editor.prompt", "ifd": "both",
-              "op": "Review and revise authored agent prompts while retaining their exact prior revisions.",
-              "ef": "Catalogs prompt text, purpose comments and load sites, appends edited versions and updates source or emits reviewable edit packets."}]
+          "wants": [{"element": "code.editor.prompt", "direction": "both",
+              "why": "Review and revise authored agent prompts while retaining their exact prior revisions.",
+              "how": "Catalogs prompt text, purpose comments and load sites, appends edited versions and updates source or emits reviewable edit packets."}]
         },
         "history": {
           "technical_name": "history store",
@@ -229,13 +229,13 @@
           "technical_name": "event store",
           "name": "Data access object",
           "role": "SE",
-          "wants": [{"pe": "upstream.code.engine.database", "ifd": "both",
-              "op": "Commit durable record changes and coordinate process access to local stores.",
-              "ef": "Provides transactional local persistence for operation logs, snapshots, registries and module tables, with the shared connection layer applying schema versions, write locking and connection settings."}, {"pe": "code.store.provenance", "ifd": "receive",
-              "op": "Retain each knowledge layer's producing context and exact prompt revision.",
-              "ef": "Stores production metadata, fills missing fields while building, and resolves immutable prompt-use references."}, {"pe": "code.store.event.projection", "ifd": "receive",
-              "op": "Answer graph reads from committed changes without replaying the entire log for each operation.",
-              "ef": "Rebuilds and indexes the graph from snapshots and ordered operations, catches up at transactions and reloads replaced stores."}],
+          "wants": [{"element": "upstream.code.engine.database", "direction": "both",
+              "why": "Commit durable record changes and coordinate process access to local stores.",
+              "how": "Provides transactional local persistence for operation logs, snapshots, registries and module tables, with the shared connection layer applying schema versions, write locking and connection settings."}, {"element": "code.store.provenance", "direction": "receive",
+              "why": "Retain each knowledge layer's producing context and exact prompt revision.",
+              "how": "Stores production metadata, fills missing fields while building, and resolves immutable prompt-use references."}, {"element": "code.store.event.projection", "direction": "receive",
+              "why": "Answer graph reads from committed changes without replaying the entire log for each operation.",
+              "how": "Rebuilds and indexes the graph from snapshots and ordered operations, catches up at transactions and reloads replaced stores."}],
           "projection": {
             "technical_name": "projection event",
             "name": "Graph projection",
@@ -246,9 +246,9 @@
           "technical_name": "provenance store",
           "name": "Provenance",
           "role": "SE",
-          "wants": [{"pe": "code.service.report", "ifd": "receive",
-              "op": "Retain intake reports and execution feedback with their producing context.",
-              "ef": "Stores report bodies, records their paths, appends locked feedback with layer and prompt context, and lists or reads saved reports."}]
+          "wants": [{"element": "code.service.report", "direction": "receive",
+              "why": "Retain intake reports and execution feedback with their producing context.",
+              "how": "Stores report bodies, records their paths, appends locked feedback with layer and prompt context, and lists or reads saved reports."}]
         },
         "memory": {
           "technical_name": "memory store",
@@ -292,13 +292,13 @@
           "technical_name": "task scheduler",
           "name": "Work queue",
           "role": "SE",
-          "wants": [{"pe": "code.monitor.fault", "ifd": "receive",
-              "op": "Turn repeated runtime faults into functionally located repair work and retain evidence that fixes hold.",
-              "ef": "Groups faults and watched log errors, files deduplicated tickets at source-linked elements, counts recurrences and verifies repairs through quiet deadlines or named tests."}, {"pe": "code.dispatcher.agent", "ifd": "both",
-              "op": "Execute eligible tickets with observable agent ownership and preserve session state when work is interrupted or needs human input.",
-              "ef": "Runs ticket-owned ACP sessions, tracks activity, budgets and drift, queues messages and attachments, and supports editor proxying, wake timers, interruption, recovery and configured worktree review."}, {"pe": "code.integration.tracking.issue", "ifd": "both",
-              "op": "Keep external issue orchestration and project-addressed work consistent.",
-              "ef": "Links issues to tickets, exchanges comments and questions, synchronizes outcomes, and hands heartbeat assignments to dispatch with retained ownership."}]
+          "wants": [{"element": "code.monitor.fault", "direction": "receive",
+              "why": "Turn repeated runtime faults into functionally located repair work and retain evidence that fixes hold.",
+              "how": "Groups faults and watched log errors, files deduplicated tickets at source-linked elements, counts recurrences and verifies repairs through quiet deadlines or named tests."}, {"element": "code.dispatcher.agent", "direction": "both",
+              "why": "Execute eligible tickets with observable agent ownership and preserve session state when work is interrupted or needs human input.",
+              "how": "Runs ticket-owned ACP sessions, tracks activity, budgets and drift, queues messages and attachments, and supports editor proxying, wake timers, interruption, recovery and configured worktree review."}, {"element": "code.integration.tracking.issue", "direction": "both",
+              "why": "Keep external issue orchestration and project-addressed work consistent.",
+              "how": "Links issues to tickets, exchanges comments and questions, synchronizes outcomes, and hands heartbeat assignments to dispatch with retained ownership."}]
         }
       },
       "host": {
@@ -313,13 +313,13 @@
           "technical_name": "package installer",
           "name": "Installer",
           "role": "SE",
-          "wants": [{"pe": "code.service.provisioning", "ifd": "both",
-              "op": "Establish supported Metaform entry points for an unfamiliar agent harness.",
-              "ef": "Identifies the harness location, emits first-run instructions, records completion and previews backed-up host registration and owned reminders."}, {"pe": "code.manager.repository", "ifd": "receive",
-              "op": "Bring user modules forward when a newer installation changes the module template contract.",
-              "ef": "Compares template versions and dispatches module upkeep after successful newer installations. Retains manual upkeep for retries."}, {"pe": "code.registry.skill", "ifd": "receive",
-              "op": "Deploy each authored skill once with consistent discoverability and addressed access in every supported harness.",
-              "ef": "Lists skills from canonical folders. Loads procedures by name or unversioned address with current prompt-store libraries. Deploys discoverable skills to native harness folders. Supplies fallback MCP discovery where native deployment is unproven."}]
+          "wants": [{"element": "code.service.provisioning", "direction": "both",
+              "why": "Establish supported Metaform entry points for an unfamiliar agent harness.",
+              "how": "Identifies the harness location, emits first-run instructions, records completion and previews backed-up host registration and owned reminders."}, {"element": "code.manager.repository", "direction": "receive",
+              "why": "Bring user modules forward when a newer installation changes the module template contract.",
+              "how": "Compares template versions and dispatches module upkeep after successful newer installations. Retains manual upkeep for retries."}, {"element": "code.registry.skill", "direction": "receive",
+              "why": "Deploy each authored skill once with consistent discoverability and addressed access in every supported harness.",
+              "how": "Lists skills from canonical folders. Loads procedures by name or unversioned address with current prompt-store libraries. Deploys discoverable skills to native harness folders. Supplies fallback MCP discovery where native deployment is unproven."}]
         }
       },
       "registry": {
@@ -332,11 +332,11 @@
           "technical_name": "project registry",
           "name": "Projects",
           "role": "SE",
-          "wants": [{"pe": "code.store.history", "ifd": "both",
-              "op": "Keep registered project origins and work variants reconstructable after their source is unavailable.",
-              "ef": "Records origins, changed files or diffs and producer context, then reconstructs selected variants."}, {"pe": "code.service.backup", "ifd": "both",
-              "op": "Make clearing and restoring project stores recoverable.",
-              "ef": "Copies consistent stores, reports and base registry metadata into home backups, backs up replaced state and restores activation."}]
+          "wants": [{"element": "code.store.history", "direction": "both",
+              "why": "Keep registered project origins and work variants reconstructable after their source is unavailable.",
+              "how": "Records origins, changed files or diffs and producer context, then reconstructs selected variants."}, {"element": "code.service.backup", "direction": "both",
+              "why": "Make clearing and restoring project stores recoverable.",
+              "how": "Copies consistent stores, reports and base registry metadata into home backups, backs up replaced state and restores activation."}]
         },
         "role": {
           "technical_name": "role registry",
@@ -349,9 +349,9 @@
           "technical_name": "event bus",
           "name": "Events",
           "role": "SE",
-          "wants": [{"pe": "code.bus.event.relay", "ifd": "both",
-              "op": "Deliver map changes across processes sharing the Metaform home.",
-              "ef": "Transports authenticated map.changed events through loopback listeners, acknowledges receipt and removes refused listener records."}],
+          "wants": [{"element": "code.bus.event.relay", "direction": "both",
+              "why": "Deliver map changes across processes sharing the Metaform home.",
+              "how": "Transports authenticated map.changed events through loopback listeners, acknowledges receipt and removes refused listener records."}],
           "relay": {
             "technical_name": "relay event",
             "name": "Event relay",
@@ -364,9 +364,9 @@
           "technical_name": "package builder",
           "name": "Build",
           "role": "SE",
-          "wants": [{"pe": "code.exchange.data", "ifd": "both",
-              "op": "Carry project identity, map history and remote work between environments without silently overwriting the local workpiece.",
-              "ef": "Exports and imports versioned records and declared module tables. Archives bundle map data and optional origin files; remote returns carry working layers, file variations and notes, and import writes source changes into a separate review folder."}]
+          "wants": [{"element": "code.exchange.data", "direction": "both",
+              "why": "Carry project identity, map history and remote work between environments without silently overwriting the local workpiece.",
+              "how": "Exports and imports versioned records and declared module tables. Archives bundle map data and optional origin files; remote returns carry working layers, file variations and notes, and import writes source changes into a separate review folder."}]
         }
       },
       "exchange": {
@@ -374,9 +374,9 @@
           "technical_name": "data exchange",
           "name": "Project archive",
           "role": "SE",
-          "wants": [{"pe": "code.verifier.integrity", "ifd": "both",
-              "op": "Detect whether visible packet work and its carried provenance still correspond when a sealed packet is exchanged.",
-              "ef": "Seals and checks ZIP packets: hashes bind visible work to a manifest, and a derived-key authenticated envelope binds the hidden data to that manifest and packet lineage. Its supplied evidence enables tamper detection rather than secrecy. Current build archives use a separate unsealed exchange path."}]
+          "wants": [{"element": "code.verifier.integrity", "direction": "both",
+              "why": "Detect whether visible packet work and its carried provenance still correspond when a sealed packet is exchanged.",
+              "how": "Seals and checks ZIP packets: hashes bind visible work to a manifest, and a derived-key authenticated envelope binds the hidden data to that manifest and packet lineage. Its supplied evidence enables tamper detection rather than secrecy. Current build archives use a separate unsealed exchange path."}]
         }
       },
       "verifier": {
@@ -391,19 +391,19 @@
           "technical_name": "knowledge graph",
           "name": "Inference Metaform",
           "role": "SE",
-          "wants": [{"pe": "code.exporter.document", "ifd": "receive",
-              "op": "Make the visible functional map readable outside a live interface.",
-              "ef": "Produces address-preserving Markdown, Mermaid and XML from contextual Store reads, retaining roles, references and encounter records."}, {"pe": "code.store.event", "ifd": "both",
-              "op": "Preserve graph identity and every recorded change across processes, concurrent writers, migrations and refinements.",
-              "ef": "Appends transactional operations to SQLite, replays them into an in-memory graph with snapshots, exposes immutable record views and module-owned tables, and retains previous versions for reconstruction and read history."}, {"pe": "code.service.query", "ifd": "receive",
-              "op": "Expose map, layer context and record history through consistent paged reads.",
-              "ef": "Routes named questions to Store reads for roots, joins, citations, provenance, versions and operations."}, {"pe": "code.resolver.context", "ifd": "receive",
-              "op": "Return knowledge that applies at the requested functional address while retaining alternate knowledge and previous interpretations.",
-              "ef": "Walks namespace prefixes, applies selected and masked layers, excludes building layers and hidden descendants, and returns applicable properties and knowledge. Layer operations retain provenance, source relationships, tags and re-examination state."}, {"pe": "code.processor.intake", "ifd": "receive",
-              "op": "Acquire the artifact's functional shape from an examining agent without replacing semantic judgment with storage validation.",
-              "ef": "Serves the authored intake procedure and schema. Records elements and joins immediately. Stores references in the sources layer and findings in work records. Provides whole-map readback. Refines the active map by default. Finishes separate intakes without switching the active base."}, {"pe": "code.store.memory", "ifd": "both",
-              "op": "Reuse findings and corrections at the functional place they concern across agent sessions and replacement maps.",
-              "ef": "Keeps a project-level entity, relation and observation graph plus node notes, joins it to element addresses or receiver/provider address pairs, applies contextual layer visibility, and exposes orphaned joins for reattachment."}]
+          "wants": [{"element": "code.exporter.document", "direction": "receive",
+              "why": "Make the visible functional map readable outside a live interface.",
+              "how": "Produces address-preserving Markdown, Mermaid and XML from contextual Store reads, retaining roles, references and encounter records."}, {"element": "code.store.event", "direction": "both",
+              "why": "Preserve graph identity and every recorded change across processes, concurrent writers, migrations and refinements.",
+              "how": "Appends transactional operations to SQLite, replays them into an in-memory graph with snapshots, exposes immutable record views and module-owned tables, and retains previous versions for reconstruction and read history."}, {"element": "code.service.query", "direction": "receive",
+              "why": "Expose map, layer context and record history through consistent paged reads.",
+              "how": "Routes named questions to Store reads for roots, joins, citations, provenance, versions and operations."}, {"element": "code.resolver.context", "direction": "receive",
+              "why": "Return knowledge that applies at the requested functional address while retaining alternate knowledge and previous interpretations.",
+              "how": "Walks namespace prefixes, applies selected and masked layers, excludes building layers and hidden descendants, and returns applicable properties and knowledge. Layer operations retain provenance, source relationships, tags and re-examination state."}, {"element": "code.processor.intake", "direction": "receive",
+              "why": "Acquire the artifact's functional shape from an examining agent without replacing semantic judgment with storage validation.",
+              "how": "Serves the authored intake procedure and schema. Records elements and joins immediately. Stores references in the sources layer and findings in work records. Provides whole-map readback. Refines the active map by default. Finishes separate intakes without switching the active base."}, {"element": "code.store.memory", "direction": "both",
+              "why": "Reuse findings and corrections at the functional place they concern across agent sessions and replacement maps.",
+              "how": "Keeps a project-level entity, relation and observation graph plus node notes, joins it to element addresses or receiver/provider address pairs, applies contextual layer visibility, and exposes orphaned joins for reattachment."}]
         }
       },
       "exporter": {
@@ -425,9 +425,9 @@
           "technical_name": "intake processor",
           "name": "intake",
           "role": "SE",
-          "wants": [{"pe": "upstream.code.harness.agent", "ifd": "receive",
-              "op": "Obtain semantic analysis of the actual workpiece from an agent able to examine its artifacts and follow the authored intake.",
-              "ef": "Reads the procedure and schema, traces source functionality, reasons type identities and receiver purposes, and records its analysis through Metaform's tools. The intake module supplies the procedure and storage rather than performing that reasoning itself."}]
+          "wants": [{"element": "upstream.code.harness.agent", "direction": "receive",
+              "why": "Obtain semantic analysis of the actual workpiece from an agent able to examine its artifacts and follow the authored intake.",
+              "how": "Reads the procedure and schema, traces source functionality, reasons type identities and receiver purposes, and records its analysis through Metaform's tools. The intake module supplies the procedure and storage rather than performing that reasoning itself."}]
         }
       },
       "proxy": {
@@ -435,9 +435,9 @@
           "technical_name": "tunnel proxy",
           "name": "cloud",
           "role": "SE",
-          "wants": [{"pe": "code.proxy.tunnel.broker", "ifd": "both",
-              "op": "Route each authorized hosted client to its account's machine.",
-              "ef": "Terminates client OAuth, signs caller assertions and multiplexes streams to the selected machine without retaining maps or call results."}],
+          "wants": [{"element": "code.proxy.tunnel.broker", "direction": "both",
+              "why": "Route each authorized hosted client to its account's machine.",
+              "how": "Terminates client OAuth, signs caller assertions and multiplexes streams to the selected machine without retaining maps or call results."}],
           "broker": {
             "technical_name": "broker tunnel",
             "name": "Broker",
@@ -457,17 +457,17 @@
           "technical_name": "workflow engine",
           "name": "workflow",
           "role": "SE",
-          "wants": [{"pe": "code.preprocessor.prompt", "ifd": "receive",
-              "op": "Supply the lexicalized operation with knowledge applicable at its addressed elements.",
-              "ef": "Preserves supplied wording, assembles visible knowledge and properties by layer, includes always-show records and appends canonical name-to-address references."}, {"pe": "upstream.code.harness.agent", "ifd": "both",
-              "op": "Interpret authored Axiom control flow and perform each procedure's reasoning while retaining deterministic call transport.",
-              "ef": "Interprets Choice, Map, Retry, Catch and verification in the supplied logic, calls the workflow transport, and returns its computed values or errors."}, {"pe": "document.procedure", "ifd": "receive",
-              "op": "Supply reusable instructions whose semantic decisions can be prepared once and applied through later addressed calls.",
-              "ef": "Specifies agent interpretation, authoring, ingest, evaluation and task preparation. Example source workflows and definitions illustrate reusable procedures; the prompts collection supplies additional candidate procedures and is not itself a shipped runtime catalog."}, {"pe": "code.router.assignment", "ifd": "both",
-              "op": "Assign functionally grounded work to suitable expertise and retain responsibility through specialist calls and returns.",
-              "ef": "Routes unassigned tickets to registered specialists or a Facilitator, preserves existing assignments, records operative revisions and resumes callers through durable continuations."}, {"pe": "code.scheduler.task", "ifd": "both",
-              "op": "Keep requested changes, findings, progress and questions attached to the functional parts they concern and available for execution.",
-              "ef": "Tracks condition separately from task kind, board position, ownership, agent eligibility, planned steps, completed history and linked nodes. Questions and permission requests remain reviewable at their nodes; claims and role permissions govern agent writes."}]
+          "wants": [{"element": "code.preprocessor.prompt", "direction": "receive",
+              "why": "Supply the lexicalized operation with knowledge applicable at its addressed elements.",
+              "how": "Preserves supplied wording, assembles visible knowledge and properties by layer, includes always-show records and appends canonical name-to-address references."}, {"element": "upstream.code.harness.agent", "direction": "both",
+              "why": "Interpret authored Axiom control flow and perform each procedure's reasoning while retaining deterministic call transport.",
+              "how": "Interprets Choice, Map, Retry, Catch and verification in the supplied logic, calls the workflow transport, and returns its computed values or errors."}, {"element": "document.procedure", "direction": "receive",
+              "why": "Supply reusable instructions whose semantic decisions can be prepared once and applied through later addressed calls.",
+              "how": "Specifies agent interpretation, authoring, ingest, evaluation and task preparation. Example source workflows and definitions illustrate reusable procedures; the prompts collection supplies additional candidate procedures and is not itself a shipped runtime catalog."}, {"element": "code.router.assignment", "direction": "both",
+              "why": "Assign functionally grounded work to suitable expertise and retain responsibility through specialist calls and returns.",
+              "how": "Routes unassigned tickets to registered specialists or a Facilitator, preserves existing assignments, records operative revisions and resumes callers through durable continuations."}, {"element": "code.scheduler.task", "direction": "both",
+              "why": "Keep requested changes, findings, progress and questions attached to the functional parts they concern and available for execution.",
+              "how": "Tracks condition separately from task kind, board position, ownership, agent eligibility, planned steps, completed history and linked nodes. Questions and permission requests remain reviewable at their nodes; claims and role permissions govern agent writes."}]
         }
       },
       "preprocessor": {
@@ -482,9 +482,9 @@
           "technical_name": "assignment router",
           "name": "Specialist assignment routing",
           "role": "SE",
-          "wants": [{"pe": "code.registry.role", "ifd": "receive",
-              "op": "Select reusable expertise and deliver the exact authored duty assigned to each specialist.",
-              "ef": "Lists specialist purposes and role URLs, versions authored duties, exposes role resources and records prompt revisions delivered to agent sessions."}]
+          "wants": [{"element": "code.registry.role", "direction": "receive",
+              "why": "Select reusable expertise and deliver the exact authored duty assigned to each specialist.",
+              "how": "Lists specialist purposes and role URLs, versions authored duties, exposes role resources and records prompt revisions delivered to agent sessions."}]
         }
       },
       "monitor": {
@@ -504,13 +504,13 @@
           "technical_name": "agent dispatcher",
           "name": "dispatch",
           "role": "SE",
-          "wants": [{"pe": "upstream.code.harness.agent", "ifd": "both",
-              "op": "Run assigned work in the person's installed agent environment and receive activity, results and requests for permission.",
-              "ef": "Runs assigned work through Claude, Codex or official Antigravity ACP agents using their own host authentication, while dispatch supplies assignments and receives session updates."}, {"pe": "code.coordination.reservation", "ifd": "receive",
-              "op": "Keep accepted changes from competing over the same project functions.",
-              "ef": "Reserves proposal addresses across related tickets and delays conflicting work until their tickets finish."}, {"pe": "code.monitor.progress", "ifd": "receive",
-              "op": "Recognize repeated unsuccessful work so the assigned workflow can recover.",
-              "ef": "Counts executed attempts lacking completed-step progress. Excludes explicit stops. Pauses automatic execution at configured limit. Resets counts when completed steps advance. Emits rework-limit signals through existing events."}]
+          "wants": [{"element": "upstream.code.harness.agent", "direction": "both",
+              "why": "Run assigned work in the person's installed agent environment and receive activity, results and requests for permission.",
+              "how": "Runs assigned work through Claude, Codex or official Antigravity ACP agents using their own host authentication, while dispatch supplies assignments and receives session updates."}, {"element": "code.coordination.reservation", "direction": "receive",
+              "why": "Keep accepted changes from competing over the same project functions.",
+              "how": "Reserves proposal addresses across related tickets and delays conflicting work until their tickets finish."}, {"element": "code.monitor.progress", "direction": "receive",
+              "why": "Recognize repeated unsuccessful work so the assigned workflow can recover.",
+              "how": "Counts executed attempts lacking completed-step progress. Excludes explicit stops. Pauses automatic execution at configured limit. Resets counts when completed steps advance. Emits rework-limit signals through existing events."}]
         }
       },
       "coordination": {
@@ -526,9 +526,9 @@
             "technical_name": "issue tracking integration",
             "name": "paperclip",
             "role": "SE",
-            "wants": [{"pe": "code.adapter.context", "ifd": "receive",
-                "op": "Resolve the correct issue and run for each gateway call without repeating context across distinct runs.",
-                "ef": "Copies gateway identity into request context. Includes agent, issue and run identifiers. Scopes delivery by agent and run. Uses agent and issue without run. Preserves server environment."}]
+            "wants": [{"element": "code.adapter.context", "direction": "receive",
+                "why": "Resolve the correct issue and run for each gateway call without repeating context across distinct runs.",
+                "how": "Copies gateway identity into request context. Includes agent, issue and run identifiers. Scopes delivery by agent and run. Uses agent and issue without run. Preserves server environment."}]
           }
         }
       },
@@ -587,11 +587,11 @@
         "technical_name": "specification",
         "name": "Metaform specification",
         "role": "SE",
-        "wants": [{"pe": "code.suite.test", "ifd": "receive",
-            "op": "Provide executable evidence for the behavior promised by each requirement and detect regressions at public and persistence boundaries.",
-            "ef": "Uses isolated Metaform homes, requirement-tagged fixtures, real CLI/MCP round trips, storage migrations and concurrency tests, fake ACP agents and browser scenarios. CI runs strict typing, lint and pytest across operating systems and Python versions, with the browser exclusion recorded as a finding."}, {"pe": "document.manual", "ifd": "receive",
-            "op": "Make the project's functional model, operating procedures and implementation boundaries understandable to people applying or extending Metaform.",
-            "ef": "Explains functional mapping and operational use. Historical edition statements, examples and review exports provide comparison evidence rather than overriding the current specification or code."}]
+        "wants": [{"element": "code.suite.test", "direction": "receive",
+            "why": "Provide executable evidence for the behavior promised by each requirement and detect regressions at public and persistence boundaries.",
+            "how": "Uses isolated Metaform homes, requirement-tagged fixtures, real CLI/MCP round trips, storage migrations and concurrency tests, fake ACP agents and browser scenarios. CI runs strict typing, lint and pytest across operating systems and Python versions, with the browser exclusion recorded as a finding."}, {"element": "document.manual", "direction": "receive",
+            "why": "Make the project's functional model, operating procedures and implementation boundaries understandable to people applying or extending Metaform.",
+            "how": "Explains functional mapping and operational use. Historical edition statements, examples and review exports provide comparison evidence rather than overriding the current specification or code."}]
       },
       "manual": {
         "technical_name": "manual",

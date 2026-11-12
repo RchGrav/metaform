@@ -86,12 +86,11 @@ impl Contract {
         Err(Refusal::new(Code::FieldMismatch, format!("the command {detail}"), None))
     }
 
-    /// `help` answers one level at a time (R-5.39), and reads nothing from the map.
-    /// `{"help": {}}` returns the schema of the `help` command itself, with the command names.
-    /// `{"help": "<command name>"}` returns the contract's `oneOf` entry for that command.
-    /// `{"help": "<definition>"}` returns that entry of the contract's `$defs`. Each answer is the
-    /// contract's own node, as the contract holds it: a `$ref` inside it stays a `$ref`, and names
-    /// the definition an agent can ask for next. A command name comes before a definition name.
+    /// `help` reads nothing from the map. `{"help": {}}` returns the schema of the `help` command
+    /// itself, with the names it takes. `{"help": "<command name>"}` returns what that command
+    /// does, its fields and examples. `{"help": "intake"}` lists the sections of the intake
+    /// procedure, and `{"help": "intake/<section>"}` returns one. `{"help": "<definition>"}`
+    /// returns that entry of the contract's `$defs`, as the contract holds it.
     pub(crate) fn help(&self, body: &Value) -> Result<Value, Refusal> {
         let schema = &self.tool["inputSchema"];
         let Some(name) = body.as_str() else {
@@ -123,8 +122,14 @@ impl Contract {
                 )),
             };
         }
-        let command = shape::HELP_NAMES.contains(&name).then(|| help_form(schema, name)).flatten();
-        match command.or_else(|| schema["$defs"].get(name)) {
+        // A command name answers in one piece: what the command does, its fields and the
+        // founder's examples. An agent that asked how to write a command had to follow three
+        // pointers to learn one field name, and the answer misled the model in the one run with
+        // the real tool (founder, 2026-11-12: "just offering help for the various commands").
+        if let Some(answer) = command_help().get(name) {
+            return Ok(json!({"help": {name: answer}}));
+        }
+        match schema["$defs"].get(name) {
             Some(node) => Ok(json!({"help": {name: node}})),
             None => Err(Refusal::new(Code::FieldMismatch, shape::HELP_FORM, Some(json!({"help": {}})))),
         }
@@ -141,18 +146,14 @@ impl Contract {
     }
 }
 
-/// The entry of the input schema's top-level `oneOf` that is the form for a command name.
-/// A raw dump and an addressed read are found by the start of their description; every other
-/// form is found by the property it requires. No form is found by its position.
-fn help_form<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
-    let starts = match name {
-        "raw dump" => Some("A key that starts with a period is a raw dump"),
-        "addressed read" => Some("An addressed read"),
-        _ => None,
-    };
-    schema["oneOf"].as_array()?.iter().find(|entry| match starts {
-        Some(text) => entry["description"].as_str().is_some_and(|description| description.starts_with(text)),
-        None => entry["required"].as_array().is_some_and(|required| required.iter().any(|property| property == name)),
+/// The answer for each command name, from `metaform/tool-help.json`.
+fn command_help() -> &'static serde_json::Map<String, Value> {
+    static HELP: std::sync::OnceLock<serde_json::Map<String, Value>> = std::sync::OnceLock::new();
+    HELP.get_or_init(|| {
+        let mut answers: serde_json::Map<String, Value> =
+            serde_json::from_str(include_str!("../../../../tool-help.json")).expect("tool-help.json is a JSON object");
+        answers.shift_remove("note");
+        answers
     })
 }
 
@@ -261,18 +262,18 @@ mod tests {
         let values = [
             json!(null), json!(true), json!(7), json!(""), json!(" \u{a0}"), json!("text"), json!("add"), json!("raw dump"), json!("help"), json!("todo"),
             json!("receive"), json!([]), json!(["code.y"]), json!(["code.y", "code.y"]), json!({}),
-            json!({"x": 1}), json!({"name": "n"}), json!({"name": ""}), json!({"op": "w"}), json!({"wants": {}}),
-            json!({"code.y": {"op": "w", "ef": "h", "ifd": "receive"}}),
-            json!({"code.y": {"op": "w", "ef": "h", "ifd": "up"}}),
-            json!({"code.y": {"op": "w"}}), json!({"code.y": {"op": "w", "note": "n"}}),
-            json!({"code.y": {}}), json!({"code.y": "text"}), json!({".": {"op": "w", "ef": "h", "ifd": "receive"}}),
-            json!({"y": {"op": ["w"]}}), json!({"y": {"op": {"z": 1}}}), json!({"y": {"ef": 1}}),
+            json!({"x": 1}), json!({"name": "n"}), json!({"name": ""}), json!({"why": "w"}), json!({"wants": {}}),
+            json!({"code.y": {"why": "w", "how": "h", "direction": "receive"}}),
+            json!({"code.y": {"why": "w", "how": "h", "direction": "up"}}),
+            json!({"code.y": {"why": "w"}}), json!({"code.y": {"why": "w", "note": "n"}}),
+            json!({"code.y": {}}), json!({"code.y": "text"}), json!({".": {"why": "w", "how": "h", "direction": "receive"}}),
+            json!({"y": {"why": ["w"]}}), json!({"y": {"why": {"z": 1}}}), json!({"y": {"how": 1}}),
             json!({"a b": {"x": 1}}), json!({"wants": ["code.y"]}), json!({"wants": "code.y"}),
             json!({"wants": ["."]}), json!({"wants": [7]}), json!({"wants": ["code.y"], "x": 1}),
         ];
         let fields = [
-            "technical_name", "name", "role", "status", "project", "uri", "providers", "op", "ef",
-            "ifd", "op", "ef", "ifd", "wants", "note", "a.b", "a b",
+            "technical_name", "name", "role", "status", "project", "uri", "providers", "why", "how",
+            "direction", "why", "how", "direction", "wants", "note", "a.b", "a b",
         ];
         let keys = ["add", "update", "delete", "map", "orphaned", "help", "goto", ".", ".code.x", "..", "code.x", "code..x", "a$", ""];
         let mut commands = vec![json!({}), json!([]), json!("add"), json!({"add": {}, "map": {}})];

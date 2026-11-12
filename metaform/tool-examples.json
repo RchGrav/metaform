@@ -4,9 +4,9 @@
     {
       "add": {
         "code.protocol.network.tracker.cs": {
-          "wants": [{"pe": "code.masher.widget", "op": "Receive the mash data to relay it.",
-              "ef": "Prepared mash data packets.",
-              "ifd": "receive"}]
+          "wants": [{"element": "code.masher.widget", "why": "Receive the mash data to relay it.",
+              "how": "Prepared mash data packets.",
+              "direction": "receive"}]
         }
       }
     },
@@ -94,9 +94,9 @@
         "refs": ["./src/widgets/mashbox.c"]
       },
       "wants": [],
-      "wanted_by": [{"re": "code.protocol.network.tracker.cs", "op": "Receive the mash data to relay it.",
-          "ef": "Prepared mash data packets.",
-          "ifd": "receive"}],
+      "wanted_by": [{"element": "code.protocol.network.tracker.cs", "why": "Receive the mash data to relay it.",
+          "how": "Prepared mash data packets.",
+          "direction": "receive"}],
       "layers": {},
       "memory": {
         "records": 0

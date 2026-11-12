@@ -141,7 +141,7 @@ impl Work<'_> {
                 .and_then(Value::as_str)
                 .is_some_and(|text| !text.trim().is_empty())
         };
-        let missing: Vec<&str> = ["op", "ef", "ifd"]
+        let missing: Vec<&str> = ["why", "how", "direction"]
             .into_iter()
             .filter(|key| !filled(key))
             .collect();
@@ -156,7 +156,7 @@ impl Work<'_> {
                     "'{holder}' wants '{other}': the want has no {}",
                     missing.join(", ")
                 ),
-                Some(json!({"update": {holder: {"wants": [crate::model::want_json("pe", other, &complete)]}}})),
+                Some(json!({"update": {holder: {"wants": [crate::model::want_json("element", other, &complete)]}}})),
             ));
         }
         self.ensure(other)?;
@@ -206,7 +206,7 @@ impl Work<'_> {
         for (key, value) in supplied.as_object().expect("checked by the input schema") {
             match value {
                 Value::Array(_) if key == "wants" => {
-                    // Each record names its providing element in `pe` and holds the fields to change.
+                    // Each record names its wanted element in `element` and holds the fields to change.
                     for (other, change) in read_wants(value).unwrap_or_default() {
                         self.write_want(address, &other, &Value::Object(change))?;
                     }

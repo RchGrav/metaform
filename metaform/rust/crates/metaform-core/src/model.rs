@@ -38,7 +38,7 @@ pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "refs", "s
 /// is a field of the element, not a layer, so every read of the element returns it.
 pub const REFS: &str = "refs";
 /// The want-record fields, in R-6.17's order, first in a want record; any other follows by name.
-pub const WANT_ORDER: [&str; 3] = ["op", "ef", "ifd"];
+pub const WANT_ORDER: [&str; 3] = ["why", "how", "direction"];
 
 /// Put `fields` in canonical order: the names in `first`, in that order, then the rest by name.
 fn put_in_order(fields: &mut Fields, first: &[&str]) {
@@ -75,12 +75,12 @@ impl Element {
     }
 
     /// The wants as the contract writes them: a list with one record for each providing
-    /// element. Each record names that element in `pe`, then gives `op`, `ef` and `ifd`.
+    /// element. Each record names that element in `element`, then gives `why`, `how` and `direction`.
     pub fn wants_json(&self) -> Value {
         Value::Array(
             self.wants
                 .iter()
-                .map(|(other, record)| want_json("pe", other, record))
+                .map(|(other, record)| want_json("element", other, record))
                 .collect(),
         )
     }
@@ -301,7 +301,7 @@ impl Map {
 }
 
 /// One want record in the contract's form: the address of the other element under `end`
-/// (`pe` for the providing element, `re` for the receiving element), then the record's fields.
+/// (`element` for the providing element, `element` for the receiving element), then the record's fields.
 pub(crate) fn want_json(end: &str, other: &str, record: &Fields) -> Value {
     let mut out = JsonMap::new();
     out.insert(end.to_string(), Value::String(other.to_string()));
@@ -310,14 +310,14 @@ pub(crate) fn want_json(end: &str, other: &str, record: &Fields) -> Value {
 }
 
 /// A value read as want records: a list of objects that each name their providing element
-/// in `pe`. The result is keyed by that address, because an element holds one want for
+/// in `element`. The result is keyed by that address, because an element holds one want for
 /// each providing element. Anything else named `wants` is not a list of wants.
 pub(crate) fn read_wants(value: &Value) -> Option<BTreeMap<String, Fields>> {
     let records = value.as_array()?;
     let mut wants = BTreeMap::new();
     for record in records {
         let mut fields = record.as_object()?.clone();
-        let Some(Value::String(pe)) = fields.shift_remove("pe") else {
+        let Some(Value::String(pe)) = fields.shift_remove("element") else {
             return None;
         };
         wants.insert(pe, fields);

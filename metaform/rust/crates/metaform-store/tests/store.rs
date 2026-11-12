@@ -5,7 +5,7 @@ use std::path::Path;
 use metaform_store::{ClientId, DbKey, Failure, MapKey, Store, StoreError, store_failure_json};
 use serde_json::{Value, json};
 
-/// A want record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`element` or `element`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -20,7 +20,7 @@ const A: ClientId = ClientId(1);
 const B: ClientId = ClientId(2);
 
 fn want() -> Value {
-    json!({"op": "Receive the mash data to relay it.", "ef": "Prepared mash data packets.", "ifd": "receive"})
+    json!({"why": "Receive the mash data to relay it.", "how": "Prepared mash data packets.", "direction": "receive"})
 }
 
 /// The tool example's two elements, with a want between them and a native array.
@@ -30,7 +30,7 @@ fn seed(store: &Store, map: &MapKey) {
             "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
             "name": "mashtrac", "role": "DE", "refs": ["./src/network/mashtrac.c"],
-            "memory": [{"fact": "relays mash data"}], "wants": [with_end("pe", "code.masher.widget", want())]}}}),
+            "memory": [{"fact": "relays mash data"}], "wants": [with_end("element", "code.masher.widget", want())]}}}),
     ];
     for c in commands {
         store
@@ -306,9 +306,7 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
     };
     // Put back the names an earlier build stored: the fields `why`, `how` and `intent`, in a
     // table named `WANTS`.
-    raw("ALTER TABLE DEPENDS_ON RENAME op TO why");
-    raw("ALTER TABLE DEPENDS_ON RENAME ef TO how");
-    raw("ALTER TABLE DEPENDS_ON RENAME ifd TO intent");
+    raw("ALTER TABLE DEPENDS_ON RENAME direction TO intent");
     raw("ALTER TABLE DEPENDS_ON RENAME TO WANTS");
     {
         let store = Store::open(&home).unwrap();
@@ -321,7 +319,7 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
             )
             .unwrap();
         assert!(
-            want.to_string().contains("\"ifd\":\"receive\""),
+            want.to_string().contains("\"direction\":\"receive\""),
             "{want}"
         );
     }

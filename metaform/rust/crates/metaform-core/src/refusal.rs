@@ -74,7 +74,7 @@ impl Code {
                 "R-3.13: a role is AT, DE, SE, NE, CQU, UD or DD."
             }
             Code::GrammarConstraintViolation => {
-                "Module 6.4: op is a bare infinitive verb phrase, ef is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
+                "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
             }
             Code::FieldMismatch => {
                 "The command must match the project-map input schema, and every element must match the stored-document schema."
@@ -94,7 +94,7 @@ impl Code {
             Code::ElementsBeneath => {
                 "R-3.1: an element with elements beneath it cannot be deleted before them."
             }
-            Code::WantIncomplete => "R-5.6: a want needs all of its fields: op, ef and ifd.",
+            Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
             Code::ElementNotInSkeleton => {
                 "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Defining Element (role DE)."
             }

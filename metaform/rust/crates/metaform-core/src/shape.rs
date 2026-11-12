@@ -57,20 +57,20 @@
 //! | N3 | `role` holds text, an object or a list. This check also refuses blank text. |
 //! | N4 | `status` follows N2 and is not `missing`, `MISSING`, `BKN`, `broken`, `todo` or `TODO`. |
 //! | N5 | `refs` holds a list of at least one uri, each text that is not blank. `uri` is not a field. |
-//! | N6 | `pe`, `op`, `ef` and `ifd` at an element hold an object or a list. |
+//! | N6 | `element`, `why`, `how` and `direction`, and the procedure's words for them, at an element hold an object or a list. |
 //! | N7 | `providers` holds an object. |
 //! | N8 | `null` is taken by the fields of `update`'s own element, and by a field N2 to N7 do not name. |
 //! | N9 | An object value is an element beneath, and N1 to N10 hold for it. |
 //! | N10 | `wants` at any element of the command holds want records (W1 to W9). |
-//! | W1 | `wants` is a list of records. Each record names its providing element in `pe`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
+//! | W1 | `wants` is a list of records. Each record names its wanted element in `element`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
 //! | W2 | A want record is an object. |
-//! | W3 | A want record takes only `pe`, `op`, `ef` and `ifd`. |
-//! | W4 | `op` and `ef` hold text that is not blank. |
-//! | W5 | `ifd` is `send`, `receive` or `both`. |
+//! | W3 | A want record takes only `element`, `why`, `how` and `direction`. A record that uses the procedure's words (`pe`, `op`, `purpose`, `ef`, `ifd`) is refused with the same record in the tool's words, and so is `dependencies` in place of `wants`. |
+//! | W4 | `why` and `how` hold text that is not blank. |
+//! | W5 | `direction` is `send`, `receive` or `both`. |
 //! | W6 | A want record outside `update`'s own element has all three fields (WANT_INCOMPLETE). |
 //! | W7 | A want record at `update`'s own element has at least one field. |
 //! | W8 | `wants` holds at least one want record. |
-//! | W9 | No two records of one element name the same `pe`. |
+//! | W9 | No two records of one element name the same `element`. |
 
 use serde_json::{Map as JsonMap, Value, json};
 
@@ -87,9 +87,17 @@ const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\":
 const TEXT_FIELDS: [&str; 5] = ["technical_name", "name", "role", "status", "project"];
 const REFS_FORM: &str = "a list with one uri for each artifact that has this address";
 /// The words that belong to a want, not to an element (N6).
-const WANT_WORDS: [&str; 4] = ["pe", "op", "ef", "ifd"];
-const WANT_FIELDS: [&str; 3] = ["op", "ef", "ifd"];
-/// The values of `ifd`, the Information Flow Direction, in the intake's order.
+const WANT_WORDS: [&str; 4] = ["element", "why", "how", "direction"];
+const WANT_FIELDS: [&str; 3] = ["why", "how", "direction"];
+/// The intake procedure's words for the parts of a want, each with the tool's word. The
+/// procedure reasons with its own terms (PE, OP, EF, IFD; step 6 says purpose and provider),
+/// and the tool takes plain words. A command that uses a procedure word is refused with the
+/// same command in the tool's words, so the procedure and the tool need not share a vocabulary.
+const PROCEDURE_WORDS: [(&str, &str); 6] =
+    [("pe", "element"), ("provider", "element"), ("op", "why"), ("purpose", "why"), ("ef", "how"), ("ifd", "direction")];
+/// The procedure's word for the field that holds an element's wants.
+const PROCEDURE_WANTS: &str = "dependencies";
+/// The values of `direction`, the Information Flow Direction, in the intake's order.
 const FLOWS: [&str; 3] = ["send", "receive", "both"];
 const LEGACY_STATUS: [&str; 6] = ["missing", "MISSING", "BKN", "broken", "todo", "TODO"];
 
@@ -179,6 +187,18 @@ impl Check<'_> {
                 self.wants(value, address, &here, level)?;
                 continue;
             }
+            if key == PROCEDURE_WANTS {
+                // The same records under the tool's field name, each in the tool's words.
+                let records = match value {
+                    Value::Array(records) => Value::Array(records.iter().map(in_tool_words).collect()),
+                    other => listed_with_provider(other).unwrap_or_else(|| other.clone()),
+                };
+                let moved = replaced(&replaced(self.command, &here, None), &[path, &["wants"]].concat(), Some(records));
+                return Err(refuse(
+                    format!("{PROCEDURE_WANTS} at '{address}' is not a field; wants holds what the procedure calls dependency records"),
+                    Some(moved),
+                ));
+            }
             if key == "uri" {
                 // The one link an element held is now the first item of `refs`.
                 let refs = match value.as_str().filter(|text| !is_blank(text)) {
@@ -211,13 +231,18 @@ impl Check<'_> {
                 Value::Null if level == Level::Update => {}
                 Value::Array(_) if key != "providers" => {}
                 _ if TEXT_FIELDS.contains(&key.as_str()) => self.text(key, value, address, &here)?,
-                _ if WANT_WORDS.contains(&key.as_str()) => {
+                _ if WANT_WORDS.contains(&key.as_str()) || PROCEDURE_WORDS.iter().any(|(word, _)| *word == key) => {
+                    // One want record from every part of a want that the command put on the
+                    // element, in the tool's words; a placeholder stands for each part not given.
                     let mut record = want_placeholder("<address>");
-                    if let Some(text) = value.as_str() {
-                        record[key.as_str()] = json!(text);
+                    for (name, given) in fields {
+                        let word = tool_word(name);
+                        if let (true, Some(text)) = (WANT_WORDS.contains(&word), given.as_str()) {
+                            record[word] = json!(text);
+                        }
                     }
                     return Err(refuse(
-                        format!("{key} at '{address}' is not a field of an element; pe, op, ef and ifd belong in a want"),
+                        format!("{key} at '{address}' is not a field of an element; element, why, how and direction belong in a want"),
                         Some(json!({"update": {address: {"wants": [record]}}})),
                     ));
                 }
@@ -258,16 +283,16 @@ impl Check<'_> {
     /// The value of `wants` at an element (W1, W8, W9).
     fn wants(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
         // An earlier form keyed the records by the address of the providing element. The answer
-        // is the same records as a list, with that address in `pe`.
-        if let Some(listed) = listed_with_pe(value) {
+        // is the same records as a list, with that address in `element`.
+        if let Some(listed) = listed_with_provider(value) {
             return Err(refuse(
-                format!("wants at '{holder}' must be a list of want records; each record names its providing element in pe"),
+                format!("wants at '{holder}' must be a list of want records; each record names the element it wants in element"),
                 Some(replaced(self.command, path, Some(listed))),
             ));
         }
         let Some(records) = value.as_array().filter(|records| !records.is_empty()) else {
             return Err(refuse(
-                format!("wants at '{holder}' must be a list of want records, each with pe, op, ef and ifd"),
+                format!("wants at '{holder}' must be a list of want records, each with element, why, how and direction"),
                 Some(replaced(self.command, path, Some(json!([want_placeholder("<address>")])))),
             ));
         };
@@ -287,23 +312,34 @@ impl Check<'_> {
         Ok(())
     }
 
-    /// One want record (W2 to W7). Returns the address in `pe`. `partial` is true at
-    /// `update`'s own element, where a record holds `pe` and only the fields to adjust.
+    /// One want record (W2 to W7). Returns the address in `element`. `partial` is true at
+    /// `update`'s own element, where a record holds `element` and only the fields to adjust.
     fn want<'r>(&self, record: &'r Value, holder: &str, path: &[&str], partial: bool) -> Result<&'r str, Refusal> {
         let Some(fields) = record.as_object() else {
             return Err(refuse(
-                format!("a want at '{holder}' must be a record with pe, op, ef and ifd"),
+                format!("a want at '{holder}' must be a record with element, why, how and direction"),
                 Some(replaced(self.command, path, Some(want_placeholder("<address>")))),
             ));
         };
-        let other = match fields.get("pe").and_then(Value::as_str) {
+        let used: Vec<&str> = fields
+            .keys()
+            .map(String::as_str)
+            .filter(|name| PROCEDURE_WORDS.iter().any(|(word, _)| word == name))
+            .collect();
+        if !used.is_empty() {
+            return Err(refuse(
+                format!("a want at '{holder}' takes element, why, how and direction; the command used {}", used.join(", ")),
+                Some(replaced(self.command, path, Some(in_tool_words(record)))),
+            ));
+        }
+        let other = match fields.get("element").and_then(Value::as_str) {
             Some(ROOT) => return Err(refuse("the root cannot be wanted", None)),
             Some(text) if is_address(text) => text,
             Some(text) if !text.is_empty() => return Err(not_an_address(text)),
             _ => {
                 return Err(refuse(
-                    format!("a want at '{holder}' must name its providing element in pe"),
-                    Some(replaced(self.command, &[path, &["pe"]].concat(), Some(json!("<address>")))),
+                    format!("a want at '{holder}' must name the element it wants in element"),
+                    Some(replaced(self.command, &[path, &["element"]].concat(), Some(json!("<address>")))),
                 ));
             }
         };
@@ -311,7 +347,7 @@ impl Check<'_> {
         let extra: Vec<&str> = fields
             .keys()
             .map(String::as_str)
-            .filter(|name| *name != "pe" && !WANT_FIELDS.contains(name))
+            .filter(|name| *name != "element" && !WANT_FIELDS.contains(name))
             .collect();
         if !extra.is_empty() {
             let mut fixed = self.command.clone();
@@ -320,9 +356,9 @@ impl Check<'_> {
             }
             return Err(refuse(format!("{place} does not take: {}", extra.join(", ")), accepted(fixed)));
         }
-        for (field, value) in fields.iter().filter(|(field, _)| field.as_str() != "pe") {
+        for (field, value) in fields.iter().filter(|(field, _)| field.as_str() != "element") {
             let here = [path, &[field.as_str()]].concat();
-            if field == "ifd" {
+            if field == "direction" {
                 if !value.as_str().is_some_and(|flow| FLOWS.contains(&flow)) {
                     // The intake's examples say "sends" and "receives"; the value is the bare verb.
                     let meant = match value.as_str() {
@@ -331,7 +367,7 @@ impl Check<'_> {
                         _ => "<send, receive or both>",
                     };
                     return Err(refuse(
-                        format!("ifd at {place} must be send, receive or both"),
+                        format!("direction at {place} must be send, receive or both"),
                         Some(replaced(self.command, &here, Some(json!(meant)))),
                     ));
                 }
@@ -348,7 +384,7 @@ impl Check<'_> {
             .collect();
         if partial && missing.len() == WANT_FIELDS.len() {
             return Err(refuse(
-                format!("{place} has no fields; give op, ef or ifd"),
+                format!("{place} has no fields; give why, how or direction"),
                 Some(replaced(self.command, path, Some(want_placeholder(other)))),
             ));
         }
@@ -462,9 +498,9 @@ fn accepted(command: Value) -> Option<Value> {
 }
 
 /// Want records keyed by the address of their providing element, as a list of records
-/// that each name that address in `pe`. `None` if the value is not an object whose values all
-/// hold `op`, `ef` or `ifd` as a plain value.
-fn listed_with_pe(value: &Value) -> Option<Value> {
+/// that each name that address in `element`. `None` if the value is not an object whose values all
+/// hold `why`, `how` or `direction` as a plain value.
+fn listed_with_provider(value: &Value) -> Option<Value> {
     let keyed = value.as_object().filter(|keyed| !keyed.is_empty())?;
     let mut listed = Vec::new();
     for (pe, record) in keyed {
@@ -473,16 +509,44 @@ fn listed_with_pe(value: &Value) -> Option<Value> {
             return None;
         }
         let mut out = JsonMap::new();
-        out.insert("pe".to_string(), json!(pe));
+        out.insert("element".to_string(), json!(pe));
         out.extend(fields.clone());
         listed.push(Value::Object(out));
     }
     Some(Value::Array(listed))
 }
 
+/// The tool's word for a part of a want: the word itself, or the tool's word for one of the
+/// procedure's words.
+fn tool_word(name: &str) -> &str {
+    PROCEDURE_WORDS.iter().find(|(word, _)| *word == name).map_or(name, |(_, plain)| plain)
+}
+
+/// A want record with each of the procedure's words replaced by the tool's word. A word the
+/// record already gives in the tool's form is kept, and the procedure's form of it is dropped.
+fn in_tool_words(record: &Value) -> Value {
+    let Some(fields) = record.as_object() else {
+        return record.clone();
+    };
+    let mut out = JsonMap::new();
+    for (name, value) in fields {
+        let word = tool_word(name);
+        if word == name || !fields.contains_key(word) {
+            // The intake's examples say "sends" and "receives"; the value is the bare verb.
+            let value = match (word, value.as_str()) {
+                ("direction", Some("sends")) => json!("send"),
+                ("direction", Some("receives")) => json!("receive"),
+                _ => value.clone(),
+            };
+            out.insert(word.to_string(), value);
+        }
+    }
+    Value::Object(out)
+}
+
 /// A want record with a placeholder for each value only the agent can supply.
 fn want_placeholder(pe: &str) -> Value {
-    json!({"pe": pe, "op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
+    json!({"element": pe, "why": "<why>", "how": "<how>", "direction": "<direction>"})
 }
 
 /// The single entry of an object, or `None` if the value is not an object with one entry.
