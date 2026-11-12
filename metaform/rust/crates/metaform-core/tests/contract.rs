@@ -7,6 +7,17 @@ use std::path::PathBuf;
 use metaform_core::{Code, Contract, Effect, Map, MapRef, Outcome, Refusal, execute};
 use serde_json::{Value, json};
 
+/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+#[allow(dead_code)]
+fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert(end.to_string(), Value::String(address.to_string()));
+    if let Value::Object(fields) = record.borrow() {
+        out.extend(fields.clone());
+    }
+    Value::Object(out)
+}
+
 fn fixture(name: &str) -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
@@ -190,7 +201,7 @@ fn refusals_name_the_rule_and_change_nothing() {
             None,
         ),
         (
-            json!({"add": {"code.relay": {"dependencies": {"code.masher.widget": dependency("push")}}}}),
+            json!({"add": {"code.relay": {"dependencies": [with_end("pe", "code.masher.widget", dependency("push"))]}}}),
             Code::FieldMismatch,
             None,
         ),
@@ -206,10 +217,10 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"update": {"code.masher.widget": {"name": null}}})),
         ),
         (
-            json!({"update": {"code.relay": {"dependencies": {"code.other": {"ifd": "send"}}}}}),
+            json!({"update": {"code.relay": {"dependencies": [{"pe": "code.other", "ifd": "send"}]}}}),
             Code::DependencyIncomplete,
             Some(
-                json!({"update": {"code.relay": {"dependencies": {"code.other": {"ifd": "send", "op": "<op>", "ef": "<ef>"}}}}}),
+                json!({"update": {"code.relay": {"dependencies": [{"pe": "code.other", "ifd": "send", "op": "<op>", "ef": "<ef>"}]}}}),
             ),
         ),
         (
@@ -286,12 +297,12 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"name": "part", "dependencies": {"code.other.part": dependency}}}}),
+        json!({"update": {"code.new.part": {"name": "part", "dependencies": [with_end("pe", "code.other.part", &dependency)]}}}),
     );
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "dependencies": {"code.third.part": dependency}}}}),
+        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "dependencies": [with_end("pe", "code.third.part", &dependency)]}}}),
     );
     map = write(
         &contract,
@@ -339,8 +350,8 @@ fn writes_create_paths_and_reads_return_each_form() {
     let whole = read(&contract, &map, json!({".": {}}));
     assert_eq!(whole["."]["code"]["new"]["part"]["name"], "renamed");
     assert_eq!(
-        whole["."]["code"]["new"]["part"]["dependencies"]["code.other.part"],
-        dependency
+        whole["."]["code"]["new"]["part"]["dependencies"][0],
+        with_end("pe", "code.other.part", &dependency)
     );
     let part = read(&contract, &map, json!({".code.new": {}}));
     assert_eq!(part[".code.new"]["part"], whole["."]["code"]["new"]["part"]);

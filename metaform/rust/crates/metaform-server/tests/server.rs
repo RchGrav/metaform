@@ -14,6 +14,17 @@ use std::time::Duration;
 use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
+/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+#[allow(dead_code)]
+fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert(end.to_string(), Value::String(address.to_string()));
+    if let Value::Object(fields) = record.borrow() {
+        out.extend(fields.clone());
+    }
+    Value::Object(out)
+}
+
 /// Bytes of the compact `tools/list` result (R-1.3 baseline). 11,762 at b202557; 11,973 after
 /// the specification-layer commands and the contract trim (consolidation, 2026-11-09); 3,929
 /// since 2026-11-10, when the server began to publish the one command shape
@@ -89,7 +100,7 @@ fn two_agents_share_one_project() {
             .call(json!({"update": {"code.provider.part": {"name": "provider"}}}))
             .0
     );
-    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "dependencies": {"code.provider.part": dependency}}}})).0);
+    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "dependencies": [with_end("pe", "code.provider.part", &dependency)]}}})).0);
     let (refused, refusal) = first.call(json!({"delete": {"code.provider.part": {}}}));
     assert!(
         refused,
@@ -268,7 +279,7 @@ fn only_commits_are_announced() {
     a.request("server/discover", json!({}));
     let dependency =
         json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
-    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "dependencies": {"code.base.part": dependency}}}})).0);
+    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "dependencies": [with_end("pe", "code.base.part", &dependency)]}}})).0);
     a.listen_to_map();
     assert!(
         a.call(json!({"delete": {"code.base.part": {}}})).0,

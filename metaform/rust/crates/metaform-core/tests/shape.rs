@@ -4,6 +4,17 @@
 use metaform_core::{Code, Contract, Map, execute};
 use serde_json::{Value, json};
 
+/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+#[allow(dead_code)]
+fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert(end.to_string(), Value::String(address.to_string()));
+    if let Value::Object(fields) = record.borrow() {
+        out.extend(fields.clone());
+    }
+    Value::Object(out)
+}
+
 const NOT_AN_ADDRESS: &str = "is not an address: segments are joined by periods, with no spaces, '$', '[' or ']'";
 const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
 const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"dependencies\": [\"<address>\"]} to remove dependencies";
@@ -87,7 +98,7 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
             json!(null),
         ),
         ("L4", json!({game: {"dependencies": []}}), read_form(game), json!({game: {"dependencies": {}}})),
-        ("L4", json!({game: {"dependencies": {"x": 1}}}), read_form(game), json!({game: {"dependencies": {}}})),
+        ("L4", json!({game: {"dependencies": [1]}}), read_form(game), json!({game: {"dependencies": {}}})),
         ("L4", json!({"search": {"text": "x"}}), read_form("search"), json!({"search": {"text": {}}})),
         (
             "N1",
@@ -127,27 +138,27 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         (
             "W5",
-            json!({"add": {game: {"dependencies": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receives"}}}}}),
+            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receives"}]}}}),
             format!("ifd at the dependency '{bus}' at '{game}' must be send, receive or both"),
-            json!({"add": {game: {"dependencies": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive"}}}}}),
+            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
         ),
         (
             "W1",
-            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
-            format!("dependencies at '{game}' must be an object keyed by the address of each providing element (pe)"),
             json!({"add": {game: {"dependencies": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive"}}}}}),
+            format!("dependencies at '{game}' must be a list of dependency records; each record names its providing element in pe"),
+            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
         ),
         (
             "N6",
             json!({"update": {game: {"op": "receive input"}}}),
-            format!("op at '{game}' is not a field of an element; op, ef and ifd belong in a dependency"),
-            json!({"update": {game: {"dependencies": {"<address>": {"op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}}}}}),
+            format!("op at '{game}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
+            json!({"update": {game: {"dependencies": [{"pe": "<address>", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}}),
         ),
         (
             "N6",
             json!({"add": {game: {"ifd": "receive"}}}),
-            format!("ifd at '{game}' is not a field of an element; op, ef and ifd belong in a dependency"),
-            json!({"update": {game: {"dependencies": {"<address>": {"op": "<op>", "ef": "<ef>", "ifd": "receive"}}}}}),
+            format!("ifd at '{game}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
+            json!({"update": {game: {"dependencies": [{"pe": "<address>", "op": "<op>", "ef": "<ef>", "ifd": "receive"}]}}}),
         ),
         (
             "N7",
@@ -175,59 +186,71 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         (
             "N10",
-            json!({"add": {"code.engine": {"game": {"dependencies": {bus: {"op": "receive input", "ef": "", "ifd": "receive"}}}}}}),
+            json!({"add": {"code.engine": {"game": {"dependencies": [{"pe": bus, "op": "receive input", "ef": "", "ifd": "receive"}]}}}}),
             format!("ef at the dependency '{bus}' at '{game}' must be text that is not blank"),
-            json!({"add": {"code.engine": {"game": {"dependencies": {bus: {"op": "receive input", "ef": "<ef>", "ifd": "receive"}}}}}}),
+            json!({"add": {"code.engine": {"game": {"dependencies": [{"pe": bus, "op": "receive input", "ef": "<ef>", "ifd": "receive"}]}}}}),
         ),
         (
             "N10",
             json!({"add": {"code.engine": {"game": {"dependencies": ["code.bus"]}}}}),
-            format!("dependencies at '{game}' must be an object of dependency records keyed by address"),
-            json!({"add": {"code.engine": {"game": {"dependencies": {"<address>": placeholder()}}}}}),
+            format!("a dependency at '{game}' must be a record with pe, op, ef and ifd"),
+            json!({"add": {"code.engine": {"game": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}}),
         ),
         (
             "W1",
             json!({"add": {"code.x": {"dependencies": ["code.y"]}}}),
-            "dependencies at 'code.x' must be an object of dependency records keyed by address".into(),
-            json!({"add": {"code.x": {"dependencies": {"<address>": placeholder()}}}}),
+            "a dependency at 'code.x' must be a record with pe, op, ef and ifd".into(),
+            json!({"add": {"code.x": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}),
         ),
-        ("W1", json!({"update": {game: {"dependencies": {"code y": dependency()}}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
-        ("W1", json!({"update": {game: {"dependencies": {".": dependency()}}}}), "the root cannot be depended on".into(), json!(null)),
+        ("W1", json!({"update": {game: {"dependencies": [with_end("pe", "code y", dependency())]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
+        ("W1", json!({"update": {game: {"dependencies": [with_end("pe", ".", dependency())]}}}), "the root cannot be depended on".into(), json!(null)),
         (
             "W2",
-            json!({"add": {"code.x": {"dependencies": {"code.y": "text"}}}}),
-            "the dependency 'code.y' at 'code.x' must be a record with op, ef and ifd".into(),
-            json!({"add": {"code.x": {"dependencies": {"code.y": placeholder()}}}}),
+            json!({"add": {"code.x": {"dependencies": [{"op": "receive input"}]}}}),
+            "a dependency at 'code.x' must name its providing element in pe".into(),
+            json!({"add": {"code.x": {"dependencies": [{"pe": "<address>", "op": "receive input"}]}}}),
+        ),
+        (
+            "W8",
+            json!({"add": {"code.x": {"dependencies": []}}}),
+            "dependencies at 'code.x' must be a list of dependency records, each with pe, op, ef and ifd".into(),
+            json!({"add": {"code.x": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}),
+        ),
+        (
+            "W9",
+            json!({"add": {"code.x": {"dependencies": [with_end("pe", "code.y", dependency()), with_end("pe", "code.y", dependency())]}}}),
+            "dependencies at 'code.x' names 'code.y' more than once; an element holds one dependency for each providing element".into(),
+            json!(null),
         ),
         (
             "W3",
-            json!({"update": {game: {"dependencies": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive", "note": "extra"}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive", "note": "extra"}]}}}),
             format!("{at_dependency} does not take: note"),
-            json!({"update": {game: {"dependencies": {bus: dependency()}}}}),
+            json!({"update": {game: {"dependencies": [with_end("pe", bus, dependency())]}}}),
         ),
         (
             "W3",
-            json!({"update": {game: {"dependencies": {bus: {"goal": "x", "function": "y"}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "goal": "x", "function": "y"}]}}}),
             format!("{at_dependency} does not take: goal, function"),
             json!(null),
         ),
         (
             "W5",
-            json!({"update": {game: {"dependencies": {bus: {"ifd": "sideways"}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "ifd": "sideways"}]}}}),
             format!("ifd at {at_dependency} must be send, receive or both"),
-            json!({"update": {game: {"dependencies": {bus: {"ifd": "<send, receive or both>"}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "ifd": "<send, receive or both>"}]}}}),
         ),
         (
             "W4",
-            json!({"update": {game: {"dependencies": {bus: {"op": "   "}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "   "}]}}}),
             format!("op at {at_dependency} must be text that is not blank"),
-            json!({"update": {game: {"dependencies": {bus: {"op": "<op>"}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "<op>"}]}}}),
         ),
         (
             "W7",
-            json!({"update": {game: {"dependencies": {bus: {}}}}}),
+            json!({"update": {game: {"dependencies": [{"pe": bus}]}}}),
             format!("{at_dependency} has no fields; give op, ef or ifd"),
-            json!({"update": {game: {"dependencies": {bus: placeholder()}}}}),
+            json!({"update": {game: {"dependencies": [with_end("pe", bus, placeholder())]}}}),
         ),
     ];
     // N2, N4, N5: a blank or non-text value at each field that holds text.
@@ -295,19 +318,19 @@ fn the_first_problem_in_the_fixed_order_is_reported() {
     assert!(reason(json!({"add": {"code.x": {"part": {"refs": 7}, "name": ""}}})).starts_with("refs at 'code.x.part'"));
     // In a dependency: names it does not take, then fields in order, then missing fields.
     let record = json!({"ifd": "up", "op": "", "note": 1});
-    assert!(reason(json!({"add": {"code.x": {"dependencies": {"code.y": record}}}})).contains("does not take: note"));
-    assert!(reason(json!({"add": {"code.x": {"dependencies": {"code.y": {"ifd": "up", "op": ""}}}}})).starts_with("ifd at"));
-    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"dependencies": {"code.y": {"op": "receive input"}}}}})).unwrap_err();
+    assert!(reason(json!({"add": {"code.x": {"dependencies": [with_end("pe", "code.y", &record)]}}})).contains("does not take: note"));
+    assert!(reason(json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "ifd": "up", "op": ""}]}}})).starts_with("ifd at"));
+    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "op": "receive input"}]}}})).unwrap_err();
     assert_eq!(incomplete.code, Code::DependencyIncomplete);
     assert_eq!(incomplete.reason, "'code.x' depends on 'code.y': the dependency has no ef, ifd");
     assert_eq!(
         incomplete.to_json()["remediation"],
-        json!({"add": {"code.x": {"dependencies": {"code.y": {"op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}}}}})
+        json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}})
     );
 }
 
 /// What the rules permit is accepted: `null` at `update`'s own element (N8), lists and elements
-/// beneath at the text fields (N2, N9), a `dependencies` branch beneath (N10), and every command form.
+/// beneath at the text fields (N2, N9), dependencies at an element beneath (N10), and every command form.
 #[test]
 fn commands_of_the_right_shape_pass_the_shape_check() {
     let contract = Contract::bundled().unwrap();
@@ -315,10 +338,9 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
     for command in [
         json!({"add": {"code.engine.game": {"technical_name": "game engine", "name": "Quake core", "role": "DE", "refs": ["./src/engine.c"], "status": "un_built"}}}),
         json!({"update": {"code.engine.game": {"status": null, "refs": null, "note": null, "op": null}}}),
-        json!({"update": {"code.engine.game": {"dependencies": {"code.bus": dependency()}}}}),
-        json!({"update": {"code.engine.game": {"dependencies": {"code.bus": {"ifd": "both"}}}}}),
-        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "dependencies": {"code.bus": dependency()}}}}}}),
-        json!({"add": {"code": {"relay": {"dependencies": {"queue": {"name": "Wanted queue"}}}}}}),
+        json!({"update": {"code.engine.game": {"dependencies": [with_end("pe", "code.bus", dependency())]}}}),
+        json!({"update": {"code.engine.game": {"dependencies": [{"pe": "code.bus", "ifd": "both"}]}}}),
+        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "dependencies": [with_end("pe", "code.bus", dependency())]}}}}}),
         json!({"update": {".": {"note": "the project"}}}),
         json!({"delete": {"code.engine.game": {"dependencies": ["code.bus"]}}}),
         json!({"delete": {"code.engine.audio": {}}}),
@@ -328,7 +350,6 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
             other => panic!("{command} should write, got {other:?}"),
         }
     }
-    assert!(map.element("code.relay.dependencies.queue").is_some(), "dependencies beneath is a branch when it holds no dependency fields");
     for command in [
         json!({"map": {}}), json!({"orphaned": {}}), json!({"help": {}}), json!({"help": "raw dump"}), json!({"help": "DependencyRecord"}), json!({"goto": "."}), json!({"goto": "code.engine.game"}),
         json!({".": {}}), json!({".code.engine": {}}), json!({"code.engine.game": {}}),

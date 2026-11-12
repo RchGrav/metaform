@@ -74,12 +74,13 @@ impl Element {
         self.fields.is_empty() && self.dependencies.is_empty() && self.child_map.is_none()
     }
 
-    /// The dependencies as the contract writes them: one dictionary keyed by provider address.
+    /// The dependencies as the contract writes them: a list with one record for each providing
+    /// element. Each record names that element in `pe`, then gives `op`, `ef` and `ifd`.
     pub fn dependencies_json(&self) -> Value {
-        Value::Object(
+        Value::Array(
             self.dependencies
                 .iter()
-                .map(|(other, record)| (other.clone(), Value::Object(record.clone())))
+                .map(|(other, record)| dependency_json("pe", other, record))
                 .collect(),
         )
     }
@@ -200,7 +201,7 @@ impl Map {
     }
 
     /// Load a document (R-4.2): one top-level key, the project name, over the nested map in the
-    /// agent's form. Dependencies may be the contract's array or one address-keyed object.
+    /// agent's form. Dependencies are the contract's list of records.
     pub fn from_document(document: &Value) -> Result<(String, Map), MapError> {
         let object = document.as_object().filter(|object| object.len() == 1);
         let Some((name, root)) = object.and_then(|object| object.iter().next()) else {
@@ -299,34 +300,27 @@ impl Map {
     }
 }
 
-/// A dependencies update: a dictionary keyed by provider address whose values change dependency fields.
-pub(crate) fn is_want_updates(map: &JsonMap<String, Value>) -> bool {
-    !map.is_empty()
-        && map.values().all(|change| {
-            change
-                .as_object()
-                .is_some_and(|c| ["op", "ef", "ifd"].iter().any(|f| c.contains_key(*f)))
-        })
+/// One dependency record in the contract's form: the address of the other element under `end`
+/// (`pe` for the providing element, `re` for the receiving element), then the record's fields.
+pub(crate) fn dependency_json(end: &str, other: &str, record: &Fields) -> Value {
+    let mut out = JsonMap::new();
+    out.insert(end.to_string(), Value::String(other.to_string()));
+    out.extend(record.clone());
+    Value::Object(out)
 }
 
-/// A value read as dependency records: one dictionary keyed by provider address whose values are all
-/// dependency records (the contract's and the canonical map's form), or an older list of such objects.
-/// Anything else named `dependencies` is a namespace branch, as in the stored-document schema.
-fn read_dependencies(value: &Value) -> Option<BTreeMap<String, Fields>> {
-    let is_record = |record: &Value| {
-        record.get("op").is_some_and(Value::is_string)
-            && record.get("ef").is_some_and(Value::is_string)
-    };
-    let groups: Vec<&JsonMap<String, Value>> = match value {
-        Value::Array(items) => items.iter().map(Value::as_object).collect::<Option<_>>()?,
-        Value::Object(object) if !object.is_empty() && object.values().all(is_record) => {
-            vec![object]
-        }
-        _ => return None,
-    };
+/// A value read as dependency records: a list of objects that each name their providing element
+/// in `pe`. The result is keyed by that address, because an element holds one dependency for
+/// each providing element. Anything else named `dependencies` is not a list of dependencies.
+pub(crate) fn read_dependencies(value: &Value) -> Option<BTreeMap<String, Fields>> {
+    let records = value.as_array()?;
     let mut dependencies = BTreeMap::new();
-    for (other, record) in groups.into_iter().flatten() {
-        dependencies.insert(other.clone(), record.as_object()?.clone());
+    for record in records {
+        let mut fields = record.as_object()?.clone();
+        let Some(Value::String(pe)) = fields.shift_remove("pe") else {
+            return None;
+        };
+        dependencies.insert(pe, fields);
     }
     Some(dependencies)
 }

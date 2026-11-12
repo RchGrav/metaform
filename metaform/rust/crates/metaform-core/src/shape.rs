@@ -61,15 +61,16 @@
 //! | N7 | `providers` holds an object. |
 //! | N8 | `null` is taken by the fields of `update`'s own element, and by a field N2 to N7 do not name. |
 //! | N9 | An object value is an element beneath, and N1 to N10 hold for it. |
-//! | N10 | `dependencies` beneath the command's own element holds dependency records (W1 to W6) or elements beneath. |
-//! | W1 | `dependencies` at the command's own element is an object keyed by address, and not by `.`. A list of records that each name `pe` is refused with the same records keyed by `pe`. |
+//! | N10 | `dependencies` at any element of the command holds dependency records (W1 to W9). |
+//! | W1 | `dependencies` is a list of records. Each record names its providing element in `pe`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
 //! | W2 | A dependency record is an object. |
-//! | W3 | A dependency record takes only `op`, `ef` and `ifd`. |
+//! | W3 | A dependency record takes only `pe`, `op`, `ef` and `ifd`. |
 //! | W4 | `op` and `ef` hold text that is not blank. |
 //! | W5 | `ifd` is `send`, `receive` or `both`. |
 //! | W6 | A dependency record outside `update`'s own element has all three fields (DEPENDENCY_INCOMPLETE). |
 //! | W7 | A dependency record at `update`'s own element has at least one field. |
-//! | W8 | `dependencies` at the command's own element holds at least one dependency record. |
+//! | W8 | `dependencies` holds at least one dependency record. |
+//! | W9 | No two records of one element name the same `pe`. |
 
 use serde_json::{Map as JsonMap, Value, json};
 
@@ -211,13 +212,13 @@ impl Check<'_> {
                 Value::Array(_) if key != "providers" => {}
                 _ if TEXT_FIELDS.contains(&key.as_str()) => self.text(key, value, address, &here)?,
                 _ if DEPENDENCY_WORDS.contains(&key.as_str()) => {
-                    let mut record = dependency_placeholder();
-                    if let (true, Some(text)) = (DEPENDENCY_FIELDS.contains(&key.as_str()), value.as_str()) {
+                    let mut record = dependency_placeholder("<address>");
+                    if let Some(text) = value.as_str() {
                         record[key.as_str()] = json!(text);
                     }
                     return Err(refuse(
-                        format!("{key} at '{address}' is not a field of an element; op, ef and ifd belong in a dependency"),
-                        Some(json!({"update": {address: {"dependencies": {"<address>": record}}}})),
+                        format!("{key} at '{address}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
+                        Some(json!({"update": {address: {"dependencies": [record]}}})),
                     ));
                 }
                 _ if key == "providers" => {
@@ -254,67 +255,63 @@ impl Check<'_> {
         }
     }
 
-    /// The value of `dependencies` at an element (W1, N10).
+    /// The value of `dependencies` at an element (W1, W8, W9).
     fn dependencies(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
-        // The intake's schema writes a dependency as a record that names its providing element in
-        // `pe`. The map keys each dependency by that address, so the answer is the same records
-        // keyed by `pe`.
-        if let Some(keyed) = keyed_by_pe(value) {
+        // An earlier form keyed the records by the address of the providing element. The answer
+        // is the same records as a list, with that address in `pe`.
+        if let Some(listed) = listed_with_pe(value) {
             return Err(refuse(
-                format!("dependencies at '{holder}' must be an object keyed by the address of each providing element (pe)"),
-                Some(replaced(self.command, path, Some(keyed))),
+                format!("dependencies at '{holder}' must be a list of dependency records; each record names its providing element in pe"),
+                Some(replaced(self.command, path, Some(listed))),
             ));
         }
-        let Some(dependencies) = value.as_object() else {
+        let Some(records) = value.as_array().filter(|records| !records.is_empty()) else {
             return Err(refuse(
-                format!("dependencies at '{holder}' must be an object of dependency records keyed by address"),
-                Some(replaced(self.command, path, Some(json!({"<address>": dependency_placeholder()})))),
+                format!("dependencies at '{holder}' must be a list of dependency records, each with pe, op, ef and ifd"),
+                Some(replaced(self.command, path, Some(json!([dependency_placeholder("<address>")])))),
             ));
         };
-        // Beneath the command's own element, `dependencies` may also be a branch of elements. It holds
-        // dependency records when a value in it gives op, ef or ifd as a plain value.
-        let holds_records = dependencies.values().any(|record| {
-            DEPENDENCY_FIELDS
-                .iter()
-                .any(|field| record.get(field).is_some_and(|v| !v.is_object() && !v.is_array()))
-        });
-        if level == Level::Beneath && !holds_records {
-            return self.fields(dependencies, &names::join(holder, "dependencies"), path, Level::Beneath);
-        }
-        if dependencies.is_empty() {
-            // W8: an empty `dependencies` would be read as an element named "dependencies" beneath the holder.
-            return Err(refuse(
-                format!("dependencies at '{holder}' holds no dependency record"),
-                Some(replaced(self.command, path, Some(json!({"<address>": dependency_placeholder()})))),
-            ));
-        }
-        for (other, record) in dependencies {
-            if other == ROOT {
-                return Err(refuse("the root cannot be depended on", None));
+        let mut seen: Vec<&str> = Vec::new();
+        for (index, record) in records.iter().enumerate() {
+            let index = index.to_string();
+            let here = [path, &[index.as_str()]].concat();
+            let other = self.dependency(record, holder, &here, level == Level::Update)?;
+            if seen.contains(&other) {
+                return Err(refuse(
+                    format!("dependencies at '{holder}' names '{other}' more than once; an element holds one dependency for each providing element"),
+                    None,
+                ));
             }
-            if !is_address(other) {
-                return Err(not_an_address(other));
-            }
-            let here = [path, &[other.as_str()]].concat();
-            self.dependency(record, other, holder, &here, level == Level::Update)?;
+            seen.push(other);
         }
         Ok(())
     }
 
-    /// One dependency record (W2 to W7). `partial` is true at `update`'s own element, where a record
-    /// holds only the fields to adjust.
-    fn dependency(&self, record: &Value, other: &str, holder: &str, path: &[&str], partial: bool) -> Result<(), Refusal> {
-        let place = format!("the dependency '{other}' at '{holder}'");
+    /// One dependency record (W2 to W7). Returns the address in `pe`. `partial` is true at
+    /// `update`'s own element, where a record holds `pe` and only the fields to adjust.
+    fn dependency<'r>(&self, record: &'r Value, holder: &str, path: &[&str], partial: bool) -> Result<&'r str, Refusal> {
         let Some(fields) = record.as_object() else {
             return Err(refuse(
-                format!("{place} must be a record with op, ef and ifd"),
-                Some(replaced(self.command, path, Some(dependency_placeholder()))),
+                format!("a dependency at '{holder}' must be a record with pe, op, ef and ifd"),
+                Some(replaced(self.command, path, Some(dependency_placeholder("<address>")))),
             ));
         };
+        let other = match fields.get("pe").and_then(Value::as_str) {
+            Some(ROOT) => return Err(refuse("the root cannot be depended on", None)),
+            Some(text) if is_address(text) => text,
+            Some(text) if !text.is_empty() => return Err(not_an_address(text)),
+            _ => {
+                return Err(refuse(
+                    format!("a dependency at '{holder}' must name its providing element in pe"),
+                    Some(replaced(self.command, &[path, &["pe"]].concat(), Some(json!("<address>")))),
+                ));
+            }
+        };
+        let place = format!("the dependency '{other}' at '{holder}'");
         let extra: Vec<&str> = fields
             .keys()
             .map(String::as_str)
-            .filter(|name| !DEPENDENCY_FIELDS.contains(name))
+            .filter(|name| *name != "pe" && !DEPENDENCY_FIELDS.contains(name))
             .collect();
         if !extra.is_empty() {
             let mut fixed = self.command.clone();
@@ -323,7 +320,7 @@ impl Check<'_> {
             }
             return Err(refuse(format!("{place} does not take: {}", extra.join(", ")), accepted(fixed)));
         }
-        for (field, value) in fields {
+        for (field, value) in fields.iter().filter(|(field, _)| field.as_str() != "pe") {
             let here = [path, &[field.as_str()]].concat();
             if field == "ifd" {
                 if !value.as_str().is_some_and(|flow| FLOWS.contains(&flow)) {
@@ -349,10 +346,10 @@ impl Check<'_> {
             .into_iter()
             .filter(|field| !fields.contains_key(*field))
             .collect();
-        if partial && fields.is_empty() {
+        if partial && missing.len() == DEPENDENCY_FIELDS.len() {
             return Err(refuse(
                 format!("{place} has no fields; give op, ef or ifd"),
-                Some(replaced(self.command, path, Some(dependency_placeholder()))),
+                Some(replaced(self.command, path, Some(dependency_placeholder(other)))),
             ));
         }
         if !partial && !missing.is_empty() {
@@ -367,7 +364,7 @@ impl Check<'_> {
                 Some(fixed),
             ));
         }
-        Ok(())
+        Ok(other)
     }
 }
 
@@ -464,27 +461,28 @@ fn accepted(command: Value) -> Option<Value> {
     check(&command).is_ok().then_some(command)
 }
 
-/// A list of dependency records that each name their providing element in `pe`, as one object
-/// keyed by `pe`. `None` if the value is not such a list. When two records name the same `pe`,
-/// the first is kept: an element holds one dependency for each providing element.
-fn keyed_by_pe(value: &Value) -> Option<Value> {
-    let records = value.as_array().filter(|records| !records.is_empty())?;
-    let mut keyed = JsonMap::new();
-    for record in records {
+/// Dependency records keyed by the address of their providing element, as a list of records
+/// that each name that address in `pe`. `None` if the value is not an object whose values all
+/// hold `op`, `ef` or `ifd` as a plain value.
+fn listed_with_pe(value: &Value) -> Option<Value> {
+    let keyed = value.as_object().filter(|keyed| !keyed.is_empty())?;
+    let mut listed = Vec::new();
+    for (pe, record) in keyed {
         let fields = record.as_object()?;
-        let pe = fields.get("pe")?.as_str()?;
-        let mut rest = fields.clone();
-        rest.shift_remove("pe");
-        if !keyed.contains_key(pe) {
-            keyed.insert(pe.to_string(), Value::Object(rest));
+        if !DEPENDENCY_FIELDS.iter().any(|field| fields.get(*field).is_some_and(|v| !v.is_object() && !v.is_array())) {
+            return None;
         }
+        let mut out = JsonMap::new();
+        out.insert("pe".to_string(), json!(pe));
+        out.extend(fields.clone());
+        listed.push(Value::Object(out));
     }
-    Some(Value::Object(keyed))
+    Some(Value::Array(listed))
 }
 
 /// A dependency record with a placeholder for each value only the agent can supply.
-fn dependency_placeholder() -> Value {
-    json!({"op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
+fn dependency_placeholder(pe: &str) -> Value {
+    json!({"pe": pe, "op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
 }
 
 /// The single entry of an object, or `None` if the value is not an object with one entry.
@@ -506,7 +504,17 @@ fn replaced(command: &Value, path: &[&str], value: Option<Value>) -> Value {
     };
     let mut at = &mut out;
     for key in above {
-        at = &mut at[*key];
+        // A key into a list is the item's position.
+        at = match key.parse::<usize>() {
+            Ok(index) if at.is_array() => &mut at[index],
+            _ => &mut at[*key],
+        };
+    }
+    if let (Some(items), Ok(index), Some(value)) = (at.as_array_mut(), last.parse::<usize>(), value.as_ref()) {
+        if let Some(item) = items.get_mut(index) {
+            *item = value.clone();
+        }
+        return out;
     }
     if let Some(object) = at.as_object_mut() {
         match value {

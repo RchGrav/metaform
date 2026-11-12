@@ -483,7 +483,7 @@ mod tests {
                     "name": "Packet Pipeline",
                     "role": "SE",
                     "status": "un_built",
-                    "dependencies": {"code.store": {"op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}},
+                    "dependencies": [{"pe": "code.store", "op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}],
                     "specification": [
                         {"level": 1, "code": "PL-2.a", "title": "Purpose", "text": "The pipeline moves frames, as `PL-1` limits.\n\n```text\n## not a heading (`code.x`)\n```"},
                         {"level": 2, "title": "Limits", "text": "- At most 10 Gbit/s."},

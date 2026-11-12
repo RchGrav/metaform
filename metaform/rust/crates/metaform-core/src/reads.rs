@@ -126,7 +126,7 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 const NON_LAYER_FIELDS: [&str; 3] = ["memory", "skills", "refs"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
-/// own fields and dependencies, every element that dependencies it (`dependents`) with that element's dependency, each layer
+/// own fields and dependencies, every dependency that names it (`dependents`, each with its receiving element in `re`), each layer
 /// held there with its record count, the frontmatter of the skills at the address (only when it
 /// has some), and its memory count. Counts, not records. The root's skills are the base skills an
 /// agent learns when it joins the server, so `goto` does not repeat them (R-5.30).
@@ -136,13 +136,14 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let Some(element) = map.element(address) else {
         return Err(not_found(address));
     };
-    let dependents: JsonMap<String, Value> = map
+    // Each dependency that names this element, with its receiving element in `re`.
+    let dependents: Vec<Value> = map
         .elements()
         .filter_map(|(holder, holder_element)| {
             (holder != address)
                 .then(|| holder_element.dependencies.get(address))
                 .flatten()
-                .map(|record| (holder.to_string(), Value::Object(record.clone())))
+                .map(|record| crate::model::dependency_json("re", holder, record))
         })
         .collect();
     let mut layers: JsonMap<String, Value> = element

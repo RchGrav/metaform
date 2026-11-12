@@ -102,15 +102,7 @@
           ]
         },
         "dependencies": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Dependencies"
-            },
-            {
-              "$ref": "#/$defs/NamespaceNode"
-            }
-          ],
-          "description": "An object keyed by provider addresses, each holding a dependency record, is the functional knowledge layer. Any other object is a namespace branch and follows namespace rules."
+          "$ref": "#/$defs/Dependencies"
         },
         "op": {
           "$ref": "#/$defs/RelationshipWord"
@@ -178,30 +170,23 @@
       "items": true
     },
     "Dependencies": {
-      "title": "Functional knowledge layer",
-      "type": "object",
-      "description": "Relationships owned by this receiver, keyed by the provider's address: one relationship per provider. Each key refers to the actual provider in the nested tree. The provider keeps its properties and knowledge at its own location.",
-      "propertyNames": {
-        "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
-        "description": "Project-relative reference to an element in the actual nested namespace."
-      },
-      "additionalProperties": {
+      "title": "Dependencies",
+      "type": "array",
+      "minItems": 1,
+      "items": {
         "$ref": "#/$defs/DependencyRecord"
-      }
+      },
+      "description": "The dependencies this receiving element holds: a list with one record for each providing element."
     },
     "DependencyRecord": {
       "title": "Dependency record",
-      "description": "Why this receiver depends on this provider, what the provider supplies for that goal, and what the receiver plans to do with the substance. Keep one relationship per provider address within a receiver.",
+      "description": "One dependency of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
       "type": "object",
       "properties": {
-        "ifd": {
+        "pe": {
           "type": "string",
-          "description": "The Information Flow Direction (IFD): the direction of the movement of substance that satisfies the receiver's Operative Purpose, relative to the receiver and not including the request: send, receive or both.",
-          "enum": [
-            "send",
-            "receive",
-            "both"
-          ]
+          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
+          "description": "The address of the Providing Element (PE): the element whose Encounter Function serves this receiving element's Operative Purpose. It refers to the actual element in the nested tree, which keeps its own fields at its own location."
         },
         "op": {
           "type": "string",
@@ -214,12 +199,22 @@
           "description": "How this provider serves this receiver's goal in this encounter. This is its Encounter Function (EF). Use clear, simple technical English.",
           "minLength": 1,
           "pattern": "\\S"
+        },
+        "ifd": {
+          "type": "string",
+          "description": "The Information Flow Direction (IFD): the direction of the movement of substance that satisfies the receiver's Operative Purpose, relative to the receiver and not including the request: send, receive or both.",
+          "enum": [
+            "send",
+            "receive",
+            "both"
+          ]
         }
       },
       "required": [
-        "ifd",
+        "pe",
         "op",
-        "ef"
+        "ef",
+        "ifd"
       ],
       "additionalProperties": false
     },
@@ -232,7 +227,7 @@
           "$ref": "#/$defs/ComposedElementLayer"
         }
       ],
-      "description": "This word may name a namespace branch or native layer. Scalar relationship fields belong inside dependencies, not on the element."
+      "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a dependency record, not on the element."
     }
   },
   "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",

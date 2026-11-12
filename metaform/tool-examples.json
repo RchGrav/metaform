@@ -4,13 +4,9 @@
     {
       "add": {
         "code.protocol.network.tracker.cs": {
-          "dependencies": {
-            "code.masher.widget": {
-              "op": "Receive the mash data to relay it.",
+          "dependencies": [{"pe": "code.masher.widget", "op": "Receive the mash data to relay it.",
               "ef": "Prepared mash data packets.",
-              "ifd": "receive"
-            }
-          }
+              "ifd": "receive"}]
         }
       }
     },
@@ -97,14 +93,10 @@
         "role": "SE",
         "refs": ["./src/widgets/mashbox.c"]
       },
-      "dependencies": {},
-      "dependents": {
-        "code.protocol.network.tracker.cs": {
-          "op": "Receive the mash data to relay it.",
+      "dependencies": [],
+      "dependents": [{"re": "code.protocol.network.tracker.cs", "op": "Receive the mash data to relay it.",
           "ef": "Prepared mash data packets.",
-          "ifd": "receive"
-        }
-      },
+          "ifd": "receive"}],
       "layers": {},
       "memory": {
         "records": 0

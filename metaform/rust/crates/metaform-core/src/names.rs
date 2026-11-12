@@ -194,8 +194,8 @@ impl NameCheck {
         let mut out = JsonMap::new();
         for (key, value) in fields {
             let fixed = match value {
-                Value::Array(groups) if key == "dependencies" => {
-                    Value::Array(groups.iter().map(|group| self.dependency_group(group)).collect())
+                Value::Array(records) if key == "dependencies" => {
+                    Value::Array(records.iter().map(|record| self.dependency_record(record, address)).collect())
                 }
                 Value::Object(child) => self.fields(child, &join(address, key)),
                 other => other.clone(),
@@ -205,24 +205,20 @@ impl NameCheck {
         Value::Object(out)
     }
 
-    fn dependency_group(&mut self, group: &Value) -> Value {
-        let Value::Object(group) = group else {
-            return group.clone();
+    /// One dependency record: the address in `pe` and each field name are checked.
+    fn dependency_record(&mut self, record: &Value, holder: &str) -> Value {
+        let Value::Object(fields) = record else {
+            return record.clone();
         };
-        let mut out = JsonMap::new();
-        for (provider, record) in group {
-            let record = match record {
-                Value::Object(fields) => Value::Object(
-                    fields
-                        .iter()
-                        .map(|(key, value)| (self.segment(key, provider), value.clone()))
-                        .collect(),
-                ),
-                other => other.clone(),
-            };
-            out.insert(self.address(provider), record);
-        }
-        Value::Object(out)
+        Value::Object(
+            fields
+                .iter()
+                .map(|(key, value)| match value {
+                    Value::String(provider) if key == "pe" => (key.clone(), Value::String(self.address(provider))),
+                    _ => (self.segment(key, holder), value.clone()),
+                })
+                .collect(),
+        )
     }
 }
 

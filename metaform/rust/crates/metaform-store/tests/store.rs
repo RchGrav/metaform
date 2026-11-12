@@ -5,6 +5,17 @@ use std::path::Path;
 use metaform_store::{ClientId, DbKey, Failure, MapKey, Store, StoreError, store_failure_json};
 use serde_json::{Value, json};
 
+/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+#[allow(dead_code)]
+fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert(end.to_string(), Value::String(address.to_string()));
+    if let Value::Object(fields) = record.borrow() {
+        out.extend(fields.clone());
+    }
+    Value::Object(out)
+}
+
 const A: ClientId = ClientId(1);
 const B: ClientId = ClientId(2);
 
@@ -19,7 +30,7 @@ fn seed(store: &Store, map: &MapKey) {
             "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
             "name": "mashtrac", "role": "DE", "refs": ["./src/network/mashtrac.c"],
-            "memory": [{"fact": "relays mash data"}], "dependencies": {"code.masher.widget": dependency()}}}}),
+            "memory": [{"fact": "relays mash data"}], "dependencies": [with_end("pe", "code.masher.widget", dependency())]}}}),
     ];
     for c in commands {
         store

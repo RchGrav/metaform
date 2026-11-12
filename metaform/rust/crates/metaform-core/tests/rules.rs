@@ -60,7 +60,7 @@ fn a_deletion_leaves_no_empty_element() {
     // never filled in, the element and its empty branches go too.
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let dependency = json!({"update": {GAME: {"dependencies": {"code.nothing.here": {"op": "a", "ef": "b", "ifd": "receive"}}}}});
+    let dependency = json!({"update": {GAME: {"dependencies": [{"pe": "code.nothing.here", "op": "a", "ef": "b", "ifd": "receive"}]}}});
     let with_stub = write(&contract, &map, dependency.clone());
     assert!(with_stub.element("code.nothing.here").is_some());
     let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"dependencies": ["code.nothing.here"]}}}));
@@ -165,9 +165,11 @@ fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
 fn an_empty_dependencies_and_a_system_layer_that_is_not_a_list_are_refused() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let empty = refused(&contract, &map, json!({"update": {GAME: {"dependencies": {}}}}));
-    assert_eq!(empty.code, Code::FieldMismatch);
-    assert_eq!(empty.reason, "dependencies at 'code.engine.game' holds no dependency record");
+    for empty in [json!([]), json!({})] {
+        let empty = refused(&contract, &map, json!({"update": {GAME: {"dependencies": empty}}}));
+        assert_eq!(empty.code, Code::FieldMismatch);
+        assert_eq!(empty.reason, "dependencies at 'code.engine.game' must be a list of dependency records, each with pe, op, ef and ifd");
+    }
     let text = refused(&contract, &map, json!({"update": {GAME: {"sources": "./docs/engine.md"}}}));
     assert_eq!(text.code, Code::FieldMismatch);
     assert_eq!(

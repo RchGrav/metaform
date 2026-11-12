@@ -278,7 +278,7 @@ fn the_layer_is_readable_and_listed_by_goto() {
     .unwrap();
     assert_eq!(
         trunk["code.masher"],
-        json!({"dependencies": {}}),
+        json!({"dependencies": []}),
         "the layer does not apply at a trunk"
     );
 

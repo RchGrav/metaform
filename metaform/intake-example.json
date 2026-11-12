@@ -20,13 +20,9 @@
               "name": "mashtrac",
               "role": "DE",
               "refs": ["./src/network/mashtrac.c"],
-              "dependencies": {
-                "code.masher.widget": {
-                  "op": "Receive the mash data to relay it.",
+              "dependencies": [{"pe": "code.masher.widget", "op": "Receive the mash data to relay it.",
                   "ef": "Prepared mash data packets.",
-                  "ifd": "receive"
-                }
-              }
+                  "ifd": "receive"}]
             }
           }
         }

@@ -7,10 +7,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map as JsonMap, Value, json};
+use serde_json::{Value, json};
 
 use crate::contract::Contract;
-use crate::model::{Effect, Element, Map, flatten, is_want_updates};
+use crate::model::{Effect, Element, Map, flatten, read_dependencies};
 use crate::names::{self, ROOT};
 use crate::reads;
 use crate::refusal::{Code, Refusal};
@@ -156,7 +156,7 @@ impl Work<'_> {
                     "'{holder}' depends on '{other}': the dependency has no {}",
                     missing.join(", ")
                 ),
-                Some(json!({"update": {holder: {"dependencies": {other: complete}}}})),
+                Some(json!({"update": {holder: {"dependencies": [crate::model::dependency_json("pe", other, &complete)]}}})),
             ));
         }
         self.ensure(other)?;
@@ -166,12 +166,6 @@ impl Work<'_> {
         Ok(())
     }
 
-    fn write_dependencies(&mut self, holder: &str, dependencies: &JsonMap<String, Value>) -> Result<(), Refusal> {
-        for (other, change) in dependencies {
-            self.write_dependency(holder, other, change)?;
-        }
-        Ok(())
-    }
 
     /// `add` keeps what is there: arrays grow, and other values are written (R-5.5).
     fn add(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
@@ -211,8 +205,11 @@ impl Work<'_> {
         self.ensure(address)?;
         for (key, value) in supplied.as_object().expect("checked by the input schema") {
             match value {
-                Value::Object(dependencies) if key == "dependencies" && is_want_updates(dependencies) => {
-                    self.write_dependencies(address, dependencies)?
+                Value::Array(_) if key == "dependencies" => {
+                    // Each record names its providing element in `pe` and holds the fields to change.
+                    for (other, change) in read_dependencies(value).unwrap_or_default() {
+                        self.write_dependency(address, &other, &Value::Object(change))?;
+                    }
                 }
                 Value::Null => {
                     self.element_mut(address).fields.remove(key);

@@ -145,9 +145,10 @@ fn place(address: &str, path: &str) -> String {
         .collect();
     match segments.as_slice() {
         [field] => format!("{field} at '{address}'"),
-        [dependencies, other] if dependencies == "dependencies" => format!("the dependency '{other}' at '{address}'"),
-        [dependencies, other, field] if dependencies == "dependencies" => {
-            format!("{field} at the dependency '{other}' at '{address}'")
+        // In a list of dependencies the validator gives the record's position, counted from 0.
+        [dependencies, position] if dependencies == "dependencies" => format!("dependency {position} at '{address}'"),
+        [dependencies, position, field] if dependencies == "dependencies" => {
+            format!("{field} at dependency {position} at '{address}'")
         }
         _ => format!("'{address}'"),
     }
