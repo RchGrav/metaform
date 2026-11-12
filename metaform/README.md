@@ -14,20 +14,27 @@ The agent reads the map by recognition, not by study. A model knows kinds of thi
 
 Metaform does not make a model more capable. It reserves the model's reasoning for the work. The saving is not counted in tokens or in money. The saving is reasoning: the capacity that orientation consumed stays with the task, and that capacity is what allows an agent to perform well.
 
-## Why every record carries its reason
+## Why everything says why
 
-An instruction passed on without its reason becomes universal. The conditions it was given under are gone, so it applies everywhere, including where it was never meant to. An agent that holds only the words can follow them exactly and defeat their purpose. The agent is not being hostile. The words are all it was given, and it has no means of telling which reading was meant.
+An agent reasons on what it is given, and that includes its instructions. An instruction that does not say why leaves the agent two choices. It can invent the reason, or it can follow the words with no reason at all.
 
-The reason carries the boundary with it. An agent that knows why a rule exists knows when the rule matters and when it has been met. It can also work out a case that nobody wrote down, which no list of rules or examples can cover.
+Both go wrong.
 
-Metaform is built on this.
+- An agent that invents the reason applies the instruction where its guess fits. A rule that was meant for every case is then set aside in the cases the guess does not cover. A rule that was meant for one situation is carried into every other, because the guess was wider than the intent.
+- An agent that follows the words blindly applies them where they do not belong, and can follow them exactly while defeating their purpose.
+
+Neither agent is at fault. Each was invited to guess, or to obey without understanding, by an instruction that kept its reason back.
+
+The stated reason removes the guess. An agent that knows why a rule exists knows whether the rule is meant for every case or for one, when it applies, and when it has been met. It can also work out a case that nobody wrote down, which no list of rules or examples can cover.
+
+So in Metaform everything says why, instructions included.
 
 - A dependency records why the receiving element needs the providing element, and how the provider meets that need. It does not record only that one depends on the other.
 - Each example in the intake procedure gives the reason it is valid or invalid, so the agent learns where the boundary is and not only one case on each side of it.
 - A refused command is answered with the reason and with the command that would be accepted.
-- A rule written for this project is written with the reason that produces it.
+- An instruction or a rule written for this project is written with the reason that produces it.
 
-This is what Metaform returns to the agents that use it: understanding of a project, in place of instructions about it. That understanding is what goes missing when work passes from one context to the next as summaries and rules. An agent that receives the map starts its task knowing why each part exists and what depends on it.
+This is what Metaform returns to the agents that use it: the reasons, so that their reasoning has something true to work from. That is what goes missing when work passes from one context to the next as summaries and bare rules.
 
 The same holds for anyone who writes for agents here. Write the reason. Do not copy a person's sentences into a rule: the sentences keep the words and lose what the person understood when they said them.
 
