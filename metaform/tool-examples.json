@@ -4,7 +4,7 @@
     {
       "add": {
         "code.protocol.network.tracker.cs": {
-          "dependencies": [{"pe": "code.masher.widget", "op": "Receive the mash data to relay it.",
+          "wants": [{"pe": "code.masher.widget", "op": "Receive the mash data to relay it.",
               "ef": "Prepared mash data packets.",
               "ifd": "receive"}]
         }
@@ -18,7 +18,7 @@
     {
       "delete": {
         "code.protocol.network.tracker.cs": {
-          "dependencies": [
+          "wants": [
             "code.masher.widget"
           ]
         }
@@ -48,11 +48,11 @@
       "code.masher.widget": {}
     },
     "status": "error",
-    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still depends on it. Remove that dependency first.",
+    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
     "remediation": {
       "delete": {
         "code.protocol.network.tracker.cs": {
-          "dependencies": [
+          "wants": [
             "code.masher.widget"
           ]
         }
@@ -93,8 +93,8 @@
         "role": "SE",
         "refs": ["./src/widgets/mashbox.c"]
       },
-      "dependencies": [],
-      "dependents": [{"re": "code.protocol.network.tracker.cs", "op": "Receive the mash data to relay it.",
+      "wants": [],
+      "wanted_by": [{"re": "code.protocol.network.tracker.cs", "op": "Receive the mash data to relay it.",
           "ef": "Prepared mash data packets.",
           "ifd": "receive"}],
       "layers": {},

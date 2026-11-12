@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use metaform_core::{Code, Contract, Effect, Map, MapRef, Outcome, Refusal, execute};
 use serde_json::{Value, json};
 
-/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`pe` or `re`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -75,12 +75,12 @@ fn tool_examples_give_the_documented_results() {
     let added = write(&contract, &Map::new(), requests[0].clone());
     let holder = added.element("code.protocol.network.tracker.cs").unwrap();
     assert_eq!(
-        holder.dependencies_json(),
-        requests[0]["add"]["code.protocol.network.tracker.cs"]["dependencies"]
+        holder.wants_json(),
+        requests[0]["add"]["code.protocol.network.tracker.cs"]["wants"]
     );
     assert!(
         added.element("code.masher.widget").is_some(),
-        "the dependency creates the element it names"
+        "the want creates the element it names"
     );
 
     enum Expect {
@@ -182,7 +182,7 @@ fn documents_round_trip_through_the_map() {
 fn refusals_name_the_rule_and_change_nothing() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
-    let dependency =
+    let want =
         |direction: &str| json!({"op": "Relay it.", "ef": "Supplies data.", "ifd": direction});
     let table = [
         (
@@ -201,7 +201,7 @@ fn refusals_name_the_rule_and_change_nothing() {
             None,
         ),
         (
-            json!({"add": {"code.relay": {"dependencies": [with_end("pe", "code.masher.widget", dependency("push"))]}}}),
+            json!({"add": {"code.relay": {"wants": [with_end("pe", "code.masher.widget", want("push"))]}}}),
             Code::FieldMismatch,
             None,
         ),
@@ -217,10 +217,10 @@ fn refusals_name_the_rule_and_change_nothing() {
             Some(json!({"update": {"code.masher.widget": {"name": null}}})),
         ),
         (
-            json!({"update": {"code.relay": {"dependencies": [{"pe": "code.other", "ifd": "send"}]}}}),
-            Code::DependencyIncomplete,
+            json!({"update": {"code.relay": {"wants": [{"pe": "code.other", "ifd": "send"}]}}}),
+            Code::WantIncomplete,
             Some(
-                json!({"update": {"code.relay": {"dependencies": [{"pe": "code.other", "ifd": "send", "op": "<op>", "ef": "<ef>"}]}}}),
+                json!({"update": {"code.relay": {"wants": [{"pe": "code.other", "ifd": "send", "op": "<op>", "ef": "<ef>"}]}}}),
             ),
         ),
         (
@@ -291,18 +291,18 @@ fn refusals_name_the_rule_and_change_nothing() {
 #[test]
 fn writes_create_paths_and_reads_return_each_form() {
     let contract = Contract::bundled().unwrap();
-    let dependency =
+    let want =
         json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
     let mut map = Map::new();
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"name": "part", "dependencies": [with_end("pe", "code.other.part", &dependency)]}}}),
+        json!({"update": {"code.new.part": {"name": "part", "wants": [with_end("pe", "code.other.part", &want)]}}}),
     );
     map = write(
         &contract,
         &map,
-        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "dependencies": [with_end("pe", "code.third.part", &dependency)]}}}),
+        json!({"add": {"code.new.part": {"name": "renamed", "sources": ["a"], "wants": [with_end("pe", "code.third.part", &want)]}}}),
     );
     map = write(
         &contract,
@@ -350,14 +350,14 @@ fn writes_create_paths_and_reads_return_each_form() {
     let whole = read(&contract, &map, json!({".": {}}));
     assert_eq!(whole["."]["code"]["new"]["part"]["name"], "renamed");
     assert_eq!(
-        whole["."]["code"]["new"]["part"]["dependencies"][0],
-        with_end("pe", "code.other.part", &dependency)
+        whole["."]["code"]["new"]["part"]["wants"][0],
+        with_end("pe", "code.other.part", &want)
     );
     let part = read(&contract, &map, json!({".code.new": {}}));
     assert_eq!(part[".code.new"]["part"], whole["."]["code"]["new"]["part"]);
     let entry = read(&contract, &map, json!({"code.new.part": {}}));
     assert_eq!(entry["code.new.part"]["name"], "renamed");
-    assert!(entry["code.new.part"].get("dependencies").is_none());
+    assert!(entry["code.new.part"].get("wants").is_none());
     let missing = refused(&contract, &map, &json!({".code.nowhere": {}}));
     assert_eq!(missing.code, Code::NotFound);
     assert_eq!(missing.remediation.as_deref(), Some(&json!({"map": {}})));

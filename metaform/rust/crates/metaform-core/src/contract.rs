@@ -135,7 +135,7 @@ fn help_form<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
 }
 
 /// A place in an element, named the way an agent writes it: `status at 'code.engine.game'`,
-/// `the dependency 'code.bus' at 'code.engine.game'`. `path` is the validator's JSON pointer into the
+/// `the want 'code.bus' at 'code.engine.game'`. `path` is the validator's JSON pointer into the
 /// element; no message shows it.
 fn place(address: &str, path: &str) -> String {
     let segments: Vec<String> = path
@@ -145,10 +145,10 @@ fn place(address: &str, path: &str) -> String {
         .collect();
     match segments.as_slice() {
         [field] => format!("{field} at '{address}'"),
-        // In a list of dependencies the validator gives the record's position, counted from 0.
-        [dependencies, position] if dependencies == "dependencies" => format!("dependency {position} at '{address}'"),
-        [dependencies, position, field] if dependencies == "dependencies" => {
-            format!("{field} at dependency {position} at '{address}'")
+        // In a list of wants the validator gives the record's position, counted from 0.
+        [wants, position] if wants == "wants" => format!("want {position} at '{address}'"),
+        [wants, position, field] if wants == "wants" => {
+            format!("{field} at want {position} at '{address}'")
         }
         _ => format!("'{address}'"),
     }
@@ -239,18 +239,18 @@ mod tests {
         let values = [
             json!(null), json!(true), json!(7), json!(""), json!(" \u{a0}"), json!("text"), json!("add"), json!("raw dump"), json!("help"), json!("todo"),
             json!("receive"), json!([]), json!(["code.y"]), json!(["code.y", "code.y"]), json!({}),
-            json!({"x": 1}), json!({"name": "n"}), json!({"name": ""}), json!({"op": "w"}), json!({"dependencies": {}}),
+            json!({"x": 1}), json!({"name": "n"}), json!({"name": ""}), json!({"op": "w"}), json!({"wants": {}}),
             json!({"code.y": {"op": "w", "ef": "h", "ifd": "receive"}}),
             json!({"code.y": {"op": "w", "ef": "h", "ifd": "up"}}),
             json!({"code.y": {"op": "w"}}), json!({"code.y": {"op": "w", "note": "n"}}),
             json!({"code.y": {}}), json!({"code.y": "text"}), json!({".": {"op": "w", "ef": "h", "ifd": "receive"}}),
             json!({"y": {"op": ["w"]}}), json!({"y": {"op": {"z": 1}}}), json!({"y": {"ef": 1}}),
-            json!({"a b": {"x": 1}}), json!({"dependencies": ["code.y"]}), json!({"dependencies": "code.y"}),
-            json!({"dependencies": ["."]}), json!({"dependencies": [7]}), json!({"dependencies": ["code.y"], "x": 1}),
+            json!({"a b": {"x": 1}}), json!({"wants": ["code.y"]}), json!({"wants": "code.y"}),
+            json!({"wants": ["."]}), json!({"wants": [7]}), json!({"wants": ["code.y"], "x": 1}),
         ];
         let fields = [
             "technical_name", "name", "role", "status", "project", "uri", "providers", "op", "ef",
-            "ifd", "op", "ef", "ifd", "dependencies", "note", "a.b", "a b",
+            "ifd", "op", "ef", "ifd", "wants", "note", "a.b", "a b",
         ];
         let keys = ["add", "update", "delete", "map", "orphaned", "help", "goto", ".", ".code.x", "..", "code.x", "code..x", "a$", ""];
         let mut commands = vec![json!({}), json!([]), json!("add"), json!({"add": {}, "map": {}})];
@@ -280,13 +280,13 @@ mod tests {
             let text = command.to_string();
             let blank_role = text.contains("\"role\":\"\"") || text.contains("\"role\":\" \u{a0}\"");
             // The shape check is stricter than the schema in two places: a blank role, and an
-            // empty `dependencies` at the command's own element (shape.rs, W8).
-            let empty_dependencies = ["add", "update"].iter().any(|verb| {
-                command[verb]["code.x"]["dependencies"].as_object().is_some_and(|w| w.is_empty())
-                    || command[verb]["."]["dependencies"].as_object().is_some_and(|w| w.is_empty())
+            // empty `wants` at the command's own element (shape.rs, W8).
+            let empty_wants = ["add", "update"].iter().any(|verb| {
+                command[verb]["code.x"]["wants"].as_object().is_some_and(|w| w.is_empty())
+                    || command[verb]["."]["wants"].as_object().is_some_and(|w| w.is_empty())
             });
             assert!(
-                by_hand == by_schema || ((blank_role || empty_dependencies) && by_schema),
+                by_hand == by_schema || ((blank_role || empty_wants) && by_schema),
                 "{command}: the shape check {by_hand}, the schema {by_schema}"
             );
         }

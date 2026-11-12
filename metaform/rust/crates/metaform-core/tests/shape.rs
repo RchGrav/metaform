@@ -4,7 +4,7 @@
 use metaform_core::{Code, Contract, Map, execute};
 use serde_json::{Value, json};
 
-/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`pe` or `re`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -17,10 +17,10 @@ fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -
 
 const NOT_AN_ADDRESS: &str = "is not an address: segments are joined by periods, with no spaces, '$', '[' or ']'";
 const ONE_ENTRY: &str = "a command has one entry: add, update, delete, orphaned, goto, map, help, an address to read, or a path that starts with a period for a raw dump";
-const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"dependencies\": [\"<address>\"]} to remove dependencies";
+const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 const GOTO_FORM: &str = "goto takes one address, such as {\"goto\": \"code.engine.game\"}";
 
-fn dependency() -> Value {
+fn want() -> Value {
     json!({"op": "receive input", "ef": "dispatches events", "ifd": "receive"})
 }
 
@@ -32,9 +32,9 @@ fn placeholder() -> Value {
 fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
     let game = "code.engine.game";
     let bus = "code.bus.data.event";
-    let at_dependency = format!("the dependency '{bus}' at '{game}'");
+    let at_want = format!("the want '{bus}' at '{game}'");
     let read_form = |address: &str| {
-        format!("a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"dependencies\": {{}}}}}}")
+        format!("a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"wants\": {{}}}}}}")
     };
     let mut rows = vec![
         ("C1", json!({}), ONE_ENTRY.to_string(), json!(null)),
@@ -64,18 +64,18 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ("D2", json!({"delete": {".": {}}}), "the root cannot be deleted".into(), json!(null)),
         ("D2", json!({"delete": {"code x": {}}}), format!("'code x' {NOT_AN_ADDRESS}"), json!(null)),
         ("D3", json!({"delete": {"code.x": {"other": 1}}}), DELETE_FORM.into(), json!(null)),
-        ("D3", json!({"delete": {"code.x": {"dependencies": ["code.y"], "other": 1}}}), DELETE_FORM.into(), json!(null)),
+        ("D3", json!({"delete": {"code.x": {"wants": ["code.y"], "other": 1}}}), DELETE_FORM.into(), json!(null)),
         ("D3", json!({"delete": {"code.x": null}}), DELETE_FORM.into(), json!(null)),
-        ("D4", json!({"delete": {"code.x": {"dependencies": "no"}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"dependencies": ["no"]}}})),
-        ("D4", json!({"delete": {"code.x": {"dependencies": []}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"dependencies": ["<address>"]}}})),
-        ("D5", json!({"delete": {"code.x": {"dependencies": [7]}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"dependencies": ["<address>"]}}})),
-        ("D5", json!({"delete": {"code.x": {"dependencies": ["code y"]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
-        ("D5", json!({"delete": {"code.x": {"dependencies": ["."]}}}), "the root cannot be depended on".into(), json!(null)),
+        ("D4", json!({"delete": {"code.x": {"wants": "no"}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"wants": ["no"]}}})),
+        ("D4", json!({"delete": {"code.x": {"wants": []}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"wants": ["<address>"]}}})),
+        ("D5", json!({"delete": {"code.x": {"wants": [7]}}}), DELETE_FORM.into(), json!({"delete": {"code.x": {"wants": ["<address>"]}}})),
+        ("D5", json!({"delete": {"code.x": {"wants": ["code y"]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
+        ("D5", json!({"delete": {"code.x": {"wants": ["."]}}}), "the root cannot be wanted".into(), json!(null)),
         (
             "D5",
-            json!({"delete": {"code.x": {"dependencies": ["code.y", "code.z", "code.y"]}}}),
-            "delete names the dependency 'code.y' more than once".into(),
-            json!({"delete": {"code.x": {"dependencies": ["code.y", "code.z"]}}}),
+            json!({"delete": {"code.x": {"wants": ["code.y", "code.z", "code.y"]}}}),
+            "delete names the want 'code.y' more than once".into(),
+            json!({"delete": {"code.x": {"wants": ["code.y", "code.z"]}}}),
         ),
         ("E1", json!({"map": {"x": 1}}), "map takes {}".into(), json!({"map": {}})),
         ("E1", json!({"orphaned": []}), "orphaned takes {}".into(), json!({"orphaned": {}})),
@@ -86,19 +86,19 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ("G1", json!({"goto": "code engine"}), format!("'code engine' {NOT_AN_ADDRESS}"), json!(null)),
         ("R1", json!({"..": {}}), format!("'..' {NOT_AN_ADDRESS}"), json!(null)),
         ("R1", json!({".code.": {}}), format!("'.code.' {NOT_AN_ADDRESS}"), json!(null)),
-        ("R2", json!({".code": {"dependencies": {}}}), "a raw dump takes {}".into(), json!({".code": {}})),
+        ("R2", json!({".code": {"wants": {}}}), "a raw dump takes {}".into(), json!({".code": {}})),
         ("L1", json!({"code.$x": {}}), format!("'code.$x' {NOT_AN_ADDRESS}"), json!(null)),
         ("L1", json!({"code..x": {}}), format!("'code..x' {NOT_AN_ADDRESS}"), json!(null)),
         ("L1", json!({"": {}}), format!("'' {NOT_AN_ADDRESS}"), json!(null)),
-        ("L2", json!({game: "dependencies"}), read_form(game), json!({game: {}})),
+        ("L2", json!({game: "wants"}), read_form(game), json!({game: {}})),
         (
             "L3",
             json!({"remove": {"code.x": {}}}),
             "'code.x' is not a layer name: a layer name is one segment, with no periods, spaces, '$', '[' or ']'".into(),
             json!(null),
         ),
-        ("L4", json!({game: {"dependencies": []}}), read_form(game), json!({game: {"dependencies": {}}})),
-        ("L4", json!({game: {"dependencies": [1]}}), read_form(game), json!({game: {"dependencies": {}}})),
+        ("L4", json!({game: {"wants": []}}), read_form(game), json!({game: {"wants": {}}})),
+        ("L4", json!({game: {"wants": [1]}}), read_form(game), json!({game: {"wants": {}}})),
         ("L4", json!({"search": {"text": "x"}}), read_form("search"), json!({"search": {"text": {}}})),
         (
             "N1",
@@ -138,32 +138,32 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         (
             "W5",
-            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receives"}]}}}),
-            format!("ifd at the dependency '{bus}' at '{game}' must be send, receive or both"),
-            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
+            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receives"}]}}}),
+            format!("ifd at the want '{bus}' at '{game}' must be send, receive or both"),
+            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
         ),
         (
             "W1",
-            json!({"add": {game: {"dependencies": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive"}}}}}),
-            format!("dependencies at '{game}' must be a list of dependency records; each record names its providing element in pe"),
-            json!({"add": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
+            json!({"add": {game: {"wants": {bus: {"op": "receive input", "ef": "dispatches events", "ifd": "receive"}}}}}),
+            format!("wants at '{game}' must be a list of want records; each record names its providing element in pe"),
+            json!({"add": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive"}]}}}),
         ),
         (
             "N6",
             json!({"update": {game: {"op": "receive input"}}}),
-            format!("op at '{game}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
-            json!({"update": {game: {"dependencies": [{"pe": "<address>", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}}),
+            format!("op at '{game}' is not a field of an element; pe, op, ef and ifd belong in a want"),
+            json!({"update": {game: {"wants": [{"pe": "<address>", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}}),
         ),
         (
             "N6",
             json!({"add": {game: {"ifd": "receive"}}}),
-            format!("ifd at '{game}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
-            json!({"update": {game: {"dependencies": [{"pe": "<address>", "op": "<op>", "ef": "<ef>", "ifd": "receive"}]}}}),
+            format!("ifd at '{game}' is not a field of an element; pe, op, ef and ifd belong in a want"),
+            json!({"update": {game: {"wants": [{"pe": "<address>", "op": "<op>", "ef": "<ef>", "ifd": "receive"}]}}}),
         ),
         (
             "N7",
             json!({"update": {game: {"providers": ["code.bus"]}}}),
-            format!("providers at '{game}' can hold only elements beneath it; dependencies holds what an element depends on"),
+            format!("providers at '{game}' can hold only elements beneath it; wants holds what an element wants"),
             json!(null),
         ),
         (
@@ -186,71 +186,71 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         ),
         (
             "N10",
-            json!({"add": {"code.engine": {"game": {"dependencies": [{"pe": bus, "op": "receive input", "ef": "", "ifd": "receive"}]}}}}),
-            format!("ef at the dependency '{bus}' at '{game}' must be text that is not blank"),
-            json!({"add": {"code.engine": {"game": {"dependencies": [{"pe": bus, "op": "receive input", "ef": "<ef>", "ifd": "receive"}]}}}}),
+            json!({"add": {"code.engine": {"game": {"wants": [{"pe": bus, "op": "receive input", "ef": "", "ifd": "receive"}]}}}}),
+            format!("ef at the want '{bus}' at '{game}' must be text that is not blank"),
+            json!({"add": {"code.engine": {"game": {"wants": [{"pe": bus, "op": "receive input", "ef": "<ef>", "ifd": "receive"}]}}}}),
         ),
         (
             "N10",
-            json!({"add": {"code.engine": {"game": {"dependencies": ["code.bus"]}}}}),
-            format!("a dependency at '{game}' must be a record with pe, op, ef and ifd"),
-            json!({"add": {"code.engine": {"game": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}}),
+            json!({"add": {"code.engine": {"game": {"wants": ["code.bus"]}}}}),
+            format!("a want at '{game}' must be a record with pe, op, ef and ifd"),
+            json!({"add": {"code.engine": {"game": {"wants": [with_end("pe", "<address>", placeholder())]}}}}),
         ),
         (
             "W1",
-            json!({"add": {"code.x": {"dependencies": ["code.y"]}}}),
-            "a dependency at 'code.x' must be a record with pe, op, ef and ifd".into(),
-            json!({"add": {"code.x": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}),
+            json!({"add": {"code.x": {"wants": ["code.y"]}}}),
+            "a want at 'code.x' must be a record with pe, op, ef and ifd".into(),
+            json!({"add": {"code.x": {"wants": [with_end("pe", "<address>", placeholder())]}}}),
         ),
-        ("W1", json!({"update": {game: {"dependencies": [with_end("pe", "code y", dependency())]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
-        ("W1", json!({"update": {game: {"dependencies": [with_end("pe", ".", dependency())]}}}), "the root cannot be depended on".into(), json!(null)),
+        ("W1", json!({"update": {game: {"wants": [with_end("pe", "code y", want())]}}}), format!("'code y' {NOT_AN_ADDRESS}"), json!(null)),
+        ("W1", json!({"update": {game: {"wants": [with_end("pe", ".", want())]}}}), "the root cannot be wanted".into(), json!(null)),
         (
             "W2",
-            json!({"add": {"code.x": {"dependencies": [{"op": "receive input"}]}}}),
-            "a dependency at 'code.x' must name its providing element in pe".into(),
-            json!({"add": {"code.x": {"dependencies": [{"pe": "<address>", "op": "receive input"}]}}}),
+            json!({"add": {"code.x": {"wants": [{"op": "receive input"}]}}}),
+            "a want at 'code.x' must name its providing element in pe".into(),
+            json!({"add": {"code.x": {"wants": [{"pe": "<address>", "op": "receive input"}]}}}),
         ),
         (
             "W8",
-            json!({"add": {"code.x": {"dependencies": []}}}),
-            "dependencies at 'code.x' must be a list of dependency records, each with pe, op, ef and ifd".into(),
-            json!({"add": {"code.x": {"dependencies": [with_end("pe", "<address>", placeholder())]}}}),
+            json!({"add": {"code.x": {"wants": []}}}),
+            "wants at 'code.x' must be a list of want records, each with pe, op, ef and ifd".into(),
+            json!({"add": {"code.x": {"wants": [with_end("pe", "<address>", placeholder())]}}}),
         ),
         (
             "W9",
-            json!({"add": {"code.x": {"dependencies": [with_end("pe", "code.y", dependency()), with_end("pe", "code.y", dependency())]}}}),
-            "dependencies at 'code.x' names 'code.y' more than once; an element holds one dependency for each providing element".into(),
+            json!({"add": {"code.x": {"wants": [with_end("pe", "code.y", want()), with_end("pe", "code.y", want())]}}}),
+            "wants at 'code.x' names 'code.y' more than once; an element holds one want for each providing element".into(),
             json!(null),
         ),
         (
             "W3",
-            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive", "note": "extra"}]}}}),
-            format!("{at_dependency} does not take: note"),
-            json!({"update": {game: {"dependencies": [with_end("pe", bus, dependency())]}}}),
+            json!({"update": {game: {"wants": [{"pe": bus, "op": "receive input", "ef": "dispatches events", "ifd": "receive", "note": "extra"}]}}}),
+            format!("{at_want} does not take: note"),
+            json!({"update": {game: {"wants": [with_end("pe", bus, want())]}}}),
         ),
         (
             "W3",
-            json!({"update": {game: {"dependencies": [{"pe": bus, "goal": "x", "function": "y"}]}}}),
-            format!("{at_dependency} does not take: goal, function"),
+            json!({"update": {game: {"wants": [{"pe": bus, "goal": "x", "function": "y"}]}}}),
+            format!("{at_want} does not take: goal, function"),
             json!(null),
         ),
         (
             "W5",
-            json!({"update": {game: {"dependencies": [{"pe": bus, "ifd": "sideways"}]}}}),
-            format!("ifd at {at_dependency} must be send, receive or both"),
-            json!({"update": {game: {"dependencies": [{"pe": bus, "ifd": "<send, receive or both>"}]}}}),
+            json!({"update": {game: {"wants": [{"pe": bus, "ifd": "sideways"}]}}}),
+            format!("ifd at {at_want} must be send, receive or both"),
+            json!({"update": {game: {"wants": [{"pe": bus, "ifd": "<send, receive or both>"}]}}}),
         ),
         (
             "W4",
-            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "   "}]}}}),
-            format!("op at {at_dependency} must be text that is not blank"),
-            json!({"update": {game: {"dependencies": [{"pe": bus, "op": "<op>"}]}}}),
+            json!({"update": {game: {"wants": [{"pe": bus, "op": "   "}]}}}),
+            format!("op at {at_want} must be text that is not blank"),
+            json!({"update": {game: {"wants": [{"pe": bus, "op": "<op>"}]}}}),
         ),
         (
             "W7",
-            json!({"update": {game: {"dependencies": [{"pe": bus}]}}}),
-            format!("{at_dependency} has no fields; give op, ef or ifd"),
-            json!({"update": {game: {"dependencies": [with_end("pe", bus, placeholder())]}}}),
+            json!({"update": {game: {"wants": [{"pe": bus}]}}}),
+            format!("{at_want} has no fields; give op, ef or ifd"),
+            json!({"update": {game: {"wants": [with_end("pe", bus, placeholder())]}}}),
         ),
     ];
     // N2, N4, N5: a blank or non-text value at each field that holds text.
@@ -287,7 +287,7 @@ fn a_command_of_the_wrong_shape_is_refused_in_plain_words() {
         assert_eq!(refusal.code, Code::FieldMismatch, "{rule} {command}");
         assert_eq!(refusal.reason, message, "{rule} {command}");
         assert_eq!(refusal.to_json()["remediation"], remediation, "{rule} {command}");
-        for leak in ["Single(", "Multiple(", "/add", "/update", "/delete", "/goto", "/dependencies", "must hold at"] {
+        for leak in ["Single(", "Multiple(", "/add", "/update", "/delete", "/goto", "/wants", "must hold at"] {
             assert!(!refusal.reason.contains(leak), "{rule} {command}: {}", refusal.reason);
         }
         // A remediation with no placeholder is a command the shape check accepts.
@@ -301,7 +301,7 @@ fn a_command_of_the_wrong_shape_is_refused_in_plain_words() {
 }
 
 /// The first problem is reported, in the module's order: entries, command name, address, the
-/// shape of the value, then each field in the command's order. A dependency that `add` leaves
+/// shape of the value, then each field in the command's order. A want that `add` leaves
 /// incomplete has the code and message of one that `update` leaves incomplete (W6, R-5.6).
 #[test]
 fn the_first_problem_in_the_fixed_order_is_reported() {
@@ -310,27 +310,27 @@ fn the_first_problem_in_the_fixed_order_is_reported() {
     let reason = |command: Value| execute(&contract, &map, &command).unwrap_err().reason;
     // The address comes before the shape of the value, and that before a field.
     assert!(reason(json!({"add": {"code x": "text"}})).starts_with("'code x' is not an address"));
-    assert_eq!(reason(json!({"delete": {".": {"dependencies": "no"}}})), "the root cannot be deleted");
+    assert_eq!(reason(json!({"delete": {".": {"wants": "no"}}})), "the root cannot be deleted");
     // Fields are reported in the command's order, whatever their names.
     assert!(reason(json!({"update": {"code.x": {"status": "todo", "name": ""}}})).starts_with("status at"));
     assert!(reason(json!({"update": {"code.x": {"name": "", "status": "todo"}}})).starts_with("name at"));
     // An element beneath is checked before the next field of the element above.
     assert!(reason(json!({"add": {"code.x": {"part": {"refs": 7}, "name": ""}}})).starts_with("refs at 'code.x.part'"));
-    // In a dependency: names it does not take, then fields in order, then missing fields.
+    // In a want: names it does not take, then fields in order, then missing fields.
     let record = json!({"ifd": "up", "op": "", "note": 1});
-    assert!(reason(json!({"add": {"code.x": {"dependencies": [with_end("pe", "code.y", &record)]}}})).contains("does not take: note"));
-    assert!(reason(json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "ifd": "up", "op": ""}]}}})).starts_with("ifd at"));
-    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "op": "receive input"}]}}})).unwrap_err();
-    assert_eq!(incomplete.code, Code::DependencyIncomplete);
-    assert_eq!(incomplete.reason, "'code.x' depends on 'code.y': the dependency has no ef, ifd");
+    assert!(reason(json!({"add": {"code.x": {"wants": [with_end("pe", "code.y", &record)]}}})).contains("does not take: note"));
+    assert!(reason(json!({"add": {"code.x": {"wants": [{"pe": "code.y", "ifd": "up", "op": ""}]}}})).starts_with("ifd at"));
+    let incomplete = execute(&contract, &map, &json!({"add": {"code.x": {"wants": [{"pe": "code.y", "op": "receive input"}]}}})).unwrap_err();
+    assert_eq!(incomplete.code, Code::WantIncomplete);
+    assert_eq!(incomplete.reason, "'code.x' wants 'code.y': the want has no ef, ifd");
     assert_eq!(
         incomplete.to_json()["remediation"],
-        json!({"add": {"code.x": {"dependencies": [{"pe": "code.y", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}})
+        json!({"add": {"code.x": {"wants": [{"pe": "code.y", "op": "receive input", "ef": "<ef>", "ifd": "<ifd>"}]}}})
     );
 }
 
 /// What the rules permit is accepted: `null` at `update`'s own element (N8), lists and elements
-/// beneath at the text fields (N2, N9), dependencies at an element beneath (N10), and every command form.
+/// beneath at the text fields (N2, N9), wants at an element beneath (N10), and every command form.
 #[test]
 fn commands_of_the_right_shape_pass_the_shape_check() {
     let contract = Contract::bundled().unwrap();
@@ -338,11 +338,11 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
     for command in [
         json!({"add": {"code.engine.game": {"technical_name": "game engine", "name": "Quake core", "role": "DE", "refs": ["./src/engine.c"], "status": "un_built"}}}),
         json!({"update": {"code.engine.game": {"status": null, "refs": null, "note": null, "op": null}}}),
-        json!({"update": {"code.engine.game": {"dependencies": [with_end("pe", "code.bus", dependency())]}}}),
-        json!({"update": {"code.engine.game": {"dependencies": [{"pe": "code.bus", "ifd": "both"}]}}}),
-        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "dependencies": [with_end("pe", "code.bus", dependency())]}}}}}),
+        json!({"update": {"code.engine.game": {"wants": [with_end("pe", "code.bus", want())]}}}),
+        json!({"update": {"code.engine.game": {"wants": [{"pe": "code.bus", "ifd": "both"}]}}}),
+        json!({"add": {"code": {"engine": {"audio": {"name": "Mixer", "wants": [with_end("pe", "code.bus", want())]}}}}}),
         json!({"update": {".": {"note": "the project"}}}),
-        json!({"delete": {"code.engine.game": {"dependencies": ["code.bus"]}}}),
+        json!({"delete": {"code.engine.game": {"wants": ["code.bus"]}}}),
         json!({"delete": {"code.engine.audio": {}}}),
     ] {
         match execute(&contract, &map, &command) {
@@ -351,9 +351,9 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
         }
     }
     for command in [
-        json!({"map": {}}), json!({"orphaned": {}}), json!({"help": {}}), json!({"help": "raw dump"}), json!({"help": "DependencyRecord"}), json!({"goto": "."}), json!({"goto": "code.engine.game"}),
+        json!({"map": {}}), json!({"orphaned": {}}), json!({"help": {}}), json!({"help": "raw dump"}), json!({"help": "WantRecord"}), json!({"goto": "."}), json!({"goto": "code.engine.game"}),
         json!({".": {}}), json!({".code.engine": {}}), json!({"code.engine.game": {}}),
-        json!({"code.engine.game": {"dependencies": {}, "specification": {}}}),
+        json!({"code.engine.game": {"wants": {}, "specification": {}}}),
     ] {
         assert!(execute(&contract, &map, &command).is_ok(), "{command}");
     }

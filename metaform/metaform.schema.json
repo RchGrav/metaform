@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Metaform Graph Model",
-  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. dependencies holds the dependencies of the receiving element as an array of records. Each record names its providing element in pe, a project-relative address. Each providing element also exists at its own nested path. Tool command addresses do not replace this stored tree.",
+  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. wants holds the wants of the receiving element as an array of records. Each record names its providing element in pe, a project-relative address. Each providing element also exists at its own nested path. Tool command addresses do not replace this stored tree.",
   "type": "object",
   "$defs": {
     "NamespaceValue": {
@@ -101,8 +101,8 @@
             }
           ]
         },
-        "dependencies": {
-          "$ref": "#/$defs/Dependencies"
+        "wants": {
+          "$ref": "#/$defs/Wants"
         },
         "op": {
           "$ref": "#/$defs/RelationshipWord"
@@ -149,7 +149,7 @@
         },
         "providers": {
           "$ref": "#/$defs/NamespaceNode",
-          "description": "This word may name a namespace branch. The functional relationships are in dependencies, not providers."
+          "description": "This word may name a namespace branch. The functional relationships are in wants, not providers."
         },
         "ifd": {
           "$ref": "#/$defs/RelationshipWord"
@@ -169,18 +169,18 @@
       "type": "array",
       "items": true
     },
-    "Dependencies": {
-      "title": "Dependencies",
+    "Wants": {
+      "title": "Wants",
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/DependencyRecord"
+        "$ref": "#/$defs/WantRecord"
       },
-      "description": "The dependencies this receiving element holds: a list with one record for each providing element."
+      "description": "The wants this receiving element holds: a list with one record for each providing element."
     },
-    "DependencyRecord": {
-      "title": "Dependency record",
-      "description": "One dependency of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
+    "WantRecord": {
+      "title": "Want record",
+      "description": "One want of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
       "type": "object",
       "properties": {
         "pe": {
@@ -227,7 +227,7 @@
           "$ref": "#/$defs/ComposedElementLayer"
         }
       ],
-      "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a dependency record, not on the element."
+      "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a want record, not on the element."
     }
   },
   "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",

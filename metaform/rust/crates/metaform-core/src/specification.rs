@@ -46,7 +46,7 @@ pub const MAX_LEVEL: u8 = 4;
 
 /// The specification layer's writing guidance: the short form of `TASTE.md` prepared for this
 /// layer by the TASTE auditor (metaform-38), used as written.
-pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and dependencies already say.
+pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, Simple, Transparent English. A block adds what the map leaves out on purpose; do not repeat what the element's fields and wants already say.
 - Start with what the element does or holds. Then give the detail that explains it.
 - Name the element, field or command instead of starting with \"it\", \"this\" or \"they\". A block is often read alone.
 - Use the project's terms and exact identifiers. Use one term for one thing. Put identifiers in backticks.

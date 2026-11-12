@@ -20,7 +20,7 @@
 //! ### <element block, level 1>       element blocks: Markdown level = block level + 2
 //! ```
 //!
-//! The role line and the dependencies are the skeleton facts. They come from the map, so a parse
+//! The role line and the wants are the skeleton facts. They come from the map, so a parse
 //! regenerates them from the current map and removes them. A document whose facts differ from the
 //! map is stale, and the parse refuses it, because the skeleton changes through intake, not
 //! through the prose.
@@ -135,7 +135,7 @@ fn element_heading(map: &Map, address: &str) -> String {
     format!("{} {} (`{address}`)", "#".repeat(ELEMENT_HASHES), display_name(map, address))
 }
 
-/// A stored `op` or `ef` fitted into the dependencies sentence: no trailing full stop, and a first
+/// A stored `op` or `ef` fitted into the wants sentence: no trailing full stop, and a first
 /// capital lowered when the next letter is lower case, so "Receive" becomes "receive" while "ACP"
 /// stays as written.
 fn fragment(text: &str) -> String {
@@ -149,8 +149,8 @@ fn fragment(text: &str) -> String {
     }
 }
 
-/// The skeleton facts of an element as document paragraphs: the role line, then the dependencies as a
-/// list, each dependency as the sentence of R-6.17. The root has none.
+/// The skeleton facts of an element as document paragraphs: the role line, then the wants as a
+/// list, each want as the sentence of R-6.17. The root has none.
 fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
     let Some(element) = map.element(address).filter(|_| address != ROOT) else {
         return Vec::new();
@@ -164,8 +164,8 @@ fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
         paragraphs.push(details.join(" "));
     }
     let name = display_name(map, address);
-    let dependencies: Vec<String> = element
-        .dependencies
+    let wants: Vec<String> = element
+        .wants
         .iter()
         .map(|(other, record)| {
             let field = |key: &str| fragment(record.get(key).and_then(Value::as_str).unwrap_or(""));
@@ -177,8 +177,8 @@ fn skeleton_facts(map: &Map, address: &str) -> Vec<String> {
             )
         })
         .collect();
-    if !dependencies.is_empty() {
-        paragraphs.push(dependencies.join("\n"));
+    if !wants.is_empty() {
+        paragraphs.push(wants.join("\n"));
     }
     paragraphs
 }
@@ -483,7 +483,7 @@ mod tests {
                     "name": "Packet Pipeline",
                     "role": "SE",
                     "status": "un_built",
-                    "dependencies": [{"pe": "code.store", "op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}],
+                    "wants": [{"pe": "code.store", "op": "Keep frames.", "ef": "holds frames on disk", "ifd": "send"}],
                     "specification": [
                         {"level": 1, "code": "PL-2.a", "title": "Purpose", "text": "The pipeline moves frames, as `PL-1` limits.\n\n```text\n## not a heading (`code.x`)\n```"},
                         {"level": 2, "title": "Limits", "text": "- At most 10 Gbit/s."},

@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "project-map",
-      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. Dependency records refer to providing elements at their own locations.",
+      "description": "Use this single Metaform tool for add, update, delete, orphaned, goto, map, help, raw dumps and addressed reads. Work on one receiving element at a time. Input addresses select actual elements in the nested namespace. Want records refer to providing elements at their own locations.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -64,7 +64,7 @@
                       "$ref": "#/$defs/Empty"
                     },
                     {
-                      "$ref": "#/$defs/DeleteDependencies"
+                      "$ref": "#/$defs/DeleteWants"
                     }
                   ]
                 }
@@ -109,7 +109,7 @@
           },
           {
             "type": "object",
-            "description": "goto places the agent at an address and returns its summary sheet: the element and its dependencies, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
+            "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
             "properties": {
               "goto": {
                 "type": "string",
@@ -123,7 +123,7 @@
           },
           {
             "type": "object",
-            "description": "map returns the shallow graph: every element address, each dependency as an edge from the element that holds it to the element it names, and each Defining Element. No fields and no layers.",
+            "description": "map returns the shallow graph: every element address, each want as an edge from the element that holds it to the element it names, and each Defining Element. No fields and no layers.",
             "properties": {
               "map": {
                 "$ref": "#/$defs/Empty"
@@ -257,8 +257,8 @@
                   }
                 ]
               },
-              "dependencies": {
-                "$ref": "#/$defs/Dependencies"
+              "wants": {
+                "$ref": "#/$defs/Wants"
               },
               "op": {
                 "$ref": "#/$defs/RelationshipWord"
@@ -305,7 +305,7 @@
               },
               "providers": {
                 "$ref": "#/$defs/NamespaceNode",
-                "description": "This word may name a namespace branch. The functional relationships are in dependencies, not providers."
+                "description": "This word may name a namespace branch. The functional relationships are in wants, not providers."
               },
               "ifd": {
                 "$ref": "#/$defs/RelationshipWord"
@@ -325,18 +325,18 @@
             "type": "array",
             "items": true
           },
-          "Dependencies": {
-            "title": "Dependencies",
+          "Wants": {
+            "title": "Wants",
             "type": "array",
             "minItems": 1,
             "items": {
-              "$ref": "#/$defs/DependencyRecord"
+              "$ref": "#/$defs/WantRecord"
             },
-            "description": "The dependencies this receiving element holds: a list with one record for each providing element."
+            "description": "The wants this receiving element holds: a list with one record for each providing element."
           },
-          "DependencyRecord": {
-            "title": "Dependency record",
-            "description": "One dependency of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
+          "WantRecord": {
+            "title": "Want record",
+            "description": "One want of this receiving element: the providing element (pe), what the receiver seeks through it (op), how the provider serves that purpose (ef) and the direction of the flow (ifd). These four are one set. A providing element appears once in the list.",
             "type": "object",
             "properties": {
               "pe": {
@@ -380,7 +380,7 @@
           },
           "LayerRead": {
             "type": "object",
-            "description": "Name each layer to read at the address where it is written, with {} as its value, such as {\"dependencies\": {}} or {\"specification\": {}}. An empty object reads only the element's own fields.",
+            "description": "Name each layer to read at the address where it is written, with {} as its value, such as {\"wants\": {}} or {\"specification\": {}}. An empty object reads only the element's own fields.",
             "propertyNames": {
               "pattern": "^[^.$\\[\\]\\s]+$",
               "description": "One layer name: one namespace segment."
@@ -398,13 +398,13 @@
             "type": "object",
             "minProperties": 1,
             "properties": {
-              "dependencies": {
-                "$ref": "#/$defs/Dependencies"
+              "wants": {
+                "$ref": "#/$defs/Wants"
               }
             },
             "description": "Fields supplied for one receiving element. Command addresses select actual nested elements."
           },
-          "DependencyUpdate": {
+          "WantUpdate": {
             "type": "object",
             "minProperties": 2,
             "required": [
@@ -412,28 +412,28 @@
             ],
             "properties": {
               "pe": {
-                "$ref": "#/$defs/DependencyRecord/properties/pe"
+                "$ref": "#/$defs/WantRecord/properties/pe"
               },
               "op": {
-                "$ref": "#/$defs/DependencyRecord/properties/op"
+                "$ref": "#/$defs/WantRecord/properties/op"
               },
               "ef": {
-                "$ref": "#/$defs/DependencyRecord/properties/ef"
+                "$ref": "#/$defs/WantRecord/properties/ef"
               },
               "ifd": {
-                "$ref": "#/$defs/DependencyRecord/properties/ifd"
+                "$ref": "#/$defs/WantRecord/properties/ifd"
               }
             },
             "additionalProperties": false,
-            "description": "The record names one dependency by its providing element (pe). The other fields supplied change that dependency."
+            "description": "The record names one want by its providing element (pe). The other fields supplied change that want."
           },
-          "DependenciesUpdate": {
+          "WantsUpdate": {
             "type": "array",
             "minItems": 1,
             "items": {
-              "$ref": "#/$defs/DependencyUpdate"
+              "$ref": "#/$defs/WantUpdate"
             },
-            "description": "Like Dependencies; each record holds pe and only the fields to change."
+            "description": "Like Wants; each record holds pe and only the fields to change."
           },
           "UpdateFields": {
             "type": "object",
@@ -483,8 +483,8 @@
                   }
                 ]
               },
-              "dependencies": {
-                "$ref": "#/$defs/DependenciesUpdate"
+              "wants": {
+                "$ref": "#/$defs/WantsUpdate"
               },
               "op": {
                 "anyOf": [
@@ -554,12 +554,12 @@
             "additionalProperties": {
               "$ref": "#/$defs/NamespaceValue"
             },
-            "description": "Update supplied fields on one receiving element. Null removes a property; omission leaves it unchanged. Delete individual dependencies with delete."
+            "description": "Update supplied fields on one receiving element. Null removes a property; omission leaves it unchanged. Delete individual wants with delete."
           },
-          "DeleteDependencies": {
+          "DeleteWants": {
             "type": "object",
             "properties": {
-              "dependencies": {
+              "wants": {
                 "type": "array",
                 "minItems": 1,
                 "uniqueItems": true,
@@ -570,7 +570,7 @@
               }
             },
             "required": [
-              "dependencies"
+              "wants"
             ],
             "additionalProperties": false
           },
@@ -583,7 +583,7 @@
                 "$ref": "#/$defs/ComposedElementLayer"
               }
             ],
-            "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a dependency record, not on the element."
+            "description": "This word may name a namespace branch or native layer. The fields pe, op, ef and ifd belong inside a want record, not on the element."
           }
         }
       }

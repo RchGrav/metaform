@@ -5,7 +5,7 @@ use std::path::Path;
 use metaform_store::{ClientId, DbKey, Failure, MapKey, Store, StoreError, store_failure_json};
 use serde_json::{Value, json};
 
-/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`pe` or `re`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -19,18 +19,18 @@ fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -
 const A: ClientId = ClientId(1);
 const B: ClientId = ClientId(2);
 
-fn dependency() -> Value {
+fn want() -> Value {
     json!({"op": "Receive the mash data to relay it.", "ef": "Prepared mash data packets.", "ifd": "receive"})
 }
 
-/// The tool example's two elements, with a dependency between them and a native array.
+/// The tool example's two elements, with a want between them and a native array.
 fn seed(store: &Store, map: &MapKey) {
     let commands = [
         json!({"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox",
             "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
             "name": "mashtrac", "role": "DE", "refs": ["./src/network/mashtrac.c"],
-            "memory": [{"fact": "relays mash data"}], "dependencies": [with_end("pe", "code.masher.widget", dependency())]}}}),
+            "memory": [{"fact": "relays mash data"}], "wants": [with_end("pe", "code.masher.widget", want())]}}}),
     ];
     for c in commands {
         store
@@ -75,7 +75,7 @@ fn map_persists_across_reopen() {
         assert_eq!(
             orphans,
             ["code.protocol.network.tracker.cs"],
-            "the tracker depends on the widget; nothing depends on the tracker"
+            "the tracker wants the widget; nothing wants the tracker"
         );
         (map, before)
     };
@@ -140,12 +140,12 @@ fn refused_write_changes_nothing() {
                     "delete": {"code.masher.widget": {}},
                     "status": "error",
                     "code": "DEPENDENCY_LOCK",
-                    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still depends on it. Remove that dependency first.",
-                    "remediation": {"delete": {"code.protocol.network.tracker.cs": {"dependencies": ["code.masher.widget"]}}}
+                    "message": "cannot delete 'code.masher.widget': 'code.protocol.network.tracker.cs' still wants it. Remove that want first.",
+                    "remediation": {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}}
                 });
                 assert_eq!(answer.to_string(), expected.to_string(), "fields and their order");
             }
-            other => panic!("deleting an element that another depends on must be refused, got {other:?}"),
+            other => panic!("deleting an element that another element wants must be refused, got {other:?}"),
         }
         assert_eq!(reads(&store, &map), before);
         (map, before)
@@ -285,8 +285,8 @@ fn a_setting_survives_a_reopen_and_bounds_open_databases() {
     assert!(store.open_databases() <= 2, "the setting bounds open databases: {}", store.open_databases());
 }
 
-/// R-009: a database made before the dependency renames (table `WANTS`; fields `why`, `how`, `intent`) opens with its
-/// dependencies intact. A database whose tables differ in any other way is refused before anything in it
+/// R-009: a database made before the want renames (table `WANTS`; fields `why`, `how`, `intent`) opens with its
+/// wants intact. A database whose tables differ in any other way is refused before anything in it
 /// is changed, and the refusal says so.
 #[test]
 fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
@@ -312,8 +312,8 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
     raw("ALTER TABLE DEPENDS_ON RENAME TO WANTS");
     {
         let store = Store::open(&home).unwrap();
-        assert_eq!(reads(&store, &map), before, "the dependencies survive the rename");
-        let dependency = store
+        assert_eq!(reads(&store, &map), before, "the wants survive the rename");
+        let want = store
             .execute(
                 B,
                 &map,
@@ -321,8 +321,8 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
             )
             .unwrap();
         assert!(
-            dependency.to_string().contains("\"ifd\":\"receive\""),
-            "{dependency}"
+            want.to_string().contains("\"ifd\":\"receive\""),
+            "{want}"
         );
     }
     raw("ALTER TABLE Element ADD later STRING");

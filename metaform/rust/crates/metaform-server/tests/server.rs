@@ -14,7 +14,7 @@ use std::time::Duration;
 use common::{Agent, cli, stop_server};
 use serde_json::{Value, json};
 
-/// A dependency record with the address of its other element under `end` (`pe` or `re`).
+/// A want record with the address of its other element under `end` (`pe` or `re`).
 #[allow(dead_code)]
 fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -> Value {
     let mut out = serde_json::Map::new();
@@ -31,7 +31,7 @@ fn with_end(end: &str, address: &str, record: impl std::borrow::Borrow<Value>) -
 /// (`mcp-tool.published.json`) in place of the contract's schema, which restates it for each verb.
 /// 656 since 2026-11-11: the published schema is the list of operations only. The owner designed
 /// the tool surface to be well under 1 KB. 672 since the `help` operation joined that list (R-5.39).
-const TOOLS_LIST_BYTES: usize = 686;
+const TOOLS_LIST_BYTES: usize = 680;
 
 /// Happy path: an agent discovers the server, sees exactly one tool, writes and reads.
 #[test]
@@ -93,18 +93,18 @@ fn two_agents_share_one_project() {
     first.request("server/discover", json!({}));
     let mut second = Agent::start(&home, &project);
     second.request("server/discover", json!({}));
-    let dependency =
+    let want =
         json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
     assert!(
         !first
             .call(json!({"update": {"code.provider.part": {"name": "provider"}}}))
             .0
     );
-    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "dependencies": [with_end("pe", "code.provider.part", &dependency)]}}})).0);
+    assert!(!second.call(json!({"update": {"code.receiver.part": {"name": "receiver", "wants": [with_end("pe", "code.provider.part", &want)]}}})).0);
     let (refused, refusal) = first.call(json!({"delete": {"code.provider.part": {}}}));
     assert!(
         refused,
-        "the second agent's element depends on the provider's element"
+        "the second agent's element wants the provider's element"
     );
     assert!(refusal["remediation"].is_object(), "{refusal}");
     assert_eq!(
@@ -277,13 +277,13 @@ fn only_commits_are_announced() {
     let home = dir.path().join("home");
     let mut a = Agent::on_map(&home, "notes");
     a.request("server/discover", json!({}));
-    let dependency =
+    let want =
         json!({"op": "Receive the part.", "ef": "Supplies the part.", "ifd": "receive"});
-    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "dependencies": [with_end("pe", "code.base.part", &dependency)]}}})).0);
+    assert!(!a.call(json!({"update": {"code.held.part": {"name": "held", "wants": [with_end("pe", "code.base.part", &want)]}}})).0);
     a.listen_to_map();
     assert!(
         a.call(json!({"delete": {"code.base.part": {}}})).0,
-        "deleting an element that another depends on is refused"
+        "deleting an element that another element wants is refused"
     );
     assert!(
         a.notice(
@@ -734,7 +734,7 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
     let (_, again) = agent.call(json!({"goto": "code.engine"}));
     assert_eq!(
         again,
-        json!({"at": "code.engine", "unchanged": ["element", "dependencies", "dependents", "layers", "memory", "instructions"]}),
+        json!({"at": "code.engine", "unchanged": ["element", "wants", "wanted_by", "layers", "memory", "instructions"]}),
         "a repeat arrival names every part it holds back"
     );
     let (_, other) = agent.call(json!({"goto": "code.render"}));

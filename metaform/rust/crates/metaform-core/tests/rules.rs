@@ -56,23 +56,23 @@ fn name_may_equal_technical_name() {
 
 #[test]
 fn a_deletion_leaves_no_empty_element() {
-    // A dependency creates the element it names (R-5.4). When the dependency is removed and the element was
+    // A want creates the element it names (R-5.4). When the want is removed and the element was
     // never filled in, the element and its empty branches go too.
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let dependency = json!({"update": {GAME: {"dependencies": [{"pe": "code.nothing.here", "op": "a", "ef": "b", "ifd": "receive"}]}}});
-    let with_stub = write(&contract, &map, dependency.clone());
+    let want = json!({"update": {GAME: {"wants": [{"pe": "code.nothing.here", "op": "a", "ef": "b", "ifd": "receive"}]}}});
+    let with_stub = write(&contract, &map, want.clone());
     assert!(with_stub.element("code.nothing.here").is_some());
-    let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"dependencies": ["code.nothing.here"]}}}));
+    let removed = write(&contract, &with_stub, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
     assert!(removed.element("code.nothing.here").is_none());
     assert!(removed.element("code.nothing").is_none());
-    // An element that was filled in stays when the last dependency that names it goes.
+    // An element that was filled in stays when the last want that names it goes.
     let filled = write(
         &contract,
         &with_stub,
         json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "NE"}}}),
     );
-    let kept = write(&contract, &filled, json!({"delete": {GAME: {"dependencies": ["code.nothing.here"]}}}));
+    let kept = write(&contract, &filled, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
     assert!(kept.element("code.nothing.here").is_some());
 }
 
@@ -162,13 +162,13 @@ fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
 }
 
 #[test]
-fn an_empty_dependencies_and_a_system_layer_that_is_not_a_list_are_refused() {
+fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
     for empty in [json!([]), json!({})] {
-        let empty = refused(&contract, &map, json!({"update": {GAME: {"dependencies": empty}}}));
+        let empty = refused(&contract, &map, json!({"update": {GAME: {"wants": empty}}}));
         assert_eq!(empty.code, Code::FieldMismatch);
-        assert_eq!(empty.reason, "dependencies at 'code.engine.game' must be a list of dependency records, each with pe, op, ef and ifd");
+        assert_eq!(empty.reason, "wants at 'code.engine.game' must be a list of want records, each with pe, op, ef and ifd");
     }
     let text = refused(&contract, &map, json!({"update": {GAME: {"sources": "./docs/engine.md"}}}));
     assert_eq!(text.code, Code::FieldMismatch);

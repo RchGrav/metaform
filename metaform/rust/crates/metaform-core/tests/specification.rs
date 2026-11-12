@@ -273,12 +273,12 @@ fn the_layer_is_readable_and_listed_by_goto() {
     let (_, trunk) = run(
         &contract,
         &map,
-        json!({"code.masher": {"specification": {}, "dependencies": {}}}),
+        json!({"code.masher": {"specification": {}, "wants": {}}}),
     )
     .unwrap();
     assert_eq!(
         trunk["code.masher"],
-        json!({"dependencies": []}),
+        json!({"wants": []}),
         "the layer does not apply at a trunk"
     );
 

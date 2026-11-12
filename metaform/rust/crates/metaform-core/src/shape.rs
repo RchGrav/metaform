@@ -2,7 +2,7 @@
 //!
 //! `check` refuses a command that does not have the form the `project-map` tool takes. It reads
 //! only the command, never the map. Each message names a place the way an agent writes it:
-//! `'code.engine.game'`, `status at 'code.engine.game'`, `the dependency 'code.bus.data.event' at
+//! `'code.engine.game'`, `status at 'code.engine.game'`, `the want 'code.bus.data.event' at
 //! 'code.engine.game'`. The schema check in `contract.rs` stays after this check as a backstop.
 //!
 //! The Python and TypeScript forms port this module line for line. Nothing here depends on a
@@ -21,8 +21,8 @@
 //! 5. Each field, in the order the command gives them. An object value is an element beneath;
 //!    its fields are checked, in order, before the next field of the element above.
 //!
-//! In a dependency record the order is: the record is an object, the names it does not take, each field
-//! in the command's order, then the fields that are missing. In `delete`, the items of `dependencies` are
+//! In a want record the order is: the record is an object, the names it does not take, each field
+//! in the command's order, then the fields that are missing. In `delete`, the items of `wants` are
 //! checked in the command's order; for each item: it is text, it is not the root, it is an
 //! address, it is not a repeat.
 //!
@@ -40,8 +40,8 @@
 //! | A3 | Its value is an object with at least one field. |
 //! | D1 | The body of `delete` is an object with exactly one entry. |
 //! | D2 | Its key is an address, and not `.`. |
-//! | D3 | Its value is `{}` or `{"dependencies": [...]}` with no other entry. |
-//! | D4 | `dependencies` in `delete` is a list with at least one item. |
+//! | D3 | Its value is `{}` or `{"wants": [...]}` with no other entry. |
+//! | D4 | `wants` in `delete` is a list with at least one item. |
 //! | D5 | Each item is an address, not `.`, and no item repeats. |
 //! | E1 | `map` and `orphaned` take `{}`. |
 //! | H1 | `help` takes `{}` or text that is not empty. `Contract::help` refuses a name it does not hold. |
@@ -61,15 +61,15 @@
 //! | N7 | `providers` holds an object. |
 //! | N8 | `null` is taken by the fields of `update`'s own element, and by a field N2 to N7 do not name. |
 //! | N9 | An object value is an element beneath, and N1 to N10 hold for it. |
-//! | N10 | `dependencies` at any element of the command holds dependency records (W1 to W9). |
-//! | W1 | `dependencies` is a list of records. Each record names its providing element in `pe`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
-//! | W2 | A dependency record is an object. |
-//! | W3 | A dependency record takes only `pe`, `op`, `ef` and `ifd`. |
+//! | N10 | `wants` at any element of the command holds want records (W1 to W9). |
+//! | W1 | `wants` is a list of records. Each record names its providing element in `pe`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
+//! | W2 | A want record is an object. |
+//! | W3 | A want record takes only `pe`, `op`, `ef` and `ifd`. |
 //! | W4 | `op` and `ef` hold text that is not blank. |
 //! | W5 | `ifd` is `send`, `receive` or `both`. |
-//! | W6 | A dependency record outside `update`'s own element has all three fields (DEPENDENCY_INCOMPLETE). |
-//! | W7 | A dependency record at `update`'s own element has at least one field. |
-//! | W8 | `dependencies` holds at least one dependency record. |
+//! | W6 | A want record outside `update`'s own element has all three fields (WANT_INCOMPLETE). |
+//! | W7 | A want record at `update`'s own element has at least one field. |
+//! | W8 | `wants` holds at least one want record. |
 //! | W9 | No two records of one element name the same `pe`. |
 
 use serde_json::{Map as JsonMap, Value, json};
@@ -82,13 +82,13 @@ pub(crate) const HELP_FORM: &str = "help takes {}, the name of a command, or the
 /// The command names `help` takes, in the order `{"help": {}}` lists them.
 pub(crate) const HELP_NAMES: [&str; 9] =
     ["add", "update", "delete", "orphaned", "goto", "map", "addressed read", "raw dump", "help"];
-const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"dependencies\": [\"<address>\"]} to remove dependencies";
+const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 /// The fields that hold text (N2 to N5).
 const TEXT_FIELDS: [&str; 5] = ["technical_name", "name", "role", "status", "project"];
 const REFS_FORM: &str = "a list with one uri for each artifact that has this address";
-/// The words that belong to a dependency, not to an element (N6).
-const DEPENDENCY_WORDS: [&str; 4] = ["pe", "op", "ef", "ifd"];
-const DEPENDENCY_FIELDS: [&str; 3] = ["op", "ef", "ifd"];
+/// The words that belong to a want, not to an element (N6).
+const WANT_WORDS: [&str; 4] = ["pe", "op", "ef", "ifd"];
+const WANT_FIELDS: [&str; 3] = ["op", "ef", "ifd"];
 /// The values of `ifd`, the Information Flow Direction, in the intake's order.
 const FLOWS: [&str; 3] = ["send", "receive", "both"];
 const LEGACY_STATUS: [&str; 6] = ["missing", "MISSING", "BKN", "broken", "todo", "TODO"];
@@ -175,8 +175,8 @@ impl Check<'_> {
                 ));
             }
             let here = [path, &[key.as_str()]].concat();
-            if key == "dependencies" {
-                self.dependencies(value, address, &here, level)?;
+            if key == "wants" {
+                self.wants(value, address, &here, level)?;
                 continue;
             }
             if key == "uri" {
@@ -211,19 +211,19 @@ impl Check<'_> {
                 Value::Null if level == Level::Update => {}
                 Value::Array(_) if key != "providers" => {}
                 _ if TEXT_FIELDS.contains(&key.as_str()) => self.text(key, value, address, &here)?,
-                _ if DEPENDENCY_WORDS.contains(&key.as_str()) => {
-                    let mut record = dependency_placeholder("<address>");
+                _ if WANT_WORDS.contains(&key.as_str()) => {
+                    let mut record = want_placeholder("<address>");
                     if let Some(text) = value.as_str() {
                         record[key.as_str()] = json!(text);
                     }
                     return Err(refuse(
-                        format!("{key} at '{address}' is not a field of an element; pe, op, ef and ifd belong in a dependency"),
-                        Some(json!({"update": {address: {"dependencies": [record]}}})),
+                        format!("{key} at '{address}' is not a field of an element; pe, op, ef and ifd belong in a want"),
+                        Some(json!({"update": {address: {"wants": [record]}}})),
                     ));
                 }
                 _ if key == "providers" => {
                     return Err(refuse(
-                        format!("providers at '{address}' can hold only elements beneath it; dependencies holds what an element depends on"),
+                        format!("providers at '{address}' can hold only elements beneath it; wants holds what an element wants"),
                         None,
                     ));
                 }
@@ -255,30 +255,30 @@ impl Check<'_> {
         }
     }
 
-    /// The value of `dependencies` at an element (W1, W8, W9).
-    fn dependencies(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
+    /// The value of `wants` at an element (W1, W8, W9).
+    fn wants(&self, value: &Value, holder: &str, path: &[&str], level: Level) -> Result<(), Refusal> {
         // An earlier form keyed the records by the address of the providing element. The answer
         // is the same records as a list, with that address in `pe`.
         if let Some(listed) = listed_with_pe(value) {
             return Err(refuse(
-                format!("dependencies at '{holder}' must be a list of dependency records; each record names its providing element in pe"),
+                format!("wants at '{holder}' must be a list of want records; each record names its providing element in pe"),
                 Some(replaced(self.command, path, Some(listed))),
             ));
         }
         let Some(records) = value.as_array().filter(|records| !records.is_empty()) else {
             return Err(refuse(
-                format!("dependencies at '{holder}' must be a list of dependency records, each with pe, op, ef and ifd"),
-                Some(replaced(self.command, path, Some(json!([dependency_placeholder("<address>")])))),
+                format!("wants at '{holder}' must be a list of want records, each with pe, op, ef and ifd"),
+                Some(replaced(self.command, path, Some(json!([want_placeholder("<address>")])))),
             ));
         };
         let mut seen: Vec<&str> = Vec::new();
         for (index, record) in records.iter().enumerate() {
             let index = index.to_string();
             let here = [path, &[index.as_str()]].concat();
-            let other = self.dependency(record, holder, &here, level == Level::Update)?;
+            let other = self.want(record, holder, &here, level == Level::Update)?;
             if seen.contains(&other) {
                 return Err(refuse(
-                    format!("dependencies at '{holder}' names '{other}' more than once; an element holds one dependency for each providing element"),
+                    format!("wants at '{holder}' names '{other}' more than once; an element holds one want for each providing element"),
                     None,
                 ));
             }
@@ -287,31 +287,31 @@ impl Check<'_> {
         Ok(())
     }
 
-    /// One dependency record (W2 to W7). Returns the address in `pe`. `partial` is true at
+    /// One want record (W2 to W7). Returns the address in `pe`. `partial` is true at
     /// `update`'s own element, where a record holds `pe` and only the fields to adjust.
-    fn dependency<'r>(&self, record: &'r Value, holder: &str, path: &[&str], partial: bool) -> Result<&'r str, Refusal> {
+    fn want<'r>(&self, record: &'r Value, holder: &str, path: &[&str], partial: bool) -> Result<&'r str, Refusal> {
         let Some(fields) = record.as_object() else {
             return Err(refuse(
-                format!("a dependency at '{holder}' must be a record with pe, op, ef and ifd"),
-                Some(replaced(self.command, path, Some(dependency_placeholder("<address>")))),
+                format!("a want at '{holder}' must be a record with pe, op, ef and ifd"),
+                Some(replaced(self.command, path, Some(want_placeholder("<address>")))),
             ));
         };
         let other = match fields.get("pe").and_then(Value::as_str) {
-            Some(ROOT) => return Err(refuse("the root cannot be depended on", None)),
+            Some(ROOT) => return Err(refuse("the root cannot be wanted", None)),
             Some(text) if is_address(text) => text,
             Some(text) if !text.is_empty() => return Err(not_an_address(text)),
             _ => {
                 return Err(refuse(
-                    format!("a dependency at '{holder}' must name its providing element in pe"),
+                    format!("a want at '{holder}' must name its providing element in pe"),
                     Some(replaced(self.command, &[path, &["pe"]].concat(), Some(json!("<address>")))),
                 ));
             }
         };
-        let place = format!("the dependency '{other}' at '{holder}'");
+        let place = format!("the want '{other}' at '{holder}'");
         let extra: Vec<&str> = fields
             .keys()
             .map(String::as_str)
-            .filter(|name| *name != "pe" && !DEPENDENCY_FIELDS.contains(name))
+            .filter(|name| *name != "pe" && !WANT_FIELDS.contains(name))
             .collect();
         if !extra.is_empty() {
             let mut fixed = self.command.clone();
@@ -342,25 +342,25 @@ impl Check<'_> {
                 ));
             }
         }
-        let missing: Vec<&str> = DEPENDENCY_FIELDS
+        let missing: Vec<&str> = WANT_FIELDS
             .into_iter()
             .filter(|field| !fields.contains_key(*field))
             .collect();
-        if partial && missing.len() == DEPENDENCY_FIELDS.len() {
+        if partial && missing.len() == WANT_FIELDS.len() {
             return Err(refuse(
                 format!("{place} has no fields; give op, ef or ifd"),
-                Some(replaced(self.command, path, Some(dependency_placeholder(other)))),
+                Some(replaced(self.command, path, Some(want_placeholder(other)))),
             ));
         }
         if !partial && !missing.is_empty() {
-            // The same code and message as a dependency that an update leaves incomplete (R-5.6).
+            // The same code and message as a want that an update leaves incomplete (R-5.6).
             let mut fixed = self.command.clone();
             for field in &missing {
                 fixed = replaced(&fixed, &[path, &[*field]].concat(), Some(json!(format!("<{field}>"))));
             }
             return Err(Refusal::new(
-                Code::DependencyIncomplete,
-                format!("'{holder}' depends on '{other}': the dependency has no {}", missing.join(", ")),
+                Code::WantIncomplete,
+                format!("'{holder}' wants '{other}': the want has no {}", missing.join(", ")),
                 Some(fixed),
             ));
         }
@@ -382,11 +382,11 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
     if fields.is_empty() {
         return Ok(());
     }
-    let (Some(dependencies), 1) = (fields.get("dependencies"), fields.len()) else {
+    let (Some(wants), 1) = (fields.get("wants"), fields.len()) else {
         return Err(refuse(DELETE_FORM, None));
     };
-    let remove = |dependencies: Vec<&str>| json!({"delete": {address: {"dependencies": dependencies}}});
-    let items = match dependencies {
+    let remove = |wants: Vec<&str>| json!({"delete": {address: {"wants": wants}}});
+    let items = match wants {
         Value::Array(items) if !items.is_empty() => items,
         Value::String(one) if is_address(one) => return Err(refuse(DELETE_FORM, Some(remove(vec![one])))),
         _ => return Err(refuse(DELETE_FORM, Some(remove(vec!["<address>"])))),
@@ -397,7 +397,7 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
             return Err(refuse(DELETE_FORM, Some(remove(vec!["<address>"]))));
         };
         if text == ROOT {
-            return Err(refuse("the root cannot be depended on", None));
+            return Err(refuse("the root cannot be wanted", None));
         }
         if !is_address(text) {
             return Err(not_an_address(text));
@@ -410,7 +410,7 @@ fn delete(address: &str, value: &Value) -> Result<(), Refusal> {
                 }
             }
             return Err(refuse(
-                format!("delete names the dependency '{text}' more than once"),
+                format!("delete names the want '{text}' more than once"),
                 accepted(remove(once)),
             ));
         }
@@ -425,7 +425,7 @@ fn read(address: &str, body: &Value) -> Result<(), Refusal> {
         return Err(not_an_address(address));
     }
     let form = format!(
-        "a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"dependencies\": {{}}}}}}"
+        "a read names each layer with {{}} as its value, such as {{\"{address}\": {{\"wants\": {{}}}}}}"
     );
     let Some(layers) = body.as_object() else {
         return Err(refuse(form, Some(json!({address: {}}))));
@@ -461,7 +461,7 @@ fn accepted(command: Value) -> Option<Value> {
     check(&command).is_ok().then_some(command)
 }
 
-/// Dependency records keyed by the address of their providing element, as a list of records
+/// Want records keyed by the address of their providing element, as a list of records
 /// that each name that address in `pe`. `None` if the value is not an object whose values all
 /// hold `op`, `ef` or `ifd` as a plain value.
 fn listed_with_pe(value: &Value) -> Option<Value> {
@@ -469,7 +469,7 @@ fn listed_with_pe(value: &Value) -> Option<Value> {
     let mut listed = Vec::new();
     for (pe, record) in keyed {
         let fields = record.as_object()?;
-        if !DEPENDENCY_FIELDS.iter().any(|field| fields.get(*field).is_some_and(|v| !v.is_object() && !v.is_array())) {
+        if !WANT_FIELDS.iter().any(|field| fields.get(*field).is_some_and(|v| !v.is_object() && !v.is_array())) {
             return None;
         }
         let mut out = JsonMap::new();
@@ -480,8 +480,8 @@ fn listed_with_pe(value: &Value) -> Option<Value> {
     Some(Value::Array(listed))
 }
 
-/// A dependency record with a placeholder for each value only the agent can supply.
-fn dependency_placeholder(pe: &str) -> Value {
+/// A want record with a placeholder for each value only the agent can supply.
+fn want_placeholder(pe: &str) -> Value {
     json!({"pe": pe, "op": "<op>", "ef": "<ef>", "ifd": "<ifd>"})
 }
 

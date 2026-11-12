@@ -194,8 +194,8 @@ impl NameCheck {
         let mut out = JsonMap::new();
         for (key, value) in fields {
             let fixed = match value {
-                Value::Array(records) if key == "dependencies" => {
-                    Value::Array(records.iter().map(|record| self.dependency_record(record, address)).collect())
+                Value::Array(records) if key == "wants" => {
+                    Value::Array(records.iter().map(|record| self.want_record(record, address)).collect())
                 }
                 Value::Object(child) => self.fields(child, &join(address, key)),
                 other => other.clone(),
@@ -205,8 +205,8 @@ impl NameCheck {
         Value::Object(out)
     }
 
-    /// One dependency record: the address in `pe` and each field name are checked.
-    fn dependency_record(&mut self, record: &Value, holder: &str) -> Value {
+    /// One want record: the address in `pe` and each field name are checked.
+    fn want_record(&mut self, record: &Value, holder: &str) -> Value {
         let Value::Object(fields) = record else {
             return record.clone();
         };
@@ -249,9 +249,9 @@ pub(crate) fn check_command(command: &Value) -> Result<(), Refusal> {
                 .iter()
                 .map(|(address, supplied)| {
                     let mut supplied = supplied.clone();
-                    if let Some(Value::Array(dependencies)) = supplied.get_mut("dependencies") {
-                        for dependency in dependencies.iter_mut() {
-                            if let Value::String(provider) = dependency {
+                    if let Some(Value::Array(wants)) = supplied.get_mut("wants") {
+                        for want in wants.iter_mut() {
+                            if let Value::String(provider) = want {
                                 *provider = check.address(provider);
                             }
                         }

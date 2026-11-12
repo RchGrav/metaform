@@ -1,7 +1,7 @@
 {
   "code": {
     "application": {
-      "dependencies": [{"pe": "code.sdk", "op": "Use the required SDK capabilities.",
+      "wants": [{"pe": "code.sdk", "op": "Use the required SDK capabilities.",
           "ef": "Provides the required SDK capabilities.",
           "ifd": "receive"}]
     },

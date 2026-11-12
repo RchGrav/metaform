@@ -19,7 +19,7 @@ pub(crate) fn is_project_defining(address: &str, role: Option<&Value>) -> bool {
 
 /// `{"<address>": {}}` returns that element's own fields, keyed by its address: the form in which
 /// data is entered (R-5.10). `{"<address>": {"<layer>": {}, ...}}` adds each named layer held
-/// there (R-5.21). A layer is named in the slot where it is written: `{"dependencies": {}}`,
+/// there (R-5.21). A layer is named in the slot where it is written: `{"wants": {}}`,
 /// `{"specification": {}}`. A named layer the element does not hold comes back empty when it is a
 /// layer that applies there, and is left out otherwise.
 pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refusal> {
@@ -32,8 +32,8 @@ pub(crate) fn read(map: &Map, address: &str, body: &Value) -> Result<Value, Refu
     };
     let mut fields = element.base_fields();
     for name in named {
-        if name == "dependencies" {
-            fields.insert("dependencies".into(), element.dependencies_json());
+        if name == "wants" {
+            fields.insert("wants".into(), element.wants_json());
         } else if let Some(value) = element.fields.get(name).filter(|v| v.is_array()) {
             fields.insert(name.into(), value.clone());
         } else if specification::definition_of(map, name).is_some()
@@ -76,7 +76,7 @@ pub(crate) fn raw(map: &Map, path: &str) -> Result<Value, Refusal> {
     Ok(Value::Object(JsonMap::from_iter([(path.to_string(), value)])))
 }
 
-/// `{"map": {}}` returns the shallow graph (R-5.11): every address beneath the root, each dependency as
+/// `{"map": {}}` returns the shallow graph (R-5.11): every address beneath the root, each want as
 /// an edge from the element that holds it to the element it names, and each Defining
 /// Element. No fields and no layers.
 pub(crate) fn shallow(map: &Map) -> Value {
@@ -89,7 +89,7 @@ pub(crate) fn shallow(map: &Map) -> Value {
         .elements()
         .flat_map(|(holder, element)| {
             element
-                .dependencies
+                .wants
                 .keys()
                 .map(move |other| json!([holder, other]))
         })
@@ -103,18 +103,18 @@ pub(crate) fn shallow(map: &Map) -> Value {
 }
 
 /// `{"orphaned": {}}` returns a bare dictionary keyed by address: each named element that nothing
-/// dependencies maps to its own fields (R-5.23). Being orphaned does not mean an element should go.
-/// Layer definitions are left out: they sit outside the functional skeleton, nothing dependencies them,
+/// wants maps to its own fields (R-5.23). Being orphaned does not mean an element should go.
+/// Layer definitions are left out: they sit outside the functional skeleton, nothing wants them,
 /// and the server keeps them (R-6.24), so listing them would invite a delete that is refused.
 pub(crate) fn orphaned(map: &Map) -> Value {
-    let depended = map.depended();
+    let wanted = map.wanted();
     Value::Object(
         map.elements()
             .filter(|(address, element)| {
                 *address != ROOT
                     && !specification::in_layer_scope(address)
                     && !element.fields.is_empty()
-                    && !depended.contains(address)
+                    && !wanted.contains(address)
             })
             .map(|(address, element)| (address.to_string(), Value::Object(element.base_fields())))
             .collect(),
@@ -126,7 +126,7 @@ pub(crate) fn orphaned(map: &Map) -> Value {
 const NON_LAYER_FIELDS: [&str; 3] = ["memory", "skills", "refs"];
 
 /// `{"goto": "<address>"}` returns the summary sheet for the address (R-5.30): the element's
-/// own fields and dependencies, every dependency that names it (`dependents`, each with its receiving element in `re`), each layer
+/// own fields and wants, every want that names it (`wanted_by`, each with its receiving element in `re`), each layer
 /// held there with its record count, the frontmatter of the skills at the address (only when it
 /// has some), and its memory count. Counts, not records. The root's skills are the base skills an
 /// agent learns when it joins the server, so `goto` does not repeat them (R-5.30).
@@ -136,14 +136,14 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let Some(element) = map.element(address) else {
         return Err(not_found(address));
     };
-    // Each dependency that names this element, with its receiving element in `re`.
-    let dependents: Vec<Value> = map
+    // Each want that names this element, with its receiving element in `re`.
+    let wanted_by: Vec<Value> = map
         .elements()
         .filter_map(|(holder, holder_element)| {
             (holder != address)
-                .then(|| holder_element.dependencies.get(address))
+                .then(|| holder_element.wants.get(address))
                 .flatten()
-                .map(|record| crate::model::dependency_json("re", holder, record))
+                .map(|record| crate::model::want_json("re", holder, record))
         })
         .collect();
     let mut layers: JsonMap<String, Value> = element
@@ -199,8 +199,8 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     let mut sheet = json!({
         "at": address,
         "element": element.base_fields(),
-        "dependencies": element.dependencies_json(),
-        "dependents": dependents,
+        "wants": element.wants_json(),
+        "wanted_by": wanted_by,
         "layers": layers,
         "memory": {"records": memory},
     });

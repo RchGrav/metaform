@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::contract::Contract;
-use crate::model::{Effect, Element, Map, flatten, read_dependencies};
+use crate::model::{Effect, Element, Map, flatten, read_wants};
 use crate::names::{self, ROOT};
 use crate::reads;
 use crate::refusal::{Code, Refusal};
@@ -124,11 +124,11 @@ impl Work<'_> {
         self.elements.get_mut(address).expect("ensured before use")
     }
 
-    /// Write a dependency. Supplied fields change the current record; the result needs every field
-    /// (R-5.6). The element the dependency names is created if it is not there (R-5.4).
-    fn write_dependency(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
+    /// Write a want. Supplied fields change the current record; the result needs every field
+    /// (R-5.6). The element the want names is created if it is not there (R-5.4).
+    fn write_want(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
         let mut record = self.elements[holder]
-            .dependencies
+            .wants
             .get(other)
             .cloned()
             .unwrap_or_default();
@@ -151,17 +151,17 @@ impl Work<'_> {
                 complete.insert((*key).into(), json!(format!("<{key}>")));
             }
             return Err(Refusal::new(
-                Code::DependencyIncomplete,
+                Code::WantIncomplete,
                 format!(
-                    "'{holder}' depends on '{other}': the dependency has no {}",
+                    "'{holder}' wants '{other}': the want has no {}",
                     missing.join(", ")
                 ),
-                Some(json!({"update": {holder: {"dependencies": [crate::model::dependency_json("pe", other, &complete)]}}})),
+                Some(json!({"update": {holder: {"wants": [crate::model::want_json("pe", other, &complete)]}}})),
             ));
         }
         self.ensure(other)?;
         self.element_mut(holder)
-            .dependencies
+            .wants
             .insert(other.to_string(), record);
         Ok(())
     }
@@ -193,8 +193,8 @@ impl Work<'_> {
             }
         }
         for (at, supplied) in &supplied_elements {
-            for (other, record) in &supplied.dependencies {
-                self.write_dependency(at, other, &Value::Object(record.clone()))?;
+            for (other, record) in &supplied.wants {
+                self.write_want(at, other, &Value::Object(record.clone()))?;
             }
         }
         Ok(())
@@ -205,10 +205,10 @@ impl Work<'_> {
         self.ensure(address)?;
         for (key, value) in supplied.as_object().expect("checked by the input schema") {
             match value {
-                Value::Array(_) if key == "dependencies" => {
+                Value::Array(_) if key == "wants" => {
                     // Each record names its providing element in `pe` and holds the fields to change.
-                    for (other, change) in read_dependencies(value).unwrap_or_default() {
-                        self.write_dependency(address, &other, &Value::Object(change))?;
+                    for (other, change) in read_wants(value).unwrap_or_default() {
+                        self.write_want(address, &other, &Value::Object(change))?;
                     }
                 }
                 Value::Null => {
@@ -225,16 +225,16 @@ impl Work<'_> {
         Ok(())
     }
 
-    /// `delete` removes the named dependencies, or the element. An element that something still dependencies is
-    /// refused, with the command that removes the dependency (R-5.7, R-5.25).
+    /// `delete` removes the named wants, or the element. An element that something still wants is
+    /// refused, with the command that removes the want (R-5.7, R-5.25).
     fn delete(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
         if !self.elements.contains_key(address) {
             return Ok(());
         }
-        if let Some(Value::Array(dependencies)) = supplied.get("dependencies") {
-            for other in dependencies.iter().filter_map(Value::as_str) {
-                if self.elements[address].dependencies.contains_key(other) {
-                    self.element_mut(address).dependencies.remove(other);
+        if let Some(Value::Array(wants)) = supplied.get("wants") {
+            for other in wants.iter().filter_map(Value::as_str) {
+                if self.elements[address].wants.contains_key(other) {
+                    self.element_mut(address).wants.remove(other);
                     self.prune(other);
                 }
             }
@@ -247,16 +247,16 @@ impl Work<'_> {
             // structure and code are unchanged.
             let message = if receivers.len() > 1 {
                 format!(
-                    "cannot delete '{address}': these elements still depend on it: {}. Remove their dependencies first.",
+                    "cannot delete '{address}': these elements still want it: {}. Remove their wants first.",
                     receivers.iter().map(|r| format!("'{r}'")).collect::<Vec<_>>().join(", ")
                 )
             } else {
-                format!("cannot delete '{address}': '{first}' still depends on it. Remove that dependency first.")
+                format!("cannot delete '{address}': '{first}' still wants it. Remove that want first.")
             };
             return Err(Refusal::new(
                 Code::DependencyLock,
                 message,
-                Some(json!({"delete": {first: {"dependencies": [address]}}})),
+                Some(json!({"delete": {first: {"wants": [address]}}})),
             ));
         }
         let beneath = self
@@ -270,20 +270,20 @@ impl Work<'_> {
                 Some(json!({"delete": {deepest.as_str(): {}}})),
             ));
         }
-        let depended: Vec<String> = self.elements[address].dependencies.keys().cloned().collect();
+        let wanted: Vec<String> = self.elements[address].wants.keys().cloned().collect();
         self.remove(address);
         if let Some(parent) = names::parent(address) {
             self.prune(parent);
         }
-        for other in depended {
+        for other in wanted {
             self.prune(&other);
         }
         Ok(())
     }
 
     /// Remove an element that a deletion left with nothing in it, and then each branch above it
-    /// that is left the same way: no fields, no dependencies, nothing beneath it and nothing that dependencies
-    /// it. A write creates the element a dependency names (R-5.4); when the last dependency that names it is
+    /// that is left the same way: no fields, no wants, nothing beneath it and nothing that wants
+    /// it. A write creates the element a want names (R-5.4); when the last want that names it is
     /// gone and it was never filled in, it goes too, so no empty address stays in the map.
     fn prune(&mut self, address: &str) {
         let mut branch = Some(address.to_string());
@@ -348,7 +348,7 @@ impl Work<'_> {
             let after = self.elements.get(specification::DEFINITION_ADDRESS);
             let before = self.before.element(specification::DEFINITION_ADDRESS);
             if after != before
-                && after.is_none_or(|e| e.fields != specification::definition() || !e.dependencies.is_empty())
+                && after.is_none_or(|e| e.fields != specification::definition() || !e.wants.is_empty())
             {
                 return Err(Refusal::new(
                     Code::LayerDefinitionLocked,

@@ -2,7 +2,7 @@
 //! `docs/designs/storage.md` 2.2).
 //!
 //! Every element is an `Element` node keyed by `<map id>|<stored address>`. Nesting is a
-//! `CONTAINS` relationship from each element to its children. Each dependency is a `DEPENDS_ON`
+//! `CONTAINS` relationship from each element to its children. Each want is a `DEPENDS_ON`
 //! relationship from receiver to provider carrying `op`, `ef` and `ifd`. Each item of a
 //! layer (a non-empty array field, R-6.24) is a `Record` node reached by `HOLDS` from its element,
 //! with its position in `ordinal` and the item itself as JSON in `data`. Ladybug stores every
@@ -29,8 +29,8 @@ const THREADS: u64 = 4;
 /// Element fields with their own column. A non-empty array field is a layer, kept as `Record`
 /// nodes. Every other field is kept, camelCase, in `extra`.
 const COLUMNS: [&str; 5] = ["technical_name", "name", "role", "uri", "status"];
-/// Dependency-record fields with their own property. Any other is kept in the record's `extra`.
-const DEPENDENCY_COLUMNS: [&str; 3] = ["op", "ef", "ifd"];
+/// Want-record fields with their own property. Any other is kept in the record's `extra`.
+const WANT_COLUMNS: [&str; 3] = ["op", "ef", "ifd"];
 
 /// What a table connects: a node table keyed by its first property, or a relationship table.
 enum Shape {
@@ -125,7 +125,7 @@ const TABLES: &[Table] = &[
 /// `(table, old name, new name)`. Each runs only when the old name is present and the new one
 /// is not, so it runs once.
 const RENAMES: &[(&str, &str, &str)] = &[
-    // The dependency fields took the intake's names (founder, 2026-11-12): `why` became `op`,
+    // The want fields took the intake's names (founder, 2026-11-12): `why` became `op`,
     // `how` became `ef`, and `direction` became `ifd`. `intent` is an earlier name of `direction`.
     ("DEPENDS_ON", "why", "op"),
     ("DEPENDS_ON", "how", "ef"),
@@ -136,7 +136,7 @@ const RENAMES: &[(&str, &str, &str)] = &[
 /// Table renames since the first store, applied on open before `RENAMES`: `(old name, new name)`.
 /// Each runs only when the old table is present and the new one is not.
 const TABLE_RENAMES: &[(&str, &str)] = &[
-    // A want record became a dependency (founder, 2026-11-12).
+    // The relationship took this name on 2026-11-12. The field that agents write is `wants`.
     ("WANTS", "DEPENDS_ON"),
 ];
 
@@ -324,23 +324,23 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
             address,
             Element {
                 fields,
-                dependencies: BTreeMap::new(),
+                wants: BTreeMap::new(),
                 child_map,
             },
         );
     }
-    let dependencies = rows(
+    let wants = rows(
         conn,
         "MATCH (a:Element)-[w:DEPENDS_ON]->(b:Element) WHERE a.mapId = $m \
          RETURN a.address, b.address, w.op, w.ef, w.ifd, w.extra",
         vec![("m", map.into())],
     )?;
-    for row in dependencies {
+    for row in wants {
         let mut it = row.into_iter();
         let receiver = agent_name(&text(it.next())?.unwrap_or_default());
         let provider = agent_name(&text(it.next())?.unwrap_or_default());
         let mut record = Fields::new();
-        for column in DEPENDENCY_COLUMNS {
+        for column in WANT_COLUMNS {
             if let Some(v) = text(it.next())? {
                 record.insert(column.to_string(), Json::String(v));
             }
@@ -352,8 +352,8 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
         }
         elements
             .get_mut(&receiver)
-            .ok_or_else(|| StoreError::Corrupt(format!("dependency from missing element {receiver}")))?
-            .dependencies
+            .ok_or_else(|| StoreError::Corrupt(format!("want from missing element {receiver}")))?
+            .wants
             .insert(provider, record);
     }
     let found = rows(
@@ -402,9 +402,9 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
 }
 
 /// Write an effect inside the caller's transaction. `before` is the map the effect was computed
-/// from, so only what changed is written: an element's columns when they changed, each dependency that
+/// from, so only what changed is written: an element's columns when they changed, each want that
 /// was added, changed or removed, and each layer record that was added, changed or removed.
-/// Nodes first, then dependencies and records, then nesting, then removals, so every relationship finds
+/// Nodes first, then wants and records, then nesting, then removals, so every relationship finds
 /// both of its ends.
 pub fn persist(
     conn: &Connection,
@@ -428,7 +428,7 @@ pub fn persist(
     for (address, element) in &effect.elements {
         let Some(element) = element else { continue };
         let old = before.element(address).unwrap_or(&empty);
-        persist_dependencies(conn, map, address, old, element)?;
+        persist_wants(conn, map, address, old, element)?;
         persist_layers(conn, map, address, old, element)?;
     }
     for address in created {
@@ -470,7 +470,7 @@ pub fn persist(
 }
 
 /// What the `Element` node holds for an element: its columns, `extra` and child map. Layers and
-/// dependencies are stored apart.
+/// wants are stored apart.
 fn node_values(element: &Element) -> (Vec<Option<String>>, Option<String>, Option<&str>) {
     let (columns, extra) = split(&element.fields, &COLUMNS);
     (
@@ -480,9 +480,9 @@ fn node_values(element: &Element) -> (Vec<Option<String>>, Option<String>, Optio
     )
 }
 
-/// Store the dependencies that differ between `old` and `new`: a removed or changed dependency's edge is
-/// deleted, and an added or changed dependency's edge is created.
-fn persist_dependencies(
+/// Store the wants that differ between `old` and `new`: a removed or changed want's edge is
+/// deleted, and an added or changed want's edge is created.
+fn persist_wants(
     conn: &Connection,
     map: &str,
     address: &str,
@@ -490,8 +490,8 @@ fn persist_dependencies(
     new: &Element,
 ) -> Result<(), StoreError> {
     let k = key(map, address);
-    for (provider, record) in &old.dependencies {
-        if new.dependencies.get(provider) != Some(record) {
+    for (provider, record) in &old.wants {
+        if new.wants.get(provider) != Some(record) {
             run(
                 conn,
                 "MATCH (:Element {key: $a})-[w:DEPENDS_ON]->(:Element {key: $b}) DELETE w",
@@ -502,17 +502,17 @@ fn persist_dependencies(
             )?;
         }
     }
-    for (provider, record) in &new.dependencies {
-        if old.dependencies.get(provider) == Some(record) {
+    for (provider, record) in &new.wants {
+        if old.wants.get(provider) == Some(record) {
             continue;
         }
-        let (columns, extra) = split(record, &DEPENDENCY_COLUMNS);
+        let (columns, extra) = split(record, &WANT_COLUMNS);
         let mut params = vec![
             ("a", Value::from(k.as_str())),
             ("b", Value::from(key(map, provider).as_str())),
             ("extra", opt(extra)),
         ];
-        for (name, value) in DEPENDENCY_COLUMNS.iter().zip(columns) {
+        for (name, value) in WANT_COLUMNS.iter().zip(columns) {
             params.push((name, opt(value)));
         }
         run(

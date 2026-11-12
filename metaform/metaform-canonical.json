@@ -25,7 +25,7 @@
           "module": {
             "technical_name": "module developer",
             "name": "Module developer",
-            "dependencies": [{"pe": "code.system.management.knowledge", "ifd": "both",
+            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
                 "op": "Add and maintain project-specific Metaform capabilities using a stable extension contract and distributable modules.",
                 "ef": "Supplies the public chassis contract, runnable examples and template, contextual command and MCP exposure, module-owned storage, and fork checks and packaging over the released chassis."}]
           }
@@ -34,14 +34,14 @@
           "automation": {
             "technical_name": "automation engineer",
             "name": "Automation engineer",
-            "dependencies": [{"pe": "code.system.management.knowledge", "ifd": "both",
+            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
                 "op": "Run repeatable improvement procedures with the workpiece's actual context, durable handoffs and visible responsibility for unfinished work.",
                 "ef": "Binds callable Axiom procedures to the functional map, transports agent-interpreted calls and returns, and coordinates ticket-based agent sessions through the work board and dispatch."}]
           },
           "knowledge": {
             "technical_name": "knowledge engineer",
             "name": "Knowledge engineer",
-            "dependencies": [{"pe": "code.system.management.knowledge", "ifd": "both",
+            "wants": [{"pe": "code.system.management.knowledge", "ifd": "both",
                 "op": "Keep a workpiece's functional identity, receiving purposes and encounter functions reusable as context so later analysis and improvement start from retained understanding.",
                 "ef": "Records the Inference Metaform as addressed elements and receiver-owned purpose joins, then serves the relevant map, selected knowledge, provenance and memories through agent and human interfaces."}]
           }
@@ -55,7 +55,7 @@
             "technical_name": "knowledge management system",
             "name": "Metaform",
             "role": "DE",
-            "dependencies": [{"pe": "code.service.decision", "ifd": "receive",
+            "wants": [{"pe": "code.service.decision", "ifd": "receive",
                 "op": "Reuse typed judgments for agent allocation, knowledge ordering, triage, intake coverage and session diagnostics.",
                 "ef": "Asks typed decisions, caches answers and records actionable judgments at their addresses while preserving ordinary behavior when disabled or unavailable."}, {"pe": "code.interface.graphical", "ifd": "both",
                 "op": "Let the person inspect the functional map and direct knowledge, work and agent activity from one persistent view.",
@@ -86,7 +86,7 @@
           "technical_name": "decision service",
           "name": "Jev",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.service.inference", "ifd": "receive",
+          "wants": [{"pe": "upstream.service.inference", "ifd": "receive",
               "op": "Obtain typed judgments over supplied project state.",
               "ef": "Returns Choice, Noul or Score answers with probabilities and confidence through the configured decision endpoint."}]
         },
@@ -114,7 +114,7 @@
           "technical_name": "speech service",
           "name": "elevenlabs",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.service.speech", "ifd": "both",
+          "wants": [{"pe": "upstream.service.speech", "ifd": "both",
               "op": "Obtain account-selected remote voices and transcription.",
               "ef": "Streams synthesized speech and Scribe transcription through authenticated API calls."}]
         }
@@ -124,7 +124,7 @@
           "technical_name": "graphical interface",
           "name": "Web GUI",
           "role": "SE",
-          "dependencies": [{"pe": "code.assistant.navigation", "ifd": "both",
+          "wants": [{"pe": "code.assistant.navigation", "ifd": "both",
               "op": "Coordinate project conversation and attention on the person's current view.",
               "ef": "Lets agents inspect the shared view and pointer, indicate map parts, capture evidence and act through a visible figure."}, {"pe": "upstream.code.browser.web", "ifd": "both",
               "op": "Present and interact with the live workbench on the person's machine.",
@@ -134,7 +134,7 @@
           "technical_name": "telephone interface",
           "name": "twilio",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.service.telephony", "ifd": "both",
+          "wants": [{"pe": "upstream.service.telephony", "ifd": "both",
               "op": "Carry project calls, texts and notifications through a telephone service.",
               "ef": "Delivers signed call and message webhooks and places configured outbound notifications through Twilio."}]
         },
@@ -147,7 +147,7 @@
           "technical_name": "speech interface",
           "name": "voice",
           "role": "SE",
-          "dependencies": [{"pe": "code.service.speech", "ifd": "both",
+          "wants": [{"pe": "code.service.speech", "ifd": "both",
               "op": "Offer service transcription and synthesis alongside local speech engines.",
               "ef": "Provides account-selected streaming voices and Scribe transcription through the voice.engine contract."}]
         }
@@ -176,7 +176,7 @@
           "technical_name": "tool server",
           "name": "MCP server",
           "role": "SE",
-          "dependencies": [{"pe": "code.gateway.messaging", "ifd": "both",
+          "wants": [{"pe": "code.gateway.messaging", "ifd": "both",
               "op": "Exchange project-addressed work with external agents while retaining requests, progress and returns.",
               "ef": "Receives A2A messages as tracked tickets, sends addressed work to configured peers, and retains exchange status, cancellation, input requests and returned artifacts."}, {"pe": "code.scheduler.tool", "ifd": "both",
               "op": "Keep long-running tool results observable without holding an interactive call open.",
@@ -190,7 +190,7 @@
           "technical_name": "plugin framework",
           "name": "Chassis",
           "role": "SE",
-          "dependencies": [{"pe": "code.store.prompt", "ifd": "both",
+          "wants": [{"pe": "code.store.prompt", "ifd": "both",
               "op": "Serve authored agent instructions with traceable revisions and permit deliberate review of the text a process receives.",
               "ef": "Versions shipped and edited text, retains provenance uses, fills declared resource placeholders, and provides prompt review, packet editing, source update and structural notices without substituting code for semantic judgment."}, {"pe": "code.manager.configuration", "ifd": "receive",
               "op": "Resolve each operation's module-owned settings with declared defaults and folder inheritance.",
@@ -204,7 +204,7 @@
               "op": "Deliver module events and retain each subscriber's outcome.",
               "ef": "Runs synchronous or asynchronous subscriptions with separate contexts and payload copies, returning completed, failed or cancelled delivery records."}, {"pe": "code.builder.package", "ifd": "send",
               "op": "Distribute the selected Metaform capabilities and, when requested, carry a workpiece and assignment to another execution environment.",
-              "ef": "Assembles installer, full, project-wheel and archive outputs, carries declared dependencies, emits stage progress and includes an isolated wheel bootstrap. Project wheels import their carried map and print the bound remote assignment on first run."}, {"pe": "code.interface.command_line", "ifd": "both",
+              "ef": "Assembles installer, full, project-wheel and archive outputs, carries declared wants, emits stage progress and includes an isolated wheel bootstrap. Project wheels import their carried map and print the bound remote assignment on first run."}, {"pe": "code.interface.command_line", "ifd": "both",
               "op": "Make the active project's available operations and settings discoverable and executable with consistent contextual help.",
               "ef": "Parses declared operations, resolves project, folder and session context, and supplies contextual help, settings views, reports, builds and installation commands."}, {"pe": "code.registry.project", "ifd": "both",
               "op": "Resolve the intended workpiece and its active metaform while keeping project records separate from its source files.",
@@ -216,7 +216,7 @@
           "technical_name": "prompt store",
           "name": "Prompt store",
           "role": "SE",
-          "dependencies": [{"pe": "code.editor.prompt", "ifd": "both",
+          "wants": [{"pe": "code.editor.prompt", "ifd": "both",
               "op": "Review and revise authored agent prompts while retaining their exact prior revisions.",
               "ef": "Catalogs prompt text, purpose comments and load sites, appends edited versions and updates source or emits reviewable edit packets."}]
         },
@@ -229,7 +229,7 @@
           "technical_name": "event store",
           "name": "Data access object",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.code.engine.database", "ifd": "both",
+          "wants": [{"pe": "upstream.code.engine.database", "ifd": "both",
               "op": "Commit durable record changes and coordinate process access to local stores.",
               "ef": "Provides transactional local persistence for operation logs, snapshots, registries and module tables, with the shared connection layer applying schema versions, write locking and connection settings."}, {"pe": "code.store.provenance", "ifd": "receive",
               "op": "Retain each knowledge layer's producing context and exact prompt revision.",
@@ -246,7 +246,7 @@
           "technical_name": "provenance store",
           "name": "Provenance",
           "role": "SE",
-          "dependencies": [{"pe": "code.service.report", "ifd": "receive",
+          "wants": [{"pe": "code.service.report", "ifd": "receive",
               "op": "Retain intake reports and execution feedback with their producing context.",
               "ef": "Stores report bodies, records their paths, appends locked feedback with layer and prompt context, and lists or reads saved reports."}]
         },
@@ -292,7 +292,7 @@
           "technical_name": "task scheduler",
           "name": "Work queue",
           "role": "SE",
-          "dependencies": [{"pe": "code.monitor.fault", "ifd": "receive",
+          "wants": [{"pe": "code.monitor.fault", "ifd": "receive",
               "op": "Turn repeated runtime faults into functionally located repair work and retain evidence that fixes hold.",
               "ef": "Groups faults and watched log errors, files deduplicated tickets at source-linked elements, counts recurrences and verifies repairs through quiet deadlines or named tests."}, {"pe": "code.dispatcher.agent", "ifd": "both",
               "op": "Execute eligible tickets with observable agent ownership and preserve session state when work is interrupted or needs human input.",
@@ -313,7 +313,7 @@
           "technical_name": "package installer",
           "name": "Installer",
           "role": "SE",
-          "dependencies": [{"pe": "code.service.provisioning", "ifd": "both",
+          "wants": [{"pe": "code.service.provisioning", "ifd": "both",
               "op": "Establish supported Metaform entry points for an unfamiliar agent harness.",
               "ef": "Identifies the harness location, emits first-run instructions, records completion and previews backed-up host registration and owned reminders."}, {"pe": "code.manager.repository", "ifd": "receive",
               "op": "Bring user modules forward when a newer installation changes the module template contract.",
@@ -332,7 +332,7 @@
           "technical_name": "project registry",
           "name": "Projects",
           "role": "SE",
-          "dependencies": [{"pe": "code.store.history", "ifd": "both",
+          "wants": [{"pe": "code.store.history", "ifd": "both",
               "op": "Keep registered project origins and work variants reconstructable after their source is unavailable.",
               "ef": "Records origins, changed files or diffs and producer context, then reconstructs selected variants."}, {"pe": "code.service.backup", "ifd": "both",
               "op": "Make clearing and restoring project stores recoverable.",
@@ -349,7 +349,7 @@
           "technical_name": "event bus",
           "name": "Events",
           "role": "SE",
-          "dependencies": [{"pe": "code.bus.event.relay", "ifd": "both",
+          "wants": [{"pe": "code.bus.event.relay", "ifd": "both",
               "op": "Deliver map changes across processes sharing the Metaform home.",
               "ef": "Transports authenticated map.changed events through loopback listeners, acknowledges receipt and removes refused listener records."}],
           "relay": {
@@ -364,7 +364,7 @@
           "technical_name": "package builder",
           "name": "Build",
           "role": "SE",
-          "dependencies": [{"pe": "code.exchange.data", "ifd": "both",
+          "wants": [{"pe": "code.exchange.data", "ifd": "both",
               "op": "Carry project identity, map history and remote work between environments without silently overwriting the local workpiece.",
               "ef": "Exports and imports versioned records and declared module tables. Archives bundle map data and optional origin files; remote returns carry working layers, file variations and notes, and import writes source changes into a separate review folder."}]
         }
@@ -374,7 +374,7 @@
           "technical_name": "data exchange",
           "name": "Project archive",
           "role": "SE",
-          "dependencies": [{"pe": "code.verifier.integrity", "ifd": "both",
+          "wants": [{"pe": "code.verifier.integrity", "ifd": "both",
               "op": "Detect whether visible packet work and its carried provenance still correspond when a sealed packet is exchanged.",
               "ef": "Seals and checks ZIP packets: hashes bind visible work to a manifest, and a derived-key authenticated envelope binds the hidden data to that manifest and packet lineage. Its supplied evidence enables tamper detection rather than secrecy. Current build archives use a separate unsealed exchange path."}]
         }
@@ -391,7 +391,7 @@
           "technical_name": "knowledge graph",
           "name": "Inference Metaform",
           "role": "SE",
-          "dependencies": [{"pe": "code.exporter.document", "ifd": "receive",
+          "wants": [{"pe": "code.exporter.document", "ifd": "receive",
               "op": "Make the visible functional map readable outside a live interface.",
               "ef": "Produces address-preserving Markdown, Mermaid and XML from contextual Store reads, retaining roles, references and encounter records."}, {"pe": "code.store.event", "ifd": "both",
               "op": "Preserve graph identity and every recorded change across processes, concurrent writers, migrations and refinements.",
@@ -425,7 +425,7 @@
           "technical_name": "intake processor",
           "name": "intake",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.code.harness.agent", "ifd": "receive",
+          "wants": [{"pe": "upstream.code.harness.agent", "ifd": "receive",
               "op": "Obtain semantic analysis of the actual workpiece from an agent able to examine its artifacts and follow the authored intake.",
               "ef": "Reads the procedure and schema, traces source functionality, reasons type identities and receiver purposes, and records its analysis through Metaform's tools. The intake module supplies the procedure and storage rather than performing that reasoning itself."}]
         }
@@ -435,7 +435,7 @@
           "technical_name": "tunnel proxy",
           "name": "cloud",
           "role": "SE",
-          "dependencies": [{"pe": "code.proxy.tunnel.broker", "ifd": "both",
+          "wants": [{"pe": "code.proxy.tunnel.broker", "ifd": "both",
               "op": "Route each authorized hosted client to its account's machine.",
               "ef": "Terminates client OAuth, signs caller assertions and multiplexes streams to the selected machine without retaining maps or call results."}],
           "broker": {
@@ -457,7 +457,7 @@
           "technical_name": "workflow engine",
           "name": "workflow",
           "role": "SE",
-          "dependencies": [{"pe": "code.preprocessor.prompt", "ifd": "receive",
+          "wants": [{"pe": "code.preprocessor.prompt", "ifd": "receive",
               "op": "Supply the lexicalized operation with knowledge applicable at its addressed elements.",
               "ef": "Preserves supplied wording, assembles visible knowledge and properties by layer, includes always-show records and appends canonical name-to-address references."}, {"pe": "upstream.code.harness.agent", "ifd": "both",
               "op": "Interpret authored Axiom control flow and perform each procedure's reasoning while retaining deterministic call transport.",
@@ -482,7 +482,7 @@
           "technical_name": "assignment router",
           "name": "Specialist assignment routing",
           "role": "SE",
-          "dependencies": [{"pe": "code.registry.role", "ifd": "receive",
+          "wants": [{"pe": "code.registry.role", "ifd": "receive",
               "op": "Select reusable expertise and deliver the exact authored duty assigned to each specialist.",
               "ef": "Lists specialist purposes and role URLs, versions authored duties, exposes role resources and records prompt revisions delivered to agent sessions."}]
         }
@@ -504,7 +504,7 @@
           "technical_name": "agent dispatcher",
           "name": "dispatch",
           "role": "SE",
-          "dependencies": [{"pe": "upstream.code.harness.agent", "ifd": "both",
+          "wants": [{"pe": "upstream.code.harness.agent", "ifd": "both",
               "op": "Run assigned work in the person's installed agent environment and receive activity, results and requests for permission.",
               "ef": "Runs assigned work through Claude, Codex or official Antigravity ACP agents using their own host authentication, while dispatch supplies assignments and receives session updates."}, {"pe": "code.coordination.reservation", "ifd": "receive",
               "op": "Keep accepted changes from competing over the same project functions.",
@@ -526,7 +526,7 @@
             "technical_name": "issue tracking integration",
             "name": "paperclip",
             "role": "SE",
-            "dependencies": [{"pe": "code.adapter.context", "ifd": "receive",
+            "wants": [{"pe": "code.adapter.context", "ifd": "receive",
                 "op": "Resolve the correct issue and run for each gateway call without repeating context across distinct runs.",
                 "ef": "Copies gateway identity into request context. Includes agent, issue and run identifiers. Scopes delivery by agent and run. Uses agent and issue without run. Preserves server environment."}]
           }
@@ -587,7 +587,7 @@
         "technical_name": "specification",
         "name": "Metaform specification",
         "role": "SE",
-        "dependencies": [{"pe": "code.suite.test", "ifd": "receive",
+        "wants": [{"pe": "code.suite.test", "ifd": "receive",
             "op": "Provide executable evidence for the behavior promised by each requirement and detect regressions at public and persistence boundaries.",
             "ef": "Uses isolated Metaform homes, requirement-tagged fixtures, real CLI/MCP round trips, storage migrations and concurrency tests, fake ACP agents and browser scenarios. CI runs strict typing, lint and pytest across operating systems and Python versions, with the browser exclusion recorded as a finding."}, {"pe": "document.manual", "ifd": "receive",
             "op": "Make the project's functional model, operating procedures and implementation boundaries understandable to people applying or extending Metaform.",
