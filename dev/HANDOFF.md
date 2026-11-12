@@ -1,105 +1,87 @@
-# Handoff, 2026-11-12
+# Handoff, 2026-11-12, end of day
 
-Read this first. It replaces the long session it came from. The founder is Richard. Call him the founder, not the owner.
+Read this first. It replaces the handoff written on the morning of 2026-11-12. The founder is Richard. Usage is nearly spent for the week (resets Saturday 18:00): work in few steps, run no test intake unless the founder asks, and use Sonnet for mechanical work.
 
-## What the work is
+## The work, in order
 
-Two things, in this order. Everything else is a side track.
+1. **The intake procedure.** Get it to produce the map the founder expects for photos, then test it on code.
+2. **The MCP server.** It now records what the procedure produces. Keep it in step with the founder's decisions.
 
-1. **The intake procedure.** Get it to a form the founder accepts, tested on photos and then on code.
-2. **The MCP server.** Make the tool accept what the procedure records, so that an agent records one element at a time and a person watches the map grow in the viewer.
+The web interface is a separate job. Do not start it and do not show the founder any existing page (see "Do not").
 
 ## How to work with the founder
 
-Each rule here was learned from a failure in the session. The reason is given so that you can apply it to a case this list does not name.
+Each rule was learned from a failure. The reason is given so that you can apply it to a case this list does not name.
 
-- **Do not copy his words into the project.** Work out what he means and why, and write that. Copied words lose the conditions they were said under, so an agent applies them where they were never meant.
-- **Do not change his rules unless a test run shows a failure.** Show him the failure before you change anything. He tested the wording for months, and a change that looks harmless changes what a model infers.
-- **An edit he invites is limited to the thing he named.** Do not expand, tidy or add rules around it.
-- **Do not edit `~/brain`.** Read his notes from a copy. Agents altered them before, and he lost work.
-- **Do not bring him inconsistencies to settle.** What he says in conversation governs. Where notes, specifications or code disagree with it, treat the older text as altered, decide, and record what you chose.
-- **Every instruction and rule states its reason.** Without the reason an agent guesses one, or follows the words blindly.
-- **Put a thing where the model needs it.** A model does not carry an instruction across many steps. This is why his procedure repeats a rule inside the step that uses it. That repetition is not redundancy.
-- **Stay on the track he is on.** Finish what he is working on before you raise anything else.
-- **Ask before you save a memory.**
+- **Treat the procedures and the grammar of the prompts as formulas.** Do not reword, reorder, shorten or clarify them. A passage that reads as ambiguous is contextual; report it and do not resolve it. Agents that removed apparent ambiguity changed the meaning, and the repair took a week.
+- **Never write a test, check or build step that reads the content of the procedure.** In an earlier project such tests locked the prompts until the founder could not edit them.
+- **When the tool and the procedure use different words, change the tool,** or make the tool answer the procedure's word with the corrected command. Do not ask the founder to change the procedure to fit the tool.
+- **Do not add an example of your own** to the procedure or to the tool's help. One example changes what a model infers in every run.
+- **A rule that is true for one artifact may be false for many.** Twice today a rule built for a code project (one uri for each element; one want for each wanted element) could not record a folder of photographs.
+- **Say what you are about to change before you change it,** and make one change at a time. The founder stopped work more than once because an edit was made without notice.
+- **Do not copy the founder's words into the project;** write what he means and why. The exception is procedure text he dictates: use his exact words there.
+- **Ask before you save a memory.** Do not edit `~/brain`.
+- **Report plainly when you were wrong,** and correct the record in the next commit message. Never rewrite a commit.
 
-## The current procedure
+## What the tool is now (Rust form only)
 
-**`rich/intake_best.xml` is the working file.** The founder edits it. A snapshot is at `dev/intake-test/intake_best.snapshot-2026-11-12.xml`.
+All of this is built, tested (`cargo test` in `metaform/rust`: 77 passed) and pushed on branch `fable-climb`. `metaform/SPEC.md` has a block at the top, "Changes of 2026-11-12", that records each decision with its reason. Read it.
 
-It is his cleaned canonical text (`~/brain/more/backups/Canonical_Intake_cleaned.xml`) with these changes:
+- **Roles:** `AT`, `DE`, `SE`, `NE`, `CQU`, `UD`, `DD`. A map may hold several `DE` elements. `AUE` is not a role.
+- **`wants`** is an array on the receiving element. A want has `element` (the wanted element's address), `why`, `how`, `direction` (`send`, `receive`, `both`) and `ref` (the uri of the one artifact the want is about).
+- **A want's key** within a receiving element is its `element` with its `ref`. An element may hold several wants on the same element, one for each artifact.
+- **Refs are relative to the project folder,** which the chassis registry holds. An absolute path or `file://` uri inside the project is refused with the relative form.
+- **The tool speaks plain words; the procedure keeps its terms.** A command that uses `dependencies`, `pe`, `provider`, `op`, `purpose`, `ef` or `ifd` is refused with the same command in the tool's words.
+- **Every refusal returns a corrected command** where one exists.
+- **Reads:** a plain read returns an element's own fields; `goto` returns the element, its `wants` and `wanted_by`; a key that starts with a period is a raw dump; `map` returns every address (the layers are under `layer`), each wanting pair once, and `defining`.
+- **`{"help": "<command>"}`** answers in one piece from `metaform/tool-help.json`: what the command does, its fields, the founder's examples, and for `add` the want sentence with the grammar of `why` and `how` (from SPEC R-6.17).
+- **The intake procedure is served in sections.** `metaform/intake/procedure/` holds one Markdown file for each section and `sections.md` (order, `(required)`, and `(when ...)` for a section that applies to one kind of artifact). `{"help": "intake"}` lists them; `{"help": "intake/<name>"}` returns one; each is also a resource. The server reads no file while it runs; the folder is compiled in by `build.rs`.
 
-- One `uri` for each element in place of member lists. For code it is the entry point. For a photo it is the path.
-- Roots are `code`, `document`, `media`, `data`, `upstream`, `downstream`. There is no `collection` root: members that share a type are the same type, so a set needs no root of its own.
-- The word "entity" is replaced by "element". Every entity is an element.
-- "Join" is "dependency" in most places.
-- Roles are `AUE`, `DE`, `SE`, `NE`, `CQU`, `UD`, `DD`. `CQU` is a person. `UD` is an upstream dependency. `DD` is a downstream dependant that is not a person. The address does not determine the role, so the role is stated. The viewer will colour and shape elements by role.
-- `functional_name` replaces `name_length`. Reverse the segments of the address, then replace periods and underscores with spaces. The functional name is the leading words of the result.
-- A dependency has the fields `pe`, `op`, `ef` and `ifd`. The values of `ifd` are inbound, outbound and two-way. The intake's own terms are the field names because a model infers from them. The viewer shows the full names.
-- The schema at the end is flat: one object for each element, keyed by its full address.
-- `code.game` is valid. A game names the project by its function, which is entertainment. `code.game.platformer` and `code.game.fps` are invalid because they name a genre. `code.game.engine` is invalid because an engine is not a child of a game.
+## The procedure text
 
-**Decided by the founder and still true:** annealing stays as a step. The step-by-step form stays. "Divergent" is not a role. He prefers "Defining" to "Definitive".
+- The served text is the founder's file of 2026-11-12 07:54 with its markup converted to Markdown by script. The conversion turned tag and attribute names into visible label words ("Rules:", "Examples of a CQU:", "valid", "invalid"). The founder has been told and has not reviewed the result.
+- Two wording edits were made on the founder's direct instruction: the first sentence of the CQU definition in `core_concepts.md` ("The vested beneficiary who holds the interest in the artifact that isn't involved in the process of creating or improving it."), and "an AUE role" to "a role" in `response_protocol.md`.
+- The founder's own working copy is `rich/intake_best.xml` (untracked). It has neither edit.
 
-## What the tests showed
+## What two test intakes through the real server showed
 
-All tests used 37 photos, each run in an isolated session.
+One fresh Sonnet agent each, 37 photos, about 110 seconds and $0.50 each. Transcripts and maps are in the scratch folder of the session; replay one with `dev/intake-test/watch.py <stream.jsonl>`.
 
-- His cleaned text surveys every member. His short "pure" text does not: its runs opened 0 to 3 photos.
-- A model writes invented file names when it holds the map until the end. Recording each uri when the member is observed stops it. An instruction to list the folder again was ignored.
-- Removing the annealing step made the map grow from about 10 elements to between 13 and 29, in every run.
-- The result holds on Haiku as well as Sonnet, with coarser maps.
-- One invalid example changes the inference in every run. Do not add an example on your own judgment.
-- The reference result: three types by what the photo presents (a person, a place, one object), background and signage as supporting elements, at least one CQU, one real uri each.
+- **The delivery works.** The agent read all eleven sections in order, read `{"help": "add"}`, used the tool's words, and wrote `why` and `how` that read correctly in the want sentence.
+- **It writes at the end.** It opened all 37 photos in one batch and then made every write. Steps 3 and 6 of the procedure say to record as it goes.
+- **It sorts photos into kinds** (portrait, scenery, close-up) and does not go inside a photograph. The founder's reference is `~/brain/example/basic_workflow_photo.md`: the artifact is the photograph, and its elements are its subject, setting, frame, vantage, light and so on, with the subject as the invariant.
+- **One photo in `refs` for each element.** The agent followed two sentences in `response_protocol.md` ("Every element carries one uri..." and "State in the description how many members were observed") over the tool's help. Those runs were before `ref` moved into the want.
+- **The CQU.** With the earlier CQU definition, Sonnet named a photo editor in 7 of 7 runs. The founder's ruling: the CQU is who the artifact is improved for, never who improves it; the editor is the same lazy answer as the developer. After the new first sentence, two runs named an influencer, a blogger and a portrait sitter.
+- **Concerns had nowhere to go.** The agent found duplicates and a missing-captions concern and could only report them in its reply.
 
-Working copies and their results are in `metaform/intake/stripped/README.md`.
+## Open, for the founder
 
-## How to run a test
+- Whether `refs` on an element is removed, now that each want carries `ref`. The founder said refs there will not work.
+- Whether a write takes one want at a time under the singular `want`.
+- A photo-handling section for the procedure (the founder will write it; `sections.md` can mark it `(when the artifact is a photograph)`).
+- Where an agent records a concern (missing, broken, exclude), and an artifact it has observed before its type is settled.
+- Whether the server's connection instruction, which tells every agent about `metaform gui`, is removed.
+- Whether R-6.28 (a layer is called an overlay) still stands; the founder said on 2026-11-12 that the root is `layer`.
+- The want sentence says "requires" and its rule for `how` says "provider"; the tool says `wants` and `element`. The founder's example `how`, "Prepared mash data packets.", is a noun phrase and does not fit the rule.
 
-The scripts are in `dev/intake-test/`. They were written for a scratch folder and hold absolute paths that no longer exist, so set the paths at the top of each before use.
+## Not done
 
-1. Unpack the photos from `/mnt/i/Downloads/sigma-fp2-review-samples.zip` into a folder named `photos`. Resize them with `resize.py` to 1280 pixels on the long side. Do not name the folder after the archive: the model reads a purpose from the name.
-2. Run `variant_file.sh <procedure> <label> <runs>` for Sonnet, or `variant_file_haiku.sh` for Haiku. Each run starts `claude -p` in the photo folder with no project settings and no MCP servers.
-3. Summarise with `flatsumm.py <label>` for the flat schema.
+- The Node form, the Python form and the conformance set still use the old terms; the shared contract files no longer match them.
+- `delete` removes every want on an element; it cannot remove one of several.
+- No intake has been run on code.
+- A home whose path is too long for a socket makes the server fail with only "Connection closed" on the agent's side.
+- The web interface is not started. Its requirements are in `metaform/PROJECT_SPECIFICATION.md`, section 7.
 
-Do not ask a model to write its records into its reply as it goes. The API blocks that as a request to expose reasoning. Give it a file to record into.
+## Do not
 
-## What is not done
+- Do not show the founder the page that `metaform gui` serves, or any page in `metaform/workspace`. He rejected them, and being shown one again angered him. Build the interface from an empty page only when he asks.
+- Do not open `~/.metaform`, `~/.metaform-rust` or `~/.metaform-sqlite` in a test. A backup of `~/.metaform-rust` from before today's builds is at `~/.metaform-rust.backup-2026-11-12`.
+- Do not use `pkill`, `killall` or `pgrep -f`. End a process by its id.
+- Do not use a long path for a test home; a socket path holds at most 107 bytes.
 
-**On the procedure**
+## How to run a test intake when the founder asks
 
-- The run of the current file was in progress when this was written. Read its result before anything else.
-- No test on code yet.
-- The steps still say "SET purpose" and "SET provider", and describe `ifd` as sends, receives and both. The schema says `op`, `pe`, and inbound, outbound, two-way. No run has shown this to fail, so it is unchanged.
-- One CQU example gives `downstream.code.*` for an SDK. Under the new roles that is a `DD`.
-
-**On the server.** The build does not match the procedure. One run with the real tool showed the tool refuse:
-
-- the roles (it accepts Definitive, Supportive, Notable, Divergent),
-- more than one Defining Element,
-- the dependency fields (it stores `wants` with `why`, `how`, `direction`),
-- and `technical_name` where the procedure now says `functional_name`.
-
-Also: the answer to a bare `help` request misled the model three times, two refusals return no usable command, and `search` is not built. The tool contract is protected: change it only on the founder's instruction.
-
-**Other**
-
-- The web interface he asked for, original and built from an empty page, is not started.
-- `TASTE.md` is his experiment: 24 rules, each with its reason, uncommitted. Rules 9, 12, 15, 16, 17 and 18 were added or changed in the session.
-- `metaform/PROJECT_SPECIFICATION.md` section 6.4 still explains the intake from the pure text. It needs rewriting from the current procedure.
-- `SPEC.md`, the schema and the code still hold Divergent, `collection`, `wants`, `layer` and `technical_name`.
-
-## Where things are
-
-| Thing | Path |
-|---|---|
-| Working procedure | `rich/intake_best.xml` |
-| Test copies and results | `metaform/intake/stripped/` |
-| Test scripts | `dev/intake-test/` |
-| Specification written in the session | `metaform/PROJECT_SPECIFICATION.md` |
-| The founder's notes, read only | `~/brain/` |
-| His cleaned canonical text | `~/brain/more/backups/Canonical_Intake_cleaned.xml` |
-| Test homes made in the session | `~/.metaform-climb` to `~/.metaform-climb7` |
-| Branch | `fable-climb` |
-
-Never open `~/.metaform`, `~/.metaform-rust` or `~/.metaform-sqlite` in a test. Never use `pkill`, `killall` or `pgrep -f`.
+1. Put a small set of photos in a clean folder. Smaller and fewer photos cost less: every step of a run re-reads all of them.
+2. Use a new home with a short path. Write an `mcp.json` that starts `metaform/rust/target/release/metaform mcp --home <home> --project .`.
+3. The starting instruction holds no procedure: perform an intake of this folder; call `{"help": "intake"}` and read every section in order; follow it exactly; record through `project-map`; read `{"help": "add"}` before the first write.
+4. Give the founder the `watch.py --follow` line before the run starts, or give him the two lines to run it himself in Claude Code so that he sees every action.
