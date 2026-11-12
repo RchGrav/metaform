@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Metaform Graph Model",
-  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. dependencies[] holds receiver-owned relationships keyed by project-relative provider address. Each provider also exists at its own nested path. Tool command addresses do not replace this stored tree.",
+  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. dependencies holds the dependencies of the receiving element as an array of records. Each record names its providing element in pe, a project-relative address. Each providing element also exists at its own nested path. Tool command addresses do not replace this stored tree.",
   "type": "object",
   "$defs": {
     "NamespaceValue": {
