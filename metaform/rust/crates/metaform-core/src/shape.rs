@@ -64,13 +64,13 @@
 //! | N10 | `wants` at any element of the command holds want records (W1 to W9). |
 //! | W1 | `wants` is a list of records. Each record names its wanted element in `element`, an address that is not `.`. Records keyed by address are refused with the same records as a list. |
 //! | W2 | A want record is an object. |
-//! | W3 | A want record takes only `element`, `why`, `how` and `direction`. A record that uses the procedure's words (`pe`, `op`, `purpose`, `ef`, `ifd`) is refused with the same record in the tool's words, and so is `dependencies` in place of `wants`. |
+//! | W3 | A want record takes only `element`, `why`, `how`, `direction` and `ref`. `ref` is the uri of the one artifact the want is about; `refs` or `uri` in a want is answered with one want for each uri. A record that uses the procedure's words (`pe`, `op`, `purpose`, `ef`, `ifd`) is refused with the same record in the tool's words, and so is `dependencies` in place of `wants`. |
 //! | W4 | `why` and `how` hold text that is not blank. |
 //! | W5 | `direction` is `send`, `receive` or `both`. |
 //! | W6 | A want record outside `update`'s own element has all three fields (WANT_INCOMPLETE). |
 //! | W7 | A want record at `update`'s own element has at least one field. |
 //! | W8 | `wants` holds at least one want record. |
-//! | W9 | No two records of one element name the same `element`. |
+//! | W9 | An element may hold several wants on the same element; a repeated `element` is accepted. |
 
 use serde_json::{Map as JsonMap, Value, json};
 
@@ -89,6 +89,9 @@ const REFS_FORM: &str = "a list with one uri for each artifact that has this add
 /// The words that belong to a want, not to an element (N6).
 const WANT_WORDS: [&str; 4] = ["element", "why", "how", "direction"];
 const WANT_FIELDS: [&str; 3] = ["why", "how", "direction"];
+/// The uri of the one artifact a want is about. A want may give it; it is not required, because
+/// a map of a single artifact needs none.
+const WANT_REF: &str = "ref";
 /// The intake procedure's words for the parts of a want, each with the tool's word. The
 /// procedure reasons with its own terms (PE, OP, EF, IFD; step 6 says purpose and provider),
 /// and the tool takes plain words. A command that uses a procedure word is refused with the
@@ -296,18 +299,12 @@ impl Check<'_> {
                 Some(replaced(self.command, path, Some(json!([want_placeholder("<address>")])))),
             ));
         };
-        let mut seen: Vec<&str> = Vec::new();
+        // An element may hold several wants on the same element, so a repeated element is not
+        // an error: each record is one want.
         for (index, record) in records.iter().enumerate() {
             let index = index.to_string();
             let here = [path, &[index.as_str()]].concat();
-            let other = self.want(record, holder, &here, level == Level::Update)?;
-            if seen.contains(&other) {
-                return Err(refuse(
-                    format!("wants at '{holder}' names '{other}' more than once; an element holds one want for each providing element"),
-                    None,
-                ));
-            }
-            seen.push(other);
+            self.want(record, holder, &here, level == Level::Update)?;
         }
         Ok(())
     }
@@ -347,8 +344,40 @@ impl Check<'_> {
         let extra: Vec<&str> = fields
             .keys()
             .map(String::as_str)
-            .filter(|name| *name != "element" && !WANT_FIELDS.contains(name))
+            .filter(|name| *name != "element" && *name != WANT_REF && !WANT_FIELDS.contains(name))
             .collect();
+        // A want is about one artifact. `uri` or a list in `refs` inside a want is answered with
+        // one want for each uri, each with its own `ref`.
+        if let Some(listed) = ["refs", "uri"].iter().find_map(|name| fields.get(*name)) {
+            let uris: Vec<&str> = match listed {
+                Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+                Value::String(one) => vec![one.as_str()],
+                _ => Vec::new(),
+            };
+            let mut base = fields.clone();
+            base.shift_remove("refs");
+            base.shift_remove("uri");
+            let split: Vec<Value> = if uris.is_empty() { vec!["<uri>"] } else { uris }
+                .into_iter()
+                .map(|uri| {
+                    let mut one = base.clone();
+                    one.insert(WANT_REF.to_string(), json!(uri));
+                    Value::Object(one)
+                })
+                .collect();
+            // The records take the place of this one in the list.
+            let (index, list_path) = path.split_last().expect("a want sits in a list");
+            let mut list = list_path.iter().fold(self.command, |at, key| match key.parse::<usize>() {
+                Ok(i) if at.is_array() => &at[i],
+                _ => &at[*key],
+            }).as_array().cloned().unwrap_or_default();
+            let at = index.parse::<usize>().unwrap_or(0);
+            list.splice(at..(at + 1).min(list.len()), split);
+            return Err(refuse(
+                format!("{place} is about one artifact; give its uri in ref, and write one want for each artifact"),
+                Some(replaced(self.command, list_path, Some(Value::Array(list)))),
+            ));
+        }
         if !extra.is_empty() {
             let mut fixed = self.command.clone();
             for name in &extra {
@@ -358,6 +387,15 @@ impl Check<'_> {
         }
         for (field, value) in fields.iter().filter(|(field, _)| field.as_str() != "element") {
             let here = [path, &[field.as_str()]].concat();
+            if field == WANT_REF {
+                if !value.as_str().is_some_and(|text| !is_blank(text)) {
+                    return Err(refuse(
+                        format!("ref at {place} must be the uri of the one artifact the want is about"),
+                        Some(replaced(self.command, &here, Some(json!("<uri>")))),
+                    ));
+                }
+                continue;
+            }
             if field == "direction" {
                 if !value.as_str().is_some_and(|flow| FLOWS.contains(&flow)) {
                     // The intake's examples say "sends" and "receives"; the value is the bare verb.

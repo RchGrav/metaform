@@ -23,8 +23,10 @@ pub struct MapRef(pub String);
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Element {
     pub fields: Fields,
-    /// Want records keyed by the address of the other element (R-3.5).
-    pub wants: BTreeMap<String, Fields>,
+    /// The element's wants: an array. Each entry is the address of the wanted element and the
+    /// want's own fields. An element may hold several wants on the same element, one for each
+    /// artifact: a want's key is its element together with its `ref` (founder, 2026-11-12).
+    pub wants: Vec<(String, Fields)>,
     /// The element's own child map, if it has one. The store saves and loads it, but no command
     /// sets it yet.
     pub child_map: Option<MapRef>,
@@ -38,7 +40,7 @@ pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "refs", "s
 /// is a field of the element, not a layer, so every read of the element returns it.
 pub const REFS: &str = "refs";
 /// The want-record fields, in R-6.17's order, first in a want record; any other follows by name.
-pub const WANT_ORDER: [&str; 3] = ["why", "how", "direction"];
+pub const WANT_ORDER: [&str; 4] = ["why", "how", "direction", "ref"];
 
 /// Put `fields` in canonical order: the names in `first`, in that order, then the rest by name.
 fn put_in_order(fields: &mut Fields, first: &[&str]) {
@@ -64,9 +66,14 @@ impl Element {
             self.fields.insert(REFS.to_string(), Value::Array(vec![uri]));
         }
         put_in_order(&mut self.fields, &FIELD_ORDER);
-        for record in self.wants.values_mut() {
+        for (_, record) in self.wants.iter_mut() {
             put_in_order(record, &WANT_ORDER);
         }
+        // The store keeps wants as relationships, which have no order. One fixed order, by the
+        // want's key (its element, then its `ref`), makes an element read the same after every
+        // reload.
+        let uri = |record: &Fields| record.get("ref").and_then(Value::as_str).unwrap_or_default().to_string();
+        self.wants.sort_by(|a, b| (a.0.as_str(), uri(&a.1)).cmp(&(b.0.as_str(), uri(&b.1))));
     }
 
     /// An element with nothing in it: a namespace branch that a write created.
@@ -245,7 +252,8 @@ impl Map {
             }
             for other in element
                 .wants
-                .keys()
+                .iter()
+                .map(|(other, _)| other)
                 .filter(|other| !elements.contains_key(*other))
             {
                 problems.push(format!("'{address}' wants '{other}', which does not exist"));
@@ -285,7 +293,7 @@ impl Map {
         elements
             .iter()
             .filter(|(holder, element)| {
-                holder.as_str() != address && element.wants.contains_key(address)
+                holder.as_str() != address && element.wants.iter().any(|(other, _)| other == address)
             })
             .map(|(holder, _)| holder.clone())
             .collect()
@@ -295,7 +303,7 @@ impl Map {
     pub(crate) fn wanted(&self) -> BTreeSet<&str> {
         self.elements
             .values()
-            .flat_map(|element| element.wants.keys().map(String::as_str))
+            .flat_map(|element| element.wants.iter().map(|(other, _)| other.as_str()))
             .collect()
     }
 }
@@ -309,18 +317,18 @@ pub(crate) fn want_json(end: &str, other: &str, record: &Fields) -> Value {
     Value::Object(out)
 }
 
-/// A value read as want records: a list of objects that each name their providing element
-/// in `element`. The result is keyed by that address, because an element holds one want for
-/// each providing element. Anything else named `wants` is not a list of wants.
-pub(crate) fn read_wants(value: &Value) -> Option<BTreeMap<String, Fields>> {
+/// A value read as want records: a list of objects that each name the wanted element in
+/// `element`. The result keeps every record, in the order given. Anything else named `wants` is
+/// not a list of wants.
+pub(crate) fn read_wants(value: &Value) -> Option<Vec<(String, Fields)>> {
     let records = value.as_array()?;
-    let mut wants = BTreeMap::new();
+    let mut wants = Vec::new();
     for record in records {
         let mut fields = record.as_object()?.clone();
-        let Some(Value::String(pe)) = fields.shift_remove("element") else {
+        let Some(Value::String(element)) = fields.shift_remove("element") else {
             return None;
         };
-        wants.insert(pe, fields);
+        wants.push((element, fields));
     }
     Some(wants)
 }

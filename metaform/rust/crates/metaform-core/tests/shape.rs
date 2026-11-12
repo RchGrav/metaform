@@ -236,12 +236,6 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
             json!({"add": {"code.x": {"wants": [with_end("element", "<address>", placeholder())]}}}),
         ),
         (
-            "W9",
-            json!({"add": {"code.x": {"wants": [with_end("element", "code.y", want()), with_end("element", "code.y", want())]}}}),
-            "wants at 'code.x' names 'code.y' more than once; an element holds one want for each providing element".into(),
-            json!(null),
-        ),
-        (
             "W3",
             json!({"update": {game: {"wants": [{"element": bus, "why": "receive input", "how": "dispatches events", "direction": "receive", "note": "extra"}]}}}),
             format!("{at_want} does not take: note"),

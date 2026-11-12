@@ -85,15 +85,16 @@ pub(crate) fn shallow(map: &Map) -> Value {
         .map(|(address, _)| address)
         .filter(|address| *address != ROOT)
         .collect();
-    let edges: Vec<Value> = map
-        .elements()
-        .flat_map(|(holder, element)| {
-            element
-                .wants
-                .keys()
-                .map(move |other| json!([holder, other]))
-        })
-        .collect();
+    // One pair for each element that wants another, however many wants it holds on it.
+    let mut edges: Vec<Value> = Vec::new();
+    for (holder, element) in map.elements() {
+        for (other, _) in &element.wants {
+            let pair = json!([holder, other]);
+            if !edges.contains(&pair) {
+                edges.push(pair);
+            }
+        }
+    }
     let defining: Vec<&str> = map
         .elements()
         .filter(|(address, element)| is_project_defining(address, element.fields.get("role")))
@@ -139,11 +140,13 @@ pub(crate) fn goto(map: &Map, address: &str) -> Result<Value, Refusal> {
     // Each want that names this element, with its receiving element in `element`.
     let wanted_by: Vec<Value> = map
         .elements()
-        .filter_map(|(holder, holder_element)| {
-            (holder != address)
-                .then(|| holder_element.wants.get(address))
-                .flatten()
-                .map(|record| crate::model::want_json("element", holder, record))
+        .filter(|(holder, _)| *holder != address)
+        .flat_map(|(holder, holder_element)| {
+            holder_element
+                .wants
+                .iter()
+                .filter(|(other, _)| other == address)
+                .map(move |(_, record)| crate::model::want_json("element", holder, record))
         })
         .collect();
     let mut layers: JsonMap<String, Value> = element

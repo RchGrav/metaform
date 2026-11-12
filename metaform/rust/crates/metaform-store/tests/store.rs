@@ -544,3 +544,23 @@ fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
     drop(store);
     assert_eq!(count(&file, records), 0, "a deleted element leaves no records");
 }
+
+/// Several wants on one element survive the store: each is its own relationship, and a reopened
+/// home returns all of them.
+#[test]
+fn several_wants_on_one_element_survive_a_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let map = MapKey::standalone("photos");
+    let want = |uri: &str, why: &str| json!({"element": "media.photo.subject", "why": why, "how": "shows the item whole", "direction": "receive", "ref": uri});
+    let read = json!({"downstream.seller": {"wants": {}}});
+    let before = {
+        let store = Store::open(&home).unwrap();
+        store.execute(A, &map, &json!({"add": {"downstream.seller": {"wants": [want("a.jpg", "show the watch"), want("b.jpg", "show the mug")]}}})).unwrap();
+        store.execute(A, &map, &json!({"add": {"downstream.seller": {"wants": [want("c.jpg", "show the glass")]}}})).unwrap();
+        store.execute(A, &map, &read).unwrap()
+    };
+    assert_eq!(before["downstream.seller"]["wants"].as_array().unwrap().len(), 3);
+    let store = Store::open(&home).unwrap();
+    assert_eq!(store.execute(A, &map, &read).unwrap(), before);
+}

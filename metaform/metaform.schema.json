@@ -176,11 +176,11 @@
       "items": {
         "$ref": "#/$defs/WantRecord"
       },
-      "description": "What this receiving element wants: a list with one record for each wanted element. The intake procedure calls these dependency records."
+      "description": "What this receiving element wants: a list of want records. The intake procedure calls these dependency records."
     },
     "WantRecord": {
       "title": "Want record",
-      "description": "One want of this receiving element: the element it wants, why it wants it, how that element serves the purpose, and the direction of the flow. These four are one set. An element appears once in the list.",
+      "description": "One want of this receiving element: the element it wants, why it wants it, how that element serves the purpose, and the direction of the flow. These are one set. It may name the one artifact it is about in ref. An element may hold several wants on the same element.",
       "type": "object",
       "properties": {
         "element": {
@@ -208,6 +208,12 @@
             "receive",
             "both"
           ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "The uri of the one artifact this want is about. When a map covers several artifacts, such as a folder of photographs, each want names its artifact here, and an element holds one want for each artifact."
         }
       },
       "required": [

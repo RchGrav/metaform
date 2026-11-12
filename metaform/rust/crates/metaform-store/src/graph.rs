@@ -324,7 +324,7 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
             address,
             Element {
                 fields,
-                wants: BTreeMap::new(),
+                wants: Vec::new(),
                 child_map,
             },
         );
@@ -354,7 +354,7 @@ pub fn load(conn: &Connection, map: &str) -> Result<Map, StoreError> {
             .get_mut(&receiver)
             .ok_or_else(|| StoreError::Corrupt(format!("want from missing element {receiver}")))?
             .wants
-            .insert(provider, record);
+            .push((provider, record));
     }
     let found = rows(
         conn,
@@ -490,8 +490,20 @@ fn persist_wants(
     new: &Element,
 ) -> Result<(), StoreError> {
     let k = key(map, address);
-    for (provider, record) in &old.wants {
-        if new.wants.get(provider) != Some(record) {
+    // An element may hold several wants on one element. For each wanted element whose wants
+    // changed, every relationship to it is removed and its wants are written again.
+    let on = |element: &'_ Element, provider: &str| -> Vec<Fields> {
+        element.wants.iter().filter(|(other, _)| other == provider).map(|(_, record)| record.clone()).collect()
+    };
+    let mut providers: Vec<&String> = old.wants.iter().chain(&new.wants).map(|(other, _)| other).collect();
+    providers.sort();
+    providers.dedup();
+    for provider in providers {
+        let (before, after) = (on(old, provider), on(new, provider));
+        if before == after {
+            continue;
+        }
+        if !before.is_empty() {
             run(
                 conn,
                 "MATCH (:Element {key: $a})-[w:DEPENDS_ON]->(:Element {key: $b}) DELETE w",
@@ -501,26 +513,23 @@ fn persist_wants(
                 ],
             )?;
         }
-    }
-    for (provider, record) in &new.wants {
-        if old.wants.get(provider) == Some(record) {
-            continue;
+        for record in &after {
+            let (columns, extra) = split(record, &WANT_COLUMNS);
+            let mut params = vec![
+                ("a", Value::from(k.as_str())),
+                ("b", Value::from(key(map, provider).as_str())),
+                ("extra", opt(extra)),
+            ];
+            for (name, value) in WANT_COLUMNS.iter().zip(columns) {
+                params.push((name, opt(value)));
+            }
+            run(
+                conn,
+                "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
+                 CREATE (a)-[:DEPENDS_ON {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
+                params,
+            )?;
         }
-        let (columns, extra) = split(record, &WANT_COLUMNS);
-        let mut params = vec![
-            ("a", Value::from(k.as_str())),
-            ("b", Value::from(key(map, provider).as_str())),
-            ("extra", opt(extra)),
-        ];
-        for (name, value) in WANT_COLUMNS.iter().zip(columns) {
-            params.push((name, opt(value)));
-        }
-        run(
-            conn,
-            "MATCH (a:Element {key: $a}), (b:Element {key: $b}) \
-             CREATE (a)-[:DEPENDS_ON {why: $why, how: $how, direction: $direction, extra: $extra}]->(b)",
-            params,
-        )?;
     }
     Ok(())
 }

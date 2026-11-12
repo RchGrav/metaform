@@ -8,7 +8,7 @@
       "role": "AT, DE, SE, NE, CQU, UD or DD. {\"help\": \"intake/core_concepts\"} defines them.",
       "refs": "A list with one uri for each artifact that has this address.",
       "status": "un_built for functionality that is intended and not built.",
-      "wants": "A list with one record for each element this element wants. A record holds element (the wanted element's address), why, how and direction (send, receive or both). The wanted element is created at its own address if it is not there. why and how are sentence fragments that complete the sentence below."
+      "wants": "A list of want records. A record holds element (the wanted element's address), why, how, direction (send, receive or both) and ref (the uri of the one artifact the want is about). An element may hold several wants on the same element, one for each artifact or purpose. The wanted element is created at its own address if it is not there. why and how are sentence fragments that complete the sentence below."
     },
     "examples": [
       {
@@ -48,7 +48,7 @@
     "does": "Changes fields of an element. A field set to null is removed; a field left out is unchanged. A wants record names its element and gives only the fields to change.",
     "fields": {
       "technical_name, name, role, refs, status": "As in add. A list replaces the list that is there.",
-      "wants": "A list of records. Each holds element and the fields to change: why, how or direction. {\"help\": \"add\"} gives the sentence that why and how complete."
+      "wants": "A list of records. Each holds element, and ref or why to say which want when the element has several, and the fields to change. {\"help\": \"add\"} gives the sentence that why and how complete."
     },
     "examples": [
       {

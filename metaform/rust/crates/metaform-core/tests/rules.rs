@@ -178,3 +178,44 @@ fn an_empty_wants_and_a_system_layer_that_is_not_a_list_are_refused() {
     );
     write(&contract, &map, json!({"update": {GAME: {"sources": ["./docs/engine.md"]}}}));
 }
+
+/// An element's wants are an array. It may hold several wants on the same element, one for each
+/// artifact. A want's key is its element together with its `ref`: a record with the same key
+/// changes that want and stores no second copy.
+#[test]
+fn an_element_holds_several_wants_on_one_element() {
+    let contract = Contract::bundled().unwrap();
+    let want = |uri: &str, why: &str| json!({"element": "media.photo.subject", "why": why, "how": "shows the item whole", "direction": "receive", "ref": uri});
+    let map = write(&contract, &Map::new(), json!({"add": {"downstream.seller": {"wants": [want("a.jpg", "show the watch"), want("b.jpg", "show the mug")]}}}));
+    assert_eq!(map.element("downstream.seller").unwrap().wants.len(), 2);
+    // A later command adds a third artifact's want and keeps the two that are there.
+    let map = write(&contract, &map, json!({"add": {"downstream.seller": {"wants": [want("c.jpg", "show the glass")]}}}));
+    assert_eq!(map.element("downstream.seller").unwrap().wants.len(), 3);
+    // The same ref again changes that want.
+    let map = write(&contract, &map, json!({"add": {"downstream.seller": {"wants": [want("a.jpg", "show the watch dial")]}}}));
+    let seller = map.element("downstream.seller").unwrap();
+    assert_eq!(seller.wants.len(), 3);
+    assert!(seller.wants.iter().any(|(_, record)| record["ref"] == "a.jpg" && record["why"] == "show the watch dial"));
+    // update names the want by its ref and changes one field.
+    let map = write(&contract, &map, json!({"update": {"downstream.seller": {"wants": [{"element": "media.photo.subject", "ref": "b.jpg", "direction": "both"}]}}}));
+    let seller = map.element("downstream.seller").unwrap();
+    assert!(seller.wants.iter().any(|(_, record)| record["ref"] == "b.jpg" && record["direction"] == "both" && record["why"] == "show the mug"));
+    // The key is the element with the ref. A want with no ref is the one want on that element
+    // with none, so a second record with no ref changes it.
+    let map = write(&contract, &map, json!({"add": {"code.engine.game": {"wants": [
+        {"element": "code.bus", "why": "receive input", "how": "dispatches events", "direction": "receive"}
+    ]}}}));
+    let map = write(&contract, &map, json!({"update": {"code.engine.game": {"wants": [{"element": "code.bus", "direction": "both"}]}}}));
+    let game = map.element("code.engine.game").unwrap();
+    assert_eq!(game.wants.len(), 1);
+    assert_eq!(game.wants[0].1["direction"], "both");
+    // goto on the wanted element lists every want that names it, and map lists the pair once.
+    let sheet = execute(&contract, &map, &json!({"goto": "media.photo.subject"})).unwrap();
+    assert_eq!(sheet.result()["wanted_by"].as_array().unwrap().len(), 3);
+    let index = execute(&contract, &map, &json!({"map": {}})).unwrap();
+    let pairs = index.result()["edges"].as_array().unwrap().iter().filter(|pair| pair[0] == "downstream.seller").count();
+    assert_eq!(pairs, 1);
+    // delete with the element's address removes every want on it.
+    let map = write(&contract, &map, json!({"delete": {"downstream.seller": {"wants": ["media.photo.subject"]}}}));
+    assert!(map.element("downstream.seller").is_none_or(|seller| seller.wants.is_empty()));
+}

@@ -362,6 +362,13 @@ impl Store {
             .as_object()
             .and_then(|o| o.keys().next())
             .map(String::as_str);
+        // A ref inside the project is stored relative to the project folder, so the map holds
+        // when the folder moves. A map that belongs to no project has no folder to be relative to.
+        if let DbKey::Project(id) = &map.db
+            && let Some(project) = self.projects()?.into_iter().find(|project| &project.id == id)
+        {
+            metaform_core::refs::check_relative(command, &project.folder).map_err(Failure::Refused)?;
+        }
         if !matches!(verb, Some("add" | "update" | "delete")) {
             let snapshot = db.snapshot(&map.map)?;
             return match metaform_core::execute(&self.contract, &snapshot, command) {

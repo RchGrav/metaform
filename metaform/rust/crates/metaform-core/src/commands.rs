@@ -124,17 +124,18 @@ impl Work<'_> {
         self.elements.get_mut(address).expect("ensured before use")
     }
 
-    /// Write a want. Supplied fields change the current record; the result needs every field
-    /// (R-5.6). The element the want names is created if it is not there (R-5.4).
+    /// Write a want. Within a receiving element, a want's key is its element together with its
+    /// `ref`, the artifact it is about (founder, 2026-11-12). A record whose element and `ref`
+    /// match a want that is there changes that want; a want with no `ref` matches a record with
+    /// none. Any other record is a new want. The result needs every field (R-5.6). The wanted
+    /// element is created if it is not there (R-5.4).
     fn write_want(&mut self, holder: &str, other: &str, change: &Value) -> Result<(), Refusal> {
-        let mut record = self.elements[holder]
-            .wants
-            .get(other)
-            .cloned()
-            .unwrap_or_default();
-        if let Value::Object(change) = change {
-            record.extend(change.clone());
-        }
+        let change = change.as_object().cloned().unwrap_or_default();
+        let wants = &self.elements[holder].wants;
+        let ref_of = |record: &crate::model::Fields| record.get("ref").and_then(Value::as_str).map(str::to_string);
+        let index = (0..wants.len()).find(|i| wants[*i].0 == other && ref_of(&wants[*i].1) == ref_of(&change));
+        let mut record = index.map(|i| wants[i].1.clone()).unwrap_or_default();
+        record.extend(change);
         let filled = |key: &str| {
             record
                 .get(key)
@@ -160,12 +161,13 @@ impl Work<'_> {
             ));
         }
         self.ensure(other)?;
-        self.element_mut(holder)
-            .wants
-            .insert(other.to_string(), record);
+        let element = self.element_mut(holder);
+        match index {
+            Some(index) => element.wants[index].1 = record,
+            None => element.wants.push((other.to_string(), record)),
+        }
         Ok(())
     }
-
 
     /// `add` keeps what is there: arrays grow, and other values are written (R-5.5).
     fn add(&mut self, address: &str, supplied: &Value) -> Result<(), Refusal> {
@@ -233,8 +235,9 @@ impl Work<'_> {
         }
         if let Some(Value::Array(wants)) = supplied.get("wants") {
             for other in wants.iter().filter_map(Value::as_str) {
-                if self.elements[address].wants.contains_key(other) {
-                    self.element_mut(address).wants.remove(other);
+                // Every want on the named element is removed.
+                if self.elements[address].wants.iter().any(|(wanted, _)| wanted == other) {
+                    self.element_mut(address).wants.retain(|(wanted, _)| wanted != other);
                     self.prune(other);
                 }
             }
@@ -270,7 +273,7 @@ impl Work<'_> {
                 Some(json!({"delete": {deepest.as_str(): {}}})),
             ));
         }
-        let wanted: Vec<String> = self.elements[address].wants.keys().cloned().collect();
+        let wanted: Vec<String> = self.elements[address].wants.iter().map(|(other, _)| other.clone()).collect();
         self.remove(address);
         if let Some(parent) = names::parent(address) {
             self.prune(parent);
