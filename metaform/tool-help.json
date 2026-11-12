@@ -1,5 +1,5 @@
 {
-  "note": "What {\"help\": \"<command>\"} returns: what the command does, its fields, and examples. Every example is the founder's, from tool-examples.json, in the tool's current words. Do not add an example of your own: an example changes what a model infers.",
+  "note": "What {\"help\": \"<command>\"} returns: what the command does, its fields, and examples. Every example is the founder's, from tool-examples.json, in the tool's current words. Do not add an example of your own: an example changes what a model infers. The want_sentence in add is the founder's, from SPEC.md R-6.17, word for word.",
   "add": {
     "does": "Adds an element, or adds fields and wants to an element that exists. The key is the element's address. A list grows; any other field is written. One command names one element.",
     "fields": {
@@ -8,67 +8,134 @@
       "role": "AT, DE, SE, NE, CQU, UD or DD. {\"help\": \"intake/core_concepts\"} defines them.",
       "refs": "A list with one uri for each artifact that has this address.",
       "status": "un_built for functionality that is intended and not built.",
-      "wants": "A list with one record for each element this element wants. A record holds element (the wanted element's address), why, how and direction (send, receive or both). The wanted element is created at its own address if it is not there."
+      "wants": "A list with one record for each element this element wants. A record holds element (the wanted element's address), why, how and direction (send, receive or both). The wanted element is created at its own address if it is not there. why and how are sentence fragments that complete the sentence below."
     },
     "examples": [
-      {"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox", "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}},
-      {"add": {"code.protocol.network.tracker.cs": {"wants": [{"element": "code.masher.widget", "why": "Receive the mash data to relay it.", "how": "Prepared mash data packets.", "direction": "receive"}]}}}
-    ]
+      {
+        "add": {
+          "code.masher.widget": {
+            "technical_name": "widget masher code",
+            "name": "mashbox",
+            "role": "SE",
+            "refs": [
+              "./src/widgets/mashbox.c"
+            ]
+          }
+        }
+      },
+      {
+        "add": {
+          "code.protocol.network.tracker.cs": {
+            "wants": [
+              {
+                "element": "code.masher.widget",
+                "why": "Receive the mash data to relay it.",
+                "how": "Prepared mash data packets.",
+                "direction": "receive"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "want_sentence": {
+      "sentence": "{this.address} ({this.name}) requires {other.address} ({other.name}) in order to {why}, which {how}.",
+      "why": "Bare infinitive verb phrase. State the active goal as a sentence fragment beginning with a base action verb. Do not include a leading 'to', subject nouns, or any words ending in -ing. Example: drain raw frames from the network interface card",
+      "how": "Third-person singular present indicative verb phrase. State how the provider satisfies the goal beginning with a present-tense verb ending in -s or -es that agrees with 'which'. Do not include subject nouns, 'by', or any words ending in -ing. Example: holds descriptor pointers across contiguous memory segments"
+    }
   },
   "update": {
     "does": "Changes fields of an element. A field set to null is removed; a field left out is unchanged. A wants record names its element and gives only the fields to change.",
     "fields": {
       "technical_name, name, role, refs, status": "As in add. A list replaces the list that is there.",
-      "wants": "A list of records. Each holds element and the fields to change: why, how or direction."
+      "wants": "A list of records. Each holds element and the fields to change: why, how or direction. {\"help\": \"add\"} gives the sentence that why and how complete."
     },
     "examples": [
-      {"update": {"code.masher.widget": {"role": null}}}
+      {
+        "update": {
+          "code.masher.widget": {
+            "role": null
+          }
+        }
+      }
     ]
   },
   "delete": {
     "does": "Deletes an element with {}, or removes wants by naming their elements. An element that another element wants is not deleted; the refusal returns the command that removes that want.",
     "examples": [
-      {"delete": {"code.protocol.network.tracker.cs": {"wants": ["code.masher.widget"]}}},
-      {"delete": {"code.masher.widget": {}}}
+      {
+        "delete": {
+          "code.protocol.network.tracker.cs": {
+            "wants": [
+              "code.masher.widget"
+            ]
+          }
+        }
+      },
+      {
+        "delete": {
+          "code.masher.widget": {}
+        }
+      }
     ]
   },
   "orphaned": {
     "does": "Returns the elements that no element wants, each with its own fields. Being orphaned does not mean an element should be deleted.",
     "examples": [
-      {"orphaned": {}}
+      {
+        "orphaned": {}
+      }
     ]
   },
   "goto": {
     "does": "Places you at an element and returns its fields, its wants, the wants that name it (wanted_by), and the layers that hold records there. A later goto to the same address returns only what changed.",
     "examples": [
-      {"goto": "code.masher.widget"}
+      {
+        "goto": "code.masher.widget"
+      }
     ]
   },
   "map": {
     "does": "Returns every address, each want as a pair (the element that holds it, then the wanted element), and the Defining Elements. It returns no fields. The layers are the addresses beneath layer.",
     "examples": [
-      {"map": {}}
+      {
+        "map": {}
+      }
     ]
   },
   "addressed read": {
     "does": "A key that is an address reads that element's own fields. To add a layer to the answer, name it with {} as its value.",
     "examples": [
-      {"code.masher.widget": {}},
-      {"code.masher.widget": {"wants": {}}}
+      {
+        "code.masher.widget": {}
+      },
+      {
+        "code.masher.widget": {
+          "wants": {}
+        }
+      }
     ]
   },
   "raw dump": {
     "does": "A key that starts with a period returns the stored JSON at that path, with everything beneath it. A period alone returns the whole project.",
     "examples": [
-      {".code.masher": {}}
+      {
+        ".code.masher": {}
+      }
     ]
   },
   "help": {
     "does": "{} lists the names help takes. A command name returns what the command does, its fields and examples. intake lists the sections of the intake procedure, and intake/<section> returns one.",
     "examples": [
-      {"help": {}},
-      {"help": "add"},
-      {"help": "intake"}
+      {
+        "help": {}
+      },
+      {
+        "help": "add"
+      },
+      {
+        "help": "intake"
+      }
     ]
   }
 }
