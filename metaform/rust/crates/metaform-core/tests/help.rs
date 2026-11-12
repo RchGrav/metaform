@@ -72,37 +72,28 @@ fn help_with_no_name_returns_the_schema_of_help() {
     );
 }
 
-/// `{"help": "intake"}` lists the sections of the intake procedure in the file's order, and
+/// `{"help": "intake"}` lists the sections of the intake procedure in reading order, and
 /// `{"help": "intake/<section>"}` returns one section's text. A name the procedure does not
 /// hold is refused with the command that lists the sections.
+///
+/// This test reads the list from the procedure itself. It asserts nothing about which sections
+/// exist, what they are named, which are required or what they say, so the founder can edit,
+/// rename, add and remove sections without a test failing.
 #[test]
 fn help_serves_the_intake_procedure_one_section_at_a_time() {
     let contract = Contract::bundled().unwrap();
+    let sections = metaform_core::procedure::sections();
     let listing = execute(&contract, &Map::new(), &json!({"help": "intake"})).unwrap();
-    let names: Vec<String> = listing.result()["help"]["intake"]["sections"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|name| name.as_str().unwrap().to_string())
-        .collect();
-    let expected: Vec<String> = metaform_core::procedure::sections().into_iter().map(|s| s.name).collect();
-    assert_eq!(names, expected);
-    for wanted in ["goal", "core_concepts", "namespace_rules", "cqu_rules", "constraints", "method"] {
-        assert!(names.iter().any(|name| name == wanted), "the procedure has a {wanted} section");
-    }
-    let mut whole = 0;
-    for name in &names {
-        let key = format!("intake/{name}");
+    let names: Vec<&str> = sections.iter().map(|s| s.name).collect();
+    let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name).collect();
+    assert_eq!(listing.result()["help"]["intake"]["sections"], json!(names));
+    assert_eq!(listing.result()["help"]["intake"]["required"], json!(required));
+    for section in &sections {
+        let key = format!("intake/{}", section.name);
         let answer = execute(&contract, &Map::new(), &json!({"help": key})).unwrap();
-        let text = answer.result()["help"][&key].as_str().unwrap().to_string();
-        assert!(!text.is_empty() && !text.starts_with('<'), "{name} is Markdown, served without its tags");
-        whole += text.len();
+        assert_eq!(answer.result()["help"][&key], json!(section.text));
     }
-    assert_eq!(listing.result()["help"]["intake"]["required"], json!(["core_concepts"]));
-    let listing_bytes = listing.result().to_string().len();
-    assert!(listing_bytes < 700, "the listing is short: {listing_bytes} bytes");
-    assert!(whole > 20_000, "the sections together hold the procedure: {whole} bytes");
-    let unknown = execute(&contract, &Map::new(), &json!({"help": "intake/nothing"})).unwrap_err();
+    let unknown = execute(&contract, &Map::new(), &json!({"help": "intake/no such section"})).unwrap_err();
     assert_eq!(unknown.code, Code::FieldMismatch);
     assert_eq!(unknown.remediation.as_deref(), Some(&json!({"help": "intake"})));
 }

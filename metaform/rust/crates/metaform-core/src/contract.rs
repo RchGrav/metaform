@@ -105,8 +105,8 @@ impl Contract {
         // one. An agent reads a section when it needs the rules in it, and no sooner.
         if name == "intake" {
             let sections = crate::procedure::sections();
-            let names: Vec<&str> = sections.iter().map(|s| s.name.as_str()).collect();
-            let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name.as_str()).collect();
+            let names: Vec<&str> = sections.iter().map(|s| s.name).collect();
+            let required: Vec<&str> = sections.iter().filter(|s| s.required).map(|s| s.name).collect();
             return Ok(json!({"help": {"intake": {
                 "sections": names,
                 "required": required,

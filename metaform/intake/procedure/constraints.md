@@ -1,0 +1,11 @@
+- Elements represent discrete functional roles actively instantiated by this artifact, named and described at their most specific reusable type level.
+- Never use vague top-level labels where a specific functional mechanism exists.
+- Keep namespace identity type-level; the dependencies carry the AUE-specific Operative Purpose and Encounter Function.
+- After working through the process and the closure pass, attempt to anneal dependencies and combine elements to a final shape that speaks to the artifact type.
+- You must seek to create a thorough and complete map of the parent functionalities.
+- Keep the graph shape limited to artifact's functional elements as a type, while speaking to the function of the AUE as a whole in its dependencies.
+- Focus on the notable elements of interest and observe that just because it can be named doesn't mean it is interesting, remarkable, or deserving of special attention.
+- A dependency speaks about this artifact. Its purpose and function state what this AUE actually does, in its own particulars.
+- The dependency data must speak to the AUE. Where an AUE represents something, describe the function of that representation within the AUE rather than substituting the independent real-world functionality of what is represented.
+- For every AUE, seek SE elements as defined in core concepts.
+- Intake is never gated or judged; only the resulting map may be graded and the intake refined contextually afterward.
