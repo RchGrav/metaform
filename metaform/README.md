@@ -1,6 +1,6 @@
 # Metaform
 
-Metaform is a functional topology: a map of what a project does. It forms that map by intake, from intent, from a specification or from an existing project, code or not. It takes in a specification, refines and organizes it, and saves it in an improved form. It serves as a formboard that agents use to realign a code base that is hard to refactor. Inside any project, it is a context management system (`SPEC.md`, section 1).
+Metaform is a functional topology: a map of what a project does. It forms that map by intake, from intent, from a specification or from an existing project, code or not. It takes in a specification, refines and organizes it, and saves it in an improved form. Agents use the map to realign a code base that is hard to refactor: the map states what every part must connect to, so each change can be checked against it. Inside any project, it is a context management system (`SPEC.md`, section 1).
 
 ## What Metaform is for
 
@@ -56,17 +56,17 @@ This separates two kinds of change. Mutation changes how something is built and 
 
 Every element has these relationships, because something always depends on it. An element that nothing depends on is not a type.
 
-One relationship is an anchor. It holds an element to what it is, and everything it does not fix is free to move.
+One relationship fixes part of what an element is. An agent may change anything that the relationship does not state.
 
-Many relationships are a formboard. Together they give the shape that every part of the project has to fit.
+All the relationships together state what every part of the project must connect to, and why.
 
-The formboard does its most useful work when code is refactored. An agent that rewires tangled code works a few steps at a time, and the code does not show what each step breaks somewhere else. The formboard shows it. Every part has a place, and each place states what depends on it and why. The agent checks each step against that shape, so it sees a break when it makes one. The same shape decodes the tangle: for each strand of the code, the formboard says what it is for and what it has to connect to.
+That statement is most useful when code is refactored. An agent that rewires tangled code works a few steps at a time, and the code does not show what each step breaks somewhere else. The map shows it. Every element has an address, and each address states what depends on that element and why. The agent checks each step against those relationships, so it sees a break when it makes one. The same relationships explain the tangled code: for each piece of the code, the map says what it is for and what it must connect to.
 
-<!-- Placeholder, 2026-11-09: what the anchor is used for. Ideation and creativity, and a surface for experiments that seek improvement without guidance. To be written when the owner describes these uses. -->
+<!-- Placeholder, 2026-11-09: what a single relationship is used for. Ideation and creativity, and a surface for experiments that seek improvement without guidance. To be written when the owner describes these uses. -->
 
-## The skeleton and what it carries
+## The map and the knowledge kept on it
 
-The map is the skeleton of the project. The skeleton keeps the project the kind of thing it is. It does not make the project the particular thing it is. That comes from everything else that is true of it, and all of that is kept on the skeleton, at the functionality it concerns. So the map is the structure that holds everything else: a natural index of the project.
+The map is the fixed structure of the project. It records what kind of thing the project is. It does not record what makes the project the particular thing it is. That comes from everything else that is true of the project, and each such fact is kept on the map, at the functionality it concerns. So the map is an index of the project: every fact has one address.
 
 That knowledge is kept in layers. A layer is an array attached to an element. Each layer has a definition under `layer`, which is the system's own schema and is not part of the project. The specification layer's definition names it `specification`, so each element that receives it has a `specification` array.
 
@@ -84,7 +84,7 @@ Layers come and go with the work, and the map stays. To port a project from C++ 
 
 ## The form in Metaform
 
-A form is a shape, and the formboard is that shape. A form is also a thing with fields to fill in, and the map is that too. Every address is a place that holds what is known about one piece of functionality.
+The word form has two meanings here, and the map is both. A form is a shape: the map gives the shape of the project. A form is also a document with fields to fill in: every address is a field that holds what is known about one piece of functionality.
 
 So an agent that arrives at its work is handed what belongs to that work, already gathered and sorted: the element, what it needs, what relies on it, and the knowledge and skills kept there. It is handed nothing that belongs to other work. An agent on the network code does not receive the skills or the history of the storage code, and it spends no reasoning on setting them aside.
 
