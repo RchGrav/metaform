@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+I want to put forth some expectations up from when it comes to this project and it's design. I ask that you recognize and respect them.
+@EXPECTATIONS.md
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
