@@ -8,10 +8,41 @@ use crate::names::{self, ROOT};
 use crate::refusal::{Code, Refusal};
 use crate::specification;
 
-/// The roles of the intake procedure, spelled as a write must spell them: Artifact Type,
-/// Defining Element, Supportive Element, Notable Element, Cestui Que Use, Upstream Dependency
-/// and Downstream Dependant.
-pub const ROLES: [&str; 7] = ["AT", "DE", "SE", "NE", "CQU", "UD", "DD"];
+/// The roles, spelled as a write must spell them (founder, 2026-11-15: a role is written by its
+/// full name). A Coupled Element is a Supporting Element whose functionality cannot be changed
+/// apart from the elements that want it, so work on it and work on them is not assigned to
+/// different worktrees at the same time.
+pub const ROLES: [&str; 8] = [
+    "Artifact Type",
+    "Defining Element",
+    "Supporting Element",
+    "Coupled Element",
+    "Notable Element",
+    "Cestui Que Use",
+    "Upstream Dependency",
+    "Downstream Dependant",
+];
+
+/// The role that names what an artifact is. `map` lists the project's elements that hold it.
+pub const DEFINING: &str = "Defining Element";
+
+/// What a refusal puts in place of a role that it cannot correct.
+pub(crate) const ROLE_PLACEHOLDER: &str = "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>";
+
+/// The intake procedure's abbreviations of the roles, each with the role it means. A write that uses
+/// one is refused with the same write using the role's name, because an agent that follows the
+/// procedure exactly must be given the right command. The store uses the abbreviations to bring
+/// a map stored before 2026-11-15 up to date.
+pub const ROLE_WORDS: [(&str, &str); 8] = [
+    ("AT", "Artifact Type"),
+    ("DE", "Defining Element"),
+    ("SE", "Supporting Element"),
+    ("CE", "Coupled Element"),
+    ("NE", "Notable Element"),
+    ("CQU", "Cestui Que Use"),
+    ("UD", "Upstream Dependency"),
+    ("DD", "Downstream Dependant"),
+];
 
 /// Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the
 /// map before the write.
@@ -89,7 +120,8 @@ fn check_technical_name(before: &Map, address: &str, element: &Element) -> Resul
 
 /// A write that sets or changes `role` must set one of `ROLES` (R-3.13). A role the write
 /// did not change is not checked, so a stored map with older role names (`Definitive`,
-/// `Supportive`, `Notable`, `Divergent`) still accepts unrelated writes.
+/// `Supportive`, `Notable`, `Divergent`) still accepts unrelated writes. A role written in one
+/// of the procedure's words is refused with the write that uses the role's name.
 fn check_role(before: &Map, address: &str, element: &Element) -> Result<(), Refusal> {
     let Some(role) = element.fields.get("role").and_then(Value::as_str) else {
         return Ok(());
@@ -98,10 +130,11 @@ fn check_role(before: &Map, address: &str, element: &Element) -> Result<(), Refu
     if stored == Some(role) || ROLES.contains(&role) {
         return Ok(());
     }
+    let meant = ROLE_WORDS.iter().find(|(word, _)| *word == role).map_or(ROLE_PLACEHOLDER, |(_, name)| *name);
     Err(Refusal::new(
         Code::RoleTaxonomyFailure,
         format!("'{address}': role \"{role}\" is not one of: {}", ROLES.join(", ")),
-        Some(correction(before, address, element, "role", "<AT, DE, SE, NE, CQU, UD or DD>")),
+        Some(correction(before, address, element, "role", meant)),
     ))
 }
 

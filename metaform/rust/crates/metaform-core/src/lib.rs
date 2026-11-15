@@ -32,3 +32,4 @@ pub use contract::{Contract, ContractError};
 pub use model::{Effect, Element, Fields, Map, MapError, MapRef};
 pub use names::{ROOT, ROOT_SCOPES, agent_name, stored_name};
 pub use refusal::{Code, Refusal};
+pub use rules::{ROLES, ROLE_WORDS};

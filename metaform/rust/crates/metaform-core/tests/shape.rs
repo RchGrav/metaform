@@ -110,7 +110,7 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
             "N3",
             json!({"update": {game: {"role": 7}}}),
             format!("role at '{game}' must be text that is not blank"),
-            json!({"update": {game: {"role": "<AT, DE, SE, NE, CQU, UD or DD>"}}}),
+            json!({"update": {game: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}}),
         ),
         (
             "N4",
@@ -349,7 +349,7 @@ fn commands_of_the_right_shape_pass_the_shape_check() {
     let contract = Contract::bundled().unwrap();
     let mut map = Map::new();
     for command in [
-        json!({"add": {"code.engine.game": {"technical_name": "game engine", "name": "Quake core", "role": "DE", "refs": ["./src/engine.c"], "status": "un_built"}}}),
+        json!({"add": {"code.engine.game": {"technical_name": "game engine", "name": "Quake core", "role": "Defining Element", "refs": ["./src/engine.c"], "status": "un_built"}}}),
         json!({"update": {"code.engine.game": {"status": null, "refs": null, "note": null, "why": null}}}),
         json!({"update": {"code.engine.game": {"wants": [with_end("element", "code.bus", want())]}}}),
         json!({"update": {"code.engine.game": {"wants": [{"element": "code.bus", "direction": "both"}]}}}),

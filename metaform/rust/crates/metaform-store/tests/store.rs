@@ -27,9 +27,9 @@ fn want() -> Value {
 fn seed(store: &Store, map: &MapKey) {
     let commands = [
         json!({"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox",
-            "role": "SE", "refs": ["./src/widgets/mashbox.c"]}}}),
+            "role": "Supporting Element", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
-            "name": "mashtrac", "role": "DE", "refs": ["./src/network/mashtrac.c"],
+            "name": "mashtrac", "role": "Defining Element", "refs": ["./src/network/mashtrac.c"],
             "memory": [{"fact": "relays mash data"}], "wants": [with_end("element", "code.masher.widget", want())]}}}),
     ];
     for c in commands {
@@ -286,7 +286,7 @@ fn a_setting_survives_a_reopen_and_bounds_open_databases() {
 }
 
 /// R-009: a database made before the want renames (table `WANTS`; fields `why`, `how`, `intent`) opens with its
-/// wants intact. A database whose tables differ in any other way is refused before anything in it
+/// wants intact, and a role stored as an abbreviation is read by its full name. A database whose tables differ in any other way is refused before anything in it
 /// is changed, and the refusal says so.
 #[test]
 fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
@@ -308,9 +308,12 @@ fn an_older_database_is_brought_up_to_date_or_refused_unchanged() {
     // table named `WANTS`.
     raw("ALTER TABLE DEPENDS_ON RENAME direction TO intent");
     raw("ALTER TABLE DEPENDS_ON RENAME TO WANTS");
+    // Put back the roles as a build before 2026-11-15 stored them: the procedure's abbreviations.
+    raw("MATCH (e:Element) WHERE e.role = 'Defining Element' SET e.role = 'DE'");
+    raw("MATCH (e:Element) WHERE e.role = 'Supporting Element' SET e.role = 'SE'");
     {
         let store = Store::open(&home).unwrap();
-        assert_eq!(reads(&store, &map), before, "the wants survive the rename");
+        assert_eq!(reads(&store, &map), before, "the wants survive the rename, and each role reads by its full name");
         let want = store
             .execute(
                 B,
@@ -431,7 +434,7 @@ fn a_batch_is_stored_whole_or_not_at_all() {
     let map = project(&store, dir.path());
     store.execute(B, &map, &json!({".": {}})).unwrap(); // seeds the definition first
     let announced = store.subscribe(&map);
-    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Frame mover", "role": "DE"}}});
+    let element = json!({"add": {"code.pipeline": {"technical_name": "pipeline", "name": "Frame mover", "role": "Defining Element"}}});
     let blocks = |code: &str| {
         json!({"update": {"code.pipeline": {"specification": [{"level": 1, "code": code, "title": "Purpose", "text": "Moves frames."}]}}})
     };
@@ -491,13 +494,13 @@ fn layers_are_records_and_the_map_reads_back_byte_for_byte() {
         let define = json!({"update": {"layer.knowledge.features": {"instruction": "Tag each element with the groups it belongs to."}}});
         store.execute(A, &map, &define).unwrap();
         let add = json!({"add": {"code.alpha": {
-            "role": "SE", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
+            "role": "Supporting Element", "zeta": "last by name", "name": "Alpha part", "technical_name": "alpha",
             "features": [{"b": 1, "a": {"y": 2, "x": [1, 2]}}, "naïve ✓ \"quoted\"", 3],
             "sources": [], "memory": [{"fact": "one"}, {"fact": "two"}]}}});
         store.execute(A, &map, &add).unwrap();
         let written = dump(&store);
         assert!(
-            written.contains(r#"{"technical_name":"alpha","name":"Alpha part","role":"SE","features""#),
+            written.contains(r#"{"technical_name":"alpha","name":"Alpha part","role":"Supporting Element","features""#),
             "intake fields first, then the rest by name: {written}"
         );
         written

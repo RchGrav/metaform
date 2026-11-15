@@ -271,7 +271,7 @@ impl Check<'_> {
             Some(_) => Ok(()),
             None => {
                 let placeholder = if key == "role" {
-                    "<AT, DE, SE, NE, CQU, UD or DD>".to_string()
+                    crate::rules::ROLE_PLACEHOLDER.to_string()
                 } else {
                     format!("<{key}>")
                 };

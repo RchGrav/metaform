@@ -71,7 +71,7 @@ impl Code {
             }
             Code::CanonicalNameCollisionFailure => "R-3.12: name must not equal technical_name.",
             Code::RoleTaxonomyFailure => {
-                "R-3.13: a role is AT, DE, SE, NE, CQU, UD or DD."
+                "R-3.13: a role is Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant."
             }
             Code::GrammarConstraintViolation => {
                 "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."
@@ -96,7 +96,7 @@ impl Code {
             }
             Code::WantIncomplete => "R-5.6: a want needs all of its fields: why, how and direction.",
             Code::ElementNotInSkeleton => {
-                "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Defining Element (role DE)."
+                "R-6.26: layer records are written only at an element with technical_name, name and role, or at the root once the map has a Defining Element."
             }
             Code::HeadingLevelInvalid => {
                 "R-6.25: the first titled block is level 1, each level is at most one more than the level before it, and no level is above 4."

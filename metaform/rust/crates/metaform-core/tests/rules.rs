@@ -22,7 +22,7 @@ fn refused(contract: &Contract, map: &Map, command: Value) -> Refusal {
 }
 
 fn seeded(contract: &Contract) -> Map {
-    let game = json!({"technical_name": "game engine", "name": "Quake core", "role": "DE"});
+    let game = json!({"technical_name": "game engine", "name": "Quake core", "role": "Defining Element"});
     write(contract, &Map::new(), json!({"add": {GAME: game}}))
 }
 
@@ -50,7 +50,7 @@ fn name_may_equal_technical_name() {
     write(
         &contract,
         &map,
-        json!({"add": {"downstream.reader": {"technical_name": "reader", "name": "reader", "role": "NE"}}}),
+        json!({"add": {"downstream.reader": {"technical_name": "reader", "name": "reader", "role": "Notable Element"}}}),
     );
 }
 
@@ -70,7 +70,7 @@ fn a_deletion_leaves_no_empty_element() {
     let filled = write(
         &contract,
         &with_stub,
-        json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "NE"}}}),
+        json!({"update": {"code.nothing.here": {"technical_name": "here nothing", "name": "Placeholder", "role": "Notable Element"}}}),
     );
     let kept = write(&contract, &filled, json!({"delete": {GAME: {"wants": ["code.nothing.here"]}}}));
     assert!(kept.element("code.nothing.here").is_some());
@@ -84,7 +84,7 @@ fn a_second_defining_element_is_accepted() {
     let map = write(
         &contract,
         &map,
-        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "DE"}}}),
+        json!({"add": {"code.loop.main": {"technical_name": "main loop", "name": "Frame pump", "role": "Defining Element"}}}),
     );
     let index = execute(&contract, &map, &json!({"map": {}})).unwrap();
     assert_eq!(index.result()["defining"], json!(["code.engine.game", "code.loop.main"]));
@@ -94,26 +94,34 @@ fn a_second_defining_element_is_accepted() {
 fn a_written_role_is_one_of_the_roles() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    for role in ["Helper", "de", "Definitive", "Supportive", "Notable", "Divergent", "AUE", "SE "] {
+    for role in ["Helper", "de", "Definitive", "Supportive", "Notable", "Divergent", "AUE", "SE ", "defining element"] {
         let refusal = refused(&contract, &map, json!({"update": {GAME: {"role": role}}}));
         assert_eq!(refusal.code, Code::RoleTaxonomyFailure, "{role}");
         assert_eq!(
             refusal.reason,
-            format!("'code.engine.game': role \"{role}\" is not one of: AT, DE, SE, NE, CQU, UD, DD")
+            format!("'code.engine.game': role \"{role}\" is not one of: Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency, Downstream Dependant")
         );
         assert_eq!(
             refusal.to_json()["remediation"],
-            json!({"update": {GAME: {"role": "<AT, DE, SE, NE, CQU, UD or DD>"}}})
+            json!({"update": {GAME: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}})
         );
     }
     let created = refused(&contract, &map, json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "Helper"}}}));
     assert_eq!(
         created.to_json()["remediation"],
-        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<AT, DE, SE, NE, CQU, UD or DD>"}}}),
+        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}}),
         "a refused add stored nothing, so the remediation adds the element again"
     );
-    for role in ["AT", "SE", "NE", "CQU", "UD", "DD", "DE"] {
+    for role in metaform_core::ROLES {
         write(&contract, &map, json!({"update": {GAME: {"role": role}}}));
+    }
+    write(&contract, &map, json!({"update": {GAME: {"role": "Coupled Element"}}}));
+    // A role written in one of the procedure's words is answered with the role's name.
+    for (word, name) in metaform_core::ROLE_WORDS {
+        let refusal = refused(&contract, &map, json!({"update": {GAME: {"role": word}}}));
+        assert_eq!(refusal.code, Code::RoleTaxonomyFailure, "{word}");
+        assert_eq!(refusal.to_json()["remediation"], json!({"update": {GAME: {"role": name}}}), "{word}");
+        write(&contract, &map, refusal.to_json()["remediation"].clone());
     }
     // A stored map with older role names loads and accepts writes that do not change a role.
     // A write that changes one must use the current names.
@@ -124,7 +132,7 @@ fn a_written_role_is_one_of_the_roles() {
     let (_, old) = Map::from_document(&stored).unwrap();
     let old = write(&contract, &old, json!({"update": {"code.queue": {"status": "un_built"}}}));
     assert_eq!(refused(&contract, &old, json!({"update": {"code.queue": {"role": "Notable"}}})).code, Code::RoleTaxonomyFailure);
-    let old = write(&contract, &old, json!({"update": {"code.relay": {"name": "Relay station", "role": "DE"}}}));
+    let old = write(&contract, &old, json!({"update": {"code.relay": {"name": "Relay station", "role": "Defining Element"}}}));
     let index = execute(&contract, &old, &json!({"map": {}})).unwrap();
     assert_eq!(index.result()["defining"], json!(["code.relay"]));
 }
@@ -133,7 +141,7 @@ fn a_written_role_is_one_of_the_roles() {
 fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
     let contract = Contract::bundled().unwrap();
     let map = seeded(&contract);
-    let layer = json!({"technical_name": "cpp code layer", "name": "C++ notes", "role": "SE", "instruction": "Record what the C++ realization requires."});
+    let layer = json!({"technical_name": "cpp code layer", "name": "C++ notes", "role": "Supporting Element", "instruction": "Record what the C++ realization requires."});
     let map = write(&contract, &map, json!({"add": {"layer.code.cpp": layer}}));
     let records = json!([{"note": "owns the frame allocator"}]);
     let map = write(&contract, &map, json!({"update": {GAME: {"cpp": records, "memory": [{"note": "kept"}]}}}));
@@ -157,7 +165,7 @@ fn a_refusal_about_layer_records_gives_a_remediation_that_works() {
     let added = write(&contract, &map, json!({"add": {GAME: {"cpp": [{"note": "an object"}]}}}));
     assert_eq!(added.element(GAME).unwrap().fields["cpp"].as_array().unwrap().len(), 2, "add keeps the stored record");
     // Where the element holds no records of the layer, an object is still an element beneath.
-    let beneath = write(&contract, &map, json!({"add": {"code.pool": {"memory": {"technical_name": "memory pool", "name": "Arena", "role": "SE"}}}}));
+    let beneath = write(&contract, &map, json!({"add": {"code.pool": {"memory": {"technical_name": "memory pool", "name": "Arena", "role": "Supporting Element"}}}}));
     assert!(beneath.element("code.pool.memory").is_some());
 }
 

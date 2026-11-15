@@ -63,13 +63,13 @@
     "code.masher.widget": {
       "technical_name": "widget masher code",
       "name": "mashbox",
-      "role": "SE",
+      "role": "Supporting Element",
       "refs": ["./src/widgets/mashbox.c"]
     },
     "code.protocol.network.tracker.cs": {
       "technical_name": "cs tracker network protocol",
       "name": "mashtrac",
-      "role": "DE",
+      "role": "Defining Element",
       "refs": ["./src/network/mashtrac.c"]
     }
   },
@@ -90,7 +90,7 @@
       "element": {
         "technical_name": "widget masher code",
         "name": "mashbox",
-        "role": "SE",
+        "role": "Supporting Element",
         "refs": ["./src/widgets/mashbox.c"]
       },
       "wants": [],

@@ -349,7 +349,7 @@ fn layers_are_defined_in_the_map_and_the_specification_definition_is_locked() {
     let contract = Contract::bundled().unwrap();
     let map = seeded();
 
-    let features = json!({"technical_name": "features knowledge layer", "name": "Features", "role": "SE",
+    let features = json!({"technical_name": "features knowledge layer", "name": "Features", "role": "Supporting Element",
         "instruction": "Tag the element with each feature it belongs to."});
     let (map, _) = run(
         &contract,

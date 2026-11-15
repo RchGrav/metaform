@@ -61,7 +61,7 @@ pub const INSTRUCTION: &str = "Write each block in TASTE: Technically Accurate, 
 
 /// How records of the `markdown_blocks` format are written through the tool (R-6.25, R-6.26).
 /// `goto` delivers it before the definition's own instruction. `{layer}` is the field name.
-const MARKDOWN_FORM: &str = "The {layer} field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"{layer}\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Defining Element (role DE).";
+const MARKDOWN_FORM: &str = "The {layer} field is a list of blocks: {\"level\": 1-4, \"title\": \"...\", \"text\": \"...\"}. A titled block may also carry \"code\", a key that other text can cite; it is unique in the layer across the map, ignoring case. The first block may be {\"text\": \"...\"} alone, as an intro under the element's heading. The first titled block is level 1, and each level is at most one more than the level before it. update replaces every block at the address and is safe to repeat; add appends blocks; if an answer is lost, a retried add appends them twice. Read them with {\"<address>\": {\"{layer}\": {}}}. The root's blocks are in the raw dump {\".\": {}}, because a key that starts with a period is a raw dump. Blocks are accepted at an element that has technical_name, name and role, and at . once the map has a Defining Element.";
 
 /// The fields of the specification layer's definition element at `DEFINITION_ADDRESS`. The store
 /// writes it into each main map, so the export and `goto` always find the layer (R-6.24).
@@ -70,7 +70,7 @@ pub fn definition() -> Fields {
     for (key, value) in [
         ("technical_name", "specification document layer"),
         ("name", "Specification"),
-        ("role", "SE"),
+        ("role", "Supporting Element"),
         (
             "description",
             "Prose that the skeleton leaves out on purpose: what each element does, how it behaves and why, as blocks with Markdown heading levels.",
@@ -644,7 +644,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
     if !records_allowed(map, address) {
         // No command lets a layer definition hold records, so that refusal has no remediation.
         let remediation = if address == ROOT {
-            Some(json!({"update": {"<address of a Defining Element>": {"role": "DE"}}}))
+            Some(json!({"update": {"<address of a Defining Element>": {"role": "Defining Element"}}}))
         } else if in_layer_scope(address) {
             None
         } else {
@@ -662,7 +662,7 @@ pub fn check_allowed(map: &Map, address: &str, layer: &str) -> Result<(), Refusa
             Some(json!({"update": {address: fix}}))
         };
         let reason = if address == ROOT {
-            format!("'.': {layer} records at the root need a Defining Element (role DE) in the map first")
+            format!("'.': {layer} records at the root need a Defining Element in the map first")
         } else if in_layer_scope(address) {
             format!("'{address}': {layer} records do not go on layer definitions")
         } else {

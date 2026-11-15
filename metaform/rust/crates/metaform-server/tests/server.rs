@@ -558,7 +558,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     let mut agent = Agent::start(&home, &project);
     agent.request("server/discover", json!({}));
     let (refused, said) = agent.call(json!({"add": {"code": {
-        "technical_name": "code", "name": "Packet Lab", "role": "DE",
+        "technical_name": "code", "name": "Packet Lab", "role": "Defining Element",
         "specification": [
             {"text": "Packet Lab records frames from the network card."},
             {"level": 1, "title": "Scope", "text": "It MUST record every frame."}
@@ -575,7 +575,7 @@ fn the_specification_exports_as_markdown_through_the_cli() {
     assert_eq!(code, 0, "{document}");
     assert_eq!(
         document,
-        "# lab\n\n## Packet Lab (`code`)\n\nRole: DE. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
+        "# lab\n\n## Packet Lab (`code`)\n\nRole: Defining Element. Technical name: code.\n\nPacket Lab records frames from the network card.\n\n### Scope\n\nIt MUST record every frame.\n"
     );
     let (code, checked, reports) = run(&["specification", "export", "--check", "--project", folder]);
     assert_eq!((code, checked), (0, document), "--check leaves stdout as the document");
@@ -606,8 +606,8 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     let (refused, answer) = agent.call(seed);
     assert!(!refused, "{answer}");
     for (address, technical, name, role) in [
-        ("code.engine", "engine", "main loop", "DE"),
-        ("code.render", "render", "painter", "SE"),
+        ("code.engine", "engine", "main loop", "Defining Element"),
+        ("code.render", "render", "painter", "Supporting Element"),
     ] {
         let fields = json!({"technical_name": technical, "name": name, "role": role});
         let (refused, answer) = agent.call(json!({"update": {address: fields}}));
@@ -650,9 +650,9 @@ fn an_edited_specification_imports_all_or_nothing() {
     let mut agent = Agent::start(&home, &project);
     agent.request("server/discover", json!({}));
     for command in [
-        json!({"add": {"code": {"technical_name": "code", "name": "Packet Lab", "role": "DE",
+        json!({"add": {"code": {"technical_name": "code", "name": "Packet Lab", "role": "Defining Element",
             "specification": [{"level": 1, "code": "PL-1", "title": "Scope", "text": "Packet Lab records frames."}]}}}),
-        json!({"add": {"code.store": {"technical_name": "store code", "name": "Frame Store", "role": "SE",
+        json!({"add": {"code.store": {"technical_name": "store code", "name": "Frame Store", "role": "Supporting Element",
             "specification": [{"level": 1, "title": "Retention", "text": "The store keeps frames for a week."}]}}}),
     ] {
         let (refused, said) = agent.call(command);
@@ -719,8 +719,8 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
     let seed = json!({"update": {definition: serde_json::Value::Object(metaform_core::specification::definition())}});
     for command in [
         seed,
-        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "DE"}}}),
-        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "SE"}}}),
+        json!({"update": {"code.engine": {"technical_name": "engine", "name": "main loop", "role": "Defining Element"}}}),
+        json!({"update": {"code.render": {"technical_name": "render", "name": "painter", "role": "Supporting Element"}}}),
     ] {
         let (refused, answer) = agent.call(command);
         assert!(!refused, "{answer}");

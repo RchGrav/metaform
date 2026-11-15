@@ -532,7 +532,7 @@ mod tests {
 
     fn reports_for(blocks: Value) -> Vec<Report> {
         let map = Map::from_tree(&json!({
-            "code": {"technical_name": "code", "name": "Lab", "role": "DE", "specification": blocks}
+            "code": {"technical_name": "code", "name": "Lab", "role": "Defining Element", "specification": blocks}
         }))
         .unwrap();
         check(&map)

@@ -477,11 +477,11 @@ mod tests {
             "code": {
                 "technical_name": "code",
                 "name": "Packet Lab",
-                "role": "DE",
+                "role": "Defining Element",
                 "pipeline": {
                     "technical_name": "pipeline code",
                     "name": "Packet Pipeline",
-                    "role": "SE",
+                    "role": "Supporting Element",
                     "status": "un_built",
                     "wants": [{"element": "code.store", "why": "Keep frames.", "how": "holds frames on disk", "direction": "send"}],
                     "specification": [
@@ -490,10 +490,10 @@ mod tests {
                         {"level": 1, "title": "Errors", "text": ""}
                     ]
                 },
-                "pipeline-tools": {"technical_name": "pipeline-tools code", "name": "Pipeline Tools", "role": "NE"},
-                "store": {"technical_name": "store code", "name": "Frame Store", "role": "SE"}
+                "pipeline-tools": {"technical_name": "pipeline-tools code", "name": "Pipeline Tools", "role": "Notable Element"},
+                "store": {"technical_name": "store code", "name": "Frame Store", "role": "Supporting Element"}
             },
-            "upstream": {"nic": {"technical_name": "nic upstream", "name": "Network Card", "role": "SE"}}
+            "upstream": {"nic": {"technical_name": "nic upstream", "name": "Network Card", "role": "Supporting Element"}}
         }))
         .unwrap()
     }
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(render(&again, "packet-lab"), first);
         assert!(first.starts_with("# packet-lab\n\nPacket Lab records network traffic for later study.\n\n## `PL-1` Scope\n\n"));
         assert!(first.contains("### Out of scope"));
-        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: SE. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### `PL-2.a` Purpose"));
+        assert!(first.contains("## Packet Pipeline (`code.pipeline`)\n\nRole: Supporting Element. Technical name: pipeline code. Status: un_built.\n\n- `code.pipeline` (Packet Pipeline) requires `code.store` (Frame Store) in order to keep frames, which holds frames on disk.\n\n### `PL-2.a` Purpose"));
         assert!(first.contains("#### Limits"));
     }
 
@@ -531,7 +531,7 @@ mod tests {
         // `layer` becomes a root scope on specification-layer-core; add its element directly.
         let mut elements: BTreeMap<String, Element> =
             map().elements().map(|(a, e)| (a.to_string(), e.clone())).collect();
-        let listed = Map::from_tree(&json!({"code": {"technical_name": "specification document layer", "name": "Specification", "role": "SE"}})).unwrap();
+        let listed = Map::from_tree(&json!({"code": {"technical_name": "specification document layer", "name": "Specification", "role": "Supporting Element"}})).unwrap();
         for prefix in ["layer", "layer.document"] {
             elements.insert(prefix.into(), Element::default());
         }
@@ -542,7 +542,7 @@ mod tests {
         assert!(at("(`code.pipeline`)") < at("(`code.pipeline-tools`)"));
         assert!(at("(`code.store`)") < at("(`upstream.nic`)"));
         assert!(!document.contains("(`layer."), "the layer scope is not part of the document");
-        let older = Map::from_tree(&json!({"code": {"name": "Old", "role": "NE", "part": {"name": "Part"}}})).unwrap();
+        let older = Map::from_tree(&json!({"code": {"name": "Old", "role": "Notable Element", "part": {"name": "Part"}}})).unwrap();
         assert_eq!(left_out(&older), vec!["code", "code.part"]);
     }
 
@@ -563,7 +563,7 @@ mod tests {
         let map = map();
         let document = render(&map, "packet-lab");
         let cases = [
-            (document.replace("Role: SE. Technical name: pipeline code", "Role: NE. Technical name: pipeline code"), "skeleton facts"),
+            (document.replace("Role: Supporting Element. Technical name: pipeline code", "Role: Notable Element. Technical name: pipeline code"), "skeleton facts"),
             (format!("{document}\n## Ghost (`code.ghost`)\n"), "not an element"),
             (document.replace("## Frame Store (`code.store`)", "## Store (`code.store`)"), "must read"),
             (document.replace("#### Limits", "##### Limits"), "level 3 follows level 1"),

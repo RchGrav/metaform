@@ -5,7 +5,7 @@
     "fields": {
       "technical_name": "The short practitioner name: the leading words of the address read in reverse.",
       "name": "The name this project gives the element.",
-      "role": "AT, DE, SE, NE, CQU, UD or DD. {\"help\": \"intake/core_concepts\"} defines them.",
+      "role": "Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant. {\"help\": \"intake/core_concepts\"} defines them.",
       "refs": "A list with one uri for each artifact that has this address.",
       "status": "un_built for functionality that is intended and not built.",
       "wants": "A list of want records. A record holds element (the wanted element's address), why, how, direction (send, receive or both) and ref (the uri of the one artifact the want is about). An element may hold several wants on the same element, one for each artifact or purpose. The wanted element is created at its own address if it is not there. why and how are sentence fragments that complete the sentence below."
@@ -16,7 +16,7 @@
           "code.masher.widget": {
             "technical_name": "widget masher code",
             "name": "mashbox",
-            "role": "SE",
+            "role": "Supporting Element",
             "refs": [
               "./src/widgets/mashbox.c"
             ]

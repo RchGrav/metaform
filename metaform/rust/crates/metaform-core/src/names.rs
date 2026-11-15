@@ -26,7 +26,7 @@ pub const ROOT_SCOPES: [&str; 8] = [
 pub const ROOT_PREFIXES: [&str; 3] = ["upstream", "downstream", "layer"];
 
 /// Whether an address belongs to the project itself: the root, or an element not under a root
-/// prefix. A Defining Element (role DE) counts only among these elements.
+/// prefix. A Defining Element counts only among these elements.
 pub fn in_project(address: &str) -> bool {
     address == ROOT || !ROOT_PREFIXES.contains(&address.split('.').next().unwrap_or_default())
 }

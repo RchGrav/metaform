@@ -186,9 +186,9 @@ fn refusals_name_the_rule_and_change_nothing() {
         |direction: &str| json!({"why": "Relay it.", "how": "Supplies data.", "direction": direction});
     let table = [
         (
-            json!({"add": {"Code.relay": {"role": "SE"}}}),
+            json!({"add": {"Code.relay": {"role": "Supporting Element"}}}),
             Code::NameRoundTripFailure,
-            Some(json!({"add": {"code.relay": {"role": "SE"}}})),
+            Some(json!({"add": {"code.relay": {"role": "Supporting Element"}}})),
         ),
         (
             json!({"update": {"code.queue_2": {"name": "q"}}}),
@@ -246,7 +246,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"add": {"code.relay": {"role": "Definitive"}}}),
             Code::RoleTaxonomyFailure,
-            Some(json!({"add": {"code.relay": {"role": "<AT, DE, SE, NE, CQU, UD or DD>"}}})),
+            Some(json!({"add": {"code.relay": {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}})),
         ),
         (
             json!({"delete": {"code.protocol": {}}}),
@@ -364,7 +364,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(
         &contract,
         &map,
-        json!({"update": {"code.new.part": {"role": "DE"}}}),
+        json!({"update": {"code.new.part": {"role": "Defining Element"}}}),
     );
     assert_eq!(
         read(&contract, &map, json!({"map": {}}))["defining"],
@@ -378,7 +378,7 @@ fn writes_create_paths_and_reads_return_each_form() {
     map = write(&contract, &map, remediation);
     assert_eq!(
         read(&contract, &map, json!({"orphaned": {}})),
-        json!({"code.new.part": {"name": "renamed", "role": "DE"}})
+        json!({"code.new.part": {"name": "renamed", "role": "Defining Element"}})
     );
     map = write(&contract, &map, json!({"delete": {"code.other.part": {}}}));
     assert!(
@@ -389,16 +389,16 @@ fn writes_create_paths_and_reads_return_each_form() {
 }
 
 /// A Defining Element counts only among the project's own elements (R-3.3, R-3.7): an element
-/// under `upstream` with the role DE is not listed by `map`. A second DE inside the project is
+/// under `upstream` with the role Defining Element is not listed by `map`. A second one inside the project is
 /// accepted, and `map` lists both.
 #[test]
 fn map_lists_the_defining_elements_of_the_project_only() {
     let contract = Contract::bundled().unwrap();
-    let project = json!({"technical_name": "game engine code", "name": "Game Engine", "role": "DE"});
-    let chained = json!({"technical_name": "game engine code upstream", "name": "Physics", "role": "DE",
+    let project = json!({"technical_name": "game engine code", "name": "Game Engine", "role": "Defining Element"});
+    let chained = json!({"technical_name": "game engine code upstream", "name": "Physics", "role": "Defining Element",
         "refs": ["https://example.com/physics.git"]});
     let map = write(&contract, &Map::new(), json!({"add": {"code.engine.game": project}}));
     let map = write(&contract, &map, json!({"add": {"upstream.code.engine.game": chained}}));
-    let map = write(&contract, &map, json!({"add": {"code.engine.audio": {"technical_name": "audio engine code", "name": "Audio", "role": "DE"}}}));
+    let map = write(&contract, &map, json!({"add": {"code.engine.audio": {"technical_name": "audio engine code", "name": "Audio", "role": "Defining Element"}}}));
     assert_eq!(read(&contract, &map, json!({"map": {}}))["defining"], json!(["code.engine.audio", "code.engine.game"]));
 }

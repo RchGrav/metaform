@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 
 use lbug::{Connection, Database, SystemConfig, Value};
-use metaform_core::{Effect, Element, Fields, Map, MapRef, ROOT, agent_name, stored_name};
+use metaform_core::{Effect, Element, Fields, Map, MapRef, ROLE_WORDS, ROOT, agent_name, stored_name};
 use serde_json::Value as Json;
 
 use crate::StoreError;
@@ -190,7 +190,8 @@ pub fn open(path: &std::path::Path) -> Result<Database, StoreError> {
             for table in TABLES {
                 c.query(&table.ddl())?;
             }
-            move_layers_out_of_extra(c)
+            move_layers_out_of_extra(c)?;
+            name_roles_in_full(c)
         })?;
     }
     Ok(db)
@@ -615,6 +616,21 @@ fn create_record(
             ("d", item.to_string().into()),
         ],
     )
+}
+
+/// Write each stored role by its full name. For a few days before 2026-11-15 a build stored a role
+/// as the intake procedure's abbreviation, such as `DE` for `Defining Element`. Runs inside
+/// `open`'s schema transaction; it changes an element only while its role is one of those words,
+/// so after the first open of an older database it changes nothing.
+fn name_roles_in_full(conn: &Connection) -> Result<(), StoreError> {
+    for (word, name) in ROLE_WORDS {
+        run(
+            conn,
+            "MATCH (e:Element) WHERE e.role = $w SET e.role = $n",
+            vec![("w", word.into()), ("n", name.into())],
+        )?;
+    }
+    Ok(())
 }
 
 /// Move layers that an earlier build kept in `extra` into `Record` nodes. Runs inside `open`'s

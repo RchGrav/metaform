@@ -8,7 +8,7 @@
         "widget": {
           "technical_name": "widget masher code",
           "name": "mashbox",
-          "role": "SE",
+          "role": "Supporting Element",
           "refs": ["./src/widgets/mashbox.c"]
         }
       },
@@ -18,7 +18,7 @@
             "cs": {
               "technical_name": "cs tracker network protocol",
               "name": "mashtrac",
-              "role": "DE",
+              "role": "Defining Element",
               "refs": ["./src/network/mashtrac.c"],
               "wants": [{"element": "code.masher.widget", "why": "Receive the mash data to relay it.",
                   "how": "Prepared mash data packets.",

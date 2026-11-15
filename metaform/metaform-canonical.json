@@ -54,7 +54,7 @@
           "knowledge": {
             "technical_name": "knowledge management system",
             "name": "Metaform",
-            "role": "DE",
+            "role": "Defining Element",
             "wants": [{"element": "code.service.decision", "direction": "receive",
                 "why": "Reuse typed judgments for agent allocation, knowledge ordering, triage, intake coverage and session diagnostics.",
                 "how": "Asks typed decisions, caches answers and records actionable judgments at their addresses while preserving ordinary behavior when disabled or unavailable."}, {"element": "code.interface.graphical", "direction": "both",
@@ -85,7 +85,7 @@
         "decision": {
           "technical_name": "decision service",
           "name": "Jev",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.service.inference", "direction": "receive",
               "why": "Obtain typed judgments over supplied project state.",
               "how": "Returns Choice, Noul or Score answers with probabilities and confidence through the configured decision endpoint."}]
@@ -93,27 +93,27 @@
         "provisioning": {
           "technical_name": "provisioning service",
           "name": "Harness provisioning",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "backup": {
           "technical_name": "backup service",
           "name": "Backup and restore",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "report": {
           "technical_name": "report service",
           "name": "Reports",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "query": {
           "technical_name": "query service",
           "name": "Queries",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "speech": {
           "technical_name": "speech service",
           "name": "elevenlabs",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.service.speech", "direction": "both",
               "why": "Obtain account-selected remote voices and transcription.",
               "how": "Streams synthesized speech and Scribe transcription through authenticated API calls."}]
@@ -123,7 +123,7 @@
         "graphical": {
           "technical_name": "graphical interface",
           "name": "Web GUI",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.assistant.navigation", "direction": "both",
               "why": "Coordinate project conversation and attention on the person's current view.",
               "how": "Lets agents inspect the shared view and pointer, indicate map parts, capture evidence and act through a visible figure."}, {"element": "upstream.code.browser.web", "direction": "both",
@@ -133,7 +133,7 @@
         "telephone": {
           "technical_name": "telephone interface",
           "name": "twilio",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.service.telephony", "direction": "both",
               "why": "Carry project calls, texts and notifications through a telephone service.",
               "how": "Delivers signed call and message webhooks and places configured outbound notifications through Twilio."}]
@@ -141,12 +141,12 @@
         "command_line": {
           "technical_name": "command line interface",
           "name": "Command line",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "speech": {
           "technical_name": "speech interface",
           "name": "voice",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.service.speech", "direction": "both",
               "why": "Offer service transcription and synthesis alongside local speech engines.",
               "how": "Provides account-selected streaming voices and Scribe transcription through the voice.engine contract."}]
@@ -156,26 +156,26 @@
         "navigation": {
           "technical_name": "navigation assistant",
           "name": "Agent embodiment",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "coordinator": {
         "discussion": {
           "technical_name": "discussion coordinator",
           "name": "Roundtables",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "server": {
         "hosting": {
           "technical_name": "hosting server",
           "name": "node",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "tool": {
           "technical_name": "tool server",
           "name": "MCP server",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.gateway.messaging", "direction": "both",
               "why": "Exchange project-addressed work with external agents while retaining requests, progress and returns.",
               "how": "Receives A2A messages as tracked tickets, sends addressed work to configured peers, and retains exchange status, cancellation, input requests and returned artifacts."}, {"element": "code.scheduler.tool", "direction": "both",
@@ -189,7 +189,7 @@
         "plugin": {
           "technical_name": "plugin framework",
           "name": "Chassis",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.store.prompt", "direction": "both",
               "why": "Serve authored agent instructions with traceable revisions and permit deliberate review of the text a process receives.",
               "how": "Versions shipped and edited text, retains provenance uses, fills declared resource placeholders, and provides prompt review, packet editing, source update and structural notices without substituting code for semantic judgment."}, {"element": "code.manager.configuration", "direction": "receive",
@@ -215,7 +215,7 @@
         "prompt": {
           "technical_name": "prompt store",
           "name": "Prompt store",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.editor.prompt", "direction": "both",
               "why": "Review and revise authored agent prompts while retaining their exact prior revisions.",
               "how": "Catalogs prompt text, purpose comments and load sites, appends edited versions and updates source or emits reviewable edit packets."}]
@@ -223,12 +223,12 @@
         "history": {
           "technical_name": "history store",
           "name": "Artifact history",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "event": {
           "technical_name": "event store",
           "name": "Data access object",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.code.engine.database", "direction": "both",
               "why": "Commit durable record changes and coordinate process access to local stores.",
               "how": "Provides transactional local persistence for operation logs, snapshots, registries and module tables, with the shared connection layer applying schema versions, write locking and connection settings."}, {"element": "code.store.provenance", "direction": "receive",
@@ -239,13 +239,13 @@
           "projection": {
             "technical_name": "projection event",
             "name": "Graph projection",
-            "role": "SE"
+            "role": "Supporting Element"
           }
         },
         "provenance": {
           "technical_name": "provenance store",
           "name": "Provenance",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.service.report", "direction": "receive",
               "why": "Retain intake reports and execution feedback with their producing context.",
               "how": "Stores report bodies, records their paths, appends locked feedback with layer and prompt context, and lists or reads saved reports."}]
@@ -253,45 +253,45 @@
         "memory": {
           "technical_name": "memory store",
           "name": "memory",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "editor": {
         "prompt": {
           "technical_name": "prompt editor",
           "name": "Prompt review",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "manager": {
         "configuration": {
           "technical_name": "configuration manager",
           "name": "Settings",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "repository": {
           "technical_name": "repository manager",
           "name": "fork",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "gateway": {
         "messaging": {
           "technical_name": "messaging gateway",
           "name": "A2A",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "scheduler": {
         "tool": {
           "technical_name": "tool scheduler",
           "name": "MCP tasks",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "task": {
           "technical_name": "task scheduler",
           "name": "Work queue",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.monitor.fault", "direction": "receive",
               "why": "Turn repeated runtime faults into functionally located repair work and retain evidence that fixes hold.",
               "how": "Groups faults and watched log errors, files deduplicated tickets at source-linked elements, counts recurrences and verifies repairs through quiet deadlines or named tests."}, {"element": "code.dispatcher.agent", "direction": "both",
@@ -305,14 +305,14 @@
         "application": {
           "technical_name": "application host",
           "name": "MCP Apps",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "installer": {
         "package": {
           "technical_name": "package installer",
           "name": "Installer",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.service.provisioning", "direction": "both",
               "why": "Establish supported Metaform entry points for an unfamiliar agent harness.",
               "how": "Identifies the harness location, emits first-run instructions, records completion and previews backed-up host registration and owned reminders."}, {"element": "code.manager.repository", "direction": "receive",
@@ -326,12 +326,12 @@
         "skill": {
           "technical_name": "skill registry",
           "name": "Universal skills",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "project": {
           "technical_name": "project registry",
           "name": "Projects",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.store.history", "direction": "both",
               "why": "Keep registered project origins and work variants reconstructable after their source is unavailable.",
               "how": "Records origins, changed files or diffs and producer context, then reconstructs selected variants."}, {"element": "code.service.backup", "direction": "both",
@@ -341,21 +341,21 @@
         "role": {
           "technical_name": "role registry",
           "name": "Agent roles",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "bus": {
         "event": {
           "technical_name": "event bus",
           "name": "Events",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.bus.event.relay", "direction": "both",
               "why": "Deliver map changes across processes sharing the Metaform home.",
               "how": "Transports authenticated map.changed events through loopback listeners, acknowledges receipt and removes refused listener records."}],
           "relay": {
             "technical_name": "relay event",
             "name": "Event relay",
-            "role": "SE"
+            "role": "Supporting Element"
           }
         }
       },
@@ -363,7 +363,7 @@
         "package": {
           "technical_name": "package builder",
           "name": "Build",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.exchange.data", "direction": "both",
               "why": "Carry project identity, map history and remote work between environments without silently overwriting the local workpiece.",
               "how": "Exports and imports versioned records and declared module tables. Archives bundle map data and optional origin files; remote returns carry working layers, file variations and notes, and import writes source changes into a separate review folder."}]
@@ -373,7 +373,7 @@
         "data": {
           "technical_name": "data exchange",
           "name": "Project archive",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.verifier.integrity", "direction": "both",
               "why": "Detect whether visible packet work and its carried provenance still correspond when a sealed packet is exchanged.",
               "how": "Seals and checks ZIP packets: hashes bind visible work to a manifest, and a derived-key authenticated envelope binds the hidden data to that manifest and packet lineage. Its supplied evidence enables tamper detection rather than secrecy. Current build archives use a separate unsealed exchange path."}]
@@ -383,14 +383,14 @@
         "integrity": {
           "technical_name": "integrity verifier",
           "name": "packet",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "graph": {
         "knowledge": {
           "technical_name": "knowledge graph",
           "name": "Inference Metaform",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.exporter.document", "direction": "receive",
               "why": "Make the visible functional map readable outside a live interface.",
               "how": "Produces address-preserving Markdown, Mermaid and XML from contextual Store reads, retaining roles, references and encounter records."}, {"element": "code.store.event", "direction": "both",
@@ -410,21 +410,21 @@
         "document": {
           "technical_name": "document exporter",
           "name": "Map export",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "resolver": {
         "context": {
           "technical_name": "context resolver",
           "name": "Layer selection",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "processor": {
         "intake": {
           "technical_name": "intake processor",
           "name": "intake",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.code.harness.agent", "direction": "receive",
               "why": "Obtain semantic analysis of the actual workpiece from an agent able to examine its artifacts and follow the authored intake.",
               "how": "Reads the procedure and schema, traces source functionality, reasons type identities and receiver purposes, and records its analysis through Metaform's tools. The intake module supplies the procedure and storage rather than performing that reasoning itself."}]
@@ -434,14 +434,14 @@
         "tunnel": {
           "technical_name": "tunnel proxy",
           "name": "cloud",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.proxy.tunnel.broker", "direction": "both",
               "why": "Route each authorized hosted client to its account's machine.",
               "how": "Terminates client OAuth, signs caller assertions and multiplexes streams to the selected machine without retaining maps or call results."}],
           "broker": {
             "technical_name": "broker tunnel",
             "name": "Broker",
-            "role": "SE"
+            "role": "Supporting Element"
           }
         }
       },
@@ -449,14 +449,14 @@
         "test": {
           "technical_name": "test suite",
           "name": "Tests and CI",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "engine": {
         "workflow": {
           "technical_name": "workflow engine",
           "name": "workflow",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.preprocessor.prompt", "direction": "receive",
               "why": "Supply the lexicalized operation with knowledge applicable at its addressed elements.",
               "how": "Preserves supplied wording, assembles visible knowledge and properties by layer, includes always-show records and appends canonical name-to-address references."}, {"element": "upstream.code.harness.agent", "direction": "both",
@@ -474,14 +474,14 @@
         "prompt": {
           "technical_name": "prompt preprocessor",
           "name": "Prompt lexicalization",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "router": {
         "assignment": {
           "technical_name": "assignment router",
           "name": "Specialist assignment routing",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "code.registry.role", "direction": "receive",
               "why": "Select reusable expertise and deliver the exact authored duty assigned to each specialist.",
               "how": "Lists specialist purposes and role URLs, versions authored duties, exposes role resources and records prompt revisions delivered to agent sessions."}]
@@ -491,19 +491,19 @@
         "fault": {
           "technical_name": "fault monitor",
           "name": "Automatic fault tickets",
-          "role": "SE"
+          "role": "Supporting Element"
         },
         "progress": {
           "technical_name": "progress monitor",
           "name": "Rework counter",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "dispatcher": {
         "agent": {
           "technical_name": "agent dispatcher",
           "name": "dispatch",
-          "role": "SE",
+          "role": "Supporting Element",
           "wants": [{"element": "upstream.code.harness.agent", "direction": "both",
               "why": "Run assigned work in the person's installed agent environment and receive activity, results and requests for permission.",
               "how": "Runs assigned work through Claude, Codex or official Antigravity ACP agents using their own host authentication, while dispatch supplies assignments and receives session updates."}, {"element": "code.coordination.reservation", "direction": "receive",
@@ -517,7 +517,7 @@
         "reservation": {
           "technical_name": "reservation coordination",
           "name": "Work claims",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       },
       "integration": {
@@ -525,7 +525,7 @@
           "issue": {
             "technical_name": "issue tracking integration",
             "name": "paperclip",
-            "role": "SE",
+            "role": "Supporting Element",
             "wants": [{"element": "code.adapter.context", "direction": "receive",
                 "why": "Resolve the correct issue and run for each gateway call without repeating context across distinct runs.",
                 "how": "Copies gateway identity into request context. Includes agent, issue and run identifiers. Scopes delivery by agent and run. Uses agent and issue without run. Preserves server environment."}]
@@ -536,7 +536,7 @@
         "context": {
           "technical_name": "context adapter",
           "name": "Gateway issue context",
-          "role": "SE"
+          "role": "Supporting Element"
         }
       }
     },
@@ -545,17 +545,17 @@
         "inference": {
           "technical_name": "inference service",
           "name": "TypeSafe Jev",
-          "role": "NE"
+          "role": "Notable Element"
         },
         "telephony": {
           "technical_name": "telephony service",
           "name": "Twilio",
-          "role": "NE"
+          "role": "Notable Element"
         },
         "speech": {
           "technical_name": "speech service",
           "name": "ElevenLabs API",
-          "role": "NE"
+          "role": "Notable Element"
         }
       },
       "code": {
@@ -563,21 +563,21 @@
           "web": {
             "technical_name": "web browser",
             "name": "Web browser",
-            "role": "NE"
+            "role": "Notable Element"
           }
         },
         "engine": {
           "database": {
             "technical_name": "database engine",
             "name": "SQLite",
-            "role": "NE"
+            "role": "Notable Element"
           }
         },
         "harness": {
           "agent": {
             "technical_name": "agent harness",
             "name": "Agent harness",
-            "role": "NE"
+            "role": "Notable Element"
           }
         }
       }
@@ -586,7 +586,7 @@
       "specification": {
         "technical_name": "specification",
         "name": "Metaform specification",
-        "role": "SE",
+        "role": "Supporting Element",
         "wants": [{"element": "code.suite.test", "direction": "receive",
             "why": "Provide executable evidence for the behavior promised by each requirement and detect regressions at public and persistence boundaries.",
             "how": "Uses isolated Metaform homes, requirement-tagged fixtures, real CLI/MCP round trips, storage migrations and concurrency tests, fake ACP agents and browser scenarios. CI runs strict typing, lint and pytest across operating systems and Python versions, with the browser exclusion recorded as a finding."}, {"element": "document.manual", "direction": "receive",
@@ -596,12 +596,12 @@
       "manual": {
         "technical_name": "manual",
         "name": "Metaform documentation",
-        "role": "SE"
+        "role": "Supporting Element"
       },
       "procedure": {
         "technical_name": "procedure",
         "name": "Authored workflows",
-        "role": "SE"
+        "role": "Supporting Element"
       }
     }
   }

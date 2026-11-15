@@ -9,12 +9,12 @@ use crate::names::ROOT;
 use crate::refusal::{Code, Refusal};
 use crate::specification;
 
-/// A Defining Element of the project at an address: the role `DE` on an element inside the
+/// A Defining Element of the project at an address: the role `Defining Element` on an element inside the
 /// project (`names::in_project`). An element under `upstream`, `downstream` or `layer` is outside
 /// the project, so a role there does not count. A map may hold several Defining Elements: the
 /// intake gives one to each artifact type it finds (founder, 2026-11-12).
 pub(crate) fn is_project_defining(address: &str, role: Option<&Value>) -> bool {
-    crate::names::in_project(address) && role.and_then(Value::as_str) == Some("DE")
+    crate::names::in_project(address) && role.and_then(Value::as_str) == Some(crate::rules::DEFINING)
 }
 
 /// `{"<address>": {}}` returns that element's own fields, keyed by its address: the form in which
