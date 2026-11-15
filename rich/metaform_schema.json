@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org",
+  "title": "Metaform Graph Model",
+  "description": "A Metaform is a namespace-addressed JSON document. Object keys establish hierarchical namespace addresses directly at the root. A value at any namespace address may be a nested namespace object, a JSON array (ComposedElementLayer), or a scalar. Object keys at any level are overloaded to act as both reserved metadata attributes and dynamic structural paths simultaneously. No universal knowledge-record wrapper, artificial record IDs, or implied semantic array ordering is introduced.",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Project associated with this functional topology."
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/NamespaceValue"
+  },
+  "$defs": {
+    "NamespaceValue": {
+      "title": "Value at a namespace address",
+      "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      ]
+    },
+    "NamespaceNode": {
+      "title": "Namespace branch or receiving element",
+      "description": "Child keys establish further namespace segments; explicit element metadata attributes are reserved alongside them. The same key can be an element metadata field at one location and a namespace segment at another (for example code.registry.role). When present on a receiving element, providers contains its provider-address-keyed relationships.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The company-specific internal designation or project official terminology."
+        },
+        "role": {
+          "type": "string",
+          "description": "The ontological role of this element within the digital typonomy (DE | SE | NE)."
+        },
+        "op": {
+          "type": "string",
+          "description": "The active goal (why) of the Receiving Entity (RE) that the EF must satisfy. Written as a ASD-STE100 simplified technical english phrase."
+        },
+        "ef": {
+          "type": "string",
+          "description": "The mechanism, interface, relationship, or method of the provider that satisfies the op. Formatted strictly in ASD-STE100."
+        },
+        "status": {
+          "type": "string",
+          "description": "Mutable value indicating present state of the Receiving Entity (RE), not meant to be a permamant value (e.g., not_built,)."
+        },
+        "name_length": {
+          "type": "integer",
+          "description": "Namespace Address read Backwards, how many segments is the length of the technical name."
+        },
+        "providers": {
+          "$ref": "#/$defs/Providers"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+      }
+    },
+    "ComposedElementLayer": {
+      "title": "Array-valued composed element layer",
+      "description": "Any JSON array at any namespace address constitutes a composed element layer. Its members retain their native structure without synthetic integer IDs or semantic ordering.",
+      "type": "array",
+      "items": true
+    },
+    "Providers": {
+      "title": "Receiving element's providers map",
+      "description": "An object whose keys are the namespace addresses of providing elements. Each entry is a localized provider record owned by this receiving element. The providing-element address is the key; it is not repeated inside the value object.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderRecord"
+      }
+    },
+    "ProviderRecord": {
+      "title": "Provider record",
+      "description": "A receiver-owned statement of an operational relationship, mapping a specific provider key to its context-specific interface flow direction, operative purpose, and encounter function.",
+      "type": "object",
+      "properties": {
+        "ice": {
+          "type": "boolean",
+          "description": "Describe the direction [send|receive|both] of the information flow that fully satisfies the active goal (OP) of the receiving entity (RE) (Not Including the Request)."
+        },
+        "ifd": {
+          "type": "string",
+          "description": "Describe the direction [send|receive|both] of the information flow that fully satisfies the active goal (OP) of the receiving entity (RE) (Not Including the Request)."
+        },
+        "op": {
+          "type": "string",
+          "description": "The active goal (why) of the Receiving Entity (RE) that the EF must satisfy. Formatted strictly in ASD-STE100."
+        },
+        "ef": {
+          "type": "string",
+          "description": "The mechanism, interface, relationship, or method of the provider that satisfies the op. Formatted strictly in ASD-STE100."
+        }
+      },
+      "required": [
+        "ifd",
+        "op",
+        "ef"
+      ]
+    }
+  }
+}
