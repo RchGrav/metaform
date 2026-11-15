@@ -20,3 +20,8 @@ src/metaform/modules/mcp/resources/views/map.html
 # counter are rewritten whenever an agent runs here, in whichever folder it is started from, so tracking them left the
 # working tree dirty on every run and no branch could be started from a clean main. Nothing in Metaform reads them.
 **/.claude/autoharness/
+
+# Editor backups and Windows download markers, never committed, 2026-11-15. Files in rich/ that were already
+# tracked stay tracked.
+*~
+*:Zone.Identifier
