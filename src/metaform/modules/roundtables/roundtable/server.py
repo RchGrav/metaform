@@ -290,6 +290,7 @@ def held(found: dict[str, Any]) -> dict[str, Any]:
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
     if found['state'] == 'running' or found['unpaid']:  # a hold for want of credits becomes the chair's own
         found = store.change(int(found['number']), state='held', reason=said('held_by_chair'), unpaid=False)
+    wake_runner(found)
     return status_of(found)
 
 
@@ -310,7 +311,7 @@ def continued(found: dict[str, Any], spend: float | None = None) -> dict[str, An
         found = table(int(found['number']))
     if found['state'] == 'held':
         found = store.change(int(found['number']), state='running', reason=None, unpaid=False)
-    runner.spawn(int(found['number']))
+    wake_runner(found)
     return status_of(found)
 
 
@@ -346,8 +347,7 @@ def ended(found: dict[str, Any]) -> dict[str, Any]:
 
 
 def reseated(found: dict[str, Any], seat: str) -> dict[str, Any]:
-    """A seat brought back: active, its failures forgotten, asked on its next turn; one that left the table, an ACP
-    seat whose session ended, starts a fresh session holding the whole discussion."""
+    """Bring a seat back with its saved conversation and native session intact."""
     if found['state'] == 'ended':
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
     number = int(found['number'])
@@ -356,7 +356,7 @@ def reseated(found: dict[str, Any], seat: str) -> dict[str, Any]:
                 None)
     if held is None:
         raise ToolError(f'No seat {seat} at roundtable {number}; status lists them by seat and name.')
-    store.reseat(number, int(held['position']), fresh=bool(held['gone']))
+    store.reseat(number, int(held['position']), fresh=False)
     store.event(number, 'seat_restored', said('event_seat_reseated', seat=held['name']), seat=held['id'])
     runner.spawn(number)
     return status_of(store.discussion(number))

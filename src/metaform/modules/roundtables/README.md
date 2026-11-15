@@ -1,5 +1,7 @@
 # roundtables
 
+The consolidated current design is [Roundtable design specification](../../../../specifications/12-roundtables.md).
+
 Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the live transcript with readable message and source references, then the finished synthesis, rankings, answer and saved record. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through assigned tasks. The system controls stage progression without a coordinator agent.
 
 ## Purpose
@@ -119,11 +121,16 @@ reads the cited project files and does not copy excerpts automatically. Graph da
 is deferred and is outside this version.
 
 A judged discussion finishes after two complete quiet cycles with no accepted contribution and at least two actual
-outcomes from every participant since the last accepted contribution or chair clarification. For each participant's
+outcomes from every currently ready participant since the last accepted contribution or chair clarification. For each participant's
 two latest outcomes, `PP`, `VV` and `VP` are finished, where `P` is an actual PASS and `V` is a veto. `PV` requires
-one more correction opportunity. A busy skip, unavailable seat, missing reply, failure or pending judgment is not an
-actual outcome and cannot age the quiet cycles. Acceptance or chair input resets progress. No separate Jev
+one more correction opportunity. Busy and unavailable participants do not block the ready participants from completing
+their cycles. Their skips, missing replies and failures supply no actual outcome. A pending judgment must finish
+before completion is assessed. Acceptance or chair input resets progress. No separate Jev
 sufficiency or completion call is made.
+
+A participant that has left does not block the remaining participants from completing discussion, scoring or
+farewell. Its missing reply is never replaced with a PASS, scorecard or farewell. Temporarily unavailable agents
+retain their existing retry deadlines. Model-family matching accepts advertised context qualifiers such as `[1m]`.
 
 With judging off, the existing complete round of unanimous PASS still ends discussion. End discussion and the
 120% per-agent phase budget can advance a phase independently of normal completion. Context size does not imply
@@ -175,9 +182,10 @@ rejected by a text-repeat rule. Historical judgments retain the criteria and cut
 With judging off, every substantive reply is retained within the character reply limit, including repetitions.
 Synthesis, ranking, explanation and host stages remain unchanged.
 
-`roundtables_context_tokens` sets the native seat/editor context handoff trigger, 24,000 estimated tokens by
-default. The engine's `config.toml` can lower individual triggers through `[context_budgets]` keyed by exact seat id.
-This trigger is independent of Jev's judging window.
+`roundtables_context_tokens` sets the fallback seat/editor context handoff trigger for independent tables, 24,000
+estimated tokens by default. The engine's `config.toml` can lower individual triggers through `[context_budgets]`
+keyed by exact seat id. This trigger is independent of Jev's judging window. A continuous session of native agents
+keeps its conversations and uses native context management instead of the fallback that replaces conversations.
 
 `roundtables_judging_context_tokens` defaults to a desired cap of 50,000 estimated tokens for the judging request.
 Jev receives escaped XML containing the complete original instructions, current topic, full candidate and a
@@ -191,9 +199,31 @@ standard limits, the bounds are 52,428 tokens for the whole request and 25,600 f
 history can be smaller than the desired 50,000 cap. Required instructions and the candidate are never shortened.
 Sliding the judging window does not restart native seat contexts or alter the visible transcript.
 
-Before exhaustion, every participant receives a carry-forward request at twice the discussion character limit. Notes retain attribution and exact text outside novelty filtering. One fresh synthesizer context edits shared continuation, preserving original person instructions, decisions, evidence references, disagreements and open questions. Code attaches every intact note to the shared continuation. Seat sessions start afresh. The visible transcript retains all original turns and adds a context-handoff marker. Saved notes survive a failed editor request, so Continue retries the unfinished step. Unjudged tables use the same handoff independently of Jev.
+For independent tables approaching the context trigger, every participant receives a carry-forward request at twice the discussion character limit. Notes retain attribution and exact text outside novelty filtering. One fresh synthesizer context edits shared continuation, preserving original person instructions, decisions, evidence references, disagreements and open questions. Code attaches every intact note to the shared continuation. Seat sessions start afresh. The visible transcript retains all original turns and adds a context-handoff marker. Saved notes survive a failed editor request, so Continue retries the unfinished step. Unjudged tables use the same handoff independently of Jev.
 
-A held runner closes its seats. Comments remain queued or enter without resuming turns. Explicit Continue restarts it. Starting an engine server never resumes other live or held tables.
+A held native runner keeps its agent connections alive and waits for control events without scheduling new requests.
+Comments remain queued or enter without resuming turns. Explicit Continue resumes scheduling. Starting an engine
+server never resumes other live or held tables.
+
+The participants carry their native conversations across the session's topics. Continue and reseat reconnect to
+the saved native conversation without clearing its messages or delivery cursor.
+
+Native ACP work ends through the negotiated protocol's completion events. The external `agent_wait` setting does
+not impose a wall-clock deadline on that work. A busy agent skips its speaking opportunity while the group
+continues. Its work, missed accepted context and reply credits remain available when it rejoins. Hold pauses new
+requests and keeps the connections alive, including when background activity is unreported. An explicit Stop or End
+can cancel native work through ACP. A provider
+request failure and a transport disconnection remain separate conditions.
+
+`Compress conversations between topics` is an explicit session option, off by default. CLI and MCP callers use
+`compress_between_topics=true` when opening a chain. The next topic is selected first. Each available native agent
+then prepares a relevant continuity note and uses its own advertised compression command in the same conversation.
+The note retains goals, constraints, decisions, evidence, disagreements, open questions and references to the
+original transcript and shared files. Original records remain intact. A failed or unsupported compression leaves
+the existing conversation usable and does not hold the table. Hold pauses new requests; End session can explicitly
+cancel compression.
+Restarting the runner does not repeat a compression attempt already begun for that transition. The final topic
+has no successor and requests no between-topic compression.
 
 Each participant has an ordered inbox checkpointed at the transport's send receipt. Busy participants accumulate
 new contributions while others speak. Inputs that were not sent stay queued. Delivered inputs are not replayed
@@ -209,12 +239,23 @@ Opening with `chain=<number>` runs a session containing that many discussions. T
 roundtable. Participants create shared documents while discussion continues. Busy seats are skipped while available
 seats speak. When every seat is busy, the runner waits for actual completion or chair-control events without timed cycling.
 
-Between discussions, each participant receives one private next-topic request. No proposal or proposer identity is
-announced. Jev compares every unordered pair once in one request, asking whether the two proposals are similar.
+Between discussions, each available participant gets at most two attempts to return a private next-topic proposal.
+Participants already busy with other work are skipped before dispatch. The `topic_proposal_wait` collection window,
+30 seconds by default, starts with the first actual request and bounds the group's waiting without cancelling native
+work. Valid proposals received by the cutoff are compared. Late private replies remain recorded without changing
+an already selected topic. If none is valid while native work remains active, selection waits for actual readiness
+instead of exhausting an unasked busy participant. A missing,
+empty, PASS or DONE reply consumes an attempt. Interrupted attempts also count across runner restarts. Successful
+proposals are kept and never requested again. After the second unsuccessful attempt, selection proceeds using the
+valid proposals received. No proposal or proposer identity is announced. Jev compares every unordered pair of
+received proposals once in one request, asking whether the two proposals are similar.
 The same similarity probability is credited to both proposals. Each proposal's pair scores are averaged, and the
 highest average wins without a minimum threshold. Exact ties preserve every tied winning text verbatim and without
-attribution, joined without a model-written synthesis. A sole proposal wins directly. The owner sees aggregate
-collection and judging progress. There is no shared-file requirement for choosing the next topic.
+attribution, joined without a model-written synthesis. A sole proposal wins directly. If none arrives after two
+attempts per participant, the table reports that no next-topic proposal is available. The owner sees aggregate
+collection and comparison progress. A comparison that fails locally before transport can be retried after its
+configuration is repaired. Saved results are reused, and ambiguously sent comparisons are not resent.
+There is no shared-file requirement for choosing the next topic.
 
 After the final discussion, each agent submits private scorecards. Only aggregate scores are shared and added to
 profiles. Agents then exchange farewells and explicitly finish. The document browser reads their shared session folder.
@@ -222,6 +263,8 @@ profiles. Agents then exchange farewells and explicitly finish. The document bro
 Roundtable agent connections offer ACP v2 and retain ACP v1 support. Each connection uses its negotiated protocol.
 In v2, the prompt response acknowledges insertion and `state_update` reports activity and completion. In v1, the
 prompt response completes the turn. Permission requests use the same ACP relay for every agent.
+The lifecycle contracts are ACP's [v1 prompt turn](https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/docs/protocol/v1/prompt-turn.mdx)
+and [v2 prompt lifecycle](https://agentclientprotocol.com/protocol/v2/prompt-lifecycle.md).
 
 A peer selecting v1 is reconnected with v1 initialization so its capabilities are advertised correctly. A peer that
 rejects v2 or returns legacy initialization fields gets the same fresh v1 negotiation. Authentication, session and

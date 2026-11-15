@@ -111,6 +111,63 @@ def test_missing_pair_answer_preserves_error_and_usage_without_publishing_or_rep
 
 
 @pytest.mark.parametrize('private_table', [2], indirect=True)
+def test_unsent_comparison_after_missing_key_can_retry_without_reasking_or_double_charging(private_table, monkeypatch):
+    topics, store, found = private_table
+    save(private_table, 0, 'A completed private proposal.')
+    save(private_table, 1, 'Another completed private proposal.')
+    proposals = topics.proposals(found['number'], found['topic'])
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    transport = Mock(side_effect=AssertionError('Missing credentials must not reach the network.'))
+    monkeypatch.setattr(topics.openrouter.urllib.request, 'urlopen', transport)
+    with pytest.raises(ValueError, match='OPENROUTER_API_KEY is not set'):
+        topics.decide(found, 'Current topic.')
+    transport.assert_not_called()
+    with store.connect() as db:
+        unsent = store.plain(db.execute('SELECT * FROM topic_decisions WHERE discussion=?',
+                                       (found['number'],)).fetchone())
+    assert unsent['state'] == 'pending' and unsent['response'] is None
+    assert store.discussion(found['number'])['spent'] == 0
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'fake-test-key')
+
+    def answer(path, body, **kwargs):
+        assert topics.config.openrouter_key() == 'fake-test-key'
+        kwargs['tried']()
+        return {'answers': {'p0_1': {'noul': .72}}, 'usage': {'cost': .0001}}
+
+    posted = Mock(side_effect=answer)
+    monkeypatch.setattr(topics.openrouter, 'post', posted)
+    chosen = topics.decide(found, 'Current topic.')
+    assert chosen['state'] == 'ready' and chosen['scores'] == {'0': .72, '1': .72}
+    assert chosen['text'] == 'A completed private proposal.\n\nAnother completed private proposal.'
+    assert topics.decide(found, 'Current topic.')['text'] == chosen['text']
+    assert posted.call_count == 1 and store.discussion(found['number'])['spent'] == .0001
+    assert topics.proposals(found['number'], found['topic']) == proposals
+
+
+@pytest.mark.parametrize('private_table', [2], indirect=True)
+def test_legacy_missing_key_error_is_known_unsent_and_can_retry_the_comparison(private_table, monkeypatch):
+    topics, store, found = private_table
+    save(private_table, 0, 'One preserved proposal.')
+    save(private_table, 1, 'Another preserved proposal.')
+    with store.connect() as db:
+        store.insert(db, 'topic_decisions', {'discussion': found['number'], 'topic': found['topic'],
+                     'state': 'error', 'request': {'recorded': 'before credential preflight'}, 'response': None,
+                     'error': 'Silent: OPENROUTER_API_KEY is not set in the environment.', 'created': store.stamp()})
+
+    def answer(path, body, **kwargs):
+        kwargs['tried']()
+        return {'answers': {'p0_1': {'noul': .64}}, 'usage': {'cost': .0002}}
+
+    posted = Mock(side_effect=answer)
+    monkeypatch.setattr(topics.openrouter, 'post', posted)
+    chosen = topics.decide(found, 'Current topic.')
+    assert chosen['state'] == 'ready' and chosen['scores'] == {'0': .64, '1': .64}
+    assert topics.decide(found, 'Current topic.')['text'] == chosen['text']
+    assert posted.call_count == 1 and store.discussion(found['number'])['spent'] == .0002
+    assert len(store.topics(found['number'])) == 1
+
+
+@pytest.mark.parametrize('private_table', [2], indirect=True)
 def test_unknown_sent_comparison_is_not_replayed_or_mistaken_for_an_actual_tie(private_table, monkeypatch):
     topics, store, found = private_table
     save(private_table, 0, 'One proposal.')
@@ -126,30 +183,195 @@ def test_unknown_sent_comparison_is_not_replayed_or_mistaken_for_an_actual_tie(p
     assert len(store.topics(found['number'])) == 1
 
 
-def test_failed_proposal_never_becomes_a_zero_score_or_silent_subset_winner(private_table, monkeypatch):
+def test_exhausted_proposal_is_excluded_from_the_comparison_without_an_invented_score(private_table, monkeypatch):
     topics, store, found = private_table
     save(private_table, 0, 'A valid proposal.')
     save(private_table, 1, 'Another valid proposal.')
-    receipt = topics.begin_proposal(found, 2)
-    topics.finish_proposal(found, 2, receipt, None, {'error': 'No reply returned.'})
-    posted = Mock(side_effect=AssertionError('No subset comparison is allowed.'))
+    for _ in range(2):
+        receipt = topics.begin_proposal(found, 2)
+        assert receipt
+        topics.finish_proposal(found, 2, receipt, None, {'error': 'No reply returned.'})
+    assert topics.begin_proposal(found, 2) is None
+    posted = Mock(return_value={'answers': {'p0_1': {'noul': .75}}})
     monkeypatch.setattr(topics.openrouter, 'post', posted)
-    with pytest.raises(ValueError, match='Not every participant'):
+    decision = topics.decide(found, 'Current topic.')
+    assert decision['text'] == 'A valid proposal.\n\nAnother valid proposal.'
+    assert decision['scores'] == {'0': .75, '1': .75}
+    assert list(posted.call_args.args[1]['questions']) == ['p0_1']
+    assert posted.call_args.args[1]['state']['proposals'] == {
+        'P1': 'A valid proposal.', 'P2': 'Another valid proposal.'}
+    assert len(store.topics(found['number'])) == 1
+
+
+def test_comparison_waits_while_a_missing_proposer_still_has_a_retry_in_progress(private_table, monkeypatch):
+    topics, _, found = private_table
+    save(private_table, 0, 'First completed proposal.')
+    save(private_table, 1, 'Second completed proposal.')
+    receipt = topics.begin_proposal(found, 2)
+    topics.finish_proposal(found, 2, receipt, None, {'error': 'The first request timed out.'})
+    posted = Mock(side_effect=AssertionError('The missing participant still has an attempt remaining.'))
+    monkeypatch.setattr(topics.openrouter, 'post', posted)
+    with pytest.raises(ValueError, match='still being collected'):
+        topics.decide(found, 'Current topic.')
+    retry = topics.begin_proposal(found, 2)
+    assert retry
+    with pytest.raises(ValueError, match='still being collected'):
+        topics.decide(found, 'Current topic.')
+    posted.assert_not_called()
+
+
+def test_interrupted_proposal_retries_with_a_new_receipt_without_overwriting_a_ready_proposal(private_table):
+    topics, _, found = private_table
+    receipt = topics.begin_proposal(found, 0)
+    assert receipt and topics.begin_proposal(found, 0) is None
+    topics.recover(found, {0})
+    assert topics.proposals(found['number'], found['topic'])[0]['state'] == 'sent'
+    topics.recover(found, set())
+    replacement = topics.begin_proposal(found, 0)
+    assert replacement and replacement != receipt
+    assert topics.finish_proposal(found, 0, receipt, 'The obsolete response.', {}) is False
+    assert topics.finish_proposal(found, 0, replacement, 'The recovered proposal.', {'completion_tokens': 5}) is True
+    assert topics.finish_proposal(found, 0, replacement, None, {'error': 'Late failure.'}) is False
+    assert topics.begin_proposal(found, 0) is None
+    saved = topics.proposals(found['number'], found['topic'])[0]
+    assert saved['state'] == 'ready' and saved['text'] == 'The recovered proposal.'
+    assert saved['receipt'] == replacement and saved['usage']['completion_tokens'] == 5
+    assert saved['attempts'] == 2
+
+
+@pytest.mark.parametrize('text', [None, '', ' ', 'PASS', 'done'])
+def test_missing_or_invalid_proposal_can_be_retried_without_reasking_ready_participants(private_table, text):
+    topics, _, found = private_table
+    save(private_table, 0, 'An already returned proposal.')
+    before = topics.proposals(found['number'], found['topic'])[0]
+    receipt = topics.begin_proposal(found, 1)
+    assert receipt
+    assert topics.finish_proposal(found, 1, receipt, text, {'error': 'No usable proposal.'}) is False
+    assert topics.proposals(found['number'], found['topic'])[1]['state'] == 'pending'
+    save(private_table, 1, 'The retry succeeded.')
+    topics.recover(found, set())
+    assert topics.proposals(found['number'], found['topic'])[0] == before
+    assert topics.begin_proposal(found, 0) is None and topics.begin_proposal(found, 1) is None
+
+
+def test_historical_failed_proposal_is_retryable_after_recovery(private_table):
+    topics, store, found = private_table
+    save(private_table, 0, 'Keep the completed proposal.')
+    receipt = topics.begin_proposal(found, 1)
+    with store.connect() as db:
+        store.update(db, 'topic_proposals', {'discussion': found['number'], 'topic': found['topic'], 'position': 1},
+                     {'state': 'error', 'usage': {'error': '300 seconds'}})
+    topics.recover(found, set())
+    assert topics.proposals(found['number'], found['topic'])[1]['usage']['error'] == '300 seconds'
+    replacement = topics.begin_proposal(found, 1)
+    assert replacement and replacement != receipt
+    assert topics.begin_proposal(found, 0) is None
+
+
+def test_attempt_migration_preserves_proposals_receipts_and_unused_allowances(private_table):
+    topics, store, found = private_table
+    save(private_table, 0, 'Keep the ready proposal and its usage.')
+    failed_receipt = topics.begin_proposal(found, 1)
+    with store.connect() as db:
+        store.update(db, 'topic_proposals', {'discussion': found['number'], 'topic': found['topic'], 'position': 1},
+                     {'state': 'error', 'usage': {'error': '300 seconds'}})
+        db.execute('ALTER TABLE topic_proposals DROP COLUMN attempts')
+    path = str(store.config.home() / 'roundtable.sqlite3')
+    store._migrated.discard(path)
+    migrated = topics.proposals(found['number'], found['topic'])
+    assert [row['attempts'] for row in migrated] == [1, 1, 0]
+    assert migrated[0]['text'] == 'Keep the ready proposal and its usage.'
+    assert migrated[0]['usage']['completion_tokens'] == 5
+    assert migrated[1]['receipt'] == failed_receipt and migrated[1]['usage'] == {'error': '300 seconds'}
+    topics.recover(found, set())
+    replacement = topics.begin_proposal(found, 1)
+    assert replacement and replacement != failed_receipt
+    topics.finish_proposal(found, 1, replacement, None, {'error': 'Retry timed out.'})
+    store._migrated.discard(path)
+    assert topics.proposals(found['number'], found['topic'])[1]['attempts'] == 2
+    assert topics.begin_proposal(found, 1) is None
+
+
+def test_interrupted_second_attempt_is_terminal_across_repeated_recovery(private_table):
+    topics, _, found = private_table
+    first = topics.begin_proposal(found, 0)
+    assert first
+    topics.recover(found, set())
+    second = topics.begin_proposal(found, 0)
+    assert second and second != first
+    for _ in range(3):
+        topics.recover(found, set())
+        assert topics.begin_proposal(found, 0) is None
+    saved = topics.proposals(found['number'], found['topic'])[0]
+    assert saved['attempts'] == 2 and saved['state'] == 'error'
+    assert topics.finish_proposal(found, 0, second, 'A late response after recovery.', {}) is False
+
+
+def test_sole_valid_proposal_after_other_attempts_exhausted_wins_without_comparison(private_table, monkeypatch):
+    topics, _, found = private_table
+    save(private_table, 1, 'The only returned proposal.')
+    for position in (0, 2):
+        for _ in range(2):
+            receipt = topics.begin_proposal(found, position)
+            topics.finish_proposal(found, position, receipt, 'PASS', {})
+    posted = Mock(side_effect=AssertionError('No pair exists to compare.'))
+    monkeypatch.setattr(topics.openrouter, 'post', posted)
+    decision = topics.decide(found, 'Current topic.')
+    assert decision['text'] == 'The only returned proposal.'
+    assert decision['scores'] == {'1': None}
+    posted.assert_not_called()
+
+
+def test_no_returned_proposal_does_not_invent_a_next_topic(private_table, monkeypatch):
+    topics, store, found = private_table
+    for position in range(3):
+        for _ in range(2):
+            receipt = topics.begin_proposal(found, position)
+            topics.finish_proposal(found, position, receipt, None, {'error': 'Timed out.'})
+    posted = Mock(side_effect=AssertionError('There are no proposals to compare.'))
+    monkeypatch.setattr(topics.openrouter, 'post', posted)
+    with pytest.raises(ValueError, match='(?i)no .*proposal'):
         topics.decide(found, 'Current topic.')
     posted.assert_not_called()
     assert len(store.topics(found['number'])) == 1
 
 
-def test_one_model_attempt_and_private_usage_survive_restart(private_table):
-    topics, _, found = private_table
-    receipt = topics.begin_proposal(found, 0)
-    assert receipt and topics.begin_proposal(found, 0) is None
+def test_explicit_reseat_recovers_only_remaining_proposal_attempt_without_a_candidate(private_table):
+    topics, store, found = private_table
+    first = topics.begin_proposal(found, 0)
+    topics.finish_proposal(found, 0, first, None, {'error': 'Native connection ended.'})
+    store.seat_change(found['number'], 0, gone='Native connection ended.', availability='unavailable',
+                      session='keep-this-native-session', messages=[{'role': 'user', 'content': 'Keep this history.'}],
+                      seen=7)
+    topics.skip(found, {0})
+    for position in (1, 2):
+        for _ in range(2):
+            receipt = topics.begin_proposal(found, position)
+            topics.finish_proposal(found, position, receipt, None, {'error': 'No proposal.'})
+    exhausted = topics.proposals(found['number'], found['topic'])[1:]
     topics.recover(found, set())
+    assert topics.proposals(found['number'], found['topic'])[0]['state'] == 'skipped'
+    store.reseat(found['number'], 0, fresh=False)
+    topics.recover(found, set())
+    second = topics.begin_proposal(found, 0)
+    assert second and second != first
+    topics.finish_proposal(found, 0, second, 'A proposal after the explicit reseat.', {})
+    assert topics.decide(found, 'Current topic.')['text'] == 'A proposal after the explicit reseat.'
+    assert topics.proposals(found['number'], found['topic'])[1:] == exhausted
     assert topics.begin_proposal(found, 0) is None
-    saved = topics.proposals(found['number'], found['topic'])[0]
-    assert saved['state'] == 'error' and saved['receipt'] == receipt
-    save(private_table, 1, 'A returned proposal.')
-    assert topics.proposals(found['number'], found['topic'])[1]['usage']['completion_tokens'] == 5
+    restored = store.seats(found['number'])[0]
+    assert restored['session'] == 'keep-this-native-session' and restored['seen'] == 7
+    assert restored['messages'] == [{'role': 'user', 'content': 'Keep this history.'}]
+
+
+def test_reseat_cannot_reopen_a_skipped_proposal_when_a_valid_candidate_already_exists(private_table):
+    topics, store, found = private_table
+    save(private_table, 0, 'Keep this valid candidate.')
+    topics.skip(found, {1})
+    store.reseat(found['number'], 1, fresh=False)
+    topics.recover(found, set())
+    assert topics.proposals(found['number'], found['topic'])[1]['state'] == 'skipped'
+    assert topics.begin_proposal(found, 1) is None
 
 
 def test_single_attempt_transport_option_never_replays_after_a_network_failure(monkeypatch):

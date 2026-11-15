@@ -50,7 +50,8 @@ function fixture(readOptions = null) {
   const START = {own: {prompts: '', mode: ''}, permissionsFor: null};
   const UI = {seatList: node('ol'), launchPermissions: node('div'), question: {value: 'The question'},
     replyLimit: {value: 512}, tokenBudget: {value: 0}, tables: {value: 1}, start: {disabled: false}, state: {}, topic: {},
-    judging: {checked: false}, automate: {checked: false}, setup: {hidden: false}};
+    judging: {checked: false}, compressBetweenTopics: {checked: false}, automate: {checked: false},
+    setup: {hidden: false}};
   const dispatchPanel = panel();
   const api = runInNewContext(`${shared}\n${setup}\n${start}\n${launch}\n({drawSetupPermissions, chosenPermissions,
     startTable, drawDispatchPermissions, launchOwn, renderShared: drawPermissions})`, {
@@ -106,6 +107,7 @@ test('setup reuses standard controls once per ACP type and starts with inherited
   assert.equal(f.writes[0].path, '/api/roundtable-open');
   assert.equal(f.writes[0].body.chain, 1, 'one table still enters the collaboration session');
   assert.equal(f.writes[0].body.reply_limit, 512);
+  assert.equal(f.writes[0].body.compress_between_topics, false);
   assert.equal('permissions' in f.writes[0].body, false, 'project settings are inherited');
 });
 
@@ -117,10 +119,12 @@ test('explicit policy and native mode stay with their agent and reach the launch
   f.choose('claude', 'mode', 'claude-mode');
   f.choose('codex', 'mode', 'codex-mode');
   f.UI.tables.value = 3;
+  f.UI.compressBetweenTopics.checked = true;
   await f.api.startTable();
   assert.deepEqual(f.writes[0].body.permissions,
     {claude: {prompts: 'approve-reads', mode: 'claude-mode'}, codex: {mode: 'codex-mode'}});
   assert.equal(f.writes[0].body.chain, 3);
+  assert.equal(f.writes[0].body.compress_between_topics, true);
   f.choose('claude', 'prompts', '');
   f.choose('claude', 'mode', '');
   assert.deepEqual(plain(f.api.chosenPermissions(['claude/opus', 'codex/gpt-6'])), {codex: {mode: 'codex-mode'}});

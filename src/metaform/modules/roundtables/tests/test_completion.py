@@ -185,19 +185,49 @@ def test_late_accepted_correction_resets_every_models_terminal_pair(scripted):
     assert table.row()['stage'] == 'synthesis'
 
 
-def test_normal_session_exhaustion_goes_to_private_topic_selection_instead_of_collaboration(scripted, tmp_path):
+@pytest.mark.parametrize('departed', [False, True])
+def test_normal_session_exhaustion_goes_to_private_topic_selection_instead_of_collaboration(scripted, tmp_path,
+                                                                                         departed):
     make, _, _, calls = scripted
     number = make(judging=True)
     table = runner.Table(number)
     found = table.row()
     store.change(number, snapshot={**found['snapshot'], 'session': {'total': 2, 'folder': str(tmp_path)}})
+    seated = store.seats(number)
+    if departed:
+        store.seat_change(number, seated[-1]['position'], gone='Participant exited permanently.',
+                          availability='unavailable', retry_at=None)
+        seated = seated[:-1]
     for _ in range(2):
-        for row in store.seats(number):
+        for row in seated:
             store.record(number, table.entry(table.row(), row, 'PASS', kind='pass'))
         asyncio.run(table.round_over(table.row()))
     assert table.row()['stage'] == 'topic_selection'
     assert store.topics(number)[0]['why'] == 'The round ended because there was nothing new to add.'
     assert calls == []
+
+
+@pytest.mark.parametrize('staged', [False, True])
+@pytest.mark.parametrize('actual', ['PASS', 'A rejected contribution.'])
+def test_departed_seat_is_excluded_from_quiet_quorum_without_manufacturing_its_outcomes(scripted, staged, actual):
+    make, _, _, _ = scripted
+    number = make(judging=True, staged=staged)
+    table = runner.Table(number)
+    present, departed = store.seats(number)
+    store.seat_change(number, departed['position'], gone='The agent exited.', availability='unavailable', retry_at=None)
+    store.record(number, table.entry(table.row(), departed, '', kind='none', reason='The agent exited.'))
+    for cycle in range(2):
+        store.record(number, table.entry(table.row(), present, actual,
+                                         kind='pass' if actual == 'PASS' else 'seat', accepted=False))
+        store.close_round(number, 'Exhausted.')
+        assert table.row()['quiet_rounds'] == cycle + 1
+        if cycle == 0:
+            assert table.row()['state'] == 'running' and table.row()['round'] == 2
+            assert table.row()['stage'] == ('discussion' if staged else None)
+    assert table.row()['stage'] == 'synthesis' if staged else table.row()['state'] == 'ending'
+    rows = store.submissions(number)
+    assert len([row for row in rows if row['position'] == present['position']]) == 2
+    assert [row['kind'] for row in rows if row['position'] == departed['position']] == ['none']
 
 
 def test_an_accepted_reply_resets_the_streak_and_repeated_positions_are_judged(scripted, monkeypatch):
@@ -226,25 +256,24 @@ def test_an_accepted_reply_resets_the_streak_and_repeated_positions_are_judged(s
                for position in (0, 1))
 
 
-def test_failures_and_unavailable_participants_do_not_cover_a_quiet_round(scripted):
+def test_failed_available_seat_does_not_cover_round_but_unavailable_seat_is_skipped(scripted):
     make, _, _, _ = scripted
     number = make(judging=True)
     table = runner.Table(number)
     seated = store.seats(number)
     store.record(number, table.entry(table.row(), seated[0], 'A rejected contribution.', accepted=False))
     store.record(number, table.entry(table.row(), seated[1], '', kind='none', reason='Endpoint failed.'))
-    store.seat_change(number, 1, availability='unavailable')
     store.close_round(number, 'Exhausted.')
     assert table.row()['round'] == 1 and table.row()['quiet_rounds'] == 0
+    store.seat_change(number, 1, availability='unavailable')
+    store.close_round(number, 'Exhausted.')
+    assert table.row()['round'] == 2 and table.row()['quiet_rounds'] == 1
     assert table.row()['stage'] == 'discussion'
     store.record(number, table.entry(table.row(), seated[1], 'Its actual rejected reply.', accepted=False))
     store.close_round(number, 'Exhausted.')
     assert table.row()['round'] == 2 and table.row()['quiet_rounds'] == 1
     restarted = runner.Table(number)
     store.record(number, restarted.entry(restarted.row(), seated[0], 'Another rejected contribution.', accepted=False))
-    store.close_round(number, 'Exhausted.')
-    assert restarted.row()['round'] == 2 and restarted.row()['quiet_rounds'] == 1
-    store.record(number, restarted.entry(restarted.row(), seated[1], 'Another actual rejected reply.', accepted=False))
     store.close_round(number, 'Exhausted.')
     assert restarted.row()['stage'] == 'synthesis' and restarted.row()['quiet_rounds'] == 2
 
@@ -345,7 +374,27 @@ def test_veto_explanation_contains_only_failed_checks_and_their_recorded_cutoffs
 def test_budget_holds_without_turns_and_explicit_end_discussion_bypasses_hold(scripted, monkeypatch):
     make, _, _, calls = scripted
     number = make(judging=True, spend=0)
-    result = asyncio.run(runner.Table(number).run())
+    async def stopped_after_hold():
+        table = runner.Table(number)
+        held = asyncio.Event()
+        change = table.change
+
+        def observe(**changes):
+            found = change(**changes)
+            if found['state'] == 'held':
+                held.set()
+            return found
+
+        monkeypatch.setattr(table, 'change', observe)
+        task = asyncio.create_task(table.run())
+        try:
+            await asyncio.wait_for(held.wait(), 2)
+            return table.summary()
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    result = asyncio.run(stopped_after_hold())
     assert result['state'] == 'held' and 'spending limit' in result['reason']
     assert store.submissions(number) == [] and not calls
     monkeypatch.setattr(runner, 'spawn', lambda number: None)
@@ -366,7 +415,7 @@ def test_comment_clears_prior_votes_and_stays_held(scripted, monkeypatch):
     store.change(number, state='held', position=2)
     monkeypatch.setattr(runner, 'spawn', lambda number: None)
     server.commented(held.row(), 'New person instruction.')
-    asyncio.run(held.run())
+    held.enter_comments()
     assert held.row()['state'] == 'held'
     store.change(number, state='running')
     asyncio.run(held.round_over(held.row()))
@@ -490,8 +539,9 @@ def test_failed_judgment_holds_pending_reply_without_pass(scripted, monkeypatch)
     number = make(judging=True)
     replies[0] = ['Substantive point.']
     monkeypatch.setattr(judge, 'ask', lambda *args, **kw: judge.Asked(request={}, error='fixture provider failed'))
-    result = asyncio.run(runner.Table(number).run())
-    assert result['state'] == 'held'
+    table = runner.Table(number)
+    assert not asyncio.run(table.turn(table.row(), store.seats(number)[0]))
+    assert table.row()['state'] == 'held'
     assert store.discussion(number)['unjudged']['text'] == 'Substantive point.'
     assert store.submissions(number) == []
     assert store.topics(number)[0]['discussed'] is None

@@ -1,5 +1,6 @@
 """Panel turns skip busy agents and return ready agents to a fair rotation."""
 import asyncio
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -75,8 +76,8 @@ def test_panel_skips_permission_blocked_seat_and_lets_other_seats_continue(panel
             await asyncio.wait_for(permission_needed.wait(), 1)
             await asyncio.wait_for(others_continued.wait(), 1)
             assert 0 in active
-            assert store.discussion(number)['state'] == 'running'
-            assert store.discussion(number)['round'] == 1
+            assert store.discussion(number)['state'] in ('running', 'ending')
+            assert store.discussion(number)['round'] >= 2
             assert calls.count(0) == 1
             permission_answered.set()
             result = await asyncio.wait_for(task, 5)
@@ -138,7 +139,7 @@ def test_panel_ready_seats_rejoin_before_a_fast_seat_gets_another_rotation(panel
             responses[0].set_result('Evidence from the returning seat.')
             responses[2].set_result('Evidence from seat two.')
             returned = [await asyncio.wait_for(requested.get(), 1) for _ in range(2)]
-            assert [position for position, _ in returned] == [2, 0]
+            assert {position for position, _ in returned} == {2, 0}
             fast.set_result('PASS')
             for _, response in returned:
                 response.set_result('PASS')
@@ -162,18 +163,29 @@ def test_all_busy_panel_wakes_for_chair_control_and_ignores_unrelated_events(pan
 
     async def scenario():
         everyone_busy = asyncio.Event()
+        release = asyncio.Event()
+        waiting = asyncio.Event()
 
         async def blocked(seat, text):
             if len(active) == 3:
                 everyone_busy.set()
-            await asyncio.Event().wait()
+            await release.wait()
+            return 'PASS'
 
         handlers.update({position: blocked for position in range(3)})
         table = runner.Table(number)
+        original = table.wait_work
+
+        async def wait_work(tasks):
+            if active == {0, 1, 2} and not table.control.is_set():
+                waiting.set()
+            await original(tasks)
+
+        monkeypatch.setattr(table, 'wait_work', wait_work)
         task = asyncio.create_task(table.run())
         try:
             await asyncio.wait_for(everyone_busy.wait(), 1)
-            await asyncio.sleep(0)
+            await asyncio.wait_for(waiting.wait(), 1)
             before = read.call_count
             for _ in range(250):
                 callbacks[0]({'kinds': ['roundtables:control:another-table']})
@@ -181,13 +193,27 @@ def test_all_busy_panel_wakes_for_chair_control_and_ignores_unrelated_events(pan
             assert read.call_count == before
             transitions = {'hold': {'state': 'held', 'reason': 'Held by the person.'},
                            'advance': {'advance_asked': True},
-                           'end': {'state': 'ending', 'reason': 'Ended by the person.'}}
+                           'end': {'state': 'ending', 'reason': runner.said('ended_by_chair')}}
             store.change(number, **transitions[action])
             callbacks[0]({'kinds': [f'roundtables:control:{number}']})
+            if action != 'end':
+                await asyncio.sleep(0)
+                assert not task.done() and active == {0, 1, 2}
+                release.set()
+                if action == 'hold':
+                    assert store.discussion(number)['state'] == 'held'
+                    store.change(number, state='ending', reason=runner.said('ended_by_chair'))
+                    callbacks[0]({'kinds': [f'roundtables:control:{number}']})
             result = await asyncio.wait_for(task, 1)
-            assert result['state'] == ('held' if action == 'hold' else 'ended')
+            assert result['state'] == 'ended'
             assert not table.panel_work and not active
-            assert not store.submissions(number)
+            if action == 'advance':
+                assert len(store.submissions(number)) == 3
+                assert all(not row['accepted'] for row in store.submissions(number))
+            elif action == 'end':
+                assert not store.submissions(number)
+            else:
+                assert all(not row['accepted'] for row in store.submissions(number))
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
@@ -207,7 +233,13 @@ def test_completed_replies_survive_a_jev_hold_without_prompting_agents_again(pan
 
     handlers.update({position: contribute for position in range(3)})
     monkeypatch.setattr(judge, 'ask', lambda *args, **kw: judge.Asked(request={}, error='Fixture Jev failure.'))
-    first = asyncio.run(runner.Table(number).run())
+    first_table = runner.Table(number)
+
+    async def failed_judgment():
+        await asyncio.gather(*(first_table.turn(first_table.row(), row) for row in store.seats(number)))
+        return first_table.summary()
+
+    first = asyncio.run(failed_judgment())
     assert first['state'] == 'held'
     assert store.discussion(number)['unjudged']['text'] == contributions[0]
     assert [row['extra']['panel_reply']['original'] for row in store.seats(number)[1:]] == contributions[1:]
@@ -221,8 +253,75 @@ def test_completed_replies_survive_a_jev_hold_without_prompting_agents_again(pan
     assert calls == [0, 1, 2, 0, 1, 2, 0, 1, 2]
 
 
+def test_late_completed_judgment_keeps_cost_once_without_changing_new_topic(panel, monkeypatch):
+    number, handlers, _, _, _ = panel
+    for topic in ('The first topic.', 'The next topic.'):
+        store.add_topic(number, topic)
+    names = [row['name'] for row in store.seats(number)]
+    store.change(number, stage='discussion', topic=0, snapshot=render.snapshot(names, staged=True, judging=True))
+    entered, release = threading.Event(), threading.Event()
+
+    def delayed(state, criteria, **options):
+        entered.set()
+        assert release.wait(3)
+        return judge.Asked(request={'state': state}, criteria=criteria, cost=.00025,
+                           nouls={name: .99 for name in criteria})
+
+    async def contribution(seat, text):
+        return 'A completed contribution awaiting its judgment.'
+
+    handlers[0] = contribution
+    monkeypatch.setattr(judge, 'ask', delayed)
+    table = runner.Table(number)
+
+    async def scenario():
+        task = asyncio.create_task(table.turn(table.row(), store.seats(number)[0]))
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            table.archive_panel()
+            table.next_topic(table.row())
+            release.set()
+            assert not await asyncio.wait_for(task, 2)
+            assert table.row()['topic'] == 1 and table.row()['quiet_rounds'] == 0
+            assert table.row()['unjudged'] is None
+            assert len(store.submissions(number)) == 1
+            archived = store.submissions(number)[0]
+            assert archived['topic'] == 0 and archived['unjudged'] and not archived['accepted']
+            audits = store.judgments(number)
+            assert len(audits) == 1 and audits[0]['topic'] == 0 and audits[0]['decision'] == 'late'
+            assert audits[0]['cost'] == .00025 and table.row()['spent'] == .00025
+            table.collect_panel()
+            table.collect_panel()
+            assert len(store.judgments(number)) == 1 and table.row()['spent'] == .00025
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_background_readiness_disconnect_is_recorded_once_without_retry_spin(panel, monkeypatch):
+    number, _, _, _, _ = panel
+    fake = runner.KINDS['acp']
+    monkeypatch.setattr(fake, 'busy', lambda seat: seat.position == 0)
+    called = []
+
+    async def disconnected(seat):
+        called.append(seat.position)
+        raise Gone('The native connection ended.')
+
+    monkeypatch.setattr(fake, 'wait_ready', disconnected)
+    table = runner.Table(number)
+    table.seat(store.seats(number)[0])
+    asyncio.run(table.wait_busy())
+    assert called == [0]
+    assert store.seats(number)[0]['gone'] and store.seats(number)[0]['failures'] == 1
+    assert not table.has_busy()
+
+
 @pytest.mark.parametrize('ready_passes', [False, True])
-def test_busy_participant_does_not_count_toward_two_judged_quiet_rounds(panel, monkeypatch, ready_passes):
+def test_busy_participant_skips_two_ready_quiet_rounds_without_native_cancellation(panel, monkeypatch, ready_passes):
     number, handlers, _, _, calls = panel
     names = [row['name'] for row in store.seats(number)]
     store.change(number, snapshot=render.snapshot(names, judging=True))
@@ -230,7 +329,7 @@ def test_busy_participant_does_not_count_toward_two_judged_quiet_rounds(panel, m
         request={'state': state}, criteria=criteria, nouls={name: .1 for name in criteria}))
 
     async def scenario():
-        blocked, continued, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        blocked, continued, release, exhausted = (asyncio.Event() for _ in range(4))
         spoken = {1: 0, 2: 0}
 
         async def slow(seat, text):
@@ -248,19 +347,30 @@ def test_busy_participant_does_not_count_toward_two_judged_quiet_rounds(panel, m
             return f'Rejected position from seat {seat.position}, attempt {spoken[seat.position]}.'
 
         handlers.update({0: slow, 1: ready, 2: ready})
-        task = asyncio.create_task(runner.Table(number).run())
+        table = runner.Table(number)
+        over = table.round_over
+
+        async def round_over(found, **options):
+            await over(found, **options)
+            if table.row()['state'] == 'ending':
+                exhausted.set()
+
+        monkeypatch.setattr(table, 'round_over', round_over)
+        task = asyncio.create_task(table.run())
         try:
             await asyncio.wait_for(blocked.wait(), 2)
             await asyncio.wait_for(continued.wait(), 2)
-            assert store.discussion(number)['round'] == 1
-            assert store.discussion(number)['quiet_rounds'] == 0
+            await asyncio.wait_for(exhausted.wait(), 2)
+            assert store.discussion(number)['round'] == 2
+            assert store.discussion(number)['quiet_rounds'] == 2
             assert not task.done() and calls.count(0) == 1
             release.set()
             result = await asyncio.wait_for(task, 5)
             assert result['state'] == 'ended', result
             assert store.discussion(number)['round'] == 2
             assert store.discussion(number)['quiet_rounds'] == 2
-            assert calls.count(0) == 2
+            assert calls.count(0) == 1
+            assert not any(row['position'] == 0 and row['kind'] == 'pass' for row in store.submissions(number))
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
@@ -303,7 +413,7 @@ def test_late_pass_veto_gets_one_correction_turn_while_finished_peers_are_skippe
         try:
             await asyncio.wait_for(offered.wait(), 3)
             found = store.discussion(number)
-            assert found['state'] == 'running' and found['quiet_rounds'] == 2 and found['round'] == 3
+            assert found['state'] in ('running', 'ending') and found['quiet_rounds'] == 2 and found['round'] == 3
             assert [calls.count(position) for position in range(3)] == [2, 2, 3]
             blocked = [row for row in store.submissions(number) if row['position'] == 2 and row['kind'] == 'seat'][-1]
             reason = render.status(blocked)
@@ -314,6 +424,50 @@ def test_late_pass_veto_gets_one_correction_turn_while_finished_peers_are_skippe
             assert result['reason'] == 'The round ended because there was nothing new to add.'
             assert [calls.count(position) for position in range(3)] == [2, 2, 3]
         finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_busy_correction_does_not_block_an_already_quiet_ready_quorum(panel, monkeypatch):
+    number, handlers, _, _, calls = panel
+    seated = store.seats(number)
+    store.change(number, snapshot=render.snapshot([row['name'] for row in seated], judging=True))
+    table = runner.Table(number)
+    for cycle in range(2):
+        for row, pair in zip(seated, ('PP', 'VV', 'PV'), strict=True):
+            outcome = pair[cycle]
+            store.record(number, table.entry(table.row(), row, 'PASS' if outcome == 'P' else 'Rejected.',
+                                             kind='pass' if outcome == 'P' else 'seat'))
+        store.close_round(number, 'Exhausted.')
+
+    async def scenario():
+        offered, exhausted, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original = table.round_over
+
+        async def observe(found, **options):
+            await original(found, **options)
+            if table.row()['state'] == 'ending':
+                exhausted.set()
+
+        async def correction(seat, text):
+            offered.set()
+            await release.wait()
+            return 'PASS'
+
+        monkeypatch.setattr(table, 'round_over', observe)
+        handlers[2] = correction
+        task = asyncio.create_task(table.run())
+        try:
+            await asyncio.wait_for(offered.wait(), 1)
+            await asyncio.wait_for(exhausted.wait(), 1)
+            assert not task.done() and not release.is_set()
+            assert calls == [2] and table.row()['quiet_rounds'] == 2
+            release.set()
+            assert (await asyncio.wait_for(task, 3))['state'] == 'ended'
+        finally:
+            release.set()
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
@@ -351,9 +505,9 @@ def test_a_finished_models_saved_reply_is_judged_once_before_it_can_be_skipped(p
     assert calls.count(0) == len(new_passes) >= 2
 
 
-def test_unavailable_seats_wait_for_their_actual_retry_deadline_without_repeating_healthy_turns(panel, monkeypatch):
+def test_unavailable_seats_keep_retry_deadlines_without_blocking_ready_completion(panel, monkeypatch):
     number, _, _, _, calls = panel
-    retry_at = time.time() + .08
+    retry_at = time.time() + 300
     for position in (1, 2):
         store.seat_change(number, position, availability='unavailable', retry_at=retry_at, failing='transient')
     probes = []
@@ -367,26 +521,31 @@ def test_unavailable_seats_wait_for_their_actual_retry_deadline_without_repeatin
     monkeypatch.setattr(runner.Table, 'probed', probed)
     result = asyncio.run(runner.Table(number).run())
     assert result['state'] == 'ended', result
-    assert calls == [0, 1, 2]
-    assert len(probes) == 2 and min(probes) >= retry_at
+    assert calls == [0]
+    assert probes == []
+    assert all(row['retry_at'] == retry_at for row in store.seats(number)[1:])
+    assert not any(row['position'] in (1, 2) for row in store.submissions(number))
 
 
-def test_gone_participant_holds_without_inventing_a_pass(panel):
+@pytest.mark.parametrize('judging', [False, True])
+def test_gone_participant_does_not_block_remaining_seats_or_receive_an_invented_pass(panel, judging):
     number, _, _, _, calls = panel
     store.seat_change(number, 0, gone='Agent exited.', availability='unavailable', retry_at=None)
-    result = asyncio.run(runner.Table(number).run())
-    assert result['state'] == 'held'
-    assert calls == [1, 2]
-    assert store.discussion(number)['round'] == 1
+    if judging:
+        names = [row['name'] for row in store.seats(number)]
+        store.change(number, snapshot=render.snapshot(names, judging=True))
+    result = asyncio.run(asyncio.wait_for(runner.Table(number).run(), 5))
+    assert result['state'] == 'ended', result
+    assert calls == [1, 2] * (2 if judging else 1)
+    assert store.discussion(number)['round'] == (2 if judging else 1)
+    assert store.discussion(number)['quiet_rounds'] == (2 if judging else 0)
     assert not any(row['position'] == 0 for row in store.submissions(number))
 
 
 @pytest.mark.parametrize('recoverable', [False, True])
-def test_last_uncovered_seats_failure_does_not_complete_its_round(panel, monkeypatch, recoverable):
+def test_last_uncovered_seat_recovers_or_leaves_without_blocking_the_remaining_participants(panel, monkeypatch,
+                                                                                         recoverable):
     number, handlers, _, _, calls = panel
-    original_value = runner.config.value
-    monkeypatch.setattr(runner.config, 'value',
-                        lambda key: .04 if key == 'probe_wait' else original_value(key))
     observed = []
     original_failing = runner.Table.failing
 
@@ -412,9 +571,10 @@ def test_last_uncovered_seats_failure_does_not_complete_its_round(panel, monkeyp
     assert failure['position'] == 2 and failure['kind'] == 'none'
     if recoverable:
         assert result['state'] == 'ended', result
-        assert any(row['position'] == 2 and row['kind'] == 'pass' and row['number'] > failure['number']
-                   for row in store.submissions(number))
+        assert store.seats(number)[2]['retry_at'] is not None
+        assert not any(row['position'] == 2 and row['kind'] == 'pass' for row in store.submissions(number))
     else:
-        assert result['state'] == 'held'
+        assert result['state'] == 'ended', result
         assert store.discussion(number)['round'] == 1
         assert calls == [0, 1, 2]
+        assert not any(row['position'] == 2 and row['kind'] == 'pass' for row in store.submissions(number))

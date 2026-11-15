@@ -154,13 +154,15 @@ class Follower:
 
     def told(self, kind: str, audience: str, changes: dict[str, Any] | None, payload: dict[str, Any]) -> None:
         self.seq += 1
-        event = {'table': self.table_id, 'seq': self.seq, 'kind': kind, 'audience': audience, **payload}
+        observed = now()
+        event = {'table': self.table_id, 'seq': self.seq, 'kind': kind, 'audience': audience,
+                 **payload, 'at': observed}
 
         def write() -> None:
             with self.store.tables() as tx:
                 self.concern(tx)
                 tx.insert('events', {'table_id': self.table_id, 'seq': self.seq, 'kind': kind, 'audience': audience,
-                                     'payload': payload, 'at': now()})
+                                     'payload': payload, 'at': observed})
                 updated = {'followed': self.followed, **(changes or {})}
                 updated['followed'] = self.current_budget(tx, updated['followed'])
                 tx.update('tables', {'table_id': self.table_id}, updated)
@@ -302,7 +304,7 @@ class Follower:
             self.followed['turns'] = int(row['n'])
             self.emit('veto' if row.get('outcome') == 'vetoed' else 'turn', **{key: row[key] for key in (
                 'n', 'message_id', 'turn', 'topic', 'round', 'seat', 'outcome', 'scores', 'failed', 'veto_reason',
-                'text', 'truncated')
+                'text', 'truncated', 'created')
                 if key in row})
         self.followed['turns'] = max(latest, int(self.followed.get('turns') or 0))
 
@@ -315,7 +317,8 @@ class Follower:
             if row.get('outcome') == 'unjudged' and int(row['n']) > since:
                 self.followed['unjudged'] = int(row['n'])
                 self.emit('turn', **{key: row[key] for key in (
-                    'n', 'message_id', 'turn', 'topic', 'round', 'seat', 'outcome', 'failed', 'text', 'truncated')
+                    'n', 'message_id', 'turn', 'topic', 'round', 'seat', 'outcome', 'failed', 'text', 'truncated',
+                    'created')
                     if key in row})
 
     def staged(self, page: engine.Page, number: int) -> None:
@@ -346,16 +349,17 @@ class Follower:
             if int(one['number']) <= after:
                 continue
             self.followed['events'] = int(one['number'])
+            timestamp = {'created': one['created']} if one.get('created') else {}
             if one.get('kind') == 'permission':
                 payload = json.loads(str(one['text']))
-                self.emit('permission', 'person', **payload)
+                self.emit('permission', 'person', **{**timestamp, **payload})
                 continue
             if one.get('kind') == 'budget':
                 notice = cast(dict[str, Any], json.loads(str(one['text'])))
-                self.emit('operational', 'person', what='budget', text=notice['text'], budget=notice)
+                self.emit('operational', 'person', what='budget', text=notice['text'], budget=notice, **timestamp)
                 continue
             self.emit('seat_lost' if one.get('kind') in SEAT_LOST else 'operational', 'person', what=one.get('kind'),
-                      text=one.get('text'), **({'seat': one['seat']} if one.get('seat') else {}))
+                      text=one.get('text'), **timestamp, **({'seat': one['seat']} if one.get('seat') else {}))
 
     def ended(self, page: engine.Page, number: int) -> None:
         """Save the complete result before publishing its end, so the page can show it immediately or on return."""

@@ -342,7 +342,7 @@ Follow the project's writing rules:
 
 Send your scorecard as one JSON object in your reply. Rate each other participant by name: <seats/>. Give stars from 0 to 5 in each category, and a bonus of true or false:
 {"Name": {"Efficient": 5, "Alert &amp; Aware": 5, "Thorough": 5, "Coordination": 5, "bonus": false}}</session_scoring>
-<session_results>Every scorecard is in. The ranking, with the points each participant received in this session and its rating across sessions:
+<session_results>The ranking from received scorecards, with the points each participant received in this session and its rating across sessions:
 
 <ranking/></session_results>
 <session_rank><seat/>: <points/> points from <cards/> scorecards; rating <rating/></session_rank>
@@ -648,4 +648,15 @@ Propose the next topic in at most <limit/> characters. Return only your proposal
 <topic_similarity_false>The two proposals concern unrelated subjects or directions.</topic_similarity_false>
 <topic_selection_failed>The next topic could not be selected: <error/></topic_selection_failed>
 <proposal_received>Your private next-topic proposal was received.</proposal_received>
+<proposal_required>A next-topic proposal is required. PASS, DONE and empty replies do not count as proposals.</proposal_required>
+<topic_proposal_failed><seat/> did not return a next-topic proposal: <error/>. Each participant gets two attempts, then selection proceeds with the valid proposals received.</topic_proposal_failed>
+<topic_compact_focus># Prepare for optional conversation compression
+
+This is the same group continuing its discussion. The selected next topic is:
+<topic/>
+
+Before native compression, write a concise continuity note focused on this next topic. Retain the original goals and constraints, relevant decisions and their reasons, evidence and file references, disagreements, unresolved questions and work already completed. Preserve uncertainty and distinguish proposals from decisions. Keep the references needed to recover other details from the original transcript and shared documents. Do not edit or remove those records. This note carries the discussion forward in this same conversation.</topic_compact_focus>
+<topic_compression_done><seat/>'s conversation was compressed for the selected next topic.</topic_compression_done>
+<topic_compression_unavailable><seat/> does not offer native conversation compression. Its existing conversation continues.</topic_compression_unavailable>
+<topic_compression_failed><seat/>'s conversation could not be compressed: <error/>. The discussion continues with its existing conversation.</topic_compression_failed>
 </prompts>

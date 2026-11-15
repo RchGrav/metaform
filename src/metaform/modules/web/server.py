@@ -2473,6 +2473,9 @@ class Handler(BaseHTTPRequestHandler):
         table's follower has opened it."""
         address, topic, seats = given.get('address'), given.get('topic'), given.get('seats')
         automate_ticket_creation = given.get('automate_ticket_creation', False)
+        compress_between_topics = given.get('compress_between_topics', False)
+        if type(compress_between_topics) is not bool:
+            return self.send(400, {'error': 'Compress conversations between topics is true or false.'})
         judging = given.get('judging')
         if judging is not None and type(judging) is not bool:
             return self.send(400, {'error': 'Judging is true or false.'})
@@ -2505,6 +2508,7 @@ class Handler(BaseHTTPRequestHandler):
                                **({'token_budget': token_budget} if token_budget is not None else {}),
                                **({'token_basis': token_basis} if token_basis is not None else {}),
                                'automate_ticket_creation': automate_ticket_creation,
+                               'compress_between_topics': compress_between_topics,
                                **({'permissions': permissions} if permissions is not None else {}),
                                **({'judging': judging} if judging is not None else {}),
                                **({'address': address.strip()} if address and address.strip()

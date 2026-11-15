@@ -53,16 +53,20 @@ def test_invalid_setup_permissions_are_rejected_before_starting(permissions_proj
         roundtables.permission_settings(context('roundtables', permissions_project), choices, {'claude'})
 
 
-def test_open_retains_captured_choices_for_follower_and_all_session_phases(permissions_project, roundtables):
+@pytest.mark.parametrize('compression', [None, False, True])
+def test_open_retains_captured_choices_for_follower_and_all_session_phases(
+        permissions_project, roundtables, compression):
     ctx = context('roundtables', permissions_project, nouns={
         'topic': 'Build the shared documents.', 'seats': ['claude/opus'], 'chain': 1, 'judging': False,
-        'permissions': {'claude': {'prompts': 'approve-reads'}}})
+        'permissions': {'claude': {'prompts': 'approve-reads'}},
+        **({'compress_between_topics': compression} if compression is not None else {})})
     answer = roundtables.open_table(ctx)
     ctx.nouns['table'] = answer['table']
     row = roundtables.table_row(ctx)
     assert row['followed']['permissions']['claude'] == {'prompts': 'approve-reads', 'mode': ''}
     assert row['followed']['judging'] is False
     assert row['followed']['session']['total'] == 1
+    assert row['followed']['session']['compress_between_topics'] is (compression is True)
     assert roundtables.status(ctx)['materials'] == row['followed']['session']['folder']
     folder = row['followed']['session']['folder']
     assert folder in row['opening']

@@ -24,13 +24,29 @@ def enabled(found: Mapping[str, Any]) -> bool:
 
 
 def _topic(found: Mapping[str, Any]) -> int | None:
+    if cast(dict[str, Any], found.get('snapshot') or {}).get('session'):
+        return None  # A continuous conversation retains its bank and in-flight promise between topics.
     return int(found['topic']) if found.get('stage') else None
 
 
 def _state(extra: Mapping[str, Any], topic: int | None) -> dict[str, Any]:
     saved = cast(dict[str, Any], extra.get('reply_allowance') or {})
-    return dict(saved) if saved and saved.get('topic') == topic else {
-        'topic': topic, 'credit': 0, 'pending': None, 'last': None}
+    return {**saved, 'topic': topic} if saved and (saved.get('topic') == topic or topic is None) else {
+        'topic': topic, 'credit': 0, 'pending': None, 'last': None, 'busy': False}
+
+
+def busy(number: int, position: int, waiting: bool) -> None:
+    """Track native work without inventing a foreground request for background work."""
+    with store.connect() as db:
+        store.fence(db, number)
+        found = store.plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
+        if found is None or not enabled(found):
+            return
+        extra = _seat(db, number, position)
+        state = _state(extra, _topic(found))
+        if bool(state.get('busy')) != waiting:
+            state['busy'] = waiting
+            _save(db, number, position, extra, state)
 
 
 def _seat(db: DataConnection, number: int, position: int) -> dict[str, Any]:
@@ -148,8 +164,8 @@ def recorded(db: DataConnection, number: int, row: Mapping[str, Any], receipt: s
                 state['credit'] = max(0, int(state['credit']) - int(pending.get('offered', 0)))
             state['pending'], state['last'] = None, key
             changed = True
-        elif peer_message and position != row.get('position') and pending.get('busy') and \
-                state['topic'] == row.get('topic'):
+        elif peer_message and position != row.get('position') and (pending.get('busy') or state.get('busy')) and \
+                (_topic(found) is None or state['topic'] == row.get('topic')):
             state['credit'] = int(state['credit']) + 1
             changed = True
         if changed:

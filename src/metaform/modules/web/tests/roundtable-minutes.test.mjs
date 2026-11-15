@@ -89,7 +89,7 @@ test('budget operational messages show their readable text with safe raw-text fa
   show({kind: 'operational', what: 'budget', text: '{malformed budget'});
   show({kind: 'operational', what: 'budget', text: '{"phase":"panel"}'});
   show({kind: 'operational', what: 'another-kind', text: old});
-  assert.deepEqual(rows, [
+  assert.deepEqual(rows.map(row => row.slice(0, 3)), [
     ['rt-note', 'budget', 'Token budget warning: Alpha has reached 80%.'],
     ['rt-note', 'budget', 'The structured warning takes precedence.'],
     ['rt-note', 'budget', '{malformed budget'],
@@ -101,14 +101,44 @@ test('budget operational messages show their readable text with safe raw-text fa
 
 function vetoFixture() {
   const code = source.slice(source.indexOf('const VETO_REASONS ='), source.indexOf('/* Who speaks next'));
-  const said = source.slice(source.indexOf('function said('), source.indexOf('/* ---------- the figures'));
+  const said = source.slice(source.indexOf('const TRANSCRIPT_TIME ='), source.indexOf('/* ---------- the figures'));
+  const heard = source.slice(source.indexOf('function heard('), source.indexOf('const seatOf ='));
   const rows = [];
   const UI = {transcript: {scrollHeight: 100, scrollTop: 0, clientHeight: 100, append: row => rows.push(row)}};
-  const turn = runInNewContext(`${code}\n${said}\nturn`, {UI, TABLE: {ended: false, id: 'table'},
+  const api = runInNewContext(`${code}\n${said}\n${heard}\n({turn, heard})`, {UI, TABLE: {ended: false, id: 'table'},
     S: {project: 'project'}, referenceParts, seatOf: () => -1,
+    nextUp: () => {}, Intl: {DateTimeFormat: function(locale, options) {
+      return new Intl.DateTimeFormat('en-US', {...options, timeZone: 'America/New_York'});
+    }},
     h: (tag, attributes, ...children) => ({tag, attributes, children})});
-  return {turn, rows};
+  return {...api, rows};
 }
+
+test('transcript timestamps show real source times in local hours with their full date and zone', () => {
+  const f = vetoFixture(), created = '2026-11-05T18:04:05+00:00', at = '2026-11-05T19:06:07Z';
+  f.turn({kind: 'turn', seat: 'Alpha', text: 'An earlier contribution.', created, at});
+  f.heard({kind: 'operational', what: 'resume', text: 'The agents resumed.', at});
+  const first = f.rows[0].children[0], second = f.rows[1].children[0];
+  assert.equal(first.tag, 'time');
+  assert.equal(first.attributes.datetime, new Date(created).toISOString());
+  assert.equal(first.children[0], '13:04:05', 'The source time uses the viewer’s local zone, not UTC or playback time.');
+  assert.equal(first.attributes.title, new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'full', timeStyle: 'long', timeZone: 'America/New_York'}).format(new Date(created)));
+  assert.equal(second.tag, 'time');
+  assert.equal(second.attributes.datetime, new Date(at).toISOString());
+  assert.equal(second.children[0], '14:06:07');
+});
+
+test('legacy or invalid timestamp metadata never invents a transcript time', () => {
+  const f = vetoFixture();
+  for (const created of [undefined, null, '', 'yesterday', '1', '2026-11-05T18:04:05', '2026-99-99T18:04:05Z']) {
+    f.turn({kind: 'turn', seat: 'Alpha', text: 'A preserved contribution.', created});
+  }
+  for (const row of f.rows) {
+    assert.equal(row.children[0].tag, 'b');
+    assert.equal(row.children.some(child => child?.tag === 'time'), false);
+  }
+});
 
 test('accepted public IDs and citations open readable references while vetoed or legacy turns keep their labels', () => {
   const f = vetoFixture();

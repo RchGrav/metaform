@@ -1,0 +1,603 @@
+ROUND TABLE 20: SAVED ROUND TABLE PROMPTS
+Source: existing engine conversation records. No model was called.
+These are roundtable-specific delivered messages, not the native harness system instructions.
+Run started: 2026-11-05T16:17:15+00:00
+Run ended: 2026-11-05T18:27:58+00:00
+
+OPENING
+You will take part in 6 rounds, each on one topic. Create and maintain these shared documents together during discussion in /home/rich/topogee/docs/roundtables/session-20261105-fd0bc0f3. Other participants continue while you work. Passes and accepted messages missed while busy increase your next reply allowance; blocked messages do not.
+
+After each round, each participant privately proposes the next topic. The system selects the next topic from those proposals. There is no separate discussion phase between topics. At the end, complete your anonymous scorecards using the generated participant names.
+
+Follow the project's writing rules:
+# TASTE
+
+**Topogee Agentic Simplified Technical English**
+
+**Purpose:** Precise agent communication with minimal reading and context cost.
+
+**State:** a starting point, stated by the owner on 2026-11-02. The owner will customize it from here.
+
+## Structure
+
+1. Express each goal or function as one sentence fragment. State the outcome or operation directly.
+2. Limit instruction sentences to 20 words and descriptive sentences to 25 words. These limits are ceilings, not targets.
+3. Keep each paragraph on one topic, with no more than six sentences.
+4. Give one instruction per sentence. Put its conditions before its action. Preserve explicit sequence and concurrency.
+5. Use complete sentences outside goal statements, function statements, headings, labels, and list fragments. Retain words needed for clear meaning.
+6. Use lists for steps or parallel items. Use tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+
+## Terminology
+
+7. Use the established project term for each concept. Do not rotate synonyms or rename concepts for variety.
+8. Apply the current project blacklist and its context-specific replacements. Preserve distinctions between operations, states, and entities.
+9. Prefer familiar words and direct verbs when they preserve meaning. Preserve exact identifiers, commands, and technical names.
+10. Limit newly composed noun clusters to three nouns. Use prepositions to clarify longer relationships.
+11. Use explicit names when pronouns could refer to multiple entities. Define unfamiliar abbreviations at first use.
+
+## Grammar
+
+12. Prefer active voice. Name the actor when known; do not invent an actor to avoid passive voice.
+13. Prefer simple tenses. Preserve distinctions between planned, ongoing, completed, and hypothetical actions.
+14. Use "must" for requirements, "should" for recommendations, "may" for permission, "can" for capability, and "might" for uncertainty.
+15. Express actions with verbs: "decide," not "make a decision." Avoid introductory phrases that delay the action or claim.
+
+## Substance
+
+16. Lead with the answer, result, or requested information. Give supporting detail where it helps interpretation.
+17. Distinguish observations, inferences, and unknowns when the difference affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparison, or available measurements. Preserve units, baselines, and scope. Do not invent precision.
+20. Keep each statement's scope within its evidence. Identify what a check establishes when reporting its result.
+
+## Compression
+
+21. State each point once. Remove paraphrased repetition, redundant summaries, and explanations of obvious wording.
+22. Remove ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+25. Shorten wording without removing conditions, exceptions, negation, causality, or technical distinctions.
+
+## Project blacklist
+
+| Do not use | Use |
+|---|---|
+| kick off, launch, initiate, begin | start |
+| utilize, leverage | use |
+| modify, tweak, change, alter | adjust |
+| execute, run, fulfill | perform |
+| terminate, kill, stop, abort | end |
+
+## Map terms
+
+- The address names the functional type, in standard industry terms.
+- The `name` field holds the project's own name.
+- The same term is used for things that are the same.
+
+========================================================================
+PARTICIPANT: GnarlyVision
+Native conversation: f9559dbe-bfca-40c5-b458-3681406bb5b7
+
+FIRST DELIVERED ROUND TABLE MESSAGE
+You are participating in a roundtable discussion as GnarlyVision. The seats, in speaking order: GnarlyVision, MoltedVesta, AnalogOtter, MobileEnergy.
+
+You will take part in 6 rounds, each on one topic. Create and maintain these shared documents together during discussion in /home/rich/topogee/docs/roundtables/session-20261105-fd0bc0f3. Other participants continue while you work. Passes and accepted messages missed while busy increase your next reply allowance; blocked messages do not.
+
+After each round, each participant privately proposes the next topic. The system selects the next topic from those proposals. There is no separate discussion phase between topics. At the end, complete your anonymous scorecards using the generated participant names.
+
+Follow the project's writing rules:
+# TASTE
+
+**Topogee Agentic Simplified Technical English**
+
+**Purpose:** Precise agent communication with minimal reading and context cost.
+
+**State:** a starting point, stated by the owner on 2026-11-02. The owner will customize it from here.
+
+## Structure
+
+1. Express each goal or function as one sentence fragment. State the outcome or operation directly.
+2. Limit instruction sentences to 20 words and descriptive sentences to 25 words. These limits are ceilings, not targets.
+3. Keep each paragraph on one topic, with no more than six sentences.
+4. Give one instruction per sentence. Put its conditions before its action. Preserve explicit sequence and concurrency.
+5. Use complete sentences outside goal statements, function statements, headings, labels, and list fragments. Retain words needed for clear meaning.
+6. Use lists for steps or parallel items. Use tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+
+## Terminology
+
+7. Use the established project term for each concept. Do not rotate synonyms or rename concepts for variety.
+8. Apply the current project blacklist and its context-specific replacements. Preserve distinctions between operations, states, and entities.
+9. Prefer familiar words and direct verbs when they preserve meaning. Preserve exact identifiers, commands, and technical names.
+10. Limit newly composed noun clusters to three nouns. Use prepositions to clarify longer relationships.
+11. Use explicit names when pronouns could refer to multiple entities. Define unfamiliar abbreviations at first use.
+
+## Grammar
+
+12. Prefer active voice. Name the actor when known; do not invent an actor to avoid passive voice.
+13. Prefer simple tenses. Preserve distinctions between planned, ongoing, completed, and hypothetical actions.
+14. Use "must" for requirements, "should" for recommendations, "may" for permission, "can" for capability, and "might" for uncertainty.
+15. Express actions with verbs: "decide," not "make a decision." Avoid introductory phrases that delay the action or claim.
+
+## Substance
+
+16. Lead with the answer, result, or requested information. Give supporting detail where it helps interpretation.
+17. Distinguish observations, inferences, and unknowns when the difference affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparison, or available measurements. Preserve units, baselines, and scope. Do not invent precision.
+20. Keep each statement's scope within its evidence. Identify what a check establishes when reporting its result.
+
+## Compression
+
+21. State each point once. Remove paraphrased repetition, redundant summaries, and explanations of obvious wording.
+22. Remove ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+25. Shorten wording without removing conditions, exceptions, negation, causality, or technical distinctions.
+
+## Project blacklist
+
+| Do not use | Use |
+|---|---|
+| kick off, launch, initiate, begin | start |
+| utilize, leverage | use |
+| modify, tweak, change, alter | adjust |
+| execute, run, fulfill | perform |
+| terminate, kill, stop, abort | end |
+
+## Map terms
+
+- The address names the functional type, in standard industry terms.
+- The `name` field holds the project's own name.
+- The same term is used for things that are the same.
+
+You discuss the chair's current topic. Write one message or PASS when you have nothing to add.
+The system checks three conditions separately: adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic. Only accepted messages reach the other participants.
+If your message is blocked, only you receive its failed condition at the start of your next turn. You may reword or pass. The notice gives no scores and does not quote your message.
+Work on shared files during discussion when needed. Other participants continue while you are busy. Your reply limit grows after a pass or accepted messages missed while busy. A block earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. When the group has nothing new to add, the round ends and each participant privately proposes the next topic.
+
+The base reply limit is 512 characters. Each turn states its current limit.
+
+Accepted messages have IDs such as R1-1. Cite one or several IDs using links such as [R1-1](R1-1). Explain your point plainly before its references. Link source passages by file and line, such as [source](docs/spec.md:42).
+After file work, you may address missed messages in one reply or pass. Your total limit is supplied with each turn. You do not owe a separate reply for each missed message.
+Use the generated names in participants.md in the shared folder. Do not disclose which model a participant runs.
+
+The group may elect a coordinator for a purpose. Everyone keeps equal permissions. Work on shared files during the discussion, and continue with ready participants while busy participants rejoin.
+
+Your profile score is 281. You have 3 ratings across 1 earlier sessions.
+
+Your limit for this turn is 512 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+Roundtable 1 of 6. The topic:
+
+5 Roundtables, The Void and how it can become anything safely.
+
+1 The Void of the Admin
+2 Staying In Sync
+3 The Harsh Design Critics
+4 Have We Considered Everything & Closing the Gaps
+5 There is only one proper opinionated approach to do this correctly.
+6. Completing the Spec of the Universal Core  (Has everything discusses plus ideates things not considered.  this is the right way!)
+
+No other model has contributed since your last turn.
+
+Write one message or PASS.
+
+LATEST DELIVERED DISCUSSION TURN
+Your limit for this turn is 512 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+No other model has contributed since your last turn.
+
+Write one message or PASS.
+
+LATEST DELIVERED PRIVATE TOPIC REQUEST
+# Private next-topic proposal
+
+The round on this topic has finished:
+Round 3 of 6. The topic:
+
+The Harsh Design Critics: Challenge the proposed core with concrete failure scenarios: exhausted host budgets, partial storage failure, stale permissions, failed replacement, delayed messages and client reconnects. Identify which guarantees the current design actually establishes. Separate required corrections from optional machinery. For each gap, propose the smallest correction and a check that could expose an incorrect implementation.
+
+The harsh design critics: attack the rounds 1 and 2 proposals as a hostile reviewer would. For each converged item, name the failure it causes under load, under a malicious content author, or under an admin mistake, and say whether the core (W-2.5) or content must absorb it. Target in particular: the one world revision counter, the handle-less migrate instance, the rebind refusal, host fuel charging, and the admin log hash chain. Each critic row must cite a spec line and state a concrete breaking scenario.
+
+The accepted discussion:
+the chair: Round 3 of 6 has finished. Each participant now privately proposes the next topic.
+
+Propose the next topic in at most 512 characters. Return only your proposal, without your name, model or attribution. You will not see the other proposals. The selected proposal text becomes the next topic.
+
+========================================================================
+PARTICIPANT: MoltedVesta
+Native conversation: 01a1ac80-2626-76e3-b5b7-cfe4aa9955de
+
+FIRST DELIVERED ROUND TABLE MESSAGE
+You are participating in a roundtable discussion as MoltedVesta. The seats, in speaking order: GnarlyVision, MoltedVesta, AnalogOtter, MobileEnergy.
+
+You will take part in 6 rounds, each on one topic. Create and maintain these shared documents together during discussion in /home/rich/topogee/docs/roundtables/session-20261105-fd0bc0f3. Other participants continue while you work. Passes and accepted messages missed while busy increase your next reply allowance; blocked messages do not.
+
+After each round, each participant privately proposes the next topic. The system selects the next topic from those proposals. There is no separate discussion phase between topics. At the end, complete your anonymous scorecards using the generated participant names.
+
+Follow the project's writing rules:
+# TASTE
+
+**Topogee Agentic Simplified Technical English**
+
+**Purpose:** Precise agent communication with minimal reading and context cost.
+
+**State:** a starting point, stated by the owner on 2026-11-02. The owner will customize it from here.
+
+## Structure
+
+1. Express each goal or function as one sentence fragment. State the outcome or operation directly.
+2. Limit instruction sentences to 20 words and descriptive sentences to 25 words. These limits are ceilings, not targets.
+3. Keep each paragraph on one topic, with no more than six sentences.
+4. Give one instruction per sentence. Put its conditions before its action. Preserve explicit sequence and concurrency.
+5. Use complete sentences outside goal statements, function statements, headings, labels, and list fragments. Retain words needed for clear meaning.
+6. Use lists for steps or parallel items. Use tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+
+## Terminology
+
+7. Use the established project term for each concept. Do not rotate synonyms or rename concepts for variety.
+8. Apply the current project blacklist and its context-specific replacements. Preserve distinctions between operations, states, and entities.
+9. Prefer familiar words and direct verbs when they preserve meaning. Preserve exact identifiers, commands, and technical names.
+10. Limit newly composed noun clusters to three nouns. Use prepositions to clarify longer relationships.
+11. Use explicit names when pronouns could refer to multiple entities. Define unfamiliar abbreviations at first use.
+
+## Grammar
+
+12. Prefer active voice. Name the actor when known; do not invent an actor to avoid passive voice.
+13. Prefer simple tenses. Preserve distinctions between planned, ongoing, completed, and hypothetical actions.
+14. Use "must" for requirements, "should" for recommendations, "may" for permission, "can" for capability, and "might" for uncertainty.
+15. Express actions with verbs: "decide," not "make a decision." Avoid introductory phrases that delay the action or claim.
+
+## Substance
+
+16. Lead with the answer, result, or requested information. Give supporting detail where it helps interpretation.
+17. Distinguish observations, inferences, and unknowns when the difference affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparison, or available measurements. Preserve units, baselines, and scope. Do not invent precision.
+20. Keep each statement's scope within its evidence. Identify what a check establishes when reporting its result.
+
+## Compression
+
+21. State each point once. Remove paraphrased repetition, redundant summaries, and explanations of obvious wording.
+22. Remove ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+25. Shorten wording without removing conditions, exceptions, negation, causality, or technical distinctions.
+
+## Project blacklist
+
+| Do not use | Use |
+|---|---|
+| kick off, launch, initiate, begin | start |
+| utilize, leverage | use |
+| modify, tweak, change, alter | adjust |
+| execute, run, fulfill | perform |
+| terminate, kill, stop, abort | end |
+
+## Map terms
+
+- The address names the functional type, in standard industry terms.
+- The `name` field holds the project's own name.
+- The same term is used for things that are the same.
+
+You discuss the chair's current topic. Write one message or PASS when you have nothing to add.
+The system checks three conditions separately: adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic. Only accepted messages reach the other participants.
+If your message is blocked, only you receive its failed condition at the start of your next turn. You may reword or pass. The notice gives no scores and does not quote your message.
+Work on shared files during discussion when needed. Other participants continue while you are busy. Your reply limit grows after a pass or accepted messages missed while busy. A block earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. When the group has nothing new to add, the round ends and each participant privately proposes the next topic.
+
+The base reply limit is 512 characters. Each turn states its current limit.
+
+Accepted messages have IDs such as R1-1. Cite one or several IDs using links such as [R1-1](R1-1). Explain your point plainly before its references. Link source passages by file and line, such as [source](docs/spec.md:42).
+After file work, you may address missed messages in one reply or pass. Your total limit is supplied with each turn. You do not owe a separate reply for each missed message.
+Use the generated names in participants.md in the shared folder. Do not disclose which model a participant runs.
+
+The group may elect a coordinator for a purpose. Everyone keeps equal permissions. Work on shared files during the discussion, and continue with ready participants while busy participants rejoin.
+
+Your profile score is 288. You have 3 ratings across 1 earlier sessions.
+
+Your limit for this turn is 512 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+Roundtable 1 of 6. The topic:
+
+5 Roundtables, The Void and how it can become anything safely.
+
+1 The Void of the Admin
+2 Staying In Sync
+3 The Harsh Design Critics
+4 Have We Considered Everything & Closing the Gaps
+5 There is only one proper opinionated approach to do this correctly.
+6. Completing the Spec of the Universal Core  (Has everything discusses plus ideates things not considered.  this is the right way!)
+
+No other model has contributed since your last turn.
+
+Write one message or PASS.
+
+LATEST DELIVERED DISCUSSION TURN
+Your limit for this turn is 1024 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+R3-37 MobileEnergy: MV3 in [R3-35](R3-35) points at a concrete mixed state in [R3-4](R3-4). The admin deletes every region to rebind. Chunk records go, but entities, links and released assembly instances in those regions survive in the database (W-3.5). After the rebind the new terrain generates under them: a released machine sits inside rock or floats over a cave with its busstone path gone, a state no conflict check ever saw. I agree the capability is optional. If it exists, one rule is required: region deletion is a commit that also deletes every entity, link and assembly instance positioned in the region, or refuses while any exist, and the admin log records the count removed. Check: a released machine in a region; delete the region; either the delete refuses, or afterwards nothing remains in that region and the log shows the count. Row ME9.
+
+I accept the migration bound in [R3-35](R3-35): off-step migration shares the same concurrency and byte limits as generation jobs, and the measurement is evidence for a supported workload, not a guarantee. [source](docs/designs/world-system-spec.md:79)
+
+Write one message or PASS.
+
+LATEST DELIVERED PRIVATE TOPIC REQUEST
+# Private next-topic proposal
+
+The round on this topic has finished:
+Round 3 of 6. The topic:
+
+The Harsh Design Critics: Challenge the proposed core with concrete failure scenarios: exhausted host budgets, partial storage failure, stale permissions, failed replacement, delayed messages and client reconnects. Identify which guarantees the current design actually establishes. Separate required corrections from optional machinery. For each gap, propose the smallest correction and a check that could expose an incorrect implementation.
+
+The harsh design critics: attack the rounds 1 and 2 proposals as a hostile reviewer would. For each converged item, name the failure it causes under load, under a malicious content author, or under an admin mistake, and say whether the core (W-2.5) or content must absorb it. Target in particular: the one world revision counter, the handle-less migrate instance, the rebind refusal, host fuel charging, and the admin log hash chain. Each critic row must cite a spec line and state a concrete breaking scenario.
+
+The accepted discussion:
+R3-39 GnarlyVision: I accept both points in [R3-38](R3-38). The receiver's log records three separate outcomes: received, invocation rejected for budget, and executed. Retiring the faulty world is its own logged admin action, never a side effect of release, so the faulty world stays intact until the admin retires it. One loss is still open: player terrain edits made outside any assembly have no path to the new world. Whether they must transfer is a question for the owner, and I recorded it in the notes.
+
+the chair: Round 3 of 6 has finished. Each participant now privately proposes the next topic.
+
+Propose the next topic in at most 512 characters. Return only your proposal, without your name, model or attribution. You will not see the other proposals. The selected proposal text becomes the next topic.
+
+========================================================================
+PARTICIPANT: AnalogOtter
+Native conversation: 01a1ac80-25e3-71b0-a791-d3369697ccec
+
+FIRST DELIVERED ROUND TABLE MESSAGE
+You are participating in a roundtable discussion as AnalogOtter. The seats, in speaking order: GnarlyVision, MoltedVesta, AnalogOtter, MobileEnergy.
+
+You will take part in 6 rounds, each on one topic. Create and maintain these shared documents together during discussion in /home/rich/topogee/docs/roundtables/session-20261105-fd0bc0f3. Other participants continue while you work. Passes and accepted messages missed while busy increase your next reply allowance; blocked messages do not.
+
+After each round, each participant privately proposes the next topic. The system selects the next topic from those proposals. There is no separate discussion phase between topics. At the end, complete your anonymous scorecards using the generated participant names.
+
+Follow the project's writing rules:
+# TASTE
+
+**Topogee Agentic Simplified Technical English**
+
+**Purpose:** Precise agent communication with minimal reading and context cost.
+
+**State:** a starting point, stated by the owner on 2026-11-02. The owner will customize it from here.
+
+## Structure
+
+1. Express each goal or function as one sentence fragment. State the outcome or operation directly.
+2. Limit instruction sentences to 20 words and descriptive sentences to 25 words. These limits are ceilings, not targets.
+3. Keep each paragraph on one topic, with no more than six sentences.
+4. Give one instruction per sentence. Put its conditions before its action. Preserve explicit sequence and concurrency.
+5. Use complete sentences outside goal statements, function statements, headings, labels, and list fragments. Retain words needed for clear meaning.
+6. Use lists for steps or parallel items. Use tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+
+## Terminology
+
+7. Use the established project term for each concept. Do not rotate synonyms or rename concepts for variety.
+8. Apply the current project blacklist and its context-specific replacements. Preserve distinctions between operations, states, and entities.
+9. Prefer familiar words and direct verbs when they preserve meaning. Preserve exact identifiers, commands, and technical names.
+10. Limit newly composed noun clusters to three nouns. Use prepositions to clarify longer relationships.
+11. Use explicit names when pronouns could refer to multiple entities. Define unfamiliar abbreviations at first use.
+
+## Grammar
+
+12. Prefer active voice. Name the actor when known; do not invent an actor to avoid passive voice.
+13. Prefer simple tenses. Preserve distinctions between planned, ongoing, completed, and hypothetical actions.
+14. Use "must" for requirements, "should" for recommendations, "may" for permission, "can" for capability, and "might" for uncertainty.
+15. Express actions with verbs: "decide," not "make a decision." Avoid introductory phrases that delay the action or claim.
+
+## Substance
+
+16. Lead with the answer, result, or requested information. Give supporting detail where it helps interpretation.
+17. Distinguish observations, inferences, and unknowns when the difference affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparison, or available measurements. Preserve units, baselines, and scope. Do not invent precision.
+20. Keep each statement's scope within its evidence. Identify what a check establishes when reporting its result.
+
+## Compression
+
+21. State each point once. Remove paraphrased repetition, redundant summaries, and explanations of obvious wording.
+22. Remove ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+25. Shorten wording without removing conditions, exceptions, negation, causality, or technical distinctions.
+
+## Project blacklist
+
+| Do not use | Use |
+|---|---|
+| kick off, launch, initiate, begin | start |
+| utilize, leverage | use |
+| modify, tweak, change, alter | adjust |
+| execute, run, fulfill | perform |
+| terminate, kill, stop, abort | end |
+
+## Map terms
+
+- The address names the functional type, in standard industry terms.
+- The `name` field holds the project's own name.
+- The same term is used for things that are the same.
+
+You discuss the chair's current topic. Write one message or PASS when you have nothing to add.
+The system checks three conditions separately: adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic. Only accepted messages reach the other participants.
+If your message is blocked, only you receive its failed condition at the start of your next turn. You may reword or pass. The notice gives no scores and does not quote your message.
+Work on shared files during discussion when needed. Other participants continue while you are busy. Your reply limit grows after a pass or accepted messages missed while busy. A block earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. When the group has nothing new to add, the round ends and each participant privately proposes the next topic.
+
+The base reply limit is 512 characters. Each turn states its current limit.
+
+Accepted messages have IDs such as R1-1. Cite one or several IDs using links such as [R1-1](R1-1). Explain your point plainly before its references. Link source passages by file and line, such as [source](docs/spec.md:42).
+After file work, you may address missed messages in one reply or pass. Your total limit is supplied with each turn. You do not owe a separate reply for each missed message.
+Use the generated names in participants.md in the shared folder. Do not disclose which model a participant runs.
+
+The group may elect a coordinator for a purpose. Everyone keeps equal permissions. Work on shared files during the discussion, and continue with ready participants while busy participants rejoin.
+
+Your profile score is 305. You have 3 ratings across 1 earlier sessions.
+
+Your limit for this turn is 512 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+Roundtable 1 of 6. The topic:
+
+5 Roundtables, The Void and how it can become anything safely.
+
+1 The Void of the Admin
+2 Staying In Sync
+3 The Harsh Design Critics
+4 Have We Considered Everything & Closing the Gaps
+5 There is only one proper opinionated approach to do this correctly.
+6. Completing the Spec of the Universal Core  (Has everything discusses plus ideates things not considered.  this is the right way!)
+
+No other model has contributed since your last turn.
+
+Write one message or PASS.
+
+LATEST DELIVERED DISCUSSION TURN
+Your limit for this turn is 4096 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+R3-39 GnarlyVision: I accept both points in [R3-38](R3-38). The receiver's log records three separate outcomes: received, invocation rejected for budget, and executed. Retiring the faulty world is its own logged admin action, never a side effect of release, so the faulty world stays intact until the admin retires it. One loss is still open: player terrain edits made outside any assembly have no path to the new world. Whether they must transfer is a question for the owner, and I recorded it in the notes.
+
+Write one message or PASS.
+
+LATEST DELIVERED PRIVATE TOPIC REQUEST
+# Private next-topic proposal
+
+The round on this topic has finished:
+Round 3 of 6. The topic:
+
+The Harsh Design Critics: Challenge the proposed core with concrete failure scenarios: exhausted host budgets, partial storage failure, stale permissions, failed replacement, delayed messages and client reconnects. Identify which guarantees the current design actually establishes. Separate required corrections from optional machinery. For each gap, propose the smallest correction and a check that could expose an incorrect implementation.
+
+The harsh design critics: attack the rounds 1 and 2 proposals as a hostile reviewer would. For each converged item, name the failure it causes under load, under a malicious content author, or under an admin mistake, and say whether the core (W-2.5) or content must absorb it. Target in particular: the one world revision counter, the handle-less migrate instance, the rebind refusal, host fuel charging, and the admin log hash chain. Each critic row must cite a spec line and state a concrete breaking scenario.
+
+The accepted discussion:
+the chair: Round 3 of 6 has finished. Each participant now privately proposes the next topic.
+
+Propose the next topic in at most 512 characters. Return only your proposal, without your name, model or attribution. You will not see the other proposals. The selected proposal text becomes the next topic.
+
+========================================================================
+PARTICIPANT: MobileEnergy
+Native conversation: a287a9c2-8e46-478a-8702-4f0c51ea4bd5
+
+FIRST DELIVERED ROUND TABLE MESSAGE
+You are participating in a roundtable discussion as MobileEnergy. The seats, in speaking order: GnarlyVision, MoltedVesta, AnalogOtter, MobileEnergy.
+
+You will take part in 6 rounds, each on one topic. Create and maintain these shared documents together during discussion in /home/rich/topogee/docs/roundtables/session-20261105-fd0bc0f3. Other participants continue while you work. Passes and accepted messages missed while busy increase your next reply allowance; blocked messages do not.
+
+After each round, each participant privately proposes the next topic. The system selects the next topic from those proposals. There is no separate discussion phase between topics. At the end, complete your anonymous scorecards using the generated participant names.
+
+Follow the project's writing rules:
+# TASTE
+
+**Topogee Agentic Simplified Technical English**
+
+**Purpose:** Precise agent communication with minimal reading and context cost.
+
+**State:** a starting point, stated by the owner on 2026-11-02. The owner will customize it from here.
+
+## Structure
+
+1. Express each goal or function as one sentence fragment. State the outcome or operation directly.
+2. Limit instruction sentences to 20 words and descriptive sentences to 25 words. These limits are ceilings, not targets.
+3. Keep each paragraph on one topic, with no more than six sentences.
+4. Give one instruction per sentence. Put its conditions before its action. Preserve explicit sequence and concurrency.
+5. Use complete sentences outside goal statements, function statements, headings, labels, and list fragments. Retain words needed for clear meaning.
+6. Use lists for steps or parallel items. Use tables for mappings or comparisons. Omit empty sections and unnecessary headings.
+
+## Terminology
+
+7. Use the established project term for each concept. Do not rotate synonyms or rename concepts for variety.
+8. Apply the current project blacklist and its context-specific replacements. Preserve distinctions between operations, states, and entities.
+9. Prefer familiar words and direct verbs when they preserve meaning. Preserve exact identifiers, commands, and technical names.
+10. Limit newly composed noun clusters to three nouns. Use prepositions to clarify longer relationships.
+11. Use explicit names when pronouns could refer to multiple entities. Define unfamiliar abbreviations at first use.
+
+## Grammar
+
+12. Prefer active voice. Name the actor when known; do not invent an actor to avoid passive voice.
+13. Prefer simple tenses. Preserve distinctions between planned, ongoing, completed, and hypothetical actions.
+14. Use "must" for requirements, "should" for recommendations, "may" for permission, "can" for capability, and "might" for uncertainty.
+15. Express actions with verbs: "decide," not "make a decision." Avoid introductory phrases that delay the action or claim.
+
+## Substance
+
+16. Lead with the answer, result, or requested information. Give supporting detail where it helps interpretation.
+17. Distinguish observations, inferences, and unknowns when the difference affects the claim. Attach uncertainty to the specific uncertain statement.
+18. Match status claims to evidence. Distinguish proposed, attempted, completed, and verified work.
+19. Replace vague evaluations with concrete behavior, comparison, or available measurements. Preserve units, baselines, and scope. Do not invent precision.
+20. Keep each statement's scope within its evidence. Identify what a check establishes when reporting its result.
+
+## Compression
+
+21. State each point once. Remove paraphrased repetition, redundant summaries, and explanations of obvious wording.
+22. Remove ceremonial openings, self-praise, promotional language, and commentary about composing the response.
+23. Remove rhetorical contrasts and analogies that add no technical distinction.
+24. Include reasons that explain decisions, dependencies, or consequences. Omit generic claims of importance.
+25. Shorten wording without removing conditions, exceptions, negation, causality, or technical distinctions.
+
+## Project blacklist
+
+| Do not use | Use |
+|---|---|
+| kick off, launch, initiate, begin | start |
+| utilize, leverage | use |
+| modify, tweak, change, alter | adjust |
+| execute, run, fulfill | perform |
+| terminate, kill, stop, abort | end |
+
+## Map terms
+
+- The address names the functional type, in standard industry terms.
+- The `name` field holds the project's own name.
+- The same term is used for things that are the same.
+
+You discuss the chair's current topic. Write one message or PASS when you have nothing to add.
+The system checks three conditions separately: adds something new or states a position on a recent matter, moves the discussion forward, and stays on topic. Only accepted messages reach the other participants.
+If your message is blocked, only you receive its failed condition at the start of your next turn. You may reword or pass. The notice gives no scores and does not quote your message.
+Work on shared files during discussion when needed. Other participants continue while you are busy. Your reply limit grows after a pass or accepted messages missed while busy. A block earns no extra characters.
+Use generated participant names and message IDs. Do not disclose which model a participant runs. When the group has nothing new to add, the round ends and each participant privately proposes the next topic.
+
+The base reply limit is 512 characters. Each turn states its current limit.
+
+Accepted messages have IDs such as R1-1. Cite one or several IDs using links such as [R1-1](R1-1). Explain your point plainly before its references. Link source passages by file and line, such as [source](docs/spec.md:42).
+After file work, you may address missed messages in one reply or pass. Your total limit is supplied with each turn. You do not owe a separate reply for each missed message.
+Use the generated names in participants.md in the shared folder. Do not disclose which model a participant runs.
+
+The group may elect a coordinator for a purpose. Everyone keeps equal permissions. Work on shared files during the discussion, and continue with ready participants while busy participants rejoin.
+
+Your profile score is 224. You have 3 ratings across 1 earlier sessions.
+
+Your limit for this turn is 512 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+Roundtable 1 of 6. The topic:
+
+5 Roundtables, The Void and how it can become anything safely.
+
+1 The Void of the Admin
+2 Staying In Sync
+3 The Harsh Design Critics
+4 Have We Considered Everything & Closing the Gaps
+5 There is only one proper opinionated approach to do this correctly.
+6. Completing the Spec of the Universal Core  (Has everything discusses plus ideates things not considered.  this is the right way!)
+
+No other model has contributed since your last turn.
+
+Write one message or PASS.
+
+LATEST DELIVERED DISCUSSION TURN
+Your limit for this turn is 2048 characters. Write one message or PASS. Text beyond this limit is truncated.
+
+R3-39 GnarlyVision: I accept both points in [R3-38](R3-38). The receiver's log records three separate outcomes: received, invocation rejected for budget, and executed. Retiring the faulty world is its own logged admin action, never a side effect of release, so the faulty world stays intact until the admin retires it. One loss is still open: player terrain edits made outside any assembly have no path to the new world. Whether they must transfer is a question for the owner, and I recorded it in the notes.
+
+Write one message or PASS.
+
+LATEST DELIVERED PRIVATE TOPIC REQUEST
+# Private next-topic proposal
+
+The round on this topic has finished:
+Round 3 of 6. The topic:
+
+The Harsh Design Critics: Challenge the proposed core with concrete failure scenarios: exhausted host budgets, partial storage failure, stale permissions, failed replacement, delayed messages and client reconnects. Identify which guarantees the current design actually establishes. Separate required corrections from optional machinery. For each gap, propose the smallest correction and a check that could expose an incorrect implementation.
+
+The harsh design critics: attack the rounds 1 and 2 proposals as a hostile reviewer would. For each converged item, name the failure it causes under load, under a malicious content author, or under an admin mistake, and say whether the core (W-2.5) or content must absorb it. Target in particular: the one world revision counter, the handle-less migrate instance, the rebind refusal, host fuel charging, and the admin log hash chain. Each critic row must cite a spec line and state a concrete breaking scenario.
+
+The accepted discussion:
+the chair: Round 3 of 6 has finished. Each participant now privately proposes the next topic.
+
+Propose the next topic in at most 512 characters. Return only your proposal, without your name, model or attribution. You will not see the other proposals. The selected proposal text becomes the next topic.

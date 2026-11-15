@@ -9,8 +9,8 @@ Every seat has a system message, fixed for the table's life: the rules, which se
 system role of its own (`system_role`) sends it first in every request; every other kind is given it at the head of
 the first prompt of each of its sessions. Within a topic the conversation only grows, except that the seat's own reply,
 once judged, is replaced by what entered of it or by a one-line status (`settled`), never kept word for word when it
-was vetoed or truncated. When a topic opens the conversation begins again (`rebuild`), the kinds that hold a session
-starting a fresh one.
+was vetoed or truncated. A session carries the same conversations across its topics. Independent topics may begin
+their conversations again (`rebuild`). Optional native compression retains the native session.
 
 - `acp` (`harness.AcpSeat`): Claude Code, Codex or Antigravity in its own ACP session on the person's own login;
 - `openrouter` (`openrouter.ModelSeat`): a model through OpenRouter, its system message and its conversation since
@@ -152,6 +152,17 @@ class Seat:
     async def report(self, record: str, seconds: float) -> str:
         """The report, written by this seat from the whole record."""
         return (await self.exchange(record, seconds)).text
+
+    async def compress(self, topic: str, seconds: float) -> bool:
+        """Compress this conversation for the selected next topic when its transport supports it."""
+        return False
+
+    def busy(self) -> bool:
+        """Whether native work must finish before the scheduler gives this seat another request."""
+        return False
+
+    async def wait_ready(self) -> None:
+        """Wait for native readiness without starting or cancelling work."""
 
     async def probe(self, kind: str) -> None:
         """A cheap check, after failures of `kind`, that the seat can answer again; NoReply when it cannot yet. By

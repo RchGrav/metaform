@@ -28,7 +28,8 @@ function fixture(options = {}) {
   const BUDGET = {value: 0, dirty: false, setupDirty: false}, CHAIR = {writing: false};
   const S = {project: 'project', selected: null};
   const TABLE = {id: null, state: '', stage: '', ended: false, address: ''};
-  const UI = Object.fromEntries(['question', 'replyLimit', 'tables', 'start', 'state', 'topic', 'judging', 'automate', 'where',
+  const UI = Object.fromEntries(['question', 'replyLimit', 'tables', 'start', 'state', 'topic', 'judging',
+    'compressBetweenTopics', 'automate', 'where',
     'seatList', 'addSeat', 'saveParticipants', 'launchPermissions', 'hold', 'discussion', 'discussionComment',
     'sendDiscussion', 'endDiscussion', 'continueDiscussion', 'endTable', 'root'].map(key => [key, node('div')]));
   UI.question.value = 'Plan a project'; UI.replyLimit.value = '512'; UI.tables.value = '1';
@@ -274,6 +275,20 @@ test('phase progress preserves the draft limit, chair hold and discussion commen
   assert.equal(f.writes.length, 0);
 });
 
+test('unreported zero usage stays distinct from a reported zero without inventing activity', () => {
+  const f = fixture(), snapshot = phaseSnapshot();
+  snapshot.participants[0].reported = false;
+  snapshot.participants[1].reported = true;
+  snapshot.participants.push({position: 2, name: 'Legacy', tokens: 0, unreported: 0, closing: false});
+  f.api.phaseBudgetIs(snapshot);
+  const [unreported, reported, legacy] = f.UI.phaseBudgetRows.children;
+  assert.match(textOf(unreported), /0 \/ 500,000 tokens \(0%\).*Usage not yet reported/);
+  assert.match(textOf(reported), /0 \/ 500,000 tokens \(0%\)/);
+  assert.doesNotMatch(textOf(reported), /Usage not yet reported/);
+  assert.doesNotMatch(textOf(legacy), /Usage not yet reported/);
+  assert.doesNotMatch(textOf(f.UI.phaseBudgetRows), /[Ii]dle|[Bb]usy/);
+});
+
 test('missing reports and phase closing state stay explicit alongside the usage totals', () => {
   const f = fixture(), snapshot = phaseSnapshot();
   snapshot.participants[0].unreported = 1;
@@ -323,6 +338,11 @@ test('private topic selection shows only aggregate progress independently of tra
   snapshot = {...snapshot, completed: 4, state: 'judging'};
   await reader.read();
   assert.match(f.UI.topicSelectionStatus.textContent, /Comparing the private proposals.*4 of 4/);
+  snapshot = {...snapshot, state: 'compressing'};
+  await reader.read();
+  assert.equal(f.UI.topicSelectionStatus.textContent, 'Compressing conversations for the next topic.');
+  assert.equal(f.UI.endDiscussion.disabled, true);
+  assert.equal(f.UI.endSession.hidden, false);
   assert.equal(reader.TABLE.seq, 17);
   assert.equal(f.UI.phaseBudget.hidden, true, 'Selection does not invent another token-budget phase.');
   f.api.phaseBudgetIs({...phaseSnapshot('panel', 4), stage: 'discussion'});

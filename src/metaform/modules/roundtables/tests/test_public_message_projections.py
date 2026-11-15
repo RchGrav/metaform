@@ -111,3 +111,40 @@ def test_unjudged_discussion_exports_public_ids_without_inventing_criterion_excl
     assert [row['message_id'] for row in exported['transcript'] if row.get('message_id')] == ['R1-1', 'R1-2', 'R2-1']
     assert all(seat['excluded_by'] == {} for seat in exported['summary']['by_seat'].values())
     assert export.all_in_one(given.number)['transcript'] == exported['transcript']
+
+
+def test_follower_preserves_source_times_and_publishes_its_real_observation_time(discussion, monkeypatch):
+    given = discussion
+    web = importlib.import_module('metaform.modules.roundtables.roundtable.web')
+    observed = '2030-01-02T03:04:05Z'
+    published = []
+    monkeypatch.setattr(given.follow, 'now', lambda: observed)
+    monkeypatch.setattr(type(given.ctx), 'publish', lambda self, topic, event: published.append(event))
+
+    class Page:
+        def get(self, path, **kwargs):
+            request = SimpleNamespace(path_params={'number': str(given.number)},
+                                      query_params={'since': str(kwargs.get('since', 0))})
+            return json.loads(web.turns(request).body)
+
+    follower = given.follow.Follower(given.ctx, 'projection')
+    follower.turns(Page(), given.number)
+    with given.ctx.require_store().tables(write=False) as tx:
+        rows = [dict(row) for row in tx.rows('events', {'table_id': 'projection'}, limit=0).results]
+    saved = next(row for row in rows if row['payload'].get('message_id') == 'R1-1')
+    live = next(row for row in published if row.get('message_id') == 'R1-1')
+    assert saved['payload']['created'] == live['created'] == given.accepted['created']
+    assert saved['at'] == live['at'] == observed
+    assert live['created'] != live['at']
+
+
+def test_operational_events_retain_the_engine_event_timestamp():
+    from metaform.modules.roundtables.follow import Follower
+
+    source_time = '2026-11-05T18:10:57Z'
+    page = SimpleNamespace(get=lambda _path: {'events': [
+        {'number': 1, 'kind': 'held', 'text': 'Held by its chair.', 'created': source_time}]})
+    emitted = []
+    follower = SimpleNamespace(followed={}, emit=lambda *args, **kwargs: emitted.append(kwargs))
+    Follower.operational(follower, page, 20)
+    assert emitted == [{'what': 'held', 'text': 'Held by its chair.', 'created': source_time}]

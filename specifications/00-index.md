@@ -35,6 +35,7 @@ Every design decision goes into this spec when it is decided, in the record that
 | 08-projects.md | PROJ | Projects and source locations, working folders and project selection, origins, variants, reconstruction, export and import of history, clearing a project |
 | 09-viewer.md | VIEW | The one web GUI, user global, and its first view, the viewer: a floating 3D graph of the metaform and its layers, and a 2D drill-in view of one object in the left window |
 | 11-context.md | CTX | Context when and where it is needed: the base as the intake's alone, everything else a property in a knowledge layer linked at one Address and inherited toward the leaves, porting as a layer swap, memory and knowledge, the memory prompt, pushed delivery once per session, link before write, ref records and names, prompt addresses and `{this}`, the person's note, mechanics without gating |
+| 12-roundtables.md | RT | Continuous group discussions, ACP lifecycle, busy participants, ordered context and reply credits, Jev checks, quiet completion, private next-topic selection, optional compression, shared products, budgets, controls and recovery |
 | OPEN-QUESTIONS.md | D, E | Every open design and scope question with a recommendation, and the engineering choices made |
 | TRACE.md | | Every source requirement mapped to the records that carry it |
 | BUILD-BRIEF.md | | How the building agent works from this spec |

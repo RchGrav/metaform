@@ -1,0 +1,60 @@
+# ACP conversation history in Metaform
+
+This describes the implementation included in the review archive, inspected on 2026-11-05. The roundtable contract is [specifications/12-roundtables.md](../../specifications/12-roundtables.md).
+
+## Native history and Metaform's records
+
+The native agent owns its ACP conversation. Metaform retains the native session ID and asks that agent to resume or load it. Native tools, file reads and other interactions can remain in the agent's own history without appearing in the roundtable transcript. Their storage format and retention are properties of the native agent.
+
+The roundtable also keeps a local `Seat.messages` mirror. This records Metaform's prompts and retained replies for delivery, recovery and context estimates. Judging can replace or remove an assistant reply in that mirror. Optional native compression replaces its local context estimate with the preparation prompt and retained summary. Consequently, this field is neither an immutable transcript nor a copy of the native agent's complete history. A persisted session ID also does not prove which earlier facts remain in the model's current context. See [Seat.reply, delivered, settled and columns](../../src/metaform/modules/roundtables/roundtable/seat.py) and [AcpSeat.compress](../../src/metaform/modules/roundtables/roundtable/harness.py).
+
+## Storage and identifiers
+
+| Storage | Identifiers and keys | What it retains | Owning code |
+|---|---|---|---|
+| Native agent's own storage | Native ACP `sessionId` | The conversation the agent can resume or load, subject to that agent's persistence and compaction behavior | [Roundtable `Session.made`](../../src/metaform/modules/roundtables/roundtable/harness.py), [dispatch `Session.reopen`](../../src/metaform/modules/dispatch/runner.py) |
+| `$ROUNDTABLE_HOME/roundtable.sqlite3`, default `~/.roundtable/roundtable.sqlite3` | `discussions.number`; `seats` key `(discussion, position)` | Table state and each seat's native `session`, local `messages`, internal submission cursor `seen`, recovery/private state in `extra`, and availability | [Engine schema and seat operations](../../src/metaform/modules/roundtables/roundtable/store.py), [home resolution](../../src/metaform/modules/roundtables/roundtable/config.py) |
+| Same engine database: discussion evidence | `submissions (discussion, number)`; `stages (discussion, topic, stage, position)`; `judgments.id`; `events (discussion, number)` | Contributions, PASS/failure records, original text where retained, acceptance decisions, stage outputs, judgment requests/results/usage, and owner operational events | [Engine schema](../../src/metaform/modules/roundtables/roundtable/store.py), [owner exports](../../src/metaform/modules/roundtables/roundtable/export.py) |
+| Same engine database: private selection and ratings | `topic_proposals (discussion, topic, position)`; `topic_decisions (discussion, topic)`; `scorecards (discussion, position)` | Proposal attempts and comparison evidence; private peer scorecards. `profiles`, `profile_aliases` and `session_ratings` retain identity mappings, accumulated ratings and once-per-session rating accounting | [Engine schema and ratings](../../src/metaform/modules/roundtables/roundtable/store.py), [private topic selection](../../src/metaform/modules/roundtables/roundtable/topics.py) |
+| Metaform project's roundtables tables | Bridge `tables.table_id`; bridge `events (table_id, seq)` | Mapping from the project's table ID to the engine's numeric discussion, native roster, follower cursors, state and saved-record locations | [Roundtables declaration](../../src/metaform/modules/roundtables/__init__.py), [follower](../../src/metaform/modules/roundtables/follow.py) |
+| Shared project files | Session materials directory and `docs/roundtables/<number>-<topic>/`; continuation subdirectories when used | Jointly authored documents, plus the participant-readable `export.json` and `mechanical-report.md` | [Follower.saved](../../src/metaform/modules/roundtables/follow.py) |
+| Metaform project's dispatch tables | `agent_sessions.session_id`; `session_lines (session_id, name)`; `session_attempts.work_id` | Session ownership/lifecycle and native identity, ordered named thread entries, recovery state and supervisor retry accounting | [Dispatch schemas and carry_conversations](../../src/metaform/modules/dispatch/__init__.py), [dispatch Session](../../src/metaform/modules/dispatch/runner.py), [assigned task sessions](../../src/metaform/modules/dispatch/task_sessions.py) |
+| Metaform project's agents tables | `sent (session_id, seq)`; context identity and epoch; receipt keys include epoch/name or fingerprint | Prompt-version delivery history, delivered text/fingerprints, context epochs and checks. Context identity can be the runner identity used by the delivery service | [Agents module](../../src/metaform/modules/agents/__init__.py), [context ledger](../../src/metaform/modules/agents/context.py) |
+| Engine diagnostic files | `logs/table-<number>-seat-<position>.log` and runner logs | Adapter/process diagnostics, including stderr. These files are not a guaranteed ACP wire journal | [Session.begin/connect](../../src/metaform/modules/roundtables/roundtable/harness.py) |
+
+The bridge table ID, engine discussion number, seat position, native session ID and public message ID are different identifiers. In particular, `seen` is an internal Metaform submission cursor, not an ACP message ID.
+
+## What the roundtable transcript contains
+
+`Table.keep` checkpoints `Seat.columns()` and the delivery cursor into the seat row. `submissions` and `stages` separately preserve discussion and stage evidence. The native harness handles streamed messages, permissions, tool kinds, activity and compaction state, but it does not append every ACP notification or tool result to a durable event journal. The transient `Session.said` buffers are also not such a journal. See [runner persistence](../../src/metaform/modules/roundtables/roundtable/runner.py) and [native update handling](../../src/metaform/modules/roundtables/roundtable/harness.py).
+
+There are two materially different exports:
+
+- The engine's owner export, `export.build`, includes unsuccessful turns, retained originals, judgments, operational events and native session references. Seat-context exports are derived from the current local mirror. They do not restore history that the mirror has already settled or compressed.
+- The project-folder files are produced through `export.safe_shared` and `shared_mechanical`. They contain accepted participant-readable messages and public results. Private prompts, proposal authorship, unsuccessful attempts, judgment evidence and operational records are excluded. The shared file named `export.json` is therefore not the engine's full owner export.
+
+Private scorecards are stored separately from ordinary submissions. Aggregate profile totals are accounting, not replacements for the discussion record. See [export projections](../../src/metaform/modules/roundtables/roundtable/export.py) and [Follower.saved](../../src/metaform/modules/roundtables/follow.py).
+
+The owner export is itself a projection of the database. It does not automatically include every table, such as raw private scorecards and topic-proposal bookkeeping, or provider-managed session logs.
+
+## Ordinary dispatch conversations
+
+Dispatch keeps a richer thread projection. `Session.note` writes or updates a named `session_lines` entry. Streamed message/thought content exposed by ACP grows in its existing flow entry. Tool-call entries and structured details, the current plan, session state, usage and disclosed compaction entities are recorded through their handlers. `save_state` updates the named `state` entry. Child sessions receive their own session/thread records. Stable names mean these are ordered, mutable entities rather than an append-only raw protocol log. See [Session.note, session_update, child_note and save_state](../../src/metaform/modules/dispatch/runner.py).
+
+`agent_sessions` records the native session, work ID, runner identity, origin, pinned base and lifecycle/recovery metadata. `session_attempts` counts retry/recovery attempts for work; it does not contain conversation text. Task-session inspection and resumption use these same dispatch records rather than a second transcript store. See [dispatch declarations](../../src/metaform/modules/dispatch/__init__.py) and [TaskSessions](../../src/metaform/modules/dispatch/task_sessions.py).
+
+`carry_conversations` moves legacy per-base conversations into the project's independent tables. Existing project rows win when a key already exists; the old copy is removed after copying. This supports interrupted migration and preserves conversations across base changes, clear and restore operations. The carrier is registered with the chassis. It does not make every historical version of an updated thread entry immutable.
+
+## Resume, replay and compaction
+
+Roundtable session topics retain the same native conversations. Continue and public reseat preserve native IDs, messages and cursors. The harness uses `session/resume` when supported and otherwise `session/load`; load replay is suppressed from the local text buffer while configuration/lifecycle state is processed. Closing a connection or native session is distinct from deleting its saved history. See [Session.made and close](../../src/metaform/modules/roundtables/roundtable/harness.py), [Table.topical](../../src/metaform/modules/roundtables/roundtable/runner.py) and [reseated](../../src/metaform/modules/roundtables/roundtable/server.py).
+
+Dispatch similarly restores its named thread/state with `continue_thread`, then suppresses duplicate conversational replay during load. Disclosed compaction lifecycle/summary patches are keyed by session and compaction ID, including replay. ID-less legacy observations are labeled separately. An observed completed root compaction advances Metaform's instruction-delivery epoch once; replay does not create another new epoch. Old delivery evidence remains in the agents ledger, and relevant grounding becomes eligible for delivery in the new epoch. These observations explicitly leave semantic retention unknown. The agents module also distinguishes discovering local instruction files from confirming that the native adapter loaded them. See [dispatch compaction and resume handlers](../../src/metaform/modules/dispatch/runner.py), [agents context epochs](../../src/metaform/modules/agents/context.py) and [instruction-delivery observations](../../src/metaform/modules/agents/__init__.py).
+
+Optional roundtable compression uses the existing native session and a note focused on the selected next topic. It preserves the native ID and public transcript while shortening the local estimate. This native harness is not the full dispatch compaction ledger. Independent, non-session roundtable workflows still have separate rebuild/handoff paths; the continuous-session runner bypasses that legacy context-reset path.
+
+## Retention and archive limits
+
+Normal completion leaves database records and shared documents available. Saved project records use exclusive creation and retain differing earlier artifacts in separate record directories. Abort marks the engine discussion ended, archives owned files, copies bridge/evidence records into the Metaform backup area and removes live bridge rows. These operations do not turn the shared transcript into a complete native conversation backup. See [saved records and archive](../../src/metaform/modules/roundtables/follow.py) and [abort/put_aside](../../src/metaform/modules/roundtables/roundtable/server.py).
+
+A source/review archive does not itself back up native histories or local databases. Reconstructing a particular run may require the agent's native storage, the engine database, Metaform's project database and the shared files. The source explains their relationships; it cannot establish that a particular provider retained every native event or that the model still holds every earlier fact.

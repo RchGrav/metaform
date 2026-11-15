@@ -300,6 +300,8 @@ UI.setupBudgetCache = h('span', {}, ' Cache writes count as input.');
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.judging = h('input', {type: 'checkbox', name: 'judging', checked: true});
+UI.compressBetweenTopics = h('input', {type: 'checkbox', name: 'compress_between_topics',
+  'aria-describedby': 'rt-compression-description'});
 UI.tables = h('input', {type: 'number', min: 1, max: 20, step: 1, value: 1, name: 'chain', required: true});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
@@ -310,6 +312,9 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
   h('label', {}, 'Number of roundtables', UI.tables),
   h('small', {}, 'Between roundtables, each participant privately proposes a topic. Jev compares the proposals '
     + 'to choose the next roundtable.'),
+  h('label', {}, UI.compressBetweenTopics, 'Compress conversations between topics'),
+  h('small', {id: 'rt-compression-description'},
+    'Keep the same conversations and retain context for the selected next topic.'),
   h('label', {}, 'Base reply allowance (characters)', UI.replyLimit),
   h('small', {}, 'Base allowance for discussion replies. Saved PASS and missed-message credits can increase '
     + 'a participant’s next allowance.'),
@@ -367,6 +372,7 @@ export async function openRoundtable(fresh = false) {
   showStage();
   UI.setup.hidden = false;
   UI.automate.checked = false;
+  UI.compressBetweenTopics.checked = false;
   UI.start.disabled = true;  // wait for the project's budget before offering Start
   UI.question.focus();
   UI.tokenBudget.value = 0;
@@ -493,6 +499,7 @@ async function startTable() {
   const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit, chain: tables,
     token_budget: tokenBudget,
     judging: UI.judging.checked,
+    compress_between_topics: UI.compressBetweenTopics.checked,
     automate_ticket_creation: UI.automate.checked,
     ...(Object.keys(permissions).length ? {permissions} : {}),
     ...(TABLE.address ? {address: TABLE.address} : {}),
@@ -737,9 +744,9 @@ function heard(event) {
     renderChair(); }
   else if (event.kind === 'ideas') ideas(event.ideas || []);
   else if (event.kind === 'rankings') rankings(event.rankings || []);
-  else if (event.kind === 'summary') summary(event.text, event.name);
+  else if (event.kind === 'summary') summary(event.text, event.name, event.created || event.at);
   else if (event.kind === 'minutes' || event.kind === 'running_summary') {
-    said('rt-note', event.seat || 'Saved explanation', event.text || '');
+    said('rt-note', event.seat || 'Saved explanation', event.text || '', '', event.created || event.at);
   }
   else if (event.kind === 'seat_lost') lost(event);
   else if (event.kind === 'operational') {
@@ -753,7 +760,7 @@ function heard(event) {
         } catch { /* Older followers may send plain text rather than a budget object. */ }
       }
     }
-    said('rt-note', event.what || 'note', text);
+    said('rt-note', event.what || 'note', text, '', event.created || event.at);
   }
   nextUp();
 }
@@ -780,7 +787,7 @@ function turn(event) {
     ? `${event.message_id} · ${event.seat}` : event.seat;
   said(vetoed ? 'rt-turn vetoed' : 'rt-turn', name, event.text || '',
     vetoed ? ` (vetoed: ${vetoReason(event)})`
-      : event.outcome === 'unjudged' ? ' (never judged: the table ended first)' : '');
+      : event.outcome === 'unjudged' ? ' (never judged: the table ended first)' : '', event.created || event.at);
   if (event.outcome === 'handoff' || event.outcome === 'carry') return;
   if (n < 0 || TABLE.ended) return;
   TABLE.floor = n;
@@ -811,18 +818,18 @@ function rankings(listed) {
   }
   UI.rankingsBox.hidden = TABLE.ended || !UI.rankings.children.length;
 }
-function summary(text, name) {
+function summary(text, name, at) {
   if (!text) return;
   if (!TABLE.ended) {
     UI.answer.textContent = text;
     UI.answerBox.querySelector('h3').textContent = name ? `Answer, from ${name}` : 'Answer';
     UI.answerBox.hidden = false;
   }
-  said('rt-summary', name || 'Host', text);
+  said('rt-summary', name || 'Host', text, '', at);
 }
 function lost(event) {
   const n = seatOf(event.seat);
-  said('rt-note', event.seat || 'A seat', event.text || event.what || 'left the table');
+  said('rt-note', event.seat || 'A seat', event.text || event.what || 'left the table', '', event.created || event.at);
   if (n < 0) return;
   SEAT.lost[n] = 1;
   SEAT.why[n] = event.text || event.what || 'left the table';
@@ -977,7 +984,8 @@ function topicSelectionIs(snapshot) {
   const requested = Number(snapshot.requested), completed = Number(snapshot.completed);
   const count = Number.isSafeInteger(requested) && requested > 0 && Number.isSafeInteger(completed) && completed >= 0
     ? ` ${Math.min(completed, requested)} of ${requested} proposals received.` : '';
-  UI.topicSelectionStatus.textContent = snapshot.state === 'judging'
+  UI.topicSelectionStatus.textContent = snapshot.state === 'compressing'
+    ? 'Compressing conversations for the next topic.' : snapshot.state === 'judging'
     ? `Comparing the private proposals to choose the next topic.${count}`
     : `Choosing the next topic privately.${count}`;
 }
@@ -1017,6 +1025,7 @@ function phaseBudgetIs(snapshot) {
     return h('li', {'data-position': one.position}, h('span', {class: 'rt-phase-budget-name'}, name),
       h('span', {class: 'rt-phase-budget-count'}, count),
       maximum ? h('progress', {max: maximum, value: Math.min(tokens, maximum), 'aria-label': `${name} phase token use`}) : null,
+      one.reported === false ? h('small', {}, 'Usage not yet reported.') : null,
       one.closing ? h('small', {}, 'Closing statement requested.') : null,
       one.unreported ? h('small', {}, `Usage missing for ${one.unreported} ${one.unreported === 1 ? 'reply' : 'replies'}; `
         + 'the reported total is incomplete.') : null);
@@ -1101,11 +1110,22 @@ function stateIs(state, reason) {
   renderChair();
 }
 /* One line of the transcript, whole, the newest kept in view unless the person has scrolled up to read. */
-function said(kind, who, text, after = '') {
+const TRANSCRIPT_TIME = {
+  clock: new Intl.DateTimeFormat(undefined, {hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'}),
+  full: new Intl.DateTimeFormat(undefined, {dateStyle: 'full', timeStyle: 'long'})};
+function transcriptTime(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return h('time', {class: 'rt-time', datetime: date.toISOString(), title: TRANSCRIPT_TIME.full.format(date)},
+    TRANSCRIPT_TIME.clock.format(date));
+}
+function said(kind, who, text, after = '', at = null) {
   const box = UI.transcript, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+  const timestamp = transcriptTime(at);
   const linked = value => referenceParts(value, {project: S.project, table: TABLE.id}).map(part => part.href
     ? h('a', {class: 'rt-reference', href: part.href, target: '_blank', rel: 'noopener noreferrer'}, part.text) : part.text);
-  box.append(h('li', {class: kind}, h('b', {}, ...linked(who)), ' ', ...linked(text),
+  box.append(h('li', {class: kind}, ...(timestamp ? [timestamp, ' '] : []), h('b', {}, ...linked(who)), ' ', ...linked(text),
     after ? h('span', {class: 'rt-why'}, after) : null));
   if (bottom) box.scrollTop = box.scrollHeight;
 }

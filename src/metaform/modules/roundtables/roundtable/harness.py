@@ -33,6 +33,7 @@ from acp.experimental import v2
 from acp.experimental.v2 import schema
 
 from . import __version__, config, seats, store
+from .prompts import said
 from .seat import Gone, Late, NoReply, Reply, Seat
 
 log = logging.getLogger(__name__)
@@ -117,6 +118,9 @@ class V1Client:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def on_connect(self, conn: Any) -> None:
+        self.session.on_connect(conn)
+
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
         await self.session.session_update(session_id, update, **kwargs)
 
@@ -171,6 +175,13 @@ class Session:
         self.can_close = True
         self.session_id: str | None = None
         self.config: list[dict[str, Any]] = []
+        self.commands: list[dict[str, Any]] = []
+        self.compaction_status: str | None = None
+        self.compaction_error: str | None = None
+        self.compaction_summary = ''
+        self.compaction_ids: set[str] = set()
+        self.compaction_id: str | None = None
+        self.compaction_command = False
         self.modes: dict[str, Any] = {}
         self.tool_kinds: dict[str, str | None] = {}
         self.said: dict[str, str] = {}
@@ -181,6 +192,8 @@ class Session:
         self.servers = servers or []
         self.activity = 'idle'
         self.background: list[Any] | None = None
+        # An unknown snapshot cannot acknowledge that previously reported work finished.
+        self.background_unfinished = False
         self.raw_states: dict[str, deque[dict[str, Any]]] = {}
         self.completion: asyncio.Future[dict[str, Any]] | None = None
         self.foreground_started = False
@@ -188,6 +201,9 @@ class Session:
         self.prompt_lock = asyncio.Lock()
         self.closing = False
         self.inflight: asyncio.Task[Any] | None = None
+        self.prompt_request_id: Any = None
+        self.prompt_response: asyncio.Future[dict[str, Any]] | None = None
+        self.connection_lost = asyncio.Event()
         self.permission_waits = 0
         self.legacy_message = 0
         self.legacy_breaking = True
@@ -202,8 +218,15 @@ class Session:
                 params = cast(dict[str, Any], event.message.get('params') or {})
                 if params.get('sessionId') == self.session_id and self.inflight is not None and not self.prompt_sent:
                     self.prompt_sent = True
+                    self.prompt_request_id = event.message.get('id')
                     if self.on_sent is not None:
                         self.on_sent()
+            return
+        if self.prompt_request_id is not None and event.message.get('id') == self.prompt_request_id and \
+                'method' not in event.message and ('result' in event.message or 'error' in event.message) and \
+                self.prompt_response is not None and not self.prompt_response.done():
+            self.prompt_response.set_result(dict(event.message))
+            self.activity_changed.set()
             return
         if event.message.get('id') == self.initialize_request and 'result' in event.message:
             value = event.message['result']
@@ -232,6 +255,26 @@ class Session:
         if kind == 'config_option_update':
             self.config = [one.model_dump(mode='json', by_alias=True)
                            for one in cast(list[Any], update.config_options or [])]
+        elif kind == 'available_commands_update':
+            self.commands = [one.model_dump(mode='json', by_alias=True)
+                             for one in cast(list[Any], update.available_commands or [])]
+        elif kind == 'compaction_update':
+            ident = str(update.compaction_id)
+            if self.compaction_command:
+                if self.compaction_id is None and ident not in self.compaction_ids:
+                    self.compaction_id = ident
+                if ident != self.compaction_id:
+                    return
+            self.compaction_ids.add(ident)
+            self.compaction_status = str(update.status)
+            self.compaction_error = getattr(update, 'error', None)
+            if getattr(update, 'summary', None) is not None:
+                self.compaction_summary = ''.join(str(one.text) for one in cast(list[Any], update.summary)
+                                                  if getattr(one, 'type', None) == 'text')
+        elif kind == 'compaction_summary_chunk':
+            if (not self.compaction_command or str(update.compaction_id) == self.compaction_id) and \
+                    getattr(update.content, 'type', None) == 'text':
+                self.compaction_summary += str(update.content.text)
         elif kind == 'current_mode_update' and self.protocol == 1:
             self.modes['currentModeId'] = str(update.current_mode_id)
         elif kind == 'usage_update' and getattr(update, 'cost', None) is not None:
@@ -243,6 +286,8 @@ class Session:
             if 'background' in state:
                 value = state['background']
                 self.background = list(cast(list[Any], value)) if isinstance(value, list) else None
+                if isinstance(value, list):
+                    self.background_unfinished = bool(cast(list[Any], value))
             elif self.background is not None:
                 self.background = None
             if self.activity != 'idle':
@@ -325,6 +370,15 @@ class Session:
 
     def on_connect(self, conn: Any) -> None:
         self.conn = conn
+        self.connection_lost.clear()
+        # The SDK exposes stream messages but no public disconnect callback. Its reader's actual exit is definitive.
+        receive = getattr(getattr(conn, '_conn', None), '_recv_task', None)
+        if isinstance(receive, asyncio.Task):
+            def disconnected(_: asyncio.Task[Any]) -> None:
+                if self.conn is conn:
+                    self.connection_lost.set()
+                    self.activity_changed.set()
+            cast(asyncio.Task[Any], receive).add_done_callback(disconnected)
 
     def environment(self) -> dict[str, str]:
         env = {key: value for key, value in os.environ.items()
@@ -344,8 +398,16 @@ class Session:
         self.session_id = None
         self.activity = 'idle'
         self.background = None
+        self.background_unfinished = False
         self.raw_states.clear()
         self.config = []
+        self.commands = []
+        self.compaction_status = None
+        self.compaction_error = None
+        self.compaction_summary = ''
+        self.compaction_ids.clear()
+        self.compaction_id = None
+        self.compaction_command = False
         self.modes = {}
         self.tool_kinds.clear()
         command = shlex.split(self.command or config.agents()[self.agent])
@@ -364,7 +426,8 @@ class Session:
         self.conn = acp.connect_to_agent(cast(Any, V1Client(self)), self.process.stdin, self.process.stdout,
                                          observers=[self.stream_event])
         initialized = await asyncio.wait_for(self.conn.initialize(
-            protocol_version=1, client_capabilities=legacy.ClientCapabilities(),
+            protocol_version=1, client_capabilities=legacy.ClientCapabilities(
+                session=legacy.ClientSessionCapabilities(compaction=legacy.CompactionCapabilities())),
             client_info=legacy.Implementation(name='roundtable', title='Roundtable', version=__version__)), START)
         if initialized.protocol_version != 1:
             raise acp.RequestError(-32602, f'{self.agent} selected unsupported ACP protocol '
@@ -521,8 +584,48 @@ class Session:
     def alive(self) -> bool:
         return self.process is not None and self.process.returncode is None
 
-    async def waiting(self, tasks: set[asyncio.Future[Any]], seconds: float) -> tuple[set[asyncio.Future[Any]], float]:
+    def busy(self) -> bool:
+        """ACP foreground, permissions and reported background work retain ownership of this session."""
+        return self.alive() and not self.connection_lost.is_set() and (
+            self.activity != 'idle' or self.background_unfinished or self.permission_waits > 0 or
+            self.inflight is not None and not self.inflight.done() or
+            self.prompt_response is not None and not self.prompt_response.done() or
+            self.completion is not None and not self.completion.done())
+
+    async def wait_ready(self) -> None:
+        """Observe readiness or process exit. Cancelling this observer leaves native work alone."""
+        if not self.alive():
+            raise Gone(f'{self.agent} is no longer running')
+        if self.connection_lost.is_set():
+            raise Gone(f'{self.agent} closed its connection')
+        assert self.process is not None
+        process = self.process
+        ended = asyncio.create_task(process.wait())
+        try:
+            while self.busy():
+                self.activity_changed.clear()
+                changed = asyncio.create_task(self.activity_changed.wait())
+                try:
+                    await asyncio.wait({changed, ended}, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    changed.cancel()
+                    await asyncio.gather(changed, return_exceptions=True)
+                if ended.done():
+                    raise Gone(f'{self.agent} exited with {process.returncode}')
+                if self.connection_lost.is_set():
+                    raise Gone(f'{self.agent} closed its connection')
+            if not self.alive():
+                raise Gone(f'{self.agent} exited with {process.returncode}')
+        finally:
+            ended.cancel()
+            await asyncio.gather(ended, return_exceptions=True)
+
+    async def waiting(self, tasks: set[asyncio.Future[Any]], seconds: float | None
+                      ) -> tuple[set[asyncio.Future[Any]], float | None]:
         """Wait on actual events. A person's permission wait does not consume the agent's deadline."""
+        if seconds is None:
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            return done, None
         remaining = seconds
         while True:
             self.activity_changed.clear()
@@ -553,21 +656,30 @@ class Session:
                 waiting = self.completion
             else:
                 await self.conn.cancel(session_id=self.session_id)
-                waiting = self.inflight
+                waiting = self.prompt_response if self.prompt_request_id is not None else self.inflight
             if waiting is not None and not waiting.done():
                 await asyncio.wait_for(asyncio.shield(waiting), CANCEL)
         except (TimeoutError, acp.RequestError, ConnectionError, OSError):
             await self.close()
 
-    async def prompt(self, text: str, seconds: float) -> tuple[str, dict[str, Any]]:
+    async def prompt(self, text: str, seconds: float | None = None, *, compact: bool = False
+                     ) -> tuple[str, dict[str, Any]]:
         async with self.prompt_lock:
             self.prompt_sent = False
+            self.prompt_request_id = None
             if not self.alive() or self.session_id is None:
                 raise Gone(f'{self.agent} is no longer running')
             self.said, self.order = {}, []
+            if compact:
+                self.compaction_status = None
+                self.compaction_error = None
+                self.compaction_summary = ''
+                self.compaction_id = None
+                self.compaction_command = True
             self.legacy_message, self.legacy_breaking = 0, True
             self.foreground_started = self.activity != 'idle'
             self.completion = asyncio.get_running_loop().create_future()
+            self.prompt_response = asyncio.get_running_loop().create_future()
             before = self.cost
             models = schema if self.protocol == 2 else legacy
             if self.protocol == 1:
@@ -575,47 +687,101 @@ class Session:
             asked = asyncio.create_task(self.conn.prompt(
                 session_id=self.session_id, prompt=[models.TextContentBlock(text=text)]))
             self.inflight = asked
+            self.activity_changed.set()
             assert self.process is not None
             process = self.process
             ended = asyncio.create_task(process.wait())
+            disconnected = asyncio.create_task(self.connection_lost.wait())
             accepted = False
+            responded = False
             try:
-                ready, remaining = await self.waiting({asked, ended}, seconds)
-                if asked not in ready:
-                    raise Gone(f'{self.agent} exited with {process.returncode}', delivered=self.prompt_sent)
-                response = asked.result()
+                ready, remaining = await self.waiting({asked, ended, disconnected}, seconds)
+                recover = asked not in ready
+                if recover and not self.prompt_response.done():
+                    reason = 'closed its connection' if disconnected in ready else f'exited with {process.returncode}'
+                    raise Gone(f'{self.agent} {reason}', delivered=self.prompt_sent)
+                response: Any = None
+                if not recover:
+                    try:
+                        response = asked.result()
+                    except (asyncio.CancelledError, TimeoutError):
+                        caller = asyncio.current_task()
+                        if caller is not None and caller.cancelling() or not self.prompt_sent or \
+                                self.prompt_request_id is None:
+                            raise
+                        recover = True
+                    except (ConnectionError, OSError):
+                        if not self.prompt_response.done():
+                            raise
+                        recover = True
+                if recover:
+                    # A cancelled SDK future does not cancel the original wire request. Retain its slot and reply.
+                    ready, remaining = await self.waiting({self.prompt_response, ended, disconnected}, remaining)
+                    if self.prompt_response not in ready:
+                        reason = 'closed its connection' if disconnected in ready else f'exited with {process.returncode}'
+                        raise Gone(f'{self.agent} {reason}', delivered=True)
+                    observed = self.prompt_response.result()
+                    responded = True
+                    if 'error' in observed:
+                        error = cast(dict[str, Any], observed['error'])
+                        raise acp.RequestError(int(error.get('code') or -32603),
+                                               str(error.get('message') or 'ACP request failed'), error.get('data'))
+                    response_body = observed.get('result')
+                    if not isinstance(response_body, dict):
+                        raise NoReply(f'{self.agent} returned an invalid ACP prompt response.', delivered=True)
+                    answer = cast(dict[str, Any], response_body)
+                else:
+                    responded = True
+                    answer = response.model_dump(mode='json', by_alias=True, exclude_none=True)
                 accepted = True
                 if self.protocol == 2:
-                    ready, _ = await self.waiting({self.completion, ended}, remaining)
+                    ready, _ = await self.waiting({self.completion, ended, disconnected}, remaining)
                     if self.completion not in ready:
-                        raise Gone(f'{self.agent} exited with {process.returncode}', delivered=self.prompt_sent or accepted)
+                        reason = 'closed its connection' if disconnected in ready else f'exited with {process.returncode}'
+                        raise Gone(f'{self.agent} {reason}', delivered=self.prompt_sent or accepted)
                     answer = self.completion.result()
-                else:
-                    answer = response.model_dump(mode='json', by_alias=True, exclude_none=True)
             except TimeoutError:
+                if seconds is None:
+                    raise NoReply(f'{self.agent} failed the request: transport timed out.',
+                                  delivered=self.prompt_sent or accepted, kind='transient') from None
                 await self.cancel_turn()
                 raise Late(seconds, delivered=self.prompt_sent or accepted) from None
             except asyncio.CancelledError:
-                await self.cancel_turn()
-                raise
+                caller = asyncio.current_task()
+                if caller is not None and caller.cancelling():
+                    await self.cancel_turn()
+                    raise
+                raise NoReply(f'{self.agent} request was cancelled before ACP completion.',
+                              delivered=self.prompt_sent or accepted, kind='transient') from None
             except acp.RequestError as error:
+                responded = True
                 raise NoReply(f'{self.agent} failed the turn: {error}', delivered=self.prompt_sent or accepted) from None
             except (ConnectionError, OSError) as error:
                 raise Gone(f'{self.agent} closed its connection: {error}', delivered=self.prompt_sent or accepted) from None
             finally:
                 asked.cancel()
                 ended.cancel()
-                await asyncio.gather(asked, ended, return_exceptions=True)
+                disconnected.cancel()
+                await asyncio.gather(asked, ended, disconnected, return_exceptions=True)
+                responded = responded or self.prompt_response.done()
                 self.completion = None
+                self.prompt_response = None
+                self.prompt_request_id = None
                 self.inflight = None
-                if self.protocol == 1:
+                self.compaction_command = False
+                if self.protocol == 1 and (responded or not self.prompt_sent or not self.alive() or
+                                           self.connection_lost.is_set()):
                     self.activity = 'idle'
+                self.activity_changed.set()
             stop = answer.get('stopReason')
             if stop == 'error':
                 error = cast(dict[str, Any], answer.get('error') or {})
                 raise NoReply(f'{self.agent} failed the turn: {error.get("message") or error}', delivered=True)
             if stop == 'cancelled':
                 raise NoReply(f'{self.agent} cancelled the turn', delivered=True)
+            if compact and self.compaction_status != 'completed':
+                raise NoReply(self.compaction_error or f'{self.agent} did not confirm native compression completed.',
+                              delivered=True)
             usage = cast(dict[str, Any], answer.get('usage') or {})
             used: dict[str, Any] = {'model': self.reported}
             for source, target in (('inputTokens', 'prompt_tokens'), ('cachedReadTokens', 'cached_tokens'),
@@ -626,7 +792,7 @@ class Session:
             if self.cost > before:
                 used['cost'] = round(self.cost - before, 6)
             reply = next((self.said[one].strip() for one in reversed(self.order) if self.said[one].strip()), '')
-            if not reply:
+            if not reply and not compact:
                 raise NoReply(f'{self.agent} wrote no text (it stopped: {stop})', delivered=True, kind='empty')
             return reply, used
 
@@ -674,10 +840,11 @@ class AcpSeat(Seat):
 
     async def open(self) -> None:
         """The seat's session started, or taken up again when the seat had one; Gone when it cannot be."""
-        if self.session_made is not None and self.session_made.alive():
-            return
         if self.session_made is not None:
-            self.session_made = None
+            if self.session_made.alive() and not self.session_made.connection_lost.is_set():
+                return
+            if self.session_made.connection_lost.is_set():
+                raise Gone(f'{self.row["agent"]} closed its connection')
             raise Gone(f'{self.row["agent"]} exited')
         from . import permissions
         made = Session(self.number, self.row, seat_folder(self.number, self.position),
@@ -698,11 +865,7 @@ class AcpSeat(Seat):
     async def exchange(self, text: str, seconds: float) -> Reply:
         await self.open()
         assert self.session_made is not None
-        try:
-            reply, used = await self.session_made.prompt(text, seconds)
-        except Gone:
-            self.session_made = None
-            raise
+        reply, used = await self.session_made.prompt(text)
         self.reported = self.session_made.reported
         return Reply(reply, used)
 
@@ -710,6 +873,30 @@ class AcpSeat(Seat):
         """The report, written in a fresh session that holds only the record and is given no MCP server."""
         self.in_world = False
         return (await self.exchange(record, max(seconds, self.REPORT_WAIT))).text
+
+    async def compress(self, topic: str, seconds: float) -> bool:
+        """Prepare a relevant continuity note, then compact the same native conversation."""
+        await self.open()
+        assert self.session_made is not None
+        native = self.session_made
+        if not any(command.get('name') == 'compact' for command in native.commands):
+            return False
+        prompt = said('topic_compact_focus', topic=topic)
+        note = await self.reply(prompt, seconds)
+        self.extra['compaction_usage'] = {'prepare': note.use, 'compact': None}
+        _, usage = await native.prompt('/compact', compact=True)
+        self.extra['compaction_usage']['compact'] = usage
+        # This is the local size estimate, not a replacement native conversation or public transcript.
+        self.messages = [{'role': 'user', 'content': f'{self.system}\n\n{prompt}'.strip()},
+                         {'role': 'assistant', 'content': native.compaction_summary or note.text}]
+        return True
+
+    def busy(self) -> bool:
+        return self.session_made is not None and self.session_made.busy()
+
+    async def wait_ready(self) -> None:
+        if self.session_made is not None:
+            await self.session_made.wait_ready()
 
     async def rebuild(self) -> None:
         """The seat's session closed and forgotten, so its next turn starts a fresh one."""

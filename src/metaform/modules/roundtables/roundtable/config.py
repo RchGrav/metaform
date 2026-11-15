@@ -35,7 +35,8 @@ DEFAULTS: dict[str, Any] = {
     'judge_max_request_tokens': 65536,  # the owner's 64K total request limit, including all questions
     'judge_max_question_tokens': 32000,  # Jev's standard state plus any one question context limit
     'spend': 2.0,  # the most US dollars a table spends through OpenRouter: its seats, Jev and an OpenRouter reporter
-    'agent_wait': 300,  # seconds a seat's agent has for its turn, and an outside agent seat to submit
+    'agent_wait': 300,  # external response waits; native ACP work follows its completion events
+    'topic_proposal_wait': 30,  # collection window only; native work continues after the table stops collecting
     'jev_wait': 300,  # seconds one of Jev's judgments has for every attempt and the waits between them
     'degraded_after': 2,  # failures of one kind in a row, empty replies among them, that mark a seat degraded
     'unavailable_after': 4,  # failures of one kind in a row that make a seat unavailable, asked again after a probe

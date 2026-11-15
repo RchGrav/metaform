@@ -61,7 +61,7 @@ JSON = frozenset({'messages', 'reply', 'unjudged', 'models', 'extra', 'imported'
 # What an operational event says happened, in `events`: OpenRouter's credits ran out, the table held or resumed, a
 # seat left the table, was degraded or came back, the table's runner stopped
 EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report',
-          'permission', 'budget')
+          'permission', 'budget', 'topic_proposal_failed', 'topic_compression')
 SYNTHESIZER, HOST, REPORTER = -1, -2, -3  # the position of a fresh request's seat, never one at the table
 
 SCHEMA = """
@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS session_ratings(
 CREATE TABLE IF NOT EXISTS topic_proposals(
   discussion INTEGER NOT NULL, topic INTEGER NOT NULL, position INTEGER NOT NULL,
   state TEXT NOT NULL DEFAULT 'pending', receipt TEXT, text TEXT, usage TEXT, created TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(discussion, topic, position));
 CREATE TABLE IF NOT EXISTS topic_decisions(
   discussion INTEGER NOT NULL, topic INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
@@ -182,6 +183,7 @@ ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
                    ('reseated', 'INTEGER NOT NULL DEFAULT 0'), ('identity', 'TEXT'), ('profile_key', 'TEXT')),
+         'topic_proposals': (('attempts', 'INTEGER NOT NULL DEFAULT 0'),),
          'submissions': (('original', 'TEXT'), ('truncated', 'INTEGER NOT NULL DEFAULT 0'), ('topic', 'INTEGER'),
                          ('new_context', 'REAL'), ('on_topic', 'REAL'), ('label', 'TEXT'), ('repeat_of', 'INTEGER'),
                          ('unjudged', 'INTEGER NOT NULL DEFAULT 0'), ('message_id', 'TEXT'))}
@@ -199,6 +201,8 @@ def migrate(db: DataConnection, path: str) -> None:
         for name, kind in columns:
             if name not in held:
                 db.execute(f'ALTER TABLE {table} ADD COLUMN {name} {kind}')
+                if table == 'topic_proposals' and name == 'attempts':
+                    db.execute('UPDATE topic_proposals SET attempts=1 WHERE receipt IS NOT NULL')
     for row in db.execute('SELECT number FROM discussions WHERE context_id IS NULL').fetchall():
         db.execute('UPDATE discussions SET context_id=?, task_id=? WHERE number=?',
                    (uuid.uuid4().hex, uuid.uuid4().hex, row[0]))
@@ -575,8 +579,8 @@ def decide(number: int, judgment: Mapping[str, Any] | None, changes: Mapping[str
         update(db, 'discussions', {'number': number}, changes)
 
 
-def close_round(number: int, reason: str) -> None:
-    """Require two quiet rotations and a finished PP, VV or VP pair for every judged participant."""
+def close_round(number: int, reason: str, *, busy: set[int] | None = None) -> None:
+    """Require actual completion from remaining participants, without inventing replies for those who left."""
     with connect() as db:
         fence(db, number)
         found = plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
@@ -588,7 +592,10 @@ def close_round(number: int, reason: str) -> None:
                           'AND topic IS ? AND kind NOT IN (\'chair\', \'carry\', \'handoff\')',
                           (number, found['pass_after'], found['round'],
                            found['topic'] if found['stage'] else None)).fetchall()
-        participants = db.execute('SELECT position FROM seats WHERE discussion=?', (number,)).fetchall()
+        participants = db.execute('SELECT position FROM seats WHERE discussion=? AND (gone IS NULL OR gone=\'\') '
+                                  'AND availability!=\'unavailable\'',
+                                  (number,)).fetchall()
+        participants = [seat for seat in participants if seat['position'] not in (busy or set())]
         waiting = db.execute('SELECT 1 FROM waiting WHERE discussion=? LIMIT 1', (number,)).fetchone()
         actual = [row for row in rows if row['kind'] == 'pass' or (row['kind'] == 'seat' and not row['unjudged'])]
         covered = {row['position'] for row in actual}
@@ -613,9 +620,14 @@ def close_round(number: int, reason: str) -> None:
                 covered.update(terminal)
         if waiting or not participants or not all(seat['position'] in covered for seat in participants):
             return
-        quiet = (0 if any(row['accepted'] for row in actual) else int(found['quiet_rounds']) + 1) if judging else 0
-        unanimous = not waiting and len(rows) == len(participants) and all(
-            sum(one['position'] == seat['position'] and one['kind'] == 'pass' for one in rows) == 1
+        if not actual and (not judging or int(found['quiet_rounds']) < 2):
+            return
+        quiet = (0 if any(row['accepted'] for row in actual) else
+                 int(found['quiet_rounds']) + int(bool(actual))) if judging else 0
+        positions = {seat['position'] for seat in participants}
+        remaining = [row for row in rows if row['position'] in positions]
+        unanimous = not waiting and len(remaining) == len(participants) and all(
+            sum(one['position'] == seat['position'] and one['kind'] == 'pass' for one in remaining) == 1
             for seat in participants)
         finished = quiet >= 2 and all(seat['position'] in terminal for seat in participants) if judging else unanimous
         if not finished:

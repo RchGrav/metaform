@@ -175,6 +175,53 @@ def test_waiting_for_jev_is_not_busy_native_work(panel):
     assert allowance.begin(number, 0).limit == 512
 
 
+def test_busy_session_keeps_credits_and_delivers_missed_history_across_topics_once(panel):
+    make, handlers, prompts = panel
+    number = make()
+    found = store.discussion(number)
+    store.change(number, snapshot={**found['snapshot'], 'session': {'total': 2}})
+    table = runner.Table(number)
+
+    async def scenario():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(seat, text):
+            started.set()
+            await release.wait()
+            return 'The original topic response arrived late.'
+
+        handlers[0] = slow
+        task = asyncio.create_task(table.turn(table.row(), store.seats(number)[0]))
+        await asyncio.wait_for(started.wait(), 1)
+        promised = dict(state(number, 0)['pending'])
+        recorded(number, 1, accepted=True, text='MISSED_FROM_FIRST_TOPIC')
+        table.next_topic(table.row())
+        recorded(number, 2, accepted=True, text='MISSED_FROM_SECOND_TOPIC')
+        assert state(number, 0)['credit'] == 2
+        assert state(number, 0)['pending'] == promised
+        assert store.seats(number)[0]['seen'] == 0
+        release.set()
+        assert not await asyncio.wait_for(task, 1)
+        archived = [row for row in store.submissions(number) if row['position'] == 0]
+        assert len(archived) == 1 and archived[0]['topic'] == 0 and archived[0]['unjudged']
+        assert state(number, 0)['pending'] is None and state(number, 0)['credit'] == 2
+
+        async def rejoined(seat, text):
+            assert text.count('MISSED_FROM_FIRST_TOPIC') == 1
+            assert text.count('MISSED_FROM_SECOND_TOPIC') == 1
+            assert '1536 characters' in text
+            return 'The current topic response.'
+
+        handlers[0] = rejoined
+        assert await table.turn(table.row(), store.seats(number)[0])
+        assert store.seats(number)[0]['seen'] == archived[0]['number']
+        assert state(number, 0)['credit'] == 0
+        assert table.seat(store.seats(number)[0]).extra.get('panel_reply') is None
+
+    asyncio.run(asyncio.wait_for(scenario(), 5))
+    assert len([text for position, text in prompts if position == 0]) == 2
+
+
 def test_peer_acceptance_between_begin_and_history_read_is_missed_then_shown_once_with_earned_space(
         panel, monkeypatch):
     make, handlers, prompts = panel

@@ -298,32 +298,29 @@ def test_jev_retry_does_not_count_a_physical_reply_twice(phase_table, monkeypatc
     assert budget.status(second.row())['participants'][0]['tokens'] == 15
 
 
-def test_cap_drains_inline_file_work_and_selection_opens_a_zero_budget_panel(phase_table, monkeypatch):
+def test_cap_preserves_native_work_and_selection_opens_a_zero_budget_panel(phase_table, monkeypatch):
     make, handlers, calls, cancelled, materials = phase_table
     number = make(total=2)
     note = materials / 'retained-proof.txt'
     table = runner.Table(number)
-    decisions = []
-
-    def compared(path, body, **options):
-        assert path == '/alpha/decisions'
-        decisions.append(body)
-        return {'answers': {key: {'noul': .5} for key in body['questions']}}
-
+    compared = Mock(side_effect=AssertionError('The one available proposal needs no comparison.'))
     monkeypatch.setattr(topics.openrouter, 'post', compared)
-    original = table.next_topic
-
-    def stop_at_new_panel(found):
-        original(found)
-        current = table.row()
-        assert current['stage'] == 'discussion' and current['topic'] == 1
-        assert all(row['tokens'] == 0 for row in budget.progress(current)['participants'])
-        store.change(number, state='held', reason='Fixture stops before any new-panel work.')
-
-    monkeypatch.setattr(table, 'next_topic', stop_at_new_panel)
+    monkeypatch.setattr(runner, 'spawn', lambda *_: None)
 
     async def scenario():
-        entered, everyone = set(), asyncio.Event()
+        entered, everyone, release, opened, finished = set(), asyncio.Event(), asyncio.Event(), asyncio.Event(), asyncio.Event()
+        returned = []
+        original = table.next_topic
+
+        def stop_at_new_panel(found):
+            original(found)
+            current = table.row()
+            assert current['stage'] == 'discussion' and current['topic'] == 1
+            assert all(row['tokens'] == 0 for row in budget.progress(current)['participants'])
+            store.change(number, state='held', reason='Fixture stops before any new-panel work.')
+            opened.set()
+
+        monkeypatch.setattr(table, 'next_topic', stop_at_new_panel)
 
         async def busy(seat, text):
             found = table.row()
@@ -333,7 +330,11 @@ def test_cap_drains_inline_file_work_and_selection_opens_a_zero_budget_panel(pha
                 everyone.set()
             await everyone.wait()
             if seat.position:
-                await asyncio.Event().wait()
+                await release.wait()
+                returned.append(seat.position)
+                if len(returned) == 2:
+                    finished.set()
+                return Reply('Late completed inline work.', {'prompt_tokens': 6, 'completion_tokens': 1})
             note.write_text('Keep these completed inline materials.', encoding='utf-8')
             store.change(number, handoff={'after': 0})
             store.record(number, table.entry(found, store.seats(number)[0], 'Keep the saved handoff note.', kind='carry'))
@@ -341,38 +342,44 @@ def test_cap_drains_inline_file_work_and_selection_opens_a_zero_budget_panel(pha
 
         async def propose(seat, text):
             assert budget.phase(table.row()) is None
-            with store.connect() as db:
-                assert db.execute("SELECT tokens FROM phase_usage WHERE discussion=? AND topic=0 AND phase='panel' "
-                                  'AND position=0', (number,)).fetchone()[0] == 120
-            return Reply(f'Privately proposed next question {seat.position}.',
-                         {'prompt_tokens': 90000, 'completion_tokens': 1000})
+            return Reply('The available participant proposes the next question.', {'completion_tokens': 10})
 
         for position in range(3):
             handlers[('discussion', 0, position)] = busy
             handlers[('topic_selection', 0, position)] = propose
-        result = await asyncio.wait_for(table.run(), 5)
-        assert result['state'] == 'held', result
+        task = asyncio.create_task(table.run())
+        try:
+            await asyncio.wait_for(opened.wait(), 3)
+            assert not cancelled and not task.done()
+            assert set(table.panel_work) == {1, 2}
+            assert [row['session'] for row in store.seats(number)] == ['phase-0', 'phase-1', 'phase-2']
+            assert all(row['tokens'] == 0 for row in budget.progress(table.row())['participants'])
+            release.set()
+            await asyncio.wait_for(finished.wait(), 2)
+            await asyncio.sleep(0)
+            assert not cancelled and not task.done()
+            with store.connect() as db:
+                usage = [tuple(row) for row in db.execute('SELECT topic,phase,position,tokens FROM phase_usage '
+                                                         'WHERE discussion=? ORDER BY topic,phase,position', (number,))]
+            assert usage == [(0, 'panel', 0, 120), (0, 'panel', 1, 7), (0, 'panel', 2, 7)]
+            await asyncio.to_thread(server.ended, table.row())
+            table.control.set()
+            assert (await asyncio.wait_for(task, 5))['state'] == 'ended'
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     asyncio.run(scenario())
     assert len(store.topics(number)) == 2
     assert store.topics(number)[0]['advanced_by'] == 'budget'
     assert store.discussion(number)['handoff'] is None
-    assert any(row['kind'] == 'carry' and row['text'] == 'Keep the saved handoff note.'
-               for row in store.submissions(number))
     assert note.read_text() == 'Keep these completed inline materials.'
-    assert not (materials / 'next-topic.md').exists()
-    assert {position for stage, topic, position in cancelled if stage == 'discussion' and topic == 0} == {1, 2}
-    assert any(row['kind'] == 'seat' and row['text'] == 'Completed inline file work.'
-               for row in store.submissions(number))
-    assert not table.panel_work and not table.working
-    assert {stage for stage, _, _, _ in calls} == {'discussion', 'topic_selection'}
-    assert len(decisions) == 1 and len(decisions[0]['questions']) == 3
-    assert all(sum(stage == 'topic_selection' and position == seat for stage, topic, position, text in calls) == 1
-               for seat in range(3))
-    with store.connect() as db:
-        usage = [tuple(row) for row in db.execute('SELECT topic,phase,position,tokens FROM phase_usage '
-                                                 'WHERE discussion=? ORDER BY topic,phase,position', (number,))]
-    assert usage == [(0, 'panel', 0, 120)]
+    assert not cancelled and not table.panel_work and not table.working
+    compared.assert_not_called()
+    assert [position for stage, topic, position, _ in calls if stage == 'topic_selection'] == [0]
+    late = [row for row in store.submissions(number) if row['text'] == 'Late completed inline work.']
+    assert len(late) == 2 and all(row['topic'] == 0 and row['unjudged'] for row in late)
 
 
 def test_end_discussion_starts_private_selection_and_cannot_advance_selection(phase_table, monkeypatch):
@@ -481,14 +488,14 @@ def test_panel_cap_respects_person_changes_while_busy_work_is_closing(phase_tabl
     submitted = materials / 'next-topic.md'
     submitted.write_text('The submitted next topic.', encoding='utf-8')
 
-    async def stopped():
+    def stopped():
         found = table.row()
         if action == 'hold':
             store.change(number, state='held', reason='Held by the person.')
         else:
             store.change(number, snapshot={**found['snapshot'], 'token_budget': 0})
 
-    monkeypatch.setattr(table, 'unseat', stopped)
+    monkeypatch.setattr(table, 'archive_panel', stopped)
     assert asyncio.run(table.enforce_budget(table.row())) is True
     assert table.row()['stage'] == 'discussion'
     assert submitted.is_file()

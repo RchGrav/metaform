@@ -21,12 +21,27 @@ import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import events
 
-from . import budget, config, export, harness, health, judge, openrouter, outside, peers, render, stages, store, topics
+from . import (
+    budget,
+    config,
+    export,
+    harness,
+    health,
+    judge,
+    openrouter,
+    outside,
+    peers,
+    render,
+    stages,
+    store,
+    topics,
+)
 from . import seats as seating
 from .names import base as named_base
 from .prompts import said
@@ -127,11 +142,13 @@ class Table:
         self.retired: list[Seat] = []  # seats the chair reseated, closed with the rest
         # A session's phases: replies in flight by seat, with the submission each saw last.
         self.working: dict[int, asyncio.Task[tuple[Reply | None, int, str | None]]] = {}
+        self.work_phase: dict[int, tuple[str, int]] = {}
         self.panel_work: dict[int, asyncio.Task[bool]] = {}
         self.panel_asking: set[int] = set()
         self.judging = asyncio.Lock()
         self.control = asyncio.Event()
         self.topic_deciding: asyncio.Task[dict[str, Any]] | None = None
+        self.topic_choice: tuple[int, dict[str, Any]] | None = None
 
     def row(self) -> dict[str, Any]:
         return store.discussion(self.number)
@@ -217,57 +234,86 @@ class Table:
         listener = events.listen('roundtables', changed)
         try:
             while True:
-                self.collect_panel()
-                found = self.row()
-                given: Any = found['unjudged']
-                waiting = cast(dict[str, Any], given).get('position') if isinstance(given, dict) else None
-                if waiting is None or found['state'] not in ('running', 'held'):  # a held reply keeps its number
-                    self.enter_comments()
+                try:
+                    self.collect_panel()
                     found = self.row()
-                if found['state'] == 'ended':
-                    return self.summary()
-                if found['state'] == 'ending':
-                    try:
-                        await self.finish()
-                    except Exception as error:  # the table stays ending and says why; end asks again
-                        log.exception('Table %s: the report and export were not finished', self.number)
-                        self.change(state='ending', report_error=said('report_failed', error=named(error)))
-                    return self.summary()
-                if found['state'] == 'held':
-                    return self.summary()
-                if await self.enforce_budget(found):
-                    continue
-                if found['stage'] == 'collaboration' and render.session(found):
-                    self.start_topic_selection(found)
-                    continue
-                if found['advance_asked']:
-                    await self.stop_panel(record=True)
-                    self.change(handoff=None)
-                    self.discussed(found, 'chair')
-                    continue
-                seated = store.seats(self.number)
-                if waiting is None and not any(health.usable(seat) for seat in seated):
-                    if not any(health.returns(seat) for seat in seated):
-                        self.change(state='held', reason=said('held_empty'))
+                    given: Any = found['unjudged']
+                    waiting = cast(dict[str, Any], given).get('position') if isinstance(given, dict) else None
+                    if waiting is None or found['state'] not in ('running', 'held'):  # a held reply keeps its number
+                        self.enter_comments()
+                        found = self.row()
+                    if found['state'] == 'ended':
+                        return self.summary()
+                    if found['state'] == 'ending':
+                        if found['reason'] != said('ended_by_chair') and self.has_busy():
+                            await self.wait_busy()
+                            continue
+                        try:
+                            await self.finish()
+                        except Exception as error:  # the table stays ending and says why; end asks again
+                            log.exception('Table %s: the report and export were not finished', self.number)
+                            self.change(state='ending', report_error=said('report_failed', error=named(error)))
+                        return self.summary()
+                    if found['state'] == 'held':
+                        if any(row['kind'] == 'acp' for row in store.seats(self.number)):
+                            if self.has_busy():
+                                await self.wait_busy()
+                            else:
+                                await self.wait_work([])
+                            continue
+                        if self.has_busy():
+                            await self.wait_busy()
+                            continue
+                        return self.summary()
+                    if await self.enforce_budget(found):
                         continue
-                    if not any([await self.probed(seat) for seat in seated if health.due(seat)]):
-                        await self.recover(store.seats(self.number))
-                    continue
-                spent, most = float(found['spent'] or 0), float(found['spend'])
-                if spent >= most and self.requires_payment(found):
-                    self.change(state='held', reason=said('held_spend', spend=dollars(most), spent=dollars(spent)))
-                    continue
-                if found['stage'] and found['stage'] != 'discussion':
-                    await self.stage(found)
-                    continue
-                pending = any(cast(dict[str, Any], row.get('extra') or {}).get('panel_reply') for row in seated)
-                if waiting is None and not pending and (found.get('handoff') or self.context_due(found)):
-                    if self.panel_work:
-                        await self.wait_work(list(self.panel_work.values()))
-                    else:
-                        await self.handoff(found)
-                    continue
-                await self.panel(found, seated)
+                    if found['stage'] == 'collaboration' and render.session(found):
+                        self.start_topic_selection(found)
+                        continue
+                    if found['advance_asked']:
+                        self.archive_panel()
+                        self.change(handoff=None)
+                        self.discussed(found, 'chair')
+                        continue
+                    seated = store.seats(self.number)
+                    if waiting is None and found['stage'] != 'topic_selection' and not any(
+                            health.usable(seat) for seat in seated):
+                        if not any(health.returns(seat) for seat in seated):
+                            self.change(state='held', reason=said('held_empty'))
+                            continue
+                        if not any([await self.probed(seat) for seat in seated if health.due(seat)]):
+                            await self.recover(store.seats(self.number))
+                        continue
+                    spent, most = float(found['spent'] or 0), float(found['spend'])
+                    if spent >= most and self.requires_payment(found):
+                        self.change(state='held', reason=said('held_spend', spend=dollars(most), spent=dollars(spent)))
+                        continue
+                    if found['stage'] and found['stage'] != 'discussion':
+                        await self.stage(found)
+                        continue
+                    pending = any(cast(dict[str, Any], row.get('extra') or {}).get('panel_reply') for row in seated)
+                    native_session = bool(render.session(found))
+                    if native_session and found.get('handoff'):
+                        self.change(handoff=None)
+                        continue
+                    if waiting is None and not pending and not native_session and (
+                            found.get('handoff') or self.context_due(found)):
+                        if self.panel_work:
+                            await self.wait_work(list(self.panel_work.values()))
+                        else:
+                            await self.handoff(found)
+                        continue
+                    await self.panel(found, seated)
+                except (store.Lost, asyncio.CancelledError):
+                    raise
+                except Exception as error:
+                    log.exception('Table %s: work stopped on an error', self.number)
+                    self.change(state='held', reason=said('held_error', error=named(error)))
+                    if any(row['kind'] == 'acp' for row in store.seats(self.number)):
+                        self.control.clear()
+                        await self.wait_work([])
+                        continue  # Hold retains native sessions, including work whose background state is unknown.
+                    return self.summary()
         except store.Lost:  # another runner took the table: this one writes nothing more and stops
             log.warning('Table %s: another runner took the table; this one stops', self.number)
             self.tell('runner_stopped', said('event_runner_lost'))
@@ -313,9 +359,9 @@ class Table:
         """Next seat, then examine the full round without inferring anyone's vote."""
         self.change(position=int(self.row()['position']) + 1)
 
-    async def round_over(self, found: dict[str, Any]) -> None:
+    async def round_over(self, found: dict[str, Any], *, busy: set[int] | None = None) -> None:
         """A completed round advances its exhaustion streak or the voluntary unjudged PASS decision."""
-        store.close_round(self.number, said('why_exhausted' if render.judging(found) else 'why_passes'))
+        store.close_round(self.number, said('why_exhausted' if render.judging(found) else 'why_passes'), busy=busy)
         if render.session(found) and self.row()['stage'] == 'synthesis':
             self.start_topic_selection(self.row())
 
@@ -348,8 +394,7 @@ class Table:
         if not current['forced']:
             return False
         if current['phase'] == 'panel':
-            await self.stop_panel(record=True)
-            await self.unseat()
+            self.archive_panel()
             found = self.row()
             if found['state'] != 'running' or not budget.status(found)['forced']:
                 return True
@@ -365,7 +410,6 @@ class Table:
             else:
                 self.change(stage='synthesis', position=0)
         else:
-            await self.unseat()
             self.start_topic_selection(found)
         return True
 
@@ -395,8 +439,7 @@ class Table:
         return held
 
     async def topical(self, found: dict[str, Any], seat: Seat) -> None:
-        """The seat's context bounded by the open topic: begun again once, when the seat first comes to a topic its
-        context does not hold, so a topic's turns never carry an earlier topic's history."""
+        """Preserve a session's conversation across topics; independent topics start their own context."""
         if not found['stage'] or seat.extra.get('topic') == found['topic']:
             return
         if render.session(found):  # a session's agents keep their conversation from one roundtable to the next
@@ -448,6 +491,7 @@ class Table:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self.working.clear()
+        self.work_phase.clear()
         self.panel_work.clear()
         self.panel_asking.clear()
         self.topic_deciding = None
@@ -464,6 +508,74 @@ class Table:
                 self.panel_work.pop(position)
                 if not task.cancelled():
                     task.result()
+        found = self.row()
+        current = (str(found['stage']), int(found['topic']))
+        for position, task in list(self.working.items()):
+            if task.done() and self.work_phase.get(position, current) != current:
+                self.working.pop(position)
+                self.work_phase.pop(position, None)
+                if not task.cancelled():
+                    task.result()
+
+    def busy(self, row: dict[str, Any]) -> bool:
+        position = int(row['position'])
+        return position in self.panel_work or position in self.working or self.seat(row).busy()
+
+    def has_busy(self) -> bool:
+        return any(not task.done() for task in (*self.panel_work.values(), *self.working.values())) or any(
+            self.seated[int(row['position'])].busy() for row in store.seats(self.number)
+            if not row['gone'] and int(row['position']) in self.seated)
+
+    async def wait_busy(self) -> None:
+        """Wait for native readiness or completed work; cancelling these watchers never cancels native work."""
+        tasks: list[asyncio.Task[Any]] = [task for task in (*self.panel_work.values(), *self.working.values())
+                                         if not task.done()]
+        occupied = {position for position, task in (*self.panel_work.items(), *self.working.items()) if not task.done()}
+        rows = {int(row['position']): row for row in store.seats(self.number)}
+        watched = {position: asyncio.create_task(seat.wait_ready()) for position, seat in self.seated.items()
+                   if not rows[position]['gone'] and seat.busy() and position not in occupied}
+        watchers = list(watched.values())
+        try:
+            if tasks or watchers:
+                await self.wait_work([*tasks, *watchers])
+                for position, task in watched.items():
+                    if task.done() and not task.cancelled():
+                        try:
+                            task.result()
+                        except NoReply as error:
+                            self.failing(rows[position], error)
+            else:
+                await self.recover(store.seats(self.number))
+        finally:
+            for task in watchers:
+                task.cancel()
+            await asyncio.gather(*watchers, return_exceptions=True)
+
+    def credit_busy(self) -> None:
+        from . import allowance
+
+        for position, seat in self.seated.items():
+            allowance.busy(self.number, position, position in self.panel_asking or seat.busy())
+
+    def archive_panel(self) -> None:
+        """Retain completed old-topic replies without interrupting any native work still in flight."""
+        for row in store.seats(self.number):
+            seat = self.seat(row)
+            pending = seat.extra.get('panel_reply')
+            if isinstance(pending, dict):
+                self.archive_reply(seat, row, cast(dict[str, Any], pending))
+        unjudged = store.pending(self.number)
+        if unjudged is not None:
+            store.record(self.number, unjudged, judged=True)
+
+    def archive_reply(self, seat: Seat, row: dict[str, Any], held: dict[str, Any]) -> None:
+        found = {**self.row(), 'round': held['round'], 'topic': held['topic'], 'stage': 'discussion'}
+        store.record(self.number, self.entry(found, row, str(held['original']), unjudged=True,
+                                             reason='The reply arrived after its discussion closed.',
+                                             **cast(dict[str, Any], held['use'])),
+                     receipt=str(held['usage_id']) if held.get('usage_id') else None)
+        seat.extra['panel_reply'] = None
+        self.keep(seat, None)
 
     async def wait_work(self, tasks: list[asyncio.Task[Any]]) -> None:
         """Wait for actual completion or a chair operation, without periodically reading the table."""
@@ -548,16 +660,22 @@ class Table:
             terminal = {position for position, pair in outcomes.items() if pair in ('PP', 'VV', 'VP')}
             covered.update(terminal)
         pending = [row for row in seated if cast(dict[str, Any], row.get('extra') or {}).get('panel_reply')]
-        closing = {int(row['position']) for row in seated if budget.needs_closing(found, int(row['position']))}
-        if not self.panel_work and not pending and not closing and all(
-                int(row['position']) in covered for row in seated):
-            await self.round_over(found)
+        busy = {int(row['position']) for row in seated if int(row['position']) in self.panel_asking or
+                int(row['position']) in self.working or self.seat(row).busy() or not health.usable(row)}
+        eligible = [row for row in seated if not row['gone'] and int(row['position']) not in busy]
+        judging = set(self.panel_work) - busy
+        closing = {int(row['position']) for row in seated
+                   if not row['gone'] and int(row['position']) not in busy and
+                   budget.needs_closing(found, int(row['position']))}
+        if not judging and not pending and not closing and eligible and all(
+                int(row['position']) in covered for row in eligible):
+            await self.round_over(found, busy=busy)
             return
         at = int(found['position']) % max(1, len(seated))
         ordered = sorted(seated, key=lambda row: (int(row['position']) - at) % max(1, len(seated)))
         for row in ordered:
             position = int(row['position'])
-            if position in self.panel_work or row['gone']:
+            if self.busy(row) or row['gone']:
                 continue
             if position in terminal and position not in closing and not any(
                     int(one['position']) == position for one in pending):
@@ -565,7 +683,7 @@ class Table:
             if not health.usable(row) and not await self.probed(row):
                 continue
             mine = [one for one in rows if one['position'] == position]
-            if mine and self.panel_work and not self.panel_asking:
+            if position in covered and judging:
                 continue  # A reply waiting for Jev alone does not extend the speaking round.
             if position not in closing and mine and mine[-1]['kind'] == 'pass' and not any(
                     one['position'] != position and one['number'] > mine[-1]['number'] and one['kind'] == 'seat'
@@ -574,8 +692,8 @@ class Table:
             self.panel_work[position] = asyncio.create_task(self.turn(found, row))
             self.change(position=(position + 1) % max(1, len(seated)))
             return
-        if self.panel_work:
-            await self.wait_work(list(self.panel_work.values()))
+        if self.has_busy():
+            await self.wait_busy()
             return
         # A healthy participant's PASS cannot stand in for an unavailable participant's missing reply.
         await self.recover(store.seats(self.number))
@@ -790,6 +908,7 @@ class Table:
             notice = budget.prompt(self.row(), int(row['position']))
             view = '\n\n'.join(part for part in (feedback, said('turn_allowance', limit=limit), notice.text, view) if part)
             self.panel_asking.add(int(row['position']))
+            self.control.set()  # Native work now owns this opportunity; reevaluate the remaining ready quorum.
             def delivered() -> None:
                 allowance.delivered(self.number, seat.position, offer.receipt)
                 budget.delivered_prompt(found, seat.position, notice)
@@ -828,8 +947,14 @@ class Table:
                 self.control.set()
         async with self.judging:
             current = self.row()
+            if current['stage'] != found['stage'] or current['topic'] != found['topic']:
+                held = cast(dict[str, Any], seat.extra.get('panel_reply') or {})
+                if held:
+                    self.archive_reply(seat, row, held)
+                return False
             if current['state'] != 'running' or current['stage'] != found['stage'] or current['topic'] != found['topic']:
                 return False
+            found = {**found, 'round': current['round']}
             if render.passed(original):  # A voluntary pass stays a pass, never a skipped or failed turn.
                 receipt = cast(dict[str, Any], seat.extra.get('panel_reply') or {}).get('usage_id')
                 recorded = store.record(self.number, self.entry(
@@ -868,6 +993,7 @@ class Table:
     async def verdict(self, found: dict[str, Any], row: dict[str, Any], entry: dict[str, Any]) -> bool:
         """Judge every substantive reply against bounded accepted context, preserving captured historical criteria."""
         if not render.judging(found):
+            self.credit_busy()
             recorded = store.record(self.number, {**entry, 'accepted': True}, judged=True)
             self.settle(row, str(entry.get('original') or entry['text']), recorded)
             return True
@@ -891,10 +1017,17 @@ class Table:
                                      {'position': row['position'], 'text': text}, criteria,
                                      model=captured.get('jev_model'))
         asked = await asyncio.to_thread(judge.ask, given, criteria, model=captured.get('jev_model'))
+        current = self.row()
+        if current['topic'] != found['topic'] or current['stage'] != found['stage']:
+            with store.connect() as db:
+                store.fence(db, self.number)
+                store.judge(db, self.number, asked.row('veto', floors, 'late', **where))
+            return False  # Advancement already archived this completed reply and its receipt.
         if asked.nouls is None:
             self.unjudged(asked, asked.row('veto', floors, None, **where))
             return False
         accepted = judge.passed(asked.nouls, floors)
+        self.credit_busy()
         recorded = store.record(self.number, {**entry, 'accepted': accepted, 'jev_cost': round(asked.cost, 6),
                                               **asked.nouls}, judged=True,
                                 judgment=asked.row('veto', floors, 'keep' if accepted else 'veto', **where))
@@ -910,7 +1043,7 @@ class Table:
         contributions on the open topic since its last turn, and the topic when its context does not hold it yet: on
         its first turn of a topic, or in a context begun again, after the digest of the topics before it."""
         own = [one for one in since if one['position'] == row['position']]
-        others = [one for one in since if one['topic'] == found['topic']  # its own too, once it was started again
+        others = [one for one in since if (render.session(found) or one['topic'] == found['topic'])
                   and render.entered(one) and one['kind'] not in ('carry', 'handoff')
                   and (one['position'] != row['position'] or (not seat.messages and render.entered(one)))]
         mine = [one for one in store.submissions(self.number) if one['position'] == row['position']]
@@ -1125,16 +1258,33 @@ class Table:
         store.phase(self.number, 'topic_selection', said('topic_selection_start', index=str(at), total=str(total)))
 
     async def select_topic(self, found: dict[str, Any]) -> None:
-        """Collect one private proposal per model, then consume one durable comparison decision."""
+        """Give each model two chances, then compare the private proposals that actually arrived."""
         for position, task in list(self.working.items()):
             if task.done():
                 del self.working[position]
+                self.work_phase.pop(position, None)
                 if not task.cancelled():
                     task.result()
         seated = store.seats(self.number)
         topics.seed(found, seated)
         topics.recover(found, set(self.working))
-        pending = [row for row in topics.proposals(self.number, int(found['topic'])) if row['state'] == 'pending']
+        topics.skip(found, {int(row['position']) for row in seated if row['gone']})
+        collected = topics.proposals(self.number, int(found['topic']))
+        attempted = [row for row in collected if row['receipt']]
+        deadline = min((datetime.fromisoformat(str(row['created'])).timestamp() for row in attempted),
+                       default=time.time()) + float(config.value('topic_proposal_wait'))
+        pending = [proposal for proposal in collected if proposal['state'] == 'pending' and
+                   not self.busy(seated[int(proposal['position'])])]
+        candidate = any(row['state'] == 'ready' for row in collected)
+        if attempted and time.time() >= deadline and candidate:
+            topics.skip(found, {int(row['position']) for row in collected if row['state'] in ('pending', 'sent')})
+            pending = []
+        elif candidate:
+            topics.skip(found, {int(row['position']) for row in collected if row['state'] == 'pending' and
+                               self.busy(seated[int(row['position'])])})
+        elif not pending and any(row['state'] in ('pending', 'sent') for row in collected):
+            await self.wait_busy()
+            return  # A skipped busy opportunity cannot permanently remove the only possible future proposer.
         if pending:
             at = int(found['position'])
             given = min(pending, key=lambda row: (int(row['position']) - at) % max(1, len(seated)))
@@ -1142,28 +1292,35 @@ class Table:
             row = seated[position]
             receipt = topics.begin_proposal(found, position)
             if receipt is not None:
-                if row['gone'] or not health.usable(row):
-                    topics.finish_proposal(found, position, receipt, None, {})
-                else:
-                    self.working[position] = asyncio.create_task(self.propose_topic(found, row, receipt))
+                self.working[position] = asyncio.create_task(self.propose_topic(found, row, receipt))
+                self.work_phase[position] = ('topic_selection', int(found['topic']))
             self.change(position=position + 1)
             return
-        if self.working:
-            await self.wait_work(list(self.working.values()))
+        current_proposals = [row for row in topics.proposals(self.number, int(found['topic'])) if row['state'] == 'sent']
+        if current_proposals:
+            cutoff = asyncio.create_task(asyncio.sleep(max(0.0, deadline - time.time())))
+            try:
+                await self.wait_work([cutoff, *(self.working[int(row['position'])] for row in current_proposals
+                                              if int(row['position']) in self.working)])
+            finally:
+                cutoff.cancel()
+                await asyncio.gather(cutoff, return_exceptions=True)
             return
-        if self.topic_deciding is None:
-            self.topic_deciding = asyncio.create_task(asyncio.to_thread(topics.decide, found,
-                                                                        str(self.topic(found)['text'])))
-        if not self.topic_deciding.done():
-            await self.wait_work([self.topic_deciding])
-            return
-        try:
-            decision = self.topic_deciding.result()
-        except ValueError as error:
-            self.change(state='held', reason=said('topic_selection_failed', error=str(error)))
-            return
-        finally:
-            self.topic_deciding = None
+        if self.topic_choice is None or self.topic_choice[0] != int(found['topic']):
+            if self.topic_deciding is None:
+                self.topic_deciding = asyncio.create_task(asyncio.to_thread(topics.decide, found,
+                                                                            str(self.topic(found)['text'])))
+            if not self.topic_deciding.done():
+                await self.wait_work([self.topic_deciding])
+                return
+            try:
+                self.topic_choice = (int(found['topic']), self.topic_deciding.result())
+            except ValueError as error:
+                self.change(state='held', reason=said('topic_selection_failed', error=str(error)))
+                return
+            finally:
+                self.topic_deciding = None
+        decision = self.topic_choice[1]
         current = self.row()
         if current['state'] != 'running' or current['stage'] != 'topic_selection' or current['topic'] != found['topic']:
             return
@@ -1173,14 +1330,46 @@ class Table:
         if len(store.topics(self.number)) <= at:
             store.add_topic(self.number, said('session_topic', index=str(at + 1),
                             total=str(held.get('total') or 1), topic=str(decision['text'])))
+        if held.get('compress_between_topics'):
+            due = [row for row in seated if row['kind'] == 'acp' and health.usable(row) and not self.busy(row)
+                   and cast(dict[str, Any], row.get('extra') or {}).get('compressed_for_topic') != at]
+            if due:
+                snapshot = cast(dict[str, Any], current.get('snapshot') or {})
+                self.change(snapshot={**snapshot, 'session': {**held, 'compressing_for_topic': at}})
+                for row in due:
+                    seat = self.seat(row)
+                    seat.extra['compressed_for_topic'] = at
+                    self.keep(seat, None)
+                    self.working[int(row['position'])] = asyncio.create_task(
+                        self.compress_topic(row, str(decision['text'])))
+                    self.work_phase[int(row['position'])] = ('compression', int(found['topic']))
+            if held.get('compressing_for_topic') == at:
+                snapshot = cast(dict[str, Any], current.get('snapshot') or {})
+                self.change(snapshot={**snapshot, 'session': {**held, 'compressing_for_topic': None}})
         self.next_topic(current)
+
+    async def compress_topic(self, row: dict[str, Any], topic: str) -> tuple[Reply | None, int, str | None]:
+        """Optional native compression keeps the same conversation and never blocks topic advancement on failure."""
+        seat = self.seat(row)
+        try:
+            compressed = await seat.compress(topic, float(config.value('agent_wait')))
+            self.tell('topic_compression', said('topic_compression_done' if compressed else 'topic_compression_unavailable',
+                                               seat=row['name']))
+        except store.Lost:
+            raise
+        except Exception as error:  # noqa: BLE001  optional compression cannot hold the discussion
+            self.tell('topic_compression', said('topic_compression_failed', seat=row['name'], error=str(error)))
+        finally:
+            self.keep(seat, None)
+        return None, int(row['seen']), None
 
     async def propose_topic(self, found: dict[str, Any], row: dict[str, Any], receipt: str
                             ) -> tuple[Reply | None, int, str | None]:
         """One private request in the existing conversation, carrying only newly queued accepted material."""
         seat = self.seat(row)
         accepted = [one for one in store.submissions(self.number, int(row['seen']))
-                    if one['topic'] == found['topic'] and render.entered(one) and one['kind'] in ('seat', 'chair')]
+                    if (render.session(found) or one['topic'] == found['topic']) and
+                    render.entered(one) and one['kind'] in ('seat', 'chair')]
         latest = max((int(one['number']) for one in accepted), default=int(row['seen']))
         shown = [one for one in accepted if not (seat.messages and one['position'] == row['position'])]
         context = '\n\n'.join(render.entry(one) for one in shown) or said('nothing_since')
@@ -1189,11 +1378,19 @@ class Table:
         seat.on_delivered = lambda: self.keep(seat, latest)
         try:
             reply = await seat.reply(prompt, float(config.value('agent_wait')))
-            topics.finish_proposal(found, int(row['position']), receipt, reply.text[:limit], reply.use)
-            seat.settled(reply.text, said('proposal_received'))
+            valid = topics.finish_proposal(found, int(row['position']), receipt, reply.text[:limit], reply.use)
+            if valid:
+                self.answering(row)
+            else:
+                self.failing(row, NoReply(said('proposal_required'), kind='empty'))
+            seat.settled(reply.text, said('proposal_received') if valid else said('proposal_required'))
             self.keep(seat, latest)
         except (NoReply, openrouter.Silent) as error:
+            failure = error if isinstance(error, NoReply) else NoReply(str(error), kind=error.kind)
+            self.failing(row, failure)
             topics.finish_proposal(found, int(row['position']), receipt, None, {'error': str(error)})
+            self.keep(seat, None)
+            self.tell('topic_proposal_failed', said('topic_proposal_failed', seat=row['name'], error=str(error)))
         finally:
             seat.on_delivered = None
         return None, latest, None
@@ -1217,17 +1414,17 @@ class Table:
         if kind == 'score':
             phase += [{**one, 'kind': 'score', 'number': 0} for one in store.scorecards(self.number)]
         due = [row for row in seated if not row['gone'] and health.usable(row)
-               and int(row['position']) not in self.working and self.needs(row, phase, kind)]
+               and not self.busy(row) and self.needs(row, phase, kind)]
         if due:
             at = int(found['position'])
             row = min(due, key=lambda one: (int(one['position']) - at) % max(1, len(seated)))
             self.wake(found, row, phase, kind)
             self.change(position=(int(row['position']) + 1) % max(1, len(seated)))
             return
-        if self.working:
-            await self.wait_work(list(self.working.values()))
+        if self.has_busy():
+            await self.wait_busy()
             return
-        if any(self.needs(row, phase, kind) for row in seated):
+        if any(self.needs(row, phase, kind) for row in seated if health.usable(row)):
             self.change(state='held', reason='Waiting for participants to finish the session.')
             return
         await self.phase_done(found, stage, seated, phase)
@@ -1269,12 +1466,15 @@ class Table:
             finally:
                 seat.on_delivered = None
         self.working[position] = asyncio.ensure_future(reply())
+        self.work_phase[position] = (str(found['stage']), int(found['topic']))
 
     def harvest(self, found: dict[str, Any], kind: str) -> None:
         for position, task in list(self.working.items()):
-            if not task.done():
+            if not task.done() or self.work_phase.get(position, (str(found['stage']), int(found['topic']))) != (
+                    str(found['stage']), int(found['topic'])):
                 continue
             del self.working[position]
+            self.work_phase.pop(position, None)
             reply, latest, failed = task.result()
             row = store.seats(self.number)[position]
             seat = self.seat(row)

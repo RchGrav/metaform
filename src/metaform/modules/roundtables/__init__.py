@@ -58,7 +58,8 @@ settings.boolean('roundtables_judging', True, label='Judge discussion novelty wi
                       'End discussion and the configured token budget remain available.')
 settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000,
                 label='Seat context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
-                help='Compact before seat context fills. Independent of the Jev history window.')
+                help='Fallback context handoff for independent tables. Continuous native-agent sessions keep '
+                     'their conversations. Independent of the Jev history window.')
 settings.number('roundtables_judging_context_tokens', 50000, min=4096, max=52428,
                 label='Jev history window (estimated tokens)', category='integrations', heading='Roundtables',
                 help='Sliding accepted history plus instructions and candidate, with 20% headroom under both '
@@ -306,6 +307,7 @@ def session_of(ctx: Context, table_id: str, total: int, topic: str) -> dict[str,
     with contextlib.suppress(OSError, UnicodeDecodeError):
         taste = (root / 'docs' / 'taste.md').read_text(encoding='utf-8').strip()
     return {'total': total, 'folder': str(folder),
+            'compress_between_topics': bool(ctx.nouns.get('compress_between_topics', False)),
             'opening': prompt_files.required(PACKAGE, 'session_opening', total=str(total),
                                              session_folder=str(folder),
                                              taste=taste or prompt_files.required(PACKAGE, 'minutes_taste_default')),
@@ -341,6 +343,8 @@ def open_table(ctx: Context) -> dict[str, Any]:
     total = ctx.nouns.get('chain')
     if total is not None and (type(total) is not int or total < 1):
         raise Stop('chain is how many roundtables the session runs, 1 or more.', 'metaform roundtables open')
+    if type(ctx.nouns.get('compress_between_topics', False)) is not bool:
+        raise Stop('compress_between_topics is true or false.', 'metaform roundtables open')
     # When enabled for a session, Jev judges whether each turn keeps to its panel's topic.
     judging = ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
     if judging and not settings.value('jev', ctx.folder):
@@ -697,6 +701,9 @@ MODULE = Module(
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
                          'board and execution outline without decisions. Default off.', kind='bool', required=False),
+                    Noun('compress_between_topics', 'Use native conversation compression between session topics, '
+                         'guided by the selected next topic. Keeps the same conversations. Default off.',
+                         kind='bool', required=False),
                     Noun('chain', 'Run this many rounds with the same participants, editing shared files inline. '
                                   'Private proposals select each next topic; after the last, participants score '
                                   'each other.', kind='int', required=False)),
