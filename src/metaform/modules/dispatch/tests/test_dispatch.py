@@ -4443,6 +4443,57 @@ def test_waits_on_the_person_and_a_dead_runner_are_told_apart_from_work():
     assert session_work_status({**died, 'how': 'the ticket is done'})['status'] == 'completed'
 
 
+@pytest.mark.parametrize('qualifier', ['', '[1m]', '[200k]'])
+def test_claude_family_models_resolve_through_dispatch_and_roundtable_admission(dispatch, run, qualifier):
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules import roundtables
+
+    model = f'claude-fable-5-1{qualifier}'
+    choices = [{'value': value, 'name': value} for value in ('default', 'opus', model, 'sonnet', 'haiku')]
+    offered = {'id': 'model', 'category': 'model', 'type': 'select', 'current': 'default', 'options': choices}
+    with module.own_store(dispatch.store).tables() as tx:
+        tx.insert('catalog', {'agent': 'claude', 'version': '9', 'name': 'Claude', 'seen': '2026-11-05T00:00:00Z',
+                              'seq': time.time_ns(), 'settings': [offered]})
+    assert module.model_for(dispatch.store, 'claude', 'fable') == model
+    assert module.model_for(dispatch.store, 'claude', model) == model
+    assert module.short_names(offered)['fable'] == model
+    assert any(pick['value'] == 'fable' for pick in module.picker_entries(offered))
+    assert roundtables.seat_of(context('roundtables', dispatch.folder), 'claude/fable') == f'acp:claude/{model}'
+    run('dispatch', 'tune', dispatch.id, 'model=fable', cwd=dispatch.folder)
+    assert module.ticket_options(dispatch.store, dispatch.id)['model'] == 'fable'
+
+
+@pytest.mark.parametrize('values', [
+    ('claude-fable-5', 'claude-fable-5-1[1m]'),
+    ('claude-fable-5-1[1m]', 'claude-fable-5'),
+])
+def test_claude_model_short_names_follow_newest_release_and_preserve_native_aliases(values):
+    from metaform.modules import dispatch as module
+
+    offered = {'id': 'model', 'category': 'model', 'options': [{'value': value, 'name': value} for value in values]}
+    assert module.resolve_choice(offered, 'fable') == 'claude-fable-5-1[1m]'
+    offered['options'].append({'value': 'fable', 'name': 'Fable'})
+    assert module.resolve_choice(offered, 'fable') == 'fable'
+    assert module.short_names(offered)['fable'] == 'fable'
+
+
+@pytest.mark.parametrize('values', [
+    ('claude-fable-5-1', 'claude-fable-5-1[1m]'),
+    ('claude-fable-5-1[200k]', 'claude-fable-5-1[1m]'),
+])
+def test_ambiguous_claude_context_variants_require_a_specific_model(values):
+    from metaform.modules import dispatch as module
+
+    offered = {'id': 'model', 'category': 'model',
+               'options': [{'value': value, 'name': 'Fable'} for value in (*values, 'claude-fable-5')]}
+    assert module.resolve_choice(offered, 'fable') is None
+    assert 'fable' not in module.short_names(offered)
+    assert all(pick['value'] != 'fable' for pick in module.picker_entries(offered))
+    for value in values:
+        assert module.resolve_choice(offered, value) == value
+
+
 def test_model_pickers_list_default_then_short_names_then_specific_versions_and_tune_takes_a_short_name(dispatch,
                                                                                                          run):
     """Every model picker lists Default with what it resolves to, then each short name with what it means now, then

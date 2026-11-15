@@ -538,18 +538,29 @@ VERSIONED = re.compile(r'-(\d+(?:\.\d+)*)-([a-z]+)$')
 def short_names(setting: dict[str, Any]) -> dict[str, str]:
     """Each short name a person writes for one of an agent's choices and the value it means now, in the agent's order:
     a one-word value is the agent's own alias, as Claude's opus is, and means itself; the word that ends versioned ids
-    names the newest of them, as sol names gpt-6.1-sol until gpt-6.2-sol is offered. Read from the agent's current
-    choices each time, so a new release is picked up with no change here. Only a model has them."""
+    names the newest of them, as sol names gpt-6.1-sol until gpt-6.2-sol is offered. Claude's family-first IDs also
+    accept context qualifiers, as fable names claude-fable-5-1[1m]. Ambiguous newest variants have no short name.
+    Read current choices each time so a new release needs no change here. Only a model has them."""
     if option_key(setting) != 'model':
         return {}
     values = [value for value in option_values(setting) if value != AGENT_DEFAULT]
     found = {value: value for value in values if value.isalpha() and value.islower()}
     newest: dict[str, tuple[int, ...]] = {}
     for value in values:
-        if (versioned := VERSIONED.search(value)) and versioned[2] not in found.keys() - newest.keys():
+        if versioned := VERSIONED.search(value):
+            family = versioned[2]
             version = tuple(int(part) for part in versioned[1].split('.'))
-            if versioned[2] not in newest or version > newest[versioned[2]]:
-                found[versioned[2]], newest[versioned[2]] = value, version
+        elif versioned := re.fullmatch(r'[a-z]+-([a-z]+)-(\d+(?:-\d+)*)(?:\[\d+[km]\])?', value):
+            family = versioned[1]
+            version = tuple(int(part) for part in versioned[2].split('-'))
+        else:
+            continue
+        if family in found.keys() - newest.keys():
+            continue  # An alias offered by the agent itself keeps its own meaning.
+        if family not in newest or version > newest[family]:
+            found[family], newest[family] = value, version
+        elif version == newest[family] and found.get(family) != value:
+            found.pop(family, None)
     return found
 
 
@@ -564,8 +575,8 @@ def resolve_choice(setting: dict[str, Any], given: str) -> str | None:
     shorts = {name.casefold(): value for name, value in short_names(setting).items()}
     if folded in shorts:
         return shorts[folded]
-    return next((str(choice.get('value')) for choice in choices if str(choice.get('name') or '').casefold() == folded),
-                None)
+    named = {str(choice.get('value')) for choice in choices if str(choice.get('name') or '').casefold() == folded}
+    return named.pop() if len(named) == 1 else None
 
 
 def unknown_choice(agent: str, setting: dict[str, Any], given: str) -> str:
