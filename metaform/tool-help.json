@@ -14,9 +14,9 @@
       {
         "add": {
           "code.masher.widget": {
-            "technical_name": "widget masher code",
+            "technical_name": "widget masher",
             "name": "mashbox",
-            "role": "Supporting Element",
+            "role": "Coupled Element",
             "refs": [
               "./src/widgets/mashbox.c"
             ]

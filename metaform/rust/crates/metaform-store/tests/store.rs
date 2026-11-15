@@ -26,8 +26,8 @@ fn want() -> Value {
 /// The tool example's two elements, with a want between them and a native array.
 fn seed(store: &Store, map: &MapKey) {
     let commands = [
-        json!({"add": {"code.masher.widget": {"technical_name": "widget masher code", "name": "mashbox",
-            "role": "Supporting Element", "refs": ["./src/widgets/mashbox.c"]}}}),
+        json!({"add": {"code.masher.widget": {"technical_name": "widget masher", "name": "mashbox",
+            "role": "Coupled Element", "refs": ["./src/widgets/mashbox.c"]}}}),
         json!({"add": {"code.protocol.network.tracker.cs": {"technical_name": "cs tracker network protocol",
             "name": "mashtrac", "role": "Defining Element", "refs": ["./src/network/mashtrac.c"],
             "memory": [{"fact": "relays mash data"}], "wants": [with_end("element", "code.masher.widget", want())]}}}),

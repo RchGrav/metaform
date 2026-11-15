@@ -61,9 +61,9 @@
   },
   "orphan_result_example": {
     "code.masher.widget": {
-      "technical_name": "widget masher code",
+      "technical_name": "widget masher",
       "name": "mashbox",
-      "role": "Supporting Element",
+      "role": "Coupled Element",
       "refs": ["./src/widgets/mashbox.c"]
     },
     "code.protocol.network.tracker.cs": {
@@ -75,7 +75,7 @@
   },
   "read_after_role_removal": {
     "code.masher.widget": {
-      "technical_name": "widget masher code",
+      "technical_name": "widget masher",
       "name": "mashbox",
       "refs": ["./src/widgets/mashbox.c"]
     }
@@ -88,9 +88,9 @@
     "first_result": {
       "at": "code.masher.widget",
       "element": {
-        "technical_name": "widget masher code",
+        "technical_name": "widget masher",
         "name": "mashbox",
-        "role": "Supporting Element",
+        "role": "Coupled Element",
         "refs": ["./src/widgets/mashbox.c"]
       },
       "wants": [],
