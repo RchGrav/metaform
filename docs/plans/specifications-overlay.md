@@ -1,46 +1,64 @@
 # Specifications on the map
 
-Status: plan, 2026-11-16. Nothing built yet.
+Status: plan, 2026-11-16. Nothing built on this branch yet. The design is the one already built and tested on the
+Rust branch on 2026-11-09; this plan carries it onto the Python project store.
 
 ## The problem it solves
 
-Agents have been changing Metaform without knowing what it is or what the part in front of them is for. Two cases from
-2026-11-16: a camera change slipped into the 3D map inside an unrelated commit broke dragging, and a feature built only
-because the agent protocol offered it (client files and terminals, an editor's feature in a program that has no editor)
-kept every agent on the protocol's old version. In both, nothing put the purpose of the part in front of the agent.
+Agents have been changing Metaform without knowing what it is or what the part in front of them is for. Two cases
+from 2026-11-16: a camera change slipped into the 3D map inside an unrelated commit broke dragging, and a feature built
+only because the agent protocol offered it (client files and terminals, an editor's feature in a program that has no
+editor) kept every agent on the protocol's old version. In both, nothing put the purpose of the part in front of the
+agent. The specification holds that purpose, and it belongs on the map, at the parts it describes.
 
-The specifications hold that purpose: each requirement record says what a part must do and why. Today they are
-markdown files in `specifications/`, about 450 records, and an agent reads them only if it thinks to.
+## Source
 
-## How it works
+The design, its tests and its history are in the archive `/mnt/c/spec_roundtrip.zip` (collected 2026-11-16 from the
+Rust branch `fable-climb` at `943ac06` and from topogee). Read first:
 
-1. **Specifications are an overlay of the map.** Each requirement record is one record of a `specifications` overlay,
-   placed at the element it is about: the 3D map's layout record at the 3D view's element, the intake's records at the
-   intake's element. A record keeps its id (`VIEW-005`) and its text exactly as written.
-2. **They round-trip.** The files can be read into the overlay, and the overlay written back out to the files, so a
-   change on either side reaches the other. Writing out what was read in gives the same files, byte for byte.
-3. **An agent starting work is given the project description and the base map**: what the project is, and its parts
-   with their names, roles and how they want one another, in compact form. When it works at a part, that part's
-   localized view (what the element panel shows: what it wants, what wants it, its overlays) carries the
-   specification records there, so it reads why the part is as it is before changing it.
+- `2-current-metaform-943ac06/metaform/docs/designs/specification-layer.md`: the overlay, its block format and rules,
+  the export and the import, the owner's decisions and the tests performed.
+- `2-current-metaform-943ac06/metaform/SPEC.md`, R-1.2: the round trip as a requirement, in the owner's words.
+- `.../rust/crates/metaform-core/src/markdown.rs` (`render` is the export, `parse` the import) and `specification.rs`
+  (the overlay's definition and the rules on a block).
+- `2-current-metaform-943ac06/metaform/docs/designs/specification-round-trip.md`: the earlier draft of the whole round
+  trip, not reviewed by the owner.
+
+## How it works, as designed
+
+1. **In.** Intake builds the base map from the project or from a written specification. After it, an agent reads the
+   specification and writes its text as blocks at the elements each part describes. This first step is done by
+   inference, not by a command (owner, 2026-11-09).
+2. **The overlay.** Each block is `{level, title, text}` with an optional `code`, unique across the project, that
+   other text can cite. The first block at an element may be text alone, its introduction. The tool refuses only what
+   would break the round trip: a skipped heading level, a heading line inside the text, a title that is not one line,
+   a code used twice. The writing guidance (TASTE) comes with the overlay's instruction. Blocks at the top of the map
+   are the project's own description.
+3. **Out.** A command prints the map and its blocks as one Markdown document: the project's heading and description,
+   then each element as a heading with its role, names and wants, then its blocks.
+4. **Back in.** A command reads an edited copy of that document back and writes the changed blocks, all or nothing.
+   It refuses any other document, and one that no longer matches the map. Export, edit, import and export again gives
+   the edited document byte for byte.
+5. **At start.** An agent is given the project's description and the base map. At a part, the part's localized view
+   carries its blocks, so it reads what the part is for before changing it.
 
 ## Order of work
 
-1. **The overlay.** Define `specifications` in the project store: a record's id, title, its whole text as written,
-   and the file it came from with its place in that file, so a write-out rebuilds the files in their order.
-2. **Read in.** Each record of `specifications/01` to `11` is placed at the element it is about. Placing is a
-   judgement: an agent reads the record and the map and proposes the element; a record about several parts is placed
-   at each. The person sees the placements before they are kept.
-3. **Write out.** The overlay written back to the files; a test that reading in and writing out leaves the files as
-   they were.
-4. **At start.** The project description and the base map in what an agent is given when it starts, and the
-   specification records in the localized view at each part.
-5. **Check:** an agent started on a ticket at the 3D view is shown the 3D map's layout records before it edits.
+1. **The overlay** on the Python project store, given to every project as `wants`, `tickets` and `memories` are, with
+   the block rules checked on every write that changes blocks. The store already names `overlay.specifications.project`
+   as its example of an overlay.
+2. **Export and import** as CLI commands, ported from `markdown.rs`, with the tests the Rust branch has:
+   render-parse-render gives the same document; an edited import is all or nothing; a stale document is refused.
+3. **Metaform's own specification in.** An agent reads `specifications/01` to `11` (about 450 requirement records) and
+   writes them as blocks at the elements of the `metaform` map. The person sees the placements before they are kept.
+4. **At start:** the project description and the base map in what an agent is given, and the blocks in the localized
+   view at each part.
+5. **Check:** an agent started on a ticket at the 3D view is shown the 3D view's blocks before it edits.
 
 ## Open
 
-- **Where the project description lives.** The store has none: a project holds addresses, wants, overlays and its
-  defining element, and an element holds its names, role, code reference and status. It could be a field of the
-  project, or a record at the defining element.
-- **Records about Metaform as a whole** (quality rules, the index): placed at the defining element, or kept apart.
-- **Which side is edited day to day,** the files or the overlay, once both exist.
+- **The layers that make up a project's specification** are recorded with the project's details, so a person never
+  names them (owner, 2026-11-06). The Rust design exports the specification overlay alone; whether the export also
+  carries other overlays is open there and here.
+- **Which side is edited day to day,** the map or the exported document, once both exist.
+- **`specifications/` itself:** whether the files stay as the written form, or the exported document replaces them.
