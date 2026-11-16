@@ -174,13 +174,10 @@ def test_authored_task_source_and_delivered_component_preserve_user_wording(proj
 
 
 def test_intake_is_discoverable_and_reads_the_canonical_procedure_component(run, project_folder):
-    import asyncio
     from importlib import resources
 
     from metaform import prompt_files
-    from metaform.module import prepare_agent_context, record_agent_context
     from metaform.modules import intake
-    from metaform.modules.mcp import server
 
     ctx = context('tasks', project_folder, nouns={'name': 'intake'})
     entry = next(row for row in tasks.catalog(ctx)['tasks'] if row['name'] == 'intake')
@@ -198,13 +195,6 @@ def test_intake_is_discoverable_and_reads_the_canonical_procedure_component(run,
     assert intake.prompt(context('intake', project_folder)) == expected
     read = json.loads(run('tasks', 'read', 'name=intake', '--json', cwd=project_folder).stdout)
     assert read['instructions'] == expected
-    session, component = 'assigned-intake', definition['component']
-    prepared = prepare_agent_context(project_folder, session, [component])
-    record_agent_context(project_folder, session, [component], epoch=prepared['epoch'], channel='acp_prompt')
-    due = server.instruction_required(project_folder, 'intake_start', {}, session)
-    assert due and component['name'] not in {one['name'] for one in due['instructions']}
-    asyncio.run(server.read_resource_text(project_folder, server.instruction_uri('intake_start'), session=session))
-    assert server.instruction_required(project_folder, 'intake_start', {}, session) is None
 
 
 def test_list_shows_reusable_skills_beside_the_skill_layer_with_or_without_a_project(project_folder, tmp_path):

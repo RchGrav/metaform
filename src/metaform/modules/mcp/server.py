@@ -1131,36 +1131,6 @@ def prepare_usage(folder: Path, session: str | None, components: list[dict[str, 
     return {'epoch': 0, 'components': due, 'text': '\n\n'.join(str(one['text']) for one in due)}
 
 
-def instruction_required(folder: Path, name: str, arguments: dict[str, Any], session: str | None) -> dict[str, Any] | None:
-    listed = listing(folder).get(name)
-    if listed is None or name in GUIDE_EXEMPT:
-        return None  # unknown tools retain their ordinary error, and discovery never requires itself
-    op = instruction_op(listed, arguments)
-    components = usage_components(folder, listed, op, session)
-    if not components:
-        return None
-    prepared = prepare_usage(folder, session, components)
-    if not prepared['components']:
-        return None
-    handle = (uuid.uuid4().hex[:12] if session is None or session.startswith('process:') else
-              session.removeprefix('handle:') if session.startswith('handle:') else None)
-    uri = instruction_uri(name, op, handle)
-    read_arguments: dict[str, Any] = {'tool': name}
-    if op is not None:
-        read_arguments['op'] = op
-    if handle:
-        read_arguments[HANDLE] = handle
-    return {'error': 'instructions_required', 'executed': False, 'tool': name, 'op': op,
-            'read': uri, 'read_tool': {'tool': 'metaform_instructions', 'arguments': read_arguments},
-            **({HANDLE: handle} if handle else {}),
-            'instructions': [{'name': one['name'], 'fingerprint': one['rendered_fingerprint'],
-                              'version': one.get('actual_version_id'),
-                              **({'read': one['read']} if one.get('read') else {})}
-                             for one in prepared['components']],
-            'next': 'Read the instruction URI, then repeat the operation' +
-                    (f' with {HANDLE}={handle}.' if handle else '.')}
-
-
 def command_line(name: str) -> str:
     """What a call to a command by a tool's name is answered: the command as it is run in a shell."""
     module, _, verb = name.partition('_')
@@ -1402,14 +1372,6 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
     the same data as the text block holding it, for a host that reads tool output as data.
     `shape`: an agent's call over the protocol, whose module tool's result is given as it asks, `shaping.shaped`;
     without it, as the result is, for what reads it as data, a resource or search."""
-    if not instruction_read:
-        try:
-            required = await anyio.to_thread.run_sync(instruction_required, folder, name, arguments, session)
-        except Stop as stop:
-            error, blocks = _error(stop, folder)
-            return error, blocks, None
-        if required is not None:
-            return True, [result_json(required)], required
     own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
     if own == 'set':
         error, blocks = await anyio.to_thread.run_sync(run_set, folder, dict(arguments))

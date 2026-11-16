@@ -47,7 +47,6 @@ def bridge(home, tmp_path, monkeypatch):
     folder.mkdir()
     listed = SimpleNamespace(task='session', verb=None)
     monkeypatch.setattr(server, 'listing', lambda *args: {'tasks_start': listed})
-    monkeypatch.setattr(server, 'instruction_required', lambda *args: None)
     monkeypatch.setattr(server, 'guidance', lambda *args: '')
     monkeypatch.setattr(server, 'surface', lambda *args: [])
     monkeypatch.setattr(server, 'on_surface', lambda *args: False)
