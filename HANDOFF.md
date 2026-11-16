@@ -235,6 +235,26 @@ stopped. The endpoint that window reads was checked instead.
 - Checked headless on the live page (web server restarted on this code). Not checked: a Codex ticket started with
   Fast on, end to end.
 
+## In progress (2026-11-16, evening)
+
+- Step 2a, the ACP layer `dispatch/acp/` (model, connection asking v2 with v1 fallback, v1 and v2 adapters, a
+  setting to turn v2 off, the same tests against both through the fake agent), is being built by one Opus agent in the
+  worktree `/home/rich/metaform-dispatch-acp`, branch `feat/dispatch-acp`, made from `feat/project-tool` at
+  `07950be1`. Its commits are reviewed and merged into `feat/project-tool`, then pushed. Step 2b, moving
+  `runner.Session` onto the layer, follows.
+- An agent started with the Agent tool's own worktree option is made from `main`, not from this branch: make the
+  worktree from `feat/project-tool` yourself and point the agent at it.
+
+## Done 2026-11-16 beside the plan, each committed and pushed
+
+- The 3D map: no namespace line over unrecorded steps; join edges as long as their old path, between surfaces; the
+  camera pivot added inside an unrelated commit on 2026-10-18 removed, so a selected element can be dragged again.
+- The element panel: the localized view (what an agent assigned there receives, from the project tool's own answer,
+  `/api/local-view`), Wants and Wanted by with their details, "Known as" for the element's name.
+- The chat: the next call offered after Stop agent; Claude Code's subagent option marked `profile_only` and left out;
+  a prompt the harness repeats back no longer shown twice.
+- AGENTS.md: "Scope is the assignment" and "Landing work". Bugs found and not fixed: `docs/plans/bugs-to-fix.md`.
+
 ## Next, in this order
 
 **Step 2, the connection** (`dispatch/acp/`, v1 and v2 adapters under one model). Its first task is done: all four
