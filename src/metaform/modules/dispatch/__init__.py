@@ -503,7 +503,12 @@ for _agent, (_name, _command) in AGENTS.items():
 
 # The categories ACP reserves for a session config option, session-config-options#option-categories: an option of
 # one is named by it, so a choice holds across agent versions that rename the option; any other by its own id.
-CATEGORIES = ('mode', 'model', 'model_config', 'thought_level')
+# `model_config` is not among them: it says where an option sits, not what it does, and Claude Code's adapter puts
+# Ultracode there while Codex's puts Fast mode, so each such option is named by its id. Fast mode is the `speed`
+# category ACP's rfds/speed-config-category proposes, and, until the adapters report it, the ids that proposal names
+# for the two that predate it.
+CATEGORIES = ('mode', 'model', 'speed', 'thought_level')
+SPEED_IDS = ('fast', 'fast-mode')
 
 
 def catalog_rows() -> dict[str, dict[str, Any]]:
@@ -517,8 +522,10 @@ def catalog_rows() -> dict[str, dict[str, Any]]:
 
 def option_key(setting: dict[str, Any]) -> str:
     """How dispatch's settings name one of an agent's options: by its ACP category when it has a reserved one,
-    or else by its id."""
+    or else by its id; a `model_config` option with one of `SPEED_IDS` is `speed`."""
     category = setting.get('category')
+    if category == 'model_config' and setting.get('id') in SPEED_IDS:
+        return 'speed'
     return str(category) if category in CATEGORIES else str(setting.get('id'))
 
 
@@ -645,10 +652,11 @@ def picker_entries(setting: dict[str, Any]) -> list[dict[str, Any]]:
 # Each agent's own default for one of its options is a setting of its own, dispatch_<agent>_<name>, so setting one
 # never touches another, P199, Rich 2026-10-14: (name, label, the option's ACP category, or its id when it has none).
 # Every agent has the four categories; an option with no category is a setting only where it is named here.
+# Claude Code's `agent` option is not one: it runs the whole session as one of the person's subagent definitions,
+# a choice for one session that, saved, would turn every later session into that narrow helper.
 AGENT_OPTIONS = (('mode', 'Mode', 'mode'), ('model', 'Model', 'model'), ('effort', 'Effort', 'thought_level'),
-                 ('fast', 'Fast mode', 'model_config'))
-OWN_OPTIONS = {'claude': (('agent', 'Agent', 'agent'),),
-               'codex': (('collaboration_mode', 'Collaboration mode', 'collaboration_mode'),)}
+                 ('fast', 'Fast mode', 'speed'))
+OWN_OPTIONS = {'codex': (('collaboration_mode', 'Collaboration mode', 'collaboration_mode'),)}
 AGENT_DEFAULT = 'default'  # the value of each that sends nothing, leaving the agent's own
 
 
@@ -670,7 +678,7 @@ def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
     def choices(ctx: Context) -> list[str]:
         offered = offered_option(agent, key)
         return [one['value'] for one in picker_entries(offered)] if offered and (
-            key != 'model_config' or offered.get('type') == 'boolean') else [AGENT_DEFAULT]
+            key != 'speed' or offered.get('type') == 'boolean') else [AGENT_DEFAULT]
     return choices
 
 
@@ -730,7 +738,7 @@ def chosen_options(ctx: Context, agent: str) -> dict[str, str]:
     for key, _, option in option_settings(agent):
         value = ctx.setting(key) if key in settings.SCHEMA else None
         if value and value != AGENT_DEFAULT:
-            if option == 'model_config':
+            if option == 'speed':
                 offered = offered_option(agent, option)
                 if offered is None or offered.get('type') != 'boolean':
                     continue
@@ -811,7 +819,8 @@ def migrate_agent_options(ctx: Context | None = None) -> list[str]:
         for entry in entries:
             named, _, value = entry.partition('=')
             agent, _, option = named.strip().partition('.')
-            key = next((key for key, _, one in option_settings(agent) if one == option.strip()), None)
+            option = 'speed' if option.strip() == 'model_config' else option.strip()  # Fast mode's key when written
+            key = next((key for key, _, one in option_settings(agent) if one == option), None)
             if key is None or not value.strip():
                 said.append(f'{scope}: {entry} has no setting to hold it and was dropped.')
                 continue
@@ -1776,7 +1785,7 @@ def ticket_options(store: Store, work_id: str) -> dict[str, str]:
         **({field: runtime[field] for field in ('model', 'effort') if runtime.get(field)} if runtime else {})}
     return {**{key: str(chosen[field]) for key, field in (('model', 'model'), ('thought_level', 'effort'))
                if chosen.get(field)},
-            **({'model_config': str(runtime['fast'])} if runtime and runtime.get('fast') is not None else {})}
+            **({'speed': str(runtime['fast'])} if runtime and runtime.get('fast') is not None else {})}
 
 
 def runtime_provider(ctx: Context) -> Any:
@@ -1818,7 +1827,7 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
                    for field in fields if field in given})
     agent = agent or str(values.get('agent') or agent_for(ctx, record))
     if 'fast' in given and values['fast'] is not None:
-        offered_fast = offered_option(agent, 'model_config')
+        offered_fast = offered_option(agent, 'speed')
         if offered_fast is None or offered_fast.get('type') != 'boolean':
             raise Stop(f'{agent_label(agent)} offers no boolean Fast mode.',
                        f'metaform dispatch options agent={agent}')
@@ -1832,7 +1841,7 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
                     values[field] = None
                     overrides = {key: value for key, value in overrides.items() if key != field}
     if 'agent' in given and values.get('agent') != kept.get('agent') and 'fast' not in given:
-        offered_fast = offered_option(agent, 'model_config')
+        offered_fast = offered_option(agent, 'speed')
         if offered_fast is None or offered_fast.get('type') != 'boolean':
             values['fast'] = None
             overrides = {key: value for key, value in overrides.items() if key != 'fast'}
@@ -1937,9 +1946,9 @@ def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) 
         runtime = runtime_settings(ctx, work_id)
         if not runtime.get('agent') or runtime['agent'] == agent:
             chosen = ticket_options(store, work_id)
-            offered_fast = offered_option(agent, 'model_config')
+            offered_fast = offered_option(agent, 'speed')
             if offered_fast is None or offered_fast.get('type') != 'boolean':
-                chosen = {key: value for key, value in chosen.items() if key != 'model_config'}
+                chosen = {key: value for key, value in chosen.items() if key != 'speed'}
     result = {**chosen_options(ctx, agent), **chosen}
     if offered_values(agent, 'thought_level') == []:
         result.pop('thought_level', None)

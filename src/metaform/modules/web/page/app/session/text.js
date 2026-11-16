@@ -11,7 +11,7 @@ import {wrote, movable} from '/page/app/board/history.js';
 import {renderAgents} from '/page/app/agents/dispatch.js';
 import {agentName, summonAgent} from '/page/app/agents/pickers.js';
 import {skipsPrompts, STATUS_WORDS, countOf} from '/page/app/session/tools.js';
-import {SESSIONPOP, sessionSummary, preCallSettings} from '/page/app/session/settings.js';
+import {SESSIONPOP, sessionSummary, preCallSettings, groupedControls} from '/page/app/session/settings.js';
 import {notificationState} from '/page/app/session/tasks.js';
 
 /* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
@@ -335,8 +335,8 @@ export function drawSession(box, {work, session, state}) {
   box.dataset.drawn = text + (session ? '' : summonAgent());
   box.dataset.work = work || '';
   const agent = agentName(session?.agent);
-  const controls = ended ? [] : settings.map(setting => setting.type === 'boolean'
-    ? switchSetting(setting, work) : selectSetting(setting, work, agent));
+  const controls = ended ? [] : groupedControls(agent, settings, settings.map(setting => setting.type === 'boolean'
+    ? switchSetting(setting, work) : selectSetting(setting, work, agent)));
   const used = usage && usage.used !== null && usage.used !== undefined ? usageLine(usage) : null;
   const resume = resumable ? resumeButton(work, session, agent, inPlace) : null;
   if (!session && !ended) { preCallSettings(box); return; }  // before Call: the agent's known options, chosen first

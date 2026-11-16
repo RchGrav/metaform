@@ -111,8 +111,7 @@ function runtimeControls(ticket, agent, change, settings) {
       if (S.project !== project || S.base !== base) return;
       fields.forEach((key, index) => {
         if (key === 'fast') {
-          const option = found?.settings?.find(one => one.type === 'boolean'
-            && (one.key === 'model_config' || one.category === 'model_config'));
+          const option = found?.settings?.find(one => one.type === 'boolean' && one.key === 'speed');
           const chosen = kept.fast ?? '';
           const current = option?.chosen ?? option?.current;
           const name = current === true || current === 'true' ? 'On'

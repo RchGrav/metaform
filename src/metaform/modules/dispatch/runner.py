@@ -240,7 +240,7 @@ AUTH_REQUIRED = -32000  # ACP's auth_required error: the agent needs a login bef
 # The order a session's chosen settings are applied in, by ACP category: a model switch may replace the effort and
 # config options it offers, and set_config_option answers with the whole new set, so what depends on the model goes
 # after it, session-config-options. Anything else follows in the order it was chosen.
-APPLY_ORDER = ('mode', 'model', 'model_config', 'thought_level')
+APPLY_ORDER = ('mode', 'model', 'speed', 'thought_level')
 ELICIT_WORDS = {'decline': 'decline', 'cancel': 'cancel', 'skip': 'decline'}  # an answer that is an action, not content
 # The limits a field of a form elicitation may set, the restricted JSON Schema of ACP's elicitation; `pattern` is ACP's.
 ELICIT_LIMITS = ('minLength', 'maxLength', 'pattern', 'format', 'minimum', 'maximum', 'minItems', 'maxItems')
@@ -1781,7 +1781,7 @@ class Session:
                              'options': [{'value': mode['id'], 'name': mode['name'],
                                           'description': mode.get('description'), 'group': None}
                                          for mode in available], 'source': 'mode'})
-        return found
+        return [{**one, 'key': option_key(one)} for one in found]  # the name dispatch's choices use, as `options`
 
     def harness_record(self, state: str, reason: str | None = None) -> dict[str, Any]:
         """This harness's record as the home keeps it, `offered`: how asking it went, and what its initialize and its
@@ -1840,7 +1840,7 @@ class Session:
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):
             found = next((one for one in self.settings() if option_key(one) == key), None)
-            if found is None or key == 'model_config' and found.get('type') != 'boolean':
+            if found is None or key == 'speed' and found.get('type') != 'boolean':
                 async with self.lock:
                     await self.note(f'option:{key}', 'notice', f'{self.name} offers no {key} on this session, so '
                                                              f'{key}={value} was not applied.')

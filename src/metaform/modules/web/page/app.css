@@ -2408,6 +2408,10 @@ html.frame .viewslot #viewbar{position:static}
 .sessionpop .controls{display:grid;gap:var(--s2)}
 .sessionpop .setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:var(--s2);font:var(--t-sm)/1.3 var(--sans);color:var(--muted)}
 .sessionpop .switch.setting{display:flex}
+:is(.sessionpop,#intake .intakesettings) details.more{flex-basis:100%}
+:is(.sessionpop,#intake .intakesettings) details.more > summary{cursor:pointer;padding:var(--s1) 0;font:var(--t-sm)/1.3 var(--sans);color:var(--muted)}
+:is(.sessionpop,#intake .intakesettings) details.more > summary:hover{color:var(--text)}
+#intake .intakesettings details.more > .controls{margin-top:var(--s1)}
 /* The offer of a body for the chat's agent, inline at the top of its thread: a quiet row of characters, each gently
  * moving, and Not now; the choice becomes the avatar in the chat's head. */
 #helpdesk .embody{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2);margin:var(--s2) var(--s3) 0;padding:var(--s2) var(--s3);

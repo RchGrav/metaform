@@ -128,7 +128,7 @@ test('starts keep each assigned agent until person changes current picker', () =
 
 test('Fast keeps explicit Off distinct from project inheritance', async () => {
   const f = fixture('codex', {agents: [{agent: 'codex', settings: [
-    {key: 'model_config', id: 'adapter-speed', type: 'boolean', chosen: 'true'},
+    {key: 'speed', id: 'fast-mode', category: 'model_config', type: 'boolean', chosen: 'true'},
   ]}]});
   let toggle;
   const settings = {open: true, addEventListener: (_, callback) => { toggle = callback; }};

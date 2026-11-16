@@ -25,7 +25,7 @@ def catalog(folder, fast_type='boolean'):
          'options': [{'value': 'gpt-6', 'name': 'GPT 6'}]},
     ]
     if fast_type:
-        options.append({'id': 'adapter-speed', 'name': 'Fast mode', 'category': 'model_config',
+        options.append({'id': 'fast-mode', 'name': 'Fast mode', 'category': 'model_config',
                         'type': fast_type, 'current': False, 'options': []})
     from metaform.modules.dispatch import argv
     from metaform.modules.dispatch import offered as harness_offered

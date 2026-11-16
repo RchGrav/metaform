@@ -30,8 +30,8 @@ export function sessionPop() {
 const DOCKPICK = {row: null, picker: null};
 function dockPicker() {
   if (!DOCKPICK.row) {
-    DOCKPICK.picker = summonPicker('dock', {label: 'Agent', onchange: () => refreshPreCall()});
-    DOCKPICK.row = h('div', {class: 'setting agent'}, h('span', {}, 'Agent'), DOCKPICK.picker);
+    DOCKPICK.picker = summonPicker('dock', {label: 'Harness', onchange: () => refreshPreCall()});
+    DOCKPICK.row = h('div', {class: 'setting agent'}, h('span', {}, 'Harness'), DOCKPICK.picker);
   }
   return DOCKPICK.row;
 }
@@ -41,7 +41,8 @@ function refreshPreCall() {
 }
 export function sessionSummary(box, {agent, settings, usage, controls, used, resume, before = false}) {
   const pop = sessionPop();
-  const words = settings.map(optionWords).filter(Boolean);
+  // the line says the options in ACP's categories, and any switch that is on, such as Ultracode
+  const words = settings.filter(one => optionRank(one) >= 0 || one.type === 'boolean').map(optionWords).filter(Boolean);
   const tokens = usage && usage.used !== null && usage.used !== undefined
     ? (usage.size ? `${countOf(usage.used)}/${countOf(usage.size)}` : countOf(usage.used)) : null;
   const line = [agent, ...words, tokens].filter(Boolean).join(' · ');
@@ -58,7 +59,7 @@ export function sessionSummary(box, {agent, settings, usage, controls, used, res
       : 'The agent\'s settings: its model, effort, mode and the rest', onclick: toggle},
   h('span', {class: 'said'}, line || 'Settings'), h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
   fill(box, open, h('span', {class: 'grow'}), resume);
-  const running = h('div', {class: 'setting agent'}, h('span', {}, 'Agent'),
+  const running = h('div', {class: 'setting agent'}, h('span', {}, 'Harness'),
     h('b', {title: 'To talk with another agent, Stop this agent, choose another here and Call'}, agent));
   // the agent's own row is kept in place, so a choice being made in it keeps the focus as the rest is drawn again;
   // a setting of the same agent just chosen in the open popover keeps its control, and only the line says it
@@ -108,9 +109,27 @@ export async function preCallSettings(box) {
 function agentOptionControls(agent, found) {
   const settings = (found.settings || [])
     .map(one => ({...one, options: one.choices, current: one.chosen ?? one.current}));
-  const controls = settings.map(setting => setting.type === 'boolean'
-    ? optionSwitch(agent, setting) : optionSelect(agent, setting));
+  const controls = groupedControls(found.label || agentName(agent), settings, settings.map(setting =>
+    setting.type === 'boolean' ? optionSwitch(agent, setting) : optionSelect(agent, setting)));
   return {settings, controls};
+}
+/* An agent's options in ACP's own categories come first, in this order, by the key dispatch names them with. What
+ * else a harness reports means what that harness says it means, such as Claude Code's choice to run the whole
+ * session as one of its subagents, so it sits under "More from <harness>", closed until the person opens it. */
+const MAIN_OPTIONS = ['mode', 'model', 'speed', 'thought_level'];
+const MORE = {open: false};  // opened once, it stays open as the window is drawn again on this page
+// a session's state kept before dispatch named its settings carries their category and id alone
+const optionRank = setting => MAIN_OPTIONS.indexOf(setting.key ?? setting.category ?? setting.id);
+export function groupedControls(harness, settings, controls) {
+  const main = [], more = [];
+  settings.forEach((setting, at) => {
+    const rank = optionRank(setting);
+    if (rank < 0) more.push(controls[at]); else main.push([rank, controls[at]]);
+  });
+  main.sort((one, other) => one[0] - other[0]);
+  return [...main.map(one => one[1]), more.length ? h('details', {class: 'more', open: MORE.open,
+    ontoggle: event => { MORE.open = event.currentTarget.open; }},
+  h('summary', {}, `More from ${harness}`), h('div', {class: 'controls'}, more)) : null].filter(Boolean);
 }
 function optionSwitch(agent, setting) {
   const input = h('input', {type: 'checkbox', role: 'switch', checked: String(setting.current) === 'true',
