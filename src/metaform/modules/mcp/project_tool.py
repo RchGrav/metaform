@@ -29,13 +29,37 @@ DESCRIPTION = (
     'wants.\n'
     '{"help": {}} lists the commands, and {"help": "<command>"} gives a command\'s fields and examples.\n'
     'A refused command comes back with status, code, message and remediation.')
+_BODY: dict[str, Any] = {'type': 'object', 'description': 'One path and what is written there.'}
 SCHEMA: dict[str, Any] = {
     'type': 'object',
     'description': f"One command: exactly one key, which is one of {', '.join(COMMANDS)}, or a path to read.",
+    # Each value's type is stated, so a client sends an object as an object and not as its text.
+    'properties': {
+        'map': {'anyOf': [{'type': 'string'}, {'type': 'object'}],
+                'description': "A project's name, or {} for the names of the projects."},
+        'orphaned': {'type': 'string', 'description': "A project's name."},
+        'help': {'anyOf': [{'type': 'string'}, {'type': 'object'}],
+                 'description': "A command's name, or {} for the names help takes."},
+        'add': _BODY, 'update': _BODY, 'delete': _BODY,
+    },
+    'additionalProperties': {'type': 'object', 'description': 'A path to read: {} or the overlays to include.'},
     'minProperties': 1,
     'maxProperties': 1,
-    'additionalProperties': True,
 }
+
+
+def command(arguments: dict[str, Any]) -> dict[str, Any]:
+    """The command a client sent. A client that was given no type for a value sends an object as its text; such a
+    value is read back as the object. No command takes a text that starts with a brace, so nothing else is changed."""
+    out: dict[str, Any] = {}
+    for key, value in arguments.items():
+        if isinstance(value, str) and value.lstrip().startswith(('{', '[')):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                pass
+        out[key] = value
+    return out
 
 
 def build() -> Any:
@@ -56,7 +80,7 @@ def build() -> Any:
                                          'message': f"'{params.name}' is not a tool of this server; its one tool is "
                                                     f"'{TOOL}'"}
         else:
-            given: dict[str, Any] = params.arguments or {}
+            given = command(params.arguments or {})
             answer = await anyio.to_thread.run_sync(commands.run, given, None, 'mcp')
         return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(answer))],
                                     is_error=answer.get('status') == 'error')

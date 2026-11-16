@@ -4147,7 +4147,7 @@ def test_the_project_server_lists_one_tool_and_passes_its_arguments_as_the_comma
                     return (await client.post('/mcp', json=rpc(method, params), headers=headers)).json()['result']
                 return (await ask('tools/list', {}),
                         await ask('tools/call', {'name': 'project', 'arguments': {'add': {'p.code.a': {}}}}),
-                        await ask('tools/call', {'name': 'project', 'arguments': {'p.code.b': {}}}))
+                        await ask('tools/call', {'name': 'project', 'arguments': {'p.code.b': '{}'}}))  # as text
     listed, wrote, refused = asyncio.run(go())
     assert [tool['name'] for tool in listed['tools']] == ['project']
     assert sent == [{'add': {'p.code.a': {}}}, {'p.code.b': {}}]
