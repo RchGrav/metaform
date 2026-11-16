@@ -1,10 +1,17 @@
 """The project tool's command engine over its LadybugDB store (src/metaform/project)."""
 import pytest
 
-from metaform.project import commands, store
+from metaform.project import commands, owner, store
 from metaform.project.commands import run
 
 pytestmark = pytest.mark.kind('fixture')
+
+
+@pytest.fixture(autouse=True)
+def owners_closed():
+    """Each test's home has its own owner; it is closed when the test ends, with its databases and writer threads."""
+    yield
+    owner.close_all()
 
 P = 'mashtrac'
 WIDGET = f'{P}.code.masher.widget'
@@ -248,3 +255,86 @@ def test_a_path_without_the_project_name_is_refused_naming_what_is_missing():
     refused = run({'code.masher.widget': {}})
     assert refused['code'] == 'ROOT_SCOPE_NOT_ALLOWED' and 'no project named' in refused['message']
     assert refused['remediation'] is None
+
+
+def test_writes_from_many_threads_are_all_stored(home):
+    import threading
+    answers = []
+
+    def writing(caller):
+        for index in range(15):
+            answers.append(run({'add': {f'{P}.code.part_{caller}.unit_{index}': {'name': f'{caller} {index}'}}},
+                               caller=caller))
+
+    threads = [threading.Thread(target=writing, args=(f'c{number}',)) for number in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert answers == [{'status': 'ok'}] * 120
+    assert len(run({'map': P})['addresses']) == 120
+
+
+def test_the_writer_serves_callers_in_turn_and_each_callers_writes_in_order(home, tmp_path):
+    import threading
+    database = owner.Database(tmp_path / 'turns.lbug', create='turns')
+    gate, order = threading.Event(), []
+    try:
+        held = database.write('first', lambda opened: gate.wait())  # the writer is busy while the rest queue
+        many = [database.write('busy', lambda opened, n=n: order.append(('busy', n))) for n in range(4)]
+        late = database.write('late', lambda opened: order.append(('late', 0)))
+        gate.set()
+        for future in [held, *many, late]:
+            future.result(timeout=10)
+    finally:
+        database.close()
+    assert order == [('busy', 0), ('late', 0), ('busy', 1), ('busy', 2), ('busy', 3)]
+
+
+def test_a_read_does_not_wait_for_a_write_in_progress(mapped):
+    import threading
+    owned = owner.of(mapped)
+    started, release = threading.Event(), threading.Event()
+
+    def slow(opened):
+        with opened.transaction():
+            opened.put_element('code.pending', {'name': 'not yet'})
+            started.set()
+            release.wait()
+
+    writing = threading.Thread(target=lambda: owned.write(P, 'slow', slow))
+    writing.start()
+    try:
+        assert started.wait(10)
+        found = run({'map': P})  # answered from the last committed state while the write is still open
+        assert f'{P}.code.pending' not in found['addresses'] and WIDGET in found['addresses']
+    finally:
+        release.set()
+        writing.join()
+    assert f'{P}.code.pending' in run({'map': P})['addresses']
+
+
+def test_a_second_process_cannot_own_the_home_and_acknowledged_writes_survive_a_kill(home, tmp_path):
+    import signal
+    import subprocess
+    import sys
+    script = tmp_path / 'writer.py'
+    script.write_text(
+        'import sys, time\n'
+        'from pathlib import Path\n'
+        'from metaform.project.commands import run\n'
+        'for n in range(20):\n'
+        "    assert run({'add': {f'mashtrac.code.kept_{n}': {'name': str(n)}}}, home=Path(sys.argv[1])) == "
+        "{'status': 'ok'}\n"
+        "print('acknowledged', flush=True)\n"
+        'time.sleep(600)\n')
+    first = subprocess.Popen([sys.executable, str(script), str(home)], stdout=subprocess.PIPE, text=True)
+    try:
+        assert first.stdout.readline().strip() == 'acknowledged'
+        refused = run({'map': P})  # this process is not the owner while the other lives
+        assert refused['code'] == 'INTERNAL_ERROR' and 'another process owns' in refused['message']
+    finally:
+        first.send_signal(signal.SIGKILL if hasattr(signal, 'SIGKILL') else signal.SIGTERM)
+        first.wait()
+    owner.close_all()
+    assert len(run({'map': P})['addresses']) == 20  # killed without closing: every acknowledged write is there

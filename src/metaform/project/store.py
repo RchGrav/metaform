@@ -49,12 +49,22 @@ class StoreError(Exception):
         self.unknown = unknown
 
 
-class _Engine:
-    """The one place that calls `ladybug`, which has no type information. Everything it returns is plain rows."""
+# Each open database: a 64 MiB buffer pool and 4 worker threads. The engine's own defaults size the pool from the
+# machine's memory, and a process holding several databases open ran out at about seven.
+_BUFFER_POOL = 64 * 1024 * 1024
+_THREADS = 4
 
-    def __init__(self, path: Path) -> None:
+
+class _Engine:
+    """The one place that calls `ladybug`, which has no type information. Everything it returns is plain rows. An
+    engine is one connection; `sharing` makes another connection on the same open database, for a reader."""
+
+    def __init__(self, path: Path, sharing: _Engine | None = None) -> None:
         try:
-            self._database: Any = ladybug.Database(str(path))
+            self._owns = sharing is None
+            self._database: Any = (ladybug.Database(str(path), buffer_pool_size=_BUFFER_POOL,
+                                                    max_num_threads=_THREADS)
+                                   if sharing is None else sharing._database)
             self._connection: Any = ladybug.Connection(self._database)
         except Exception as error:
             raise StoreError(f'cannot open {path.name}: {error}') from error
@@ -71,7 +81,8 @@ class _Engine:
 
     def close(self) -> None:
         self._connection.close()
-        self._database.close()
+        if self._owns:
+            self._database.close()
 
 
 def location(home: Path, project: str) -> Path:
@@ -102,8 +113,8 @@ def _column(field: str) -> str:
 
 
 class Store:
-    """An open project database. A long-running server can hold one; `commands.run` opens and closes one per call.
-    Only one process may hold a database open for writing."""
+    """One connection to an open project database. `owner.Database` holds the one that writes, on its writer thread,
+    and makes a `reader` for each thread that reads. Only one process may hold a database open."""
 
     def __init__(self, path: Path, create: str | None = None) -> None:
         """Open the database at `path`. With `create`, the project's name, make it: the tables, and the definition
@@ -118,6 +129,14 @@ class Store:
                     self._rows(statement)
                 for address, fields in texts.wants_definition(create).items():
                     self.put_part(address, dict(fields))
+
+    def reader(self) -> Store:
+        """Another connection on the same open database. It sees the last committed state and never waits for a
+        write in progress on this one."""
+        other = object.__new__(Store)
+        other.path = self.path
+        other._engine = _Engine(self.path, sharing=self._engine)
+        return other
 
     def close(self) -> None:
         self._engine.close()

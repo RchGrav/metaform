@@ -14,9 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from metaform import home as metaform_home
-from metaform.project import forms, store, texts
+from metaform.project import forms, owner, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
+from metaform.project.owner import Missing, Owner
 from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, Scalar, Store, StoreError
 from metaform.project.writes import Writer
 
@@ -24,12 +25,12 @@ OK: dict[str, object] = {'status': 'ok'}
 ANSWER_KEYS = ('status', 'code', 'message', 'remediation')
 
 
-def run(command: object, home: Path | None = None) -> dict[str, object]:
+def run(command: object, home: Path | None = None, caller: str = '') -> dict[str, object]:
     """Answer one command. `home` is the Metaform home whose `maps` folder holds the projects; by default
-    `metaform.home.home()`."""
+    `metaform.home.home()`. `caller` names who sent it, so the write queue serves each caller in turn."""
     try:
         verb, body = forms.check(command)
-        return _answer(verb, body, command, home if home is not None else metaform_home.home())
+        return _answer(verb, body, command, owner.of(home if home is not None else metaform_home.home()), caller)
     except Refusal as refusal:
         return refused(command, refusal)
     except StoreError as error:
@@ -53,28 +54,23 @@ def _missing(project: str) -> Refusal:
                    {'map': {}})
 
 
-def _open(home: Path, project: str) -> Store:
-    path = store.location(home, project)
-    if not path.exists():
-        raise _missing(project)
-    return Store(path)
-
-
-def _answer(verb: str, body: object, command: object, home: Path) -> dict[str, object]:
+def _answer(verb: str, body: object, command: object, owned: Owner, caller: str) -> dict[str, object]:
     if verb == 'help':
         return _help(body)
     if verb == 'map' and body == {}:
-        return {'projects': store.projects(home)}
-    if verb in ('map', 'orphaned'):
-        project = str(body)
-        with _open(home, project) as opened:
-            return _map(opened, project) if verb == 'map' else _orphaned(opened, project)
-    if verb in ('add', 'update', 'delete'):
-        ((path, value),) = as_dict(body).items()
-        return _write(verb, path, value, command, home)
-    address = parse(verb)
-    with _open(home, address.project) as opened:
-        return _read(opened, address, as_dict(body))
+        return {'projects': owned.projects()}
+    try:
+        if verb in ('map', 'orphaned'):
+            project = str(body)
+            return owned.read(project, lambda opened: _map(opened, project) if verb == 'map'
+                              else _orphaned(opened, project))
+        if verb in ('add', 'update', 'delete'):
+            ((path, value),) = as_dict(body).items()
+            return _write(verb, path, value, command, owned, caller)
+        address = parse(verb)
+        return owned.read(address.project, lambda opened: _read(opened, address, as_dict(body)))
+    except Missing as missing:
+        raise _missing(str(missing)) from None
 
 
 def as_dict(value: object) -> dict[str, object]:
@@ -92,32 +88,25 @@ def _help(body: object) -> dict[str, object]:
     raise refuse('help takes {} or the name of a command', {'help': {}})
 
 
-def _write(verb: str, path: str, value: object, command: object, home: Path) -> dict[str, object]:
+def _write(verb: str, path: str, value: object, command: object, owned: Owner, caller: str) -> dict[str, object]:
+    """One write: queued for its caller, run as one transaction on the project's writer, answered after the commit.
+    `add` makes a project that does not exist; a delete in one that does not exist has nothing to do."""
     address = parse(path)
-    location = store.location(home, address.project)
-    create = None
-    if not location.exists():
-        if verb == 'delete':
-            return OK
-        if verb == 'update':
-            raise _missing(address.project)
-        create = address.project
-    done = False
+
+    def work(opened: Store) -> None:
+        with opened.transaction():
+            writer = Writer(opened, address, command, verb)
+            if verb == 'delete':
+                writer.delete(value)
+            else:
+                writer.write(path, value)
+
     try:
-        opened = Store(location, create=create)
-        try:
-            with opened.transaction():
-                writer = Writer(opened, address, command, verb)
-                if verb == 'delete':
-                    writer.delete(value)
-                else:
-                    writer.write(path, value)
-            done = True
-        finally:
-            opened.close()
-    finally:
-        if create is not None and not done:
-            store.remove(location)
+        owned.write(address.project, caller, work, create=verb == 'add')
+    except Missing:
+        if verb == 'delete':
+            return dict(OK)
+        raise
     return dict(OK)
 
 
