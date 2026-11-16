@@ -513,3 +513,15 @@ def test_a_display_reads_a_whole_project_once_and_clearing_removes_it(served):
     assert commands.run({'drawn': P}, served)['status'] == 'error'  # not a command of the tool
     assert commands.clear(P, mapped) is True
     assert commands.drawn(P, mapped) is None and commands.clear(P, mapped) is False
+
+
+def test_a_service_running_code_older_than_the_code_on_disk_is_replaced(served, monkeypatch):
+    import json
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+    first = json.loads((served / 'maps' / 'service.json').read_text())['pid']
+    service._LOCAL.__dict__.pop('held', None)  # a new caller, as another process is
+    real, seen = service._code, []
+    # the code on disk is no longer what the service runs, as the first caller after an update finds
+    monkeypatch.setattr(service, '_code', lambda: real() if seen else seen.append(1) or 'changed')
+    assert commands.run({WIDGET: {}}, served)[WIDGET]['name'] == 'mashbox'  # answered by a new service, data kept
+    assert json.loads((served / 'maps' / 'service.json').read_text())['pid'] != first

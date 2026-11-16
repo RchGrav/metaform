@@ -13,6 +13,7 @@ Run as `python -m metaform.project.service <home>`. It serves until it is told t
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -34,6 +35,20 @@ ATTEMPTS = 4  # how many times one command is sent before the caller is told the
 _LOCAL = threading.local()  # each thread's own connection to each home's service
 
 
+def _code() -> str:
+    """The project package's code as it is on disk now: each file's modification time and size. A service records
+    it when it starts, and a caller that finds another on disk replaces the service, so one never serves code that
+    has since been changed."""
+    found = hashlib.sha256()
+    for path in sorted(Path(__file__).parent.glob('*.py')):
+        try:
+            state = path.stat()
+        except OSError:
+            continue
+        found.update(f'{path.name}\0{state.st_mtime_ns}\0{state.st_size}\n'.encode())
+    return found.hexdigest()
+
+
 def _record(home: Path) -> Path:
     return home / 'maps' / 'service.json'
 
@@ -41,6 +56,7 @@ def _record(home: Path) -> Path:
 def serve(home: Path) -> int:
     """Own the home's databases and answer commands until told to stop. Prints one line when it is ready, `ready` or
     `owned` when another service already owns the home, and prints nothing after it."""
+    code = _code()  # read before anything is imported further, so it names the code this process runs
     try:
         owned = owner.of(home)
     except owner.Owned:
@@ -55,8 +71,8 @@ def serve(home: Path) -> int:
         record = _record(home)
         handle = os.open(record, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(handle, 'w', encoding='utf-8') as stream:
-            json.dump({'port': cast(tuple[str, int], listener.address)[1], 'key': key.hex(), 'pid': os.getpid()},
-                      stream)
+            json.dump({'port': cast(tuple[str, int], listener.address)[1], 'key': key.hex(), 'pid': os.getpid(),
+                       'code': code}, stream)
         print('ready', flush=True)
         sys.stdout = open(os.devnull, 'w', encoding='utf-8')  # noqa: SIM115  the starter stops reading after `ready`
 
@@ -158,6 +174,16 @@ def _connect(home: Path) -> Connection | None:
         deliver_challenge(connection, key)
     except Exception:  # noqa: BLE001  something else is listening on the recorded port
         connection.close()
+        return None
+    if found.get('code') != _code():  # the code on disk has changed: this service ends after its queued writes
+        with connection:
+            try:
+                connection.send_bytes(json.dumps(_STOP).encode('utf-8'))
+                connection.recv_bytes()
+            except (OSError, EOFError):
+                pass
+        with sqlite.file_lock(home / 'maps' / 'owner.lock'):  # held by that service until its databases are closed
+            pass
         return None
     return connection
 
