@@ -377,7 +377,8 @@ def test_acknowledged_writes_survive_the_service_being_killed(served):
 
 def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_path):
     import threading
-    database = owner.Database(tmp_path / 'group.lbug', create='group')
+    told = []
+    database = owner.Database(tmp_path / 'group.lbug', create='group', committed=told.append)
     gate, commits = threading.Event(), []
     real = database._writing.transaction
 
@@ -410,6 +411,9 @@ def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_
         assert {'code.kept_a', 'code.kept_c'} <= set(stored) and len(stored) == 12
     finally:
         database.close()
+    # each commit that stored writes is told once, however many writes it held: the holder and the group of ten,
+    # then the holder and the three run alone, of which two were stored
+    assert told == ['group'] * 4
 
 
 def test_a_write_sent_again_with_the_same_request_id_is_done_once(mapped):

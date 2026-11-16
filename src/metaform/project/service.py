@@ -46,6 +46,7 @@ def serve(home: Path) -> int:
     except owner.Owned:
         print('owned', flush=True)
         return 0
+    owned.committed = _Announcer().changed
     key = secrets.token_bytes(32)
     stopped = threading.Event()
     # No key on the listener: its accept would then hold the handshake, and one slow caller would keep every other
@@ -73,6 +74,41 @@ def serve(home: Path) -> int:
     record.unlink(missing_ok=True)
     owner.close_all()
     return 0
+
+
+class _Announcer:
+    """Tells the home's other processes that a project's map changed, as `map.changed`, after each commit.
+
+    The writer thread only names the project; a thread of this class's own does the telling, so a write never waits
+    on a listener. Commits that land while a telling is in progress are told together, one event for each project."""
+
+    def __init__(self) -> None:
+        self._wake = threading.Condition()
+        self._changed: set[str] = set()
+        threading.Thread(target=self._run, name='announcer', daemon=True).start()
+
+    def changed(self, project: str) -> None:
+        with self._wake:
+            self._changed.add(project)
+            self._wake.notify()
+
+    def _run(self) -> None:
+        from metaform import home as metaform_home
+        from metaform import relay
+        from metaform.project.commands import stored_name
+        while True:
+            with self._wake:
+                while not self._changed:
+                    self._wake.wait()
+                names, self._changed = self._changed, set()
+            try:
+                registered = {stored_name(found.project_id): found.project_id for found in metaform_home.projects()}
+                for name in names:
+                    if name in registered:  # a page shows registered projects only
+                        relay.deliver('map.changed', {'project': registered[name], 'base_id': None,
+                                                      'tables': ['project.map'], 'kinds': ['map']})
+            except Exception:  # noqa: BLE001, S110  a telling that fails loses one redraw, never a write
+                pass
 
 
 def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: threading.Event,

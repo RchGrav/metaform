@@ -42,8 +42,10 @@ class Owned(StoreError):
 class Database:
     """One open project database: its writer thread, its queue of writes and its readers."""
 
-    def __init__(self, path: Path, create: str | None = None) -> None:
+    def __init__(self, path: Path, create: str | None = None,
+                 committed: Callable[[str], None] | None = None) -> None:
         self.path = path
+        self._committed = committed  # told the project's name after each commit that stored a write
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
         self._wake = threading.Condition()
@@ -142,7 +144,9 @@ class Database:
             else:
                 for (_, future), result in zip(group, results):
                     future.set_result(result)
+                self._tell()
                 return
+        stored = False
         for work, future in group:
             try:
                 with store_.transaction():
@@ -151,6 +155,14 @@ class Database:
                 future.set_exception(error)
             else:
                 future.set_result(result)
+                stored = True
+        if stored:
+            self._tell()
+
+    def _tell(self) -> None:
+        """Say once that a commit stored writes: one telling for a group, however many writes it held."""
+        if self._committed is not None:
+            self._committed(self.path.stem)
 
     def close(self) -> None:
         """Serve every write already queued, then close the database."""
@@ -165,6 +177,7 @@ class Owner:
 
     def __init__(self, home: Path) -> None:
         self.home = home
+        self.committed: Callable[[str], None] | None = None  # set by the service, to announce each commit
         folder = home / 'maps'
         folder.mkdir(parents=True, exist_ok=True)
         self._held = ExitStack()
@@ -232,7 +245,7 @@ class Owner:
             closing = self._open.pop(idle) if idle is not None else None
         if closing is not None:
             closing.close()
-        database = Database(path, create=None if exists else project)
+        database = Database(path, create=None if exists else project, committed=self.committed)
         with self._lock:
             database.users = 1
             self._open[project] = database
