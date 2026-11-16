@@ -50,6 +50,49 @@ def wants_definition(project: str) -> dict[str, dict[str, str | bool]]:
     }
 
 
+def standing_overlays() -> dict[str, dict[str, object]]:
+    """The overlays every project is given beside its wants, each by its address beneath the project's name with
+    its definition as `add` takes it. They are ordinary overlays: read, written and shown as any other. Their fields
+    are the ones tickets and memories already had: a ticket's id, task, note, kind, held, taken_by, done and outcome,
+    and a memory as the reference memory server keeps it, an entity of a type holding observations of one fact each."""
+    return {
+        'overlay.tickets': {
+            'description': 'Work assigned at this element: each record is one ticket, from asked to done.',
+            'instruction': ('Add one record for each piece of work. Change one by its position with update: taken_by '
+                            'when an agent takes it, note to say where it stands, done and outcome when it ends. On '
+                            'the board a ticket is done once done is set, doing once taken, in the backlog while '
+                            'held, and to do otherwise.'),
+            'id': {'type': 'text', 'rule': "A short id that stays the same for the ticket's life.",
+                   'example': 't-3f9a'},
+            'title': {'type': 'text', 'rule': 'One line that names the work.', 'example': 'Ring when a timer ends'},
+            'task': {'type': 'text', 'rule': 'What to do, in full, for an agent that knows nothing else of it.',
+                     'example': 'Make watch ring each timer as it ends, also one started while watch runs.'},
+            'kind': {'type': 'broken | flawed | enhancement', 'rule': 'What kind of work it is; left out for a plain task.',
+                     'example': 'broken', 'optional': True},
+            'held': {'type': 'boolean', 'rule': 'True while it waits in the backlog and is not to be started.',
+                     'example': False, 'optional': True},
+            'taken_by': {'type': 'text', 'rule': 'Who took it, once someone has.', 'example': 'claude',
+                         'optional': True},
+            'note': {'type': 'text', 'rule': 'Where it stands now, by whoever last worked on it.',
+                     'example': 'watch now reads the timers again before each sleep.', 'optional': True},
+            'done': {'type': 'text', 'rule': 'When it ended, as a date and time; left out while it is open.',
+                     'example': '2026-11-16T09:30:00Z', 'optional': True},
+            'outcome': {'type': 'completed | cancelled | failed', 'rule': 'How it ended.', 'example': 'completed',
+                        'optional': True},
+        },
+        'overlay.memories': {
+            'description': ('What is worth keeping about this element: each record is one observation of a named '
+                            'entity.'),
+            'instruction': ('Add one record for each fact, one fact in one sentence. Records that share an entity '
+                            'are that entity\'s observations.'),
+            'entity': {'type': 'text', 'rule': 'The name of what the fact is about.', 'example': 'watch command'},
+            'entity_type': {'type': 'text', 'rule': 'What kind of thing the entity is.', 'example': 'behaviour'},
+            'observation': {'type': 'text', 'rule': 'One fact, in one sentence.',
+                            'example': 'watch loads the timers when it starts, so one started later is not rung by it.'},
+        },
+    }
+
+
 COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'help')
 HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help')
 

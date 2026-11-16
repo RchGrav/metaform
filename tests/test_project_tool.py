@@ -91,7 +91,7 @@ def test_map_of_a_project_and_of_the_home(mapped):
     assert found['wants'] == [[CS, WIDGET]]
     assert found['defining'] == [CS]
     assert found['addresses'] == sorted([WIDGET, CS])  # the bare branches above them are left out
-    assert not [one for one in found['addresses'] if '.overlay' in one] and found['overlays'] == ['wants']
+    assert not [one for one in found['addresses'] if '.overlay' in one] and found['overlays'] == ['memories', 'tickets', 'wants']  # the overlays every project is given
     assert run({'map': {}}) == {'projects': [P]}
 
 
@@ -550,3 +550,19 @@ def test_reads_from_many_threads_share_a_few_connections_and_none_is_left_behind
     with ThreadPoolExecutor(16) as pool:
         assert set(pool.map(one, range(200))) == {'mashbox'}
     assert len(database._readers) <= owner.READERS and len(database._idle) == len(database._readers)
+
+
+def test_every_project_is_given_tickets_and_memories_and_one_made_before_them_gains_them(mapped):
+    assert run({f'{P}.overlay.tickets': {}})[f'{P}.overlay.tickets']['key'] == 'tickets'
+    ticket = {'id': 't-1', 'title': 'Ring', 'task': 'Ring each timer as it ends.'}
+    assert run({'add': {WIDGET: {'tickets': [ticket], 'memories': [
+        {'entity': 'watch', 'entity_type': 'behaviour', 'observation': 'It loads the timers once.'}]}}}) == {'status': 'ok'}
+    assert run({'update': {WIDGET: {'tickets': [{'position': 0, 'taken_by': 'claude'}]}}}) == {'status': 'ok'}
+    assert run({WIDGET: {'tickets': {}}})[WIDGET]['tickets'] == [{**ticket, 'taken_by': 'claude'}]
+    assert refusal(run({'add': {WIDGET: {'tickets': [{**ticket, 'outcome': 'lost'}]}}}))[0] == 'FIELD_MISMATCH'
+    # a project whose database was made before these overlays existed is given them when it is next opened
+    owned = owner.of(metaform_home.home())
+    owned.write(P, 't', lambda opened: [opened.delete_part(address) for address in list(opened.parts())
+                                        if address.startswith('overlay.memories')] and opened.drop_overlay('memories'))
+    owner.close_all()
+    assert run({f'{P}.overlay.memories': {}})[f'{P}.overlay.memories']['key'] == 'memories'

@@ -534,3 +534,15 @@ class Writer:
             self.store.delete_part(at)
             del parts[at]
             at = at.rpartition('.')[0]
+
+
+def give_standing_overlays(store: Store, project: str) -> None:
+    """Define, in a project that lacks them, the overlays every project is given: tickets and memories. Called inside
+    the writer's transaction each time a database is opened, so a project made before one of them existed gains it."""
+    from metaform.project import texts
+    defined = store.parts()
+    for path, definition in texts.standing_overlays().items():
+        if path not in defined:
+            whole = full(project, path)
+            Writer(store, parse(whole), {'add': {whole: definition}}, 'add').write(whole, definition)
+

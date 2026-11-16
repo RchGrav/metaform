@@ -115,6 +115,9 @@ class Database:
     def _serve(self, create: str | None, opened: threading.Event) -> None:
         try:
             self._writing = Store(self.path, create=create)
+            from metaform.project.writes import give_standing_overlays
+            with self._writing.transaction():
+                give_standing_overlays(self._writing, self.path.stem)
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
             self._failed = error
             opened.set()
