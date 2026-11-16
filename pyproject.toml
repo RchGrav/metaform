@@ -24,8 +24,11 @@ voice-gpu = ["faster-whisper>=1.2,<2", "nvidia-cublas-cu12>=12.4,<13; sys_platfo
              "nvidia-cudnn-cu12>=9.1,<10; sys_platform == 'linux' or sys_platform == 'win32'"]
 
 [tool.metaform]
-# The chassis's own dependencies, pure Python only, BASE-026; copied into metaform/_build_info.py, BASE-041.
-chassis-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12", "PyYAML>=6.0"]
+# The chassis's own dependencies, pure Python, BASE-026, except ladybug, the database engine of the project map: it
+# ships ready-built for Linux, macOS and Windows on Python 3.10 to 3.14, so installing it compiles nothing. Copied into
+# metaform/_build_info.py, BASE-041.
+chassis-dependencies = ["prompt_toolkit>=3.0", "networkx>=3.3", "grand-cypher>=0.12", "PyYAML>=6.0",
+                        "ladybug>=0.22.3,<0.23"]
 
 [tool.hatch.metadata.hooks.custom]
 
