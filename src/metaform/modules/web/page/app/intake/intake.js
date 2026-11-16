@@ -79,7 +79,10 @@ export function drawIntake() {
   // that has stopped working, or was used for something else, would otherwise read Starting for as long as it runs
   const activity = INTAKE.session?.activity;
   const launching = INTAKE.session?.state === 'starting';
+  // parts on the map while its agent runs are its records, written with the project tool: said by their count, which
+  // is on the page whatever the session's state was when it was last read
   const doing = INTAKE.waiting ? `${agentName(INTAKE.agent)} waits for your permission`
+    : parts && !recording ? `Recording · ${plural(parts, 'part')} so far`
     : launching ? `Starting${since ? ` · since ${ago(since) === 'now' ? 'just now' : `${ago(since)} ago`}` : ''}`
     : recording ? `Recording ${LIVE.layer} · ${following() ? `${plural(parts, 'part')} so far` : 'in a base of its own'}`
     : firstWait || (activity === 'working' ? 'Reading the project'

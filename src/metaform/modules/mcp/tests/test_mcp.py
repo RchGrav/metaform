@@ -315,7 +315,8 @@ def test_a_server_started_outside_every_project_selects_one_with_set(run, home, 
                 after.structured_content)
     instructions, before_error, before, chosen_error, after_error, after = session(home, outside, call)
     # At connect only the short pointer to the bootstrap; the folder's state comes in tool results
-    assert 'metaform://metaform' in instructions and len(startup_instructions(outside)) <= 2048
+    assert 'metaform://rules' in instructions and 'metaform://metaform' not in instructions  # no glossary is linked
+    assert len(startup_instructions(outside)) <= 2048
     assert before_error and before[0].splitlines()[-1] == ('Next: call metaform_register for this folder, or '
                                                            'metaform set --project <id> for a registered one')
     assert not chosen_error and not after_error
@@ -1967,7 +1968,9 @@ def test_connect_points_to_the_glossary_and_the_glossary_resource_serves_it_whol
         read = await client.read_resource('metaform://metaform')
         return init.instructions, listed, read.contents[0].text
     started, listed, served = session(home, mapped, check)
-    assert started.splitlines()[1:3] == ['metaform://rules', 'metaform://metaform'] and 'metaform://proj' in started
+    # the glossaries are served when read and linked to no agent at connect
+    assert started.splitlines()[1] == 'metaform://rules' and 'metaform://metaform' not in started
+    assert 'metaform://proj' not in started
     assert len(startup_instructions(mapped)) <= 2048
     assert listed[0] == 'metaform://rules' and listed[listed.index('metaform://metaform') + 1] == 'metaform://proj'
     assert served == glossary.strip() + '\n' and len(served) > 2048  # whole and alone, past the connect text's cut
@@ -2001,8 +2004,7 @@ def test_the_connect_message_is_the_directive_and_its_links_and_the_task_block_s
         run('enable', module)
     sent = connect_instructions(mapped)
     assert sent.splitlines() == [prompt_files.module('mcp', 'connect_directive'), 'metaform://rules',
-                                 'metaform://metaform', 'metaform://memory', 'metaform://modules', 'metaform://task/person',
-                                 'metaform://proj']
+                                 'metaform://memory', 'metaform://modules', 'metaform://task/person']
     assert len(sent) <= 512, len(sent)
     task = task_text(mapped, None, 'process:test-connect')
     lines = task.splitlines()
@@ -2030,10 +2032,9 @@ def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_h
     bare = tmp_path / 'bare'
     bare.mkdir()
     run('add', 'project', 'bare', str(bare))
-    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://metaform',
-                                                           'metaform://memory', 'metaform://modules',
-                                                           'metaform://firstrun', 'metaform://task/person',
-                                                           'metaform://bare']
+    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://memory',
+                                                           'metaform://modules', 'metaform://firstrun',
+                                                           'metaform://task/person']
     first = prompt_files.required(here, 'no_intake')
     assert block_text(bare, 'metaform://firstrun') == first
     assert first not in task_text(bare, None, 'process:test-firstrun')  # served once, as its own block
@@ -3363,8 +3364,7 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     from metaform.modules.mcp.server import glossary, memory_text, modules_text, project_glossary_text, task_text
     run('enable', 'memory', cwd=mapped)
     block = 'metaform://task/person' if task is None else 'metaform://task/intake' if task == 'intake' else None
-    links = ['metaform://rules', 'metaform://metaform', 'metaform://memory', 'metaform://modules',
-             *([block] if block else []), 'metaform://proj']
+    links = ['metaform://rules', 'metaform://memory', 'metaform://modules', *([block] if block else [])]  # no glossary
     if task == 'intake':  # a procedure is run with the procedure and nothing beside it: its task alone
         links = [block]
     directive = prompt_files.module('mcp', 'connect_directive') or ''
@@ -3675,7 +3675,7 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
         served.stop()
     assert 'session handle' in connect and 'compacted=true' not in connect
     assert 'opens one category at a time' not in connect and 'carry only' not in connect  # its listing never narrows
-    assert connect.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\nmetaform://metaform\n')
+    assert connect.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\nmetaform://memory\n')
     assert set(before) == set(after) == {'metaform_catalog', 'project', 'search', 'fetch'}
     assert 'pass session_handle=' in first[0] and 'compacted=true' in first[0]
     assert opened[0].startswith('map:') and 'map_where(' in opened[0]

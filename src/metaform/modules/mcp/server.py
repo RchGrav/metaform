@@ -1805,13 +1805,18 @@ BLOCKS: tuple[Block, ...] = (
 )
 
 
+UNLINKED = ('metaform', 'project')  # blocks that are served when read and linked to no agent at connect
+
+
 def links(agent: Agent) -> list[str]:
     """The links of the instruction blocks that apply to `agent` now, in BLOCKS' order. An agent a runner started on
     the intake is linked its task alone: a procedure is run with the procedure and nothing beside it, so no rule,
     glossary or module listing of the project reaches the reading it makes."""
     if agent.task == 'intake' and not agent.own:
         return [uri for block in BLOCKS if block.name == 'task' and (uri := block.link(agent))]
-    return [uri for block in BLOCKS if (uri := block.link(agent))]
+    # No glossary is linked, the tool's or the project's: element addresses read as plain names, and fields and roles
+    # are written in full. Both stay readable at their addresses for whoever asks.
+    return [uri for block in BLOCKS if block.name not in UNLINKED and (uri := block.link(agent))]
 
 
 def opening(agent: Agent) -> str:

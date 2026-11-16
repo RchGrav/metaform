@@ -96,7 +96,7 @@ def test_fuzzy_search_finds_misspelled_commands_and_returns_the_owning_module(ma
 def test_resource_opens_module_on_real_stdio_wire(home, mapped):
     async def exercise(client, init):
         initial = {one.name for one in (await client.list_tools()).tools}
-        assert initial == {'metaform_catalog'}
+        assert initial == {'metaform_catalog', 'project'}
         directory = text(await client.read_resource('metaform://modules'))
         assert 'metaform://map/tools' in directory and 'map_where(' not in directory
         resource = text(await client.read_resource('metaform://map/tools'))
