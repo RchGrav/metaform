@@ -5,8 +5,9 @@ Only one process may hold a project database open, so one process owns every pro
 
 Inside the owner, each open database has one writer thread that holds the database's only writing connection.
 Writes wait in a queue for each caller, and the writer takes one job from each caller in turn, so one caller's
-writes cannot hold back another's and each caller's own writes run in the order they arrived. A write is one
-transaction, and its answer is given only after it has committed. A read runs on the reading thread's own
+writes cannot hold back another's and each caller's own writes run in the order they arrived. The writes that are
+waiting when the writer is free are committed together as one transaction, which costs one commit for all of them;
+a write is answered only after the commit that holds it. A read runs on the reading thread's own
 connection, against the last committed state, and never waits for a write.
 """
 from __future__ import annotations
@@ -27,6 +28,7 @@ from metaform.project.store import Store, StoreError
 T = TypeVar('T')
 
 MAX_OPEN = 16  # open project databases in one owner; the least recently used idle one is closed to open another
+GROUP = 64  # the most waiting writes committed together as one transaction
 
 
 class Missing(Exception):
@@ -61,8 +63,8 @@ class Database:
             raise self._failed
 
     def write(self, caller: str, work: Callable[[Store], T]) -> Future[T]:
-        """Queue one write for `caller`. `work` is given the writing connection on the writer thread and runs its own
-        transaction; the future holds its result once it has returned, so after the commit."""
+        """Queue one write for `caller`. `work` is given the writing connection on the writer thread, inside a
+        transaction the writer opens and commits; the future holds its result only after that commit."""
         future: Future[T] = Future()
         with self._wake:
             if self._closing:
@@ -76,7 +78,7 @@ class Database:
         return future
 
     def read(self, work: Callable[[Store], T]) -> T:
-        """Run one read on the calling thread's own connection."""
+        """Run one read on the calling thread's own connection, as one read-only transaction."""
         reader: Store | None = getattr(self._local, 'reader', None)
         if reader is None:
             with self._wake:
@@ -85,7 +87,8 @@ class Database:
                 reader = self._writing.reader()
                 self._readers.append(reader)
             self._local.reader = reader
-        return work(reader)
+        with reader.reading():
+            return work(reader)
 
     def _serve(self, create: str | None, opened: threading.Event) -> None:
         try:
@@ -101,25 +104,53 @@ class Database:
                     self._wake.wait()
                 if not self._turn:
                     break  # closing, and every queued write has been served
-                caller = self._turn.popleft()
-                waiting = self._jobs[caller]
-                work, future = waiting.popleft()
-                if waiting:
-                    self._turn.append(caller)  # this caller's next write waits behind the other callers' turns
-                else:
-                    del self._jobs[caller]
-            if not future.set_running_or_notify_cancel():
-                continue
-            try:
-                future.set_result(work(self._writing))
-            except BaseException as error:  # noqa: BLE001  the caller receives its own failure
-                future.set_exception(error)
+                group: list[tuple[Callable[[Store], Any], Future[Any]]] = []
+                while self._turn and len(group) < GROUP:
+                    caller = self._turn.popleft()
+                    waiting = self._jobs[caller]
+                    group.append(waiting.popleft())
+                    if waiting:
+                        self._turn.append(caller)  # this caller's next write waits behind the other callers' turns
+                    else:
+                        del self._jobs[caller]
+            self._commit([job for job in group if job[1].set_running_or_notify_cancel()])
         with self._wake:
             for reader in self._readers:
                 reader.close()
             self._readers.clear()
             self._writing.close()
             self._writing = None
+
+    def _commit(self, group: list[tuple[Callable[[Store], Any], Future[Any]]]) -> None:
+        """Run the writes that were waiting together as one transaction with one commit, each in its turn and each
+        seeing the ones before it, and answer them after that commit. When one of them fails or is refused, the group
+        is rolled back and each write runs as a transaction of its own, so one write's failure is only its own. A
+        commit that fails leaves the group's writes unknown, and they are not run again."""
+        store_ = self._writing
+        assert store_ is not None
+        if len(group) > 1:
+            try:
+                with store_.transaction():
+                    results = [work(store_) for work, _ in group]
+            except StoreError as error:
+                if error.unknown:
+                    for _, future in group:
+                        future.set_exception(error)
+                    return
+            except BaseException:  # noqa: BLE001, S110  one write of the group failed: each is now run alone
+                pass
+            else:
+                for (_, future), result in zip(group, results):
+                    future.set_result(result)
+                return
+        for work, future in group:
+            try:
+                with store_.transaction():
+                    result = work(store_)
+            except BaseException as error:  # noqa: BLE001  the caller receives its own failure
+                future.set_exception(error)
+            else:
+                future.set_result(result)
 
     def close(self) -> None:
         """Serve every write already queued, then close the database."""

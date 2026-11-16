@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from metaform import home as metaform_home
-from metaform.project import forms, owner, texts
+from metaform.project import forms, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
@@ -26,11 +26,21 @@ ANSWER_KEYS = ('status', 'code', 'message', 'remediation')
 
 
 def run(command: object, home: Path | None = None, caller: str = '') -> dict[str, object]:
-    """Answer one command. `home` is the Metaform home whose `maps` folder holds the projects; by default
-    `metaform.home.home()`. `caller` names who sent it, so the write queue serves each caller in turn."""
+    """Answer one command, from any process. `home` is the Metaform home whose `maps` folder holds the projects; by
+    default `metaform.home.home()`. `caller` names who sent it, so the write queue serves each caller in turn.
+
+    The command is sent to the home's single-writer service, which is started when none is running. No caller opens
+    a database itself, so the writes of every process are serialized in one place."""
+    from metaform.project import service
+    return service.send(command, home if home is not None else metaform_home.home(), caller)
+
+
+def perform(command: object, owned: Owner, caller: str = '', request: str = '') -> dict[str, object]:
+    """Answer one command against the databases this process owns. The service calls this; other code calls `run`.
+    `request` is the id of a write: a write whose id is already stored is answered and not done again."""
     try:
         verb, body = forms.check(command)
-        return _answer(verb, body, command, owner.of(home if home is not None else metaform_home.home()), caller)
+        return _answer(verb, body, command, owned, caller, request)
     except Refusal as refusal:
         return refused(command, refusal)
     except StoreError as error:
@@ -54,7 +64,8 @@ def _missing(project: str) -> Refusal:
                    {'map': {}})
 
 
-def _answer(verb: str, body: object, command: object, owned: Owner, caller: str) -> dict[str, object]:
+def _answer(verb: str, body: object, command: object, owned: Owner, caller: str,
+            request: str) -> dict[str, object]:
     if verb == 'help':
         return _help(body)
     if verb == 'map' and body == {}:
@@ -66,7 +77,7 @@ def _answer(verb: str, body: object, command: object, owned: Owner, caller: str)
                               else _orphaned(opened, project))
         if verb in ('add', 'update', 'delete'):
             ((path, value),) = as_dict(body).items()
-            return _write(verb, path, value, command, owned, caller)
+            return _write(verb, path, value, command, owned, caller, request)
         address = parse(verb)
         return owned.read(address.project, lambda opened: _read(opened, address, as_dict(body)))
     except Missing as missing:
@@ -88,18 +99,22 @@ def _help(body: object) -> dict[str, object]:
     raise refuse('help takes {} or the name of a command', {'help': {}})
 
 
-def _write(verb: str, path: str, value: object, command: object, owned: Owner, caller: str) -> dict[str, object]:
-    """One write: queued for its caller, run as one transaction on the project's writer, answered after the commit.
+def _write(verb: str, path: str, value: object, command: object, owned: Owner, caller: str,
+           request: str) -> dict[str, object]:
+    """One write: queued for its caller, run inside a transaction on the project's writer, answered after the commit.
     `add` makes a project that does not exist; a delete in one that does not exist has nothing to do."""
     address = parse(path)
 
     def work(opened: Store) -> None:
-        with opened.transaction():
-            writer = Writer(opened, address, command, verb)
-            if verb == 'delete':
-                writer.delete(value)
-            else:
-                writer.write(path, value)
+        if request and opened.request_done(request):
+            return  # this same write was stored before its answer reached the caller
+        writer = Writer(opened, address, command, verb)
+        if verb == 'delete':
+            writer.delete(value)
+        else:
+            writer.write(path, value)
+        if request:
+            opened.record_request(request)  # in the write's own transaction: stored together or not at all
 
     try:
         owned.write(address.project, caller, work, create=verb == 'add')

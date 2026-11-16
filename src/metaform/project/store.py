@@ -36,7 +36,10 @@ _SCHEMA = (
     ('CREATE NODE TABLE OverlayPart(address STRING PRIMARY KEY, `description` STRING, `instruction` STRING, '
      '`type` STRING, `rule` STRING, `example` STRING, `optional` BOOLEAN, ordinal INT64)'),
     'CREATE REL TABLE Wants(FROM Element TO Element, why STRING, how STRING, direction STRING, ref STRING)',
+    # The id of each write that was stored, written in the write's own transaction, so a write sent twice is done once.
+    'CREATE NODE TABLE Request(id STRING PRIMARY KEY, seq SERIAL)',
 )
+REQUESTS_KEPT = 10000  # the most recent write ids kept; a write is only ever sent again within moments of the first
 _ELEMENT_COLUMNS = ', '.join(f'e.`{field}`' for field in ELEMENT_FIELDS)
 _PART_COLUMNS = ', '.join(f'p.`{field}`' for field in PART_FIELDS)
 
@@ -167,6 +170,29 @@ class Store:
             self._rows('COMMIT')
         except StoreError as error:
             raise StoreError(str(error), unknown=True) from error
+
+    @contextmanager
+    def reading(self) -> Generator[None]:
+        """One read is one read-only transaction: it cannot write, and every query in it sees the same committed
+        state, whatever is written meanwhile."""
+        self._rows('BEGIN TRANSACTION READ ONLY')
+        try:
+            yield
+        finally:
+            try:
+                self._rows('COMMIT')
+            except StoreError:
+                pass  # a query that failed has already ended the transaction
+
+    def request_done(self, request: str) -> bool:
+        return bool(self._rows('MATCH (r:Request {id: $id}) RETURN count(*)', id=request)[0][0])
+
+    def record_request(self, request: str) -> None:
+        """Record a stored write's id, and drop the ids too old to be sent again."""
+        row = self._rows('CREATE (r:Request {id: $id}) RETURN r.seq', id=request)
+        seq = row[0][0]
+        if isinstance(seq, int) and seq and seq % 1000 == 0:
+            self._rows('MATCH (r:Request) WHERE r.seq < $oldest DELETE r', oldest=seq - REQUESTS_KEPT)
 
     # Elements
 

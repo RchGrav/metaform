@@ -1,10 +1,15 @@
 """The project tool's command engine over its LadybugDB store (src/metaform/project)."""
 import pytest
 
-from metaform.project import commands, owner, store
-from metaform.project.commands import run
+from metaform import home as metaform_home
+from metaform.project import commands, owner, service, store
 
 pytestmark = pytest.mark.kind('fixture')
+
+
+def run(command, caller=''):
+    """The command engine in this process, on the test's own home: what the service runs for each command."""
+    return commands.perform(command, owner.of(metaform_home.home()), caller)
 
 
 @pytest.fixture(autouse=True)
@@ -12,6 +17,13 @@ def owners_closed():
     """Each test's home has its own owner; it is closed when the test ends, with its databases and writer threads."""
     yield
     owner.close_all()
+
+
+@pytest.fixture
+def served(home):
+    """A home whose commands go through its single-writer service, a process of its own, stopped when the test ends."""
+    yield home
+    service.stop(home)
 
 P = 'mashtrac'
 WIDGET = f'{P}.code.masher.widget'
@@ -261,6 +273,15 @@ def test_a_path_without_the_project_name_is_refused_naming_what_is_missing():
     assert refused['remediation'] is None
 
 
+def holding(database, gate):
+    """A write that keeps the writer busy until `gate` is set, returned once the writer has begun it."""
+    import threading
+    begun = threading.Event()
+    held = database.write('first', lambda opened: (begun.set(), gate.wait()))
+    assert begun.wait(10)
+    return held
+
+
 def test_writes_from_many_threads_are_all_stored(home):
     import threading
     answers = []
@@ -284,7 +305,7 @@ def test_the_writer_serves_callers_in_turn_and_each_callers_writes_in_order(home
     database = owner.Database(tmp_path / 'turns.lbug', create='turns')
     gate, order = threading.Event(), []
     try:
-        held = database.write('first', lambda opened: gate.wait())  # the writer is busy while the rest queue
+        held = holding(database, gate)  # the writer is busy while the rest queue
         many = [database.write('busy', lambda opened, n=n: order.append(('busy', n))) for n in range(4)]
         late = database.write('late', lambda opened: order.append(('late', 0)))
         gate.set()
@@ -301,10 +322,9 @@ def test_a_read_does_not_wait_for_a_write_in_progress(mapped):
     started, release = threading.Event(), threading.Event()
 
     def slow(opened):
-        with opened.transaction():
-            opened.put_element('code.pending', {'name': 'not yet'})
-            started.set()
-            release.wait()
+        opened.put_element('code.pending', {'name': 'not yet'})
+        started.set()
+        release.wait()
 
     writing = threading.Thread(target=lambda: owned.write(P, 'slow', slow))
     writing.start()
@@ -318,27 +338,121 @@ def test_a_read_does_not_wait_for_a_write_in_progress(mapped):
     assert f'{P}.code.pending' in run({'map': P})['addresses']
 
 
-def test_a_second_process_cannot_own_the_home_and_acknowledged_writes_survive_a_kill(home, tmp_path):
-    import signal
+def test_processes_writing_at_once_are_all_stored_through_the_one_service(served, tmp_path):
     import subprocess
     import sys
     script = tmp_path / 'writer.py'
     script.write_text(
-        'import sys, time\n'
+        'import sys\n'
         'from pathlib import Path\n'
         'from metaform.project.commands import run\n'
-        'for n in range(20):\n'
-        "    assert run({'add': {f'mashtrac.code.kept_{n}': {'name': str(n)}}}, home=Path(sys.argv[1])) == "
-        "{'status': 'ok'}\n"
-        "print('acknowledged', flush=True)\n"
-        'time.sleep(600)\n')
-    first = subprocess.Popen([sys.executable, str(script), str(home)], stdout=subprocess.PIPE, text=True)
+        'for n in range(30):\n'
+        "    answer = run({'add': {f'mashtrac.code.from_{sys.argv[2]}.unit_{n}': {'name': str(n)}}}, "
+        'home=Path(sys.argv[1]))\n'
+        "    assert answer == {'status': 'ok'}, answer\n")
+    writers = [subprocess.Popen([sys.executable, str(script), str(served), str(number)]) for number in range(4)]
+    assert [writer.wait(timeout=120) for writer in writers] == [0, 0, 0, 0]
+    assert len(commands.run({'map': P}, home=served)['addresses']) == 120
+
+
+def test_only_the_service_holds_the_databases(served):
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, home=served) == {'status': 'ok'}
+    with pytest.raises(owner.Owned):  # this process is a caller: the service is the owner
+        owner.Owner(served)
+    assert commands.run({WIDGET: {}}, home=served)[WIDGET]['name'] == 'mashbox'
+
+
+def test_acknowledged_writes_survive_the_service_being_killed(served):
+    import json
+    import os
+    import signal
+    for number in range(20):
+        assert commands.run({'add': {f'{P}.code.kept_{number}': {'name': str(number)}}}, home=served) == {
+            'status': 'ok'}
+    pid = json.loads((served / 'maps' / 'service.json').read_text())['pid']
+    os.kill(pid, signal.SIGKILL if hasattr(signal, 'SIGKILL') else signal.SIGTERM)
+    # a read after the service is gone starts a new one, which finds every write that was acknowledged
+    assert len(commands.run({'map': P}, home=served)['addresses']) == 20
+
+
+def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_path):
+    import threading
+    database = owner.Database(tmp_path / 'group.lbug', create='group')
+    gate, commits = threading.Event(), []
+    real = database._writing.transaction
+
+    def counted():
+        commits.append(1)
+        return real()
+
+    database._writing.transaction = counted
     try:
-        assert first.stdout.readline().strip() == 'acknowledged'
-        refused = run({'map': P})  # this process is not the owner while the other lives
-        assert refused['code'] == 'INTERNAL_ERROR' and 'another process owns' in refused['message']
+        held = holding(database, gate)
+        good = [database.write(f'c{n}', lambda opened, n=n: opened.put_element(f'code.unit_{n}', {'name': str(n)}))
+                for n in range(10)]
+        gate.set()
+        for future in [held, *good]:
+            future.result(timeout=10)
+        assert len(commits) == 2  # the one that held the writer, then the ten that waited, in one transaction
+        gate.clear()
+        held = holding(database, gate)
+        mixed = [database.write('a', lambda opened: opened.put_element('code.kept_a', {'name': 'a'})),
+                 database.write('b', lambda opened: (_ for _ in ()).throw(ValueError('refused'))),
+                 database.write('c', lambda opened: opened.put_element('code.kept_c', {'name': 'c'}))]
+        gate.set()
+        held.result(timeout=10)
+        assert mixed[0].result(timeout=10) is None and mixed[2].result(timeout=10) is None
+        # after the first two: the holder, the group of three that was rolled back, then each of the three alone
+        assert len(commits) == 7
+        with pytest.raises(ValueError):
+            mixed[1].result(timeout=10)
+        stored = database.read(lambda opened: [address for address, _ in opened.all_elements()])
+        assert {'code.kept_a', 'code.kept_c'} <= set(stored) and len(stored) == 12
     finally:
-        first.send_signal(signal.SIGKILL if hasattr(signal, 'SIGKILL') else signal.SIGTERM)
-        first.wait()
-    owner.close_all()
-    assert len(run({'map': P})['addresses']) == 20  # killed without closing: every acknowledged write is there
+        database.close()
+
+
+def test_a_write_sent_again_with_the_same_request_id_is_done_once(mapped):
+    run({'add': {SPEC: SPEC_DEFINITION}})
+    owned = owner.of(metaform_home.home())
+    record = {'add': {CS: {'project_specifications': [{'title': 'Purpose', 'level': 1}]}}}
+    for _ in range(3):  # the caller never saw the answer, so it sends the same write again and again
+        assert commands.perform(record, owned, 'c', 'request-1') == {'status': 'ok'}
+    assert len(run({CS: {'project_specifications': {}}})[CS]['project_specifications']) == 1
+    assert commands.perform(record, owned, 'c', 'request-2') == {'status': 'ok'}  # a new write appends
+    assert len(run({CS: {'project_specifications': {}}})[CS]['project_specifications']) == 2
+    refused = commands.perform({'add': {CS: {'role': 'DE'}}}, owned, 'c', 'request-3')
+    assert refused['status'] == 'error'  # a refused write stores no id: it is refused the same way each time
+    assert commands.perform({'add': {CS: {'role': 'Defining Element'}}}, owned, 'c', 'request-3') == {'status': 'ok'}
+
+
+def test_many_callers_in_one_process_reach_the_service_at_once(served):
+    import threading
+    failures = []
+
+    def writing(number):
+        for index in range(40):
+            answer = commands.run({'add': {f'{P}.code.thread_{number}.unit_{index}': {'name': str(index)}}},
+                                  home=served, caller=f'thread {number}')
+            if answer != {'status': 'ok'}:
+                failures.append(answer)
+
+    threads = [threading.Thread(target=writing, args=(number,)) for number in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(120)
+    assert not [thread for thread in threads if thread.is_alive()] and not failures
+    assert len(commands.run({'map': P}, home=served)['addresses']) == 640
+
+
+def test_a_write_after_the_service_was_killed_is_sent_again_to_a_new_one(served):
+    import json
+    import os
+    import signal
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, home=served) == {'status': 'ok'}
+    pid = json.loads((served / 'maps' / 'service.json').read_text())['pid']
+    os.kill(pid, signal.SIGKILL if hasattr(signal, 'SIGKILL') else signal.SIGTERM)
+    # this caller still holds its connection to the service that is gone; the write goes to a new one
+    assert commands.run({'add': {CS: {**CS_FIELDS, 'wants': [WANT]}}}, home=served) == {'status': 'ok'}
+    assert commands.run({'map': P}, home=served)['wants'] == [[CS, WIDGET]]
