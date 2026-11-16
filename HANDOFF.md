@@ -235,15 +235,23 @@ stopped. The endpoint that window reads was checked instead.
 - Checked headless on the live page (web server restarted on this code). Not checked: a Codex ticket started with
   Fast on, end to end.
 
-## In progress (2026-11-16, evening)
+## Start here (2026-11-16, late)
 
-- Step 2a, the ACP layer `dispatch/acp/` (model, connection asking v2 with v1 fallback, v1 and v2 adapters, a
-  setting to turn v2 off, the same tests against both through the fake agent), is being built by one Opus agent in the
-  worktree `/home/rich/metaform-dispatch-acp`, branch `feat/dispatch-acp`, made from `feat/project-tool` at
-  `07950be1`. Its commits are reviewed and merged into `feat/project-tool`, then pushed. Step 2b, moving
-  `runner.Session` onto the layer, follows.
-- An agent started with the Agent tool's own worktree option is made from `main`, not from this branch: make the
-  worktree from `feat/project-tool` yourself and point the agent at it.
+**Next: step 2b, done directly in this session, not by a background agent** (the person's call, on cost and quality:
+an agent re-reads everything and its work is read again to check it). Move `runner.Session` onto `dispatch/acp/`, one
+concern at a time in the plan's order, dispatch tests passing after each, one commit per concern.
+
+- Step 2a is merged: `dispatch/acp/` (model, connection asking v2 with v1 fallback, v1 and v2 adapters, `dispatch_acp_v2`).
+  Client files and terminals are deleted (`9fa792a4`), so nothing forces v1 any more.
+- Worktree `/home/rich/metaform-dispatch-acp`, branch `feat/dispatch-acp`, holds one commit past `feat/project-tool`:
+  `17e2c1e2` "acp: give the layer what the runner needs to move onto it", from the stopped agent, not yet reviewed.
+  Branch `wip/runner-move-partial` holds its uncommitted half-move of `runner.py`, untested; read it, do not merge it.
+- What the layer's builder recorded for the move (steering on v2, login status in three places, subagent events,
+  both diff shapes, usage, the prompt echo now absorbed by the v1 adapter, withdrawal, stderr, timeouts) is in the
+  brief kept at `docs/plans/dispatch-owns-acp.md` step 2; check it against the code.
+- After 2b: one live Claude Code and one live Codex session from the page, on v2. Ask the person first; they spend tokens.
+- Then: `docs/plans/specifications-overlay.md` (the Rust branch's specification layer, ported; source archive
+  `/mnt/c/spec_roundtrip.zip`).
 
 ## Done 2026-11-16 beside the plan, each committed and pushed
 

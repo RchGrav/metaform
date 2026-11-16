@@ -397,6 +397,16 @@ list; a question to the person is for a decision only they can make, never for l
   with replay, a config option set, and a v2 request answered by a v1-only harness.
 - Check: a ticket worked by Claude Code and one by Codex, each from the page, on whichever version it selects, and
   again with v2 turned off.
+- For the move, from the layer's builder (2026-11-16): Claude Code's v2 adapter advertises no `_session/steering`
+  (only `_meta.claudeCode.promptQueueing`), so a steer is an ordinary prompt on v2 where steering is not advertised;
+  login status is read from `capabilities.auth.status`, `capabilities._meta.authStatus` (Claude Code) and
+  `capabilities.auth._meta.authStatus` (Codex), and `_auth/status_update` is an `auth` event; subagent updates arrive
+  as `other` events under the child's session id; notices and compaction are raw dicts; diffs keep their wire form
+  (v1 `path`/`oldText`/`newText`, v2 `changes`/`patch`), so `tool_detail`, `track_tool_files`, `changed_files` and
+  `filed` read both; usage from either version lands in `Turn.usage`; the v1 adapter absorbs the prompt echo, so the
+  runner's `prompt_echo` goes; permission and elicitation withdrawal is the layer's, `Client.withdrawn`; the runner
+  keeps reading stderr and its own process handling (its own starter to `connect`); `connect(timeout=)` covers
+  `initialize` only; an `Unsupported` ask is still said in the thread.
 
 **3. The registry** (issues 8, 9, 10, 11, 17, 19)
 
