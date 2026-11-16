@@ -5,8 +5,8 @@
     "fields": {
       "technical_name": "The short practitioner name: the leading words of the address read in reverse.",
       "name": "The name this project gives the element.",
-      "role": "Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant. {\"help\": \"intake/core_concepts\"} defines them.",
-      "refs": "A list with one uri for each artifact that has this address.",
+      "role": "Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant. {\"help\": \"intake/core_concepts\"} defines them.",
+      "refs": "The entry point of this functionality in the material, or a discrete reference that shows it, as a list. It is not a list of every file; more pointers belong in a layer.",
       "status": "un_built for functionality that is intended and not built.",
       "wants": "A list of want records. A record holds element (the wanted element's address), why, how, direction (send, receive or both) and ref (the uri of the one artifact the want is about). An element may hold several wants on the same element, one for each artifact or purpose. The wanted element is created at its own address if it is not there. why and how are sentence fragments that complete the sentence below."
     },
@@ -88,7 +88,7 @@
     ]
   },
   "goto": {
-    "does": "Places you at an element and returns its fields, its wants, the wants that name it (wanted_by), and the layers that hold records there. A later goto to the same address returns only what changed.",
+    "does": "Places you at an element and returns its fields, its wants, the wants that name it (wanted_by), and the layers that hold records there.",
     "examples": [
       {
         "goto": "code.masher.widget"

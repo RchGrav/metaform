@@ -81,7 +81,7 @@
     }
   },
   "goto_example": {
-    "description": "goto against the populated initial state (R-5.30). The first arrival in a context returns the whole summary sheet; a later goto to the same address in the same context, with nothing changed, returns only the address. Layers and memory are empty until those parts exist, and the skills part appears only where skills exist.",
+    "description": "goto against the populated initial state (R-5.30). Every goto returns the whole summary sheet. Layers and memory are empty until those parts exist, and the skills part appears only where skills exist.",
     "request": {
       "goto": "code.masher.widget"
     },
@@ -101,9 +101,6 @@
       "memory": {
         "records": 0
       }
-    },
-    "repeat_result": {
-      "at": "code.masher.widget"
     }
   }
 }

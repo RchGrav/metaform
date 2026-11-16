@@ -2,7 +2,6 @@
 //! (`metaform/mcp-tools.proposed.json`); this file adds no tool and changes no schema.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use metaform_store::{ClientId, Failure, MapKey, Store, refusal_json, store_failure_json};
@@ -27,7 +26,6 @@ pub struct MapTool {
     map: MapKey,
     client: ClientId,
     tool: Tool,
-    presence: Mutex<Presence>,
     /// The map's resource URI (R-4.10).
     uri: String,
     /// Change feeds opened in `accepted_subscription_filter`, before rmcp acknowledges a
@@ -40,83 +38,6 @@ pub struct MapTool {
 /// The start of the URI of each section of the intake procedure. The section's name follows.
 pub const INTAKE_URI: &str = "metaform://intake/";
 
-/// Where the agent is, and what `goto` already delivered in this context.
-#[derive(Default)]
-struct Presence {
-    at: Option<String>,
-    delivered: HashMap<String, serde_json::Map<String, Value>>,
-    /// Sheet parts that hold the same text at every address, delivered once per context rather
-    /// than once per address: the layer `instructions` (R-6.27).
-    once: serde_json::Map<String, Value>,
-}
-
-/// Sheet parts whose entries are the same wherever they appear, so each entry is delivered once
-/// per context.
-const ONCE_PER_CONTEXT: [&str; 1] = ["instructions"];
-
-/// Sheet parts delivered on every arrival, never held back: a layer's `guidance` at its
-/// definition element, which is where an agent reads the guidance again after a reset (R-5.30).
-const ALWAYS: [&str; 1] = ["guidance"];
-
-/// What the server tells a client when it connects. It is one short paragraph, because every
-/// agent on the server receives it: where a person can see the map, so the agent can say so.
-pub const INSTRUCTIONS: &str = "A person can see this map as a graph in a browser. The command `metaform gui` opens the graph workspace and prints its address, which is http://127.0.0.1:4170/ unless that port is in use. When you finish an intake, or change the map for a user, tell the user that address.";
-
-impl Presence {
-    /// Record an arrival and return only the parts of the sheet not yet delivered unchanged in
-    /// this context (R-5.30: "goto only dumps new info IF the info changes"). The parts held back
-    /// are named in `unchanged`, so an agent whose context was reset can tell "nothing here" from
-    /// "already delivered" and read them again.
-    fn arrive(&mut self, sheet: Value) -> Value {
-        let Value::Object(sheet) = sheet else {
-            return sheet;
-        };
-        let at = sheet
-            .get("at")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let seen = self.delivered.entry(at.clone()).or_default();
-        let mut out = serde_json::Map::new();
-        let mut unchanged: Vec<Value> = Vec::new();
-        out.insert("at".into(), Value::String(at.clone()));
-        for (part, value) in sheet {
-            if part == "at" {
-                continue;
-            }
-            if ALWAYS.contains(&part.as_str()) {
-                out.insert(part, value);
-                continue;
-            }
-            if ONCE_PER_CONTEXT.contains(&part.as_str()) {
-                let Value::Object(entries) = value else { continue };
-                let fresh: serde_json::Map<String, Value> = entries
-                    .into_iter()
-                    .filter(|(name, text)| self.once.get(name) != Some(text))
-                    .collect();
-                if fresh.is_empty() {
-                    unchanged.push(Value::String(part));
-                } else {
-                    self.once.extend(fresh.clone());
-                    out.insert(part, Value::Object(fresh));
-                }
-                continue;
-            }
-            if seen.get(&part) == Some(&value) {
-                unchanged.push(Value::String(part));
-            } else {
-                seen.insert(part.clone(), value.clone());
-                out.insert(part, value);
-            }
-        }
-        if !unchanged.is_empty() {
-            out.insert("unchanged".into(), Value::Array(unchanged));
-        }
-        self.at = Some(at);
-        Value::Object(out)
-    }
-}
-
 impl MapTool {
     pub fn new(store: Arc<Store>, map: MapKey, client: ClientId) -> MapTool {
         let tool = tool_from(&store.tool_definition());
@@ -126,7 +47,6 @@ impl MapTool {
             map,
             client,
             tool,
-            presence: Mutex::default(),
             pending: Mutex::default(),
             legacy: Mutex::default(),
         }
@@ -171,6 +91,8 @@ pub fn tool_from(definition: &Value) -> Tool {
 
 impl ServerHandler for MapTool {
     fn get_info(&self) -> ServerConfig {
+        // The server sends no instruction at connection, because every agent would pay for the
+        // text on every connection.
         let mut info = ServerConfig::default();
         info.capabilities = ServerCapabilities::builder()
             .enable_tools()
@@ -178,7 +100,6 @@ impl ServerHandler for MapTool {
             .enable_resources_subscribe()
             .build();
         info.server_info = Implementation::new("metaform", env!("CARGO_PKG_VERSION"));
-        info.instructions = Some(INSTRUCTIONS.to_string());
         info
     }
 
@@ -207,7 +128,7 @@ impl ServerHandler for MapTool {
             let name = format!("intake/{}", section.name);
             resources.push(Resource::new(format!("{INTAKE_URI}{}", section.name), name).with_description(
                 if section.required {
-                    format!("The {} section of the intake procedure. Required reading before any work on the map.", section.name)
+                    format!("The {} section of the intake procedure. Required reading to perform an intake.", section.name)
                 } else {
                     format!("The {} section of the intake procedure.", section.name)
                 },
@@ -364,7 +285,8 @@ impl ServerHandler for MapTool {
             );
             return Err(ErrorData::invalid_params(message, None));
         }
-        let is_goto = command.get("goto").is_some();
+        // The server keeps no record of what a connection has received, because MCP has no
+        // session and clients keep a connection for different lengths of time.
         let (store, map, client) = (Arc::clone(&self.store), self.map.clone(), self.client);
         let sent = command.clone();
         let outcome = tokio::task::spawn_blocking(move || store.execute(client, &map, &sent))
@@ -372,11 +294,6 @@ impl ServerHandler for MapTool {
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Ok(match outcome {
             Ok(result) => {
-                let result = if is_goto {
-                    self.presence.lock().expect("presence lock").arrive(result)
-                } else {
-                    result
-                };
                 CallToolResult::success(vec![ContentBlock::text(result.to_string())])
             }
             Err(Failure::Refused(refusal)) => {

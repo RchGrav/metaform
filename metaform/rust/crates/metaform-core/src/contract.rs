@@ -113,7 +113,7 @@ impl Contract {
                 "sections": names,
                 "required": required,
                 "when": when,
-                "read": "Read one section with {\"help\": \"intake/<section>\"}. Read each required section before any work on the map. To perform an intake, read every section in this order before you start, except a section listed under when: read that one only if its condition holds. For other work, read another section only when you need the rules in it.",
+                "read": "These sections are the intake procedure. Read them to perform an intake: every section in this order, except a section listed under when, which you read only if its condition holds. Read one section with {\"help\": \"intake/<section>\"}. For other work on the map you need none of them.",
             }}}));
         }
         if let Some(wanted) = name.strip_prefix("intake/") {

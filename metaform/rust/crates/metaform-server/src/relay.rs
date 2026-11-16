@@ -13,8 +13,8 @@
 //!
 //! Requests sent before the restart that had no answer get an error, so the client is never left
 //! waiting: a write in flight may or may not have committed, and the error says to read the map
-//! before sending it again. What `goto` already delivered is forgotten by the new server, so it may
-//! deliver some of it again. Without the relay, a server restart ended every agent's MCP session.
+//! before sending it again. `goto` always returns the whole sheet, so a restart loses nothing.
+//! Without the relay, a server restart ended every agent's MCP session.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

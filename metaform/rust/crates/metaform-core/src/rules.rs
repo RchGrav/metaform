@@ -18,7 +18,7 @@ pub const ROLES: [&str; 8] = [
     "Supporting Element",
     "Coupled Element",
     "Notable Element",
-    "Cestui Que Use",
+    "Vested Beneficiary",
     "Upstream Dependency",
     "Downstream Dependant",
 ];
@@ -27,21 +27,22 @@ pub const ROLES: [&str; 8] = [
 pub const DEFINING: &str = "Defining Element";
 
 /// What a refusal puts in place of a role that it cannot correct.
-pub(crate) const ROLE_PLACEHOLDER: &str = "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>";
+pub(crate) const ROLE_PLACEHOLDER: &str = "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant>";
 
-/// The intake procedure's abbreviations of the roles, each with the role it means. A write that uses
-/// one is refused with the same write using the role's name, because an agent that follows the
-/// procedure exactly must be given the right command. The store uses the abbreviations to bring
+/// The intake procedure's abbreviations of the roles and the earlier full name of one role, each with
+/// the role it means. A write that uses one is refused with the same write using the role's name,
+/// because an agent that follows the procedure exactly must be given the right command. The store uses the abbreviations to bring
 /// a map stored before 2026-11-15 up to date.
-pub const ROLE_WORDS: [(&str, &str); 8] = [
+pub const ROLE_WORDS: [(&str, &str); 9] = [
     ("AT", "Artifact Type"),
     ("DE", "Defining Element"),
     ("SE", "Supporting Element"),
     ("CE", "Coupled Element"),
     ("NE", "Notable Element"),
-    ("CQU", "Cestui Que Use"),
+    ("CQU", "Vested Beneficiary"),
     ("UD", "Upstream Dependency"),
     ("DD", "Downstream Dependant"),
+    ("Cestui Que Use", "Vested Beneficiary"),
 ];
 
 /// Check one touched element: `technical_name` (R-3.11), then `role` (R-3.13). `before` is the

@@ -99,17 +99,17 @@ fn a_written_role_is_one_of_the_roles() {
         assert_eq!(refusal.code, Code::RoleTaxonomyFailure, "{role}");
         assert_eq!(
             refusal.reason,
-            format!("'code.engine.game': role \"{role}\" is not one of: Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency, Downstream Dependant")
+            format!("'code.engine.game': role \"{role}\" is not one of: Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency, Downstream Dependant")
         );
         assert_eq!(
             refusal.to_json()["remediation"],
-            json!({"update": {GAME: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}})
+            json!({"update": {GAME: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant>"}}})
         );
     }
     let created = refused(&contract, &map, json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "Helper"}}}));
     assert_eq!(
         created.to_json()["remediation"],
-        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}}),
+        json!({"add": {"code.loop.main": {"name": "Frame pump", "role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant>"}}}),
         "a refused add stored nothing, so the remediation adds the element again"
     );
     for role in metaform_core::ROLES {

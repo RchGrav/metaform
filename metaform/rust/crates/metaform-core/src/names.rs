@@ -9,12 +9,11 @@ use crate::refusal::{Code, Refusal};
 pub const ROOT: &str = ".";
 
 /// The valid root scopes (R-3.3).
-pub const ROOT_SCOPES: [&str; 8] = [
+pub const ROOT_SCOPES: [&str; 7] = [
     "code",
     "document",
     "media",
     "data",
-    "collection",
     "upstream",
     "downstream",
     "layer",

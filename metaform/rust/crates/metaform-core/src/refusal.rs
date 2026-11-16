@@ -71,7 +71,7 @@ impl Code {
             }
             Code::CanonicalNameCollisionFailure => "R-3.12: name must not equal technical_name.",
             Code::RoleTaxonomyFailure => {
-                "R-3.13: a role is Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant."
+                "R-3.13: a role is Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant."
             }
             Code::GrammarConstraintViolation => {
                 "Module 6.4: why is a bare infinitive verb phrase, how is a third-person present verb phrase, and neither has words ending in -ing. Not checked yet (D-14)."

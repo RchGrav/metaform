@@ -85,7 +85,7 @@ pub(crate) const HELP_NAMES: [&str; 10] =
 const DELETE_FORM: &str = "delete takes {} to delete the element, or {\"wants\": [\"<address>\"]} to remove wants";
 /// The fields that hold text (N2 to N5).
 const TEXT_FIELDS: [&str; 5] = ["technical_name", "name", "role", "status", "project"];
-const REFS_FORM: &str = "a list with one uri for each artifact that has this address";
+const REFS_FORM: &str = "a list that holds the entry point of this functionality, or a discrete reference to it";
 /// The words that belong to a want, not to an element (N6).
 const WANT_WORDS: [&str; 4] = ["element", "why", "how", "direction"];
 const WANT_FIELDS: [&str; 3] = ["why", "how", "direction"];

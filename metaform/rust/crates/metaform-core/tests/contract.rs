@@ -246,7 +246,7 @@ fn refusals_name_the_rule_and_change_nothing() {
         (
             json!({"add": {"code.relay": {"role": "Definitive"}}}),
             Code::RoleTaxonomyFailure,
-            Some(json!({"add": {"code.relay": {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}})),
+            Some(json!({"add": {"code.relay": {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant>"}}})),
         ),
         (
             json!({"delete": {"code.protocol": {}}}),

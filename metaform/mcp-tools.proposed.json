@@ -109,7 +109,7 @@
           },
           {
             "type": "object",
-            "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count. A later goto to the same address in the same context returns only what changed.",
+            "description": "goto places the agent at an address and returns its summary sheet: the element and its wants, what relies on it, layer record counts, skill frontmatter and the memory count.",
             "properties": {
               "goto": {
                 "type": "string",
@@ -205,7 +205,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "description": "The element's role, written by its full name: Artifact Type (the type that groups the artifacts examined), Defining Element (whose loss would prevent the artifact from remaining the same type), Supporting Element (whose Encounter Function helps a Defining Element serve the purpose of the CQU), Coupled Element (a Supporting Element whose functionality cannot be changed apart from the elements that want it, so work on it and work on them is not assigned to different worktrees at the same time), Notable Element (which states an essential demand or requirement), Cestui Que Use (the party outside the artifact whose purpose drives improvement of it), Upstream Dependency (an element outside the artifact that an element depends on) or Downstream Dependant (an element outside the artifact that depends on it and is not a person). The intake procedure abbreviates them AT, DE, SE, CE, NE, CQU, UD and DD. A map may hold several Defining Elements."
+                    "description": "The element's role, written by its full name: Artifact Type (the type that groups the artifacts examined), Defining Element (whose loss would prevent the artifact from remaining the same type), Supporting Element (whose Encounter Function helps a Defining Element serve the purpose of the CQU), Coupled Element (a Supporting Element whose functionality cannot be changed apart from the elements that want it, so work on it and work on them is not assigned to different worktrees at the same time), Notable Element (which states an essential demand or requirement), Vested Beneficiary (the vested beneficiary of the project, who is not the user or developer working on it; the intake procedure calls it the CQU), Upstream Dependency (an element outside the artifact that an element depends on) or Downstream Dependant (an element outside the artifact that depends on it and is not a person). The intake procedure abbreviates them AT, DE, SE, CE, NE, CQU, UD and DD. A map may hold several Defining Elements."
                   },
                   {
                     "$ref": "#/$defs/NamespaceNode"
@@ -292,7 +292,7 @@
                       "minLength": 1,
                       "pattern": "\\S"
                     },
-                    "description": "The source links for this element: one uri for each artifact that has this address. A code project is one artifact, so it has one uri, the entry point for this functionality. When several artifacts share the address, such as photos of one type, list the uri of each. A relative file path is allowed."
+                    "description": "The entry point of this functionality in the material, or a discrete reference that shows it. It is not a list of every file or member. A relative file path is allowed."
                   },
                   {
                     "type": "null"

@@ -41,7 +41,7 @@ This repository's `.mcp.json` starts `target/release/metaform mcp --home ${HOME}
 ## What an agent receives
 
 - A successful write answers `{"status": "ok"}` (R-5.35). A refusal repeats the command, then gives `status`, `code`, `message` and `remediation` (R-5.24).
-- `goto` places the agent at an address and returns the summary sheet. Each part arrives once for each connection; a later `goto` returns only the parts that changed and names the parts it holds back (R-5.30). The sheet names where a layer's rules are; the rules themselves are at the layer's definition element.
+- `goto` places the agent at an address and returns the whole summary sheet every time. The server remembers nothing for a connection. The sheet names where a layer's rules are; the rules themselves are at the layer's definition element.
 - Each commit is announced to clients that subscribed to the map's resource (R-4.10). Nothing polls.
 
 ## Not built

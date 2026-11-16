@@ -36,8 +36,9 @@ pub struct Element {
 /// sorted by name. One order makes an element's JSON the same after every reload and in every
 /// form of Metaform, whatever order its fields were written in.
 pub const FIELD_ORDER: [&str; 5] = ["technical_name", "name", "role", "refs", "status"];
-/// The element's source links: a list with one uri for each artifact that has this address. It
-/// is a field of the element, not a layer, so every read of the element returns it.
+/// The element's source links: a list that holds the entry point of this functionality, or a
+/// discrete reference to it. It is a field of the element, not a layer, so every read of the
+/// element returns it.
 pub const REFS: &str = "refs";
 /// The want-record fields, in R-6.17's order, first in a want record; any other follows by name.
 pub const WANT_ORDER: [&str; 4] = ["why", "how", "direction", "ref"];

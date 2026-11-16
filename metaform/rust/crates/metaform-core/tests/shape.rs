@@ -110,7 +110,7 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
             "N3",
             json!({"update": {game: {"role": 7}}}),
             format!("role at '{game}' must be text that is not blank"),
-            json!({"update": {game: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Cestui Que Use, Upstream Dependency or Downstream Dependant>"}}}),
+            json!({"update": {game: {"role": "<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested Beneficiary, Upstream Dependency or Downstream Dependant>"}}}),
         ),
         (
             "N4",
@@ -121,19 +121,19 @@ fn refused_rows() -> Vec<(&'static str, Value, String, Value)> {
         (
             "N5",
             json!({"add": {game: {"uri": "./src/engine.c"}}}),
-            format!("uri at '{game}' is not a field; refs holds a list with one uri for each artifact that has this address"),
+            format!("uri at '{game}' is not a field; refs holds a list that holds the entry point of this functionality, or a discrete reference to it"),
             json!({"add": {game: {"refs": ["./src/engine.c"]}}}),
         ),
         (
             "N5",
             json!({"add": {game: {"refs": "./src/engine.c"}}}),
-            format!("refs at '{game}' must be a list with one uri for each artifact that has this address"),
+            format!("refs at '{game}' must be a list that holds the entry point of this functionality, or a discrete reference to it"),
             json!({"add": {game: {"refs": ["./src/engine.c"]}}}),
         ),
         (
             "N5",
             json!({"add": {game: {"refs": []}}}),
-            format!("refs at '{game}' must be a list with one uri for each artifact that has this address"),
+            format!("refs at '{game}' must be a list that holds the entry point of this functionality, or a discrete reference to it"),
             json!({"add": {game: {"refs": ["<uri>"]}}}),
         ),
         // The intake procedure's words are answered with the same command in the tool's words.

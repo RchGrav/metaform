@@ -47,6 +47,7 @@ fn one_tool_over_mcp_2026_07_28() {
             .unwrap()
             .contains(&json!("2026-07-28"))
     );
+    assert!(discover["result"].get("instructions").is_none(), "the server sends no instruction at connection: {discover}");
     let tools = agent.request("tools/list", json!({}));
     let names: Vec<&str> = tools["result"]["tools"]
         .as_array()
@@ -590,10 +591,10 @@ fn the_specification_exports_as_markdown_through_the_cli() {
 }
 
 /// The specification layer over MCP (R-6.25 to R-6.27): blocks written at a skeleton element come
-/// back byte for byte after a server restart, and `goto` delivers the layer's instructions once per
-/// context, not once per address.
+/// back byte for byte after a server restart, and `goto` delivers the layer's instructions at every
+/// address, because the server keeps no record of what a connection has received.
 #[test]
-fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
+fn specification_blocks_survive_a_restart_and_instructions_arrive_at_every_goto() {
     let dir = tempfile::tempdir().unwrap();
     let (home, project) = (dir.path().join("home"), dir.path().join("proj"));
     std::fs::create_dir_all(&project).unwrap();
@@ -629,7 +630,7 @@ fn specification_blocks_survive_a_restart_and_instructions_arrive_once() {
     assert_eq!(first["layers"]["specification"], json!({"records": 3}));
     let (_, second) = agent.call(json!({"goto": "code.render"}));
     assert_eq!(second["layers"]["specification"], json!({"records": 0}));
-    assert!(second.get("instructions").is_none(), "instructions arrive once per context: {second}");
+    assert_eq!(second["instructions"], first["instructions"], "instructions arrive at every address: {second}");
 
     stop_server(&home);
     let (refused, read) = agent.read_after_restart(json!({"code.engine": {"specification": {}}}));
@@ -705,11 +706,11 @@ fn an_edited_specification_imports_all_or_nothing() {
     stop_server(&home);
 }
 
-/// After a context reset the connection may stay open, so `goto` names what it holds back
-/// (`unchanged`), and a goto at a layer's definition element always carries that layer's guidance
-/// (R-5.30). The first delivery of the guidance says where to read it again.
+/// `goto` returns the whole sheet every time (R-5.30): the server keeps no record of what a
+/// connection has received, so a repeat `goto` equals the first, and no part is held back. A goto
+/// at a layer's definition element carries that layer's guidance.
 #[test]
-fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
+fn goto_returns_the_whole_sheet_every_time_and_a_definition_carries_its_guidance() {
     let dir = tempfile::tempdir().unwrap();
     let (home, project) = (dir.path().join("home"), dir.path().join("proj"));
     std::fs::create_dir_all(&project).unwrap();
@@ -729,17 +730,13 @@ fn goto_names_what_it_holds_back_and_a_definition_repeats_its_guidance() {
     let (_, first) = agent.call(json!({"goto": "code.engine"}));
     let guidance = first["instructions"]["specification"].as_str().unwrap();
     assert!(guidance.ends_with("Read them only when you write specification.") && guidance.contains(definition), "{guidance}");
-    assert!(first.get("unchanged").is_none(), "nothing is held back on a first arrival: {first}");
+    assert!(first.get("unchanged").is_none(), "no part is held back: {first}");
 
     let (_, again) = agent.call(json!({"goto": "code.engine"}));
-    assert_eq!(
-        again,
-        json!({"at": "code.engine", "unchanged": ["element", "wants", "wanted_by", "layers", "memory", "instructions"]}),
-        "a repeat arrival names every part it holds back"
-    );
+    assert_eq!(again, first, "a repeat goto returns the whole sheet");
     let (_, other) = agent.call(json!({"goto": "code.render"}));
-    assert!(other.get("instructions").is_none(), "{other}");
-    assert_eq!(other["unchanged"], json!(["instructions"]), "held-back instructions are named: {other}");
+    assert!(other.get("unchanged").is_none(), "{other}");
+    assert_eq!(other["instructions"], first["instructions"], "instructions arrive at every address: {other}");
 
     for _ in 0..2 {
         let (_, at_definition) = agent.call(json!({"goto": definition}));
