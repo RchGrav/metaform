@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from metaform import home, prompt_files, settings
+from metaform import project as project_store
 from metaform.data import (
     CONDITIONS,
     PLACE_KINDS,
@@ -2193,7 +2194,8 @@ MODULE = Module(
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
     # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect.
     status=lambda ctx: Status(instruction=prompt_files.module('map', 'tasks') if ctx.setting('tasks') and ctx.store
-                              is not None and ctx.store.has_intake() else None, at_connect=False),
+                              is not None and project_store.holds(project_store.stored_name(ctx.store.project_id))
+                              else None, at_connect=False),
     tables=TABLES,
     data=DATA,
     work_read=work_read,

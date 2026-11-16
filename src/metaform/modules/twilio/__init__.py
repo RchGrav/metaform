@@ -688,10 +688,8 @@ def _intake_finished(payload: dict[str, Any], project: str | None) -> bool:
 def _has_intake(project: str | None) -> bool:
     if project is None:
         return False
-    try:
-        return bool(Store(project).has_intake())
-    except Exception:  # noqa: BLE001  a project not yet readable has no intake to tell of
-        return False
+    from metaform import project as project_store
+    return project_store.holds(project_store.stored_name(project))
 
 
 def _control(path: str, asked: dict[str, Any]) -> dict[str, Any]:

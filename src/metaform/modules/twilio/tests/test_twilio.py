@@ -316,31 +316,6 @@ def test_the_system_agent_reads_the_thread_again_only_when_the_runner_announces_
 
 
 @pytest.mark.req('QUAL-015')
-def test_until_intake_finishes_only_a_change_that_wrote_a_layer_reads_whether_it_has(store, monkeypatch):
-    """The bridge's map.changed handler asks the store whether intake has finished for a change that wrote a layer,
-    or one whose tables are not known; a burst of the intake agent's lines, tickets and memories reads nothing."""
-    from metaform.data import Store
-    from metaform.modules import twilio
-    reads = []
-    real = Store.has_intake
-    monkeypatch.setattr(Store, 'has_intake', lambda self: reads.append(1) or real(self))
-    store.layer('intake-1', 'intake', 'The map.', kind='intake', mutable=False, hideable=False,
-                provenance={'module': 'intake'})
-    unconcerned = [{'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'],
-                    'kinds': ['line'], 'session_ids': ['S'], 'work_ids': ['W']},
-                   {'project': 'proj', 'tables': ['ops', 'op:work'], 'kinds': ['ticket'], 'work_ids': ['W']},
-                   {'project': 'proj', 'tables': ['memory.entities', 'memory.observations']}]
-    for _ in range(100):
-        for payload in unconcerned:
-            assert twilio._intake_finished(payload, 'proj') is False
-    assert reads == []
-    store.finish('intake-1')
-    assert twilio._intake_finished({'project': 'proj', 'tables': ['op:layer', 'ops']}, 'proj') is True
-    assert twilio._intake_finished({'project': 'proj', 'base_id': None}, 'proj') is True  # another metaform active
-    assert len(reads) == 2
-
-
-@pytest.mark.req('QUAL-015')
 def test_the_bridge_server_says_when_it_listens_and_does_not_wake_while_nothing_happens():
     """uvicorn's own main loop wakes ten times a second to see whether it should exit; the bridge's waits for the exit
     it is told of, and says when it listens with an event rather than a flag read in a loop."""

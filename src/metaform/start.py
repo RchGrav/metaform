@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import context, home, loader, prompt_files, settings
-from .data import Recording, Store
+from .data import Recording
 from .errors import Stop, StoreError
 from .module import call
 from .wording import counted
@@ -74,10 +74,10 @@ def start(args: list[str], folder: Path, say: Say) -> None:
     enable(say)  # first, so a Metaform that cannot run the chain registers nothing
     project = register(folder, say)
     connect(folder, say)
-    store = Store(project)
-    mapped = store.has_intake() or bool(store.intake_bases())  # mapped in a metaform not active now, MCP-009
-    recording = bool(store.intake_recording().results) or agent_at_work(folder, project)
-    left = None if recording else next(iter(store.intake_building().results), None)  # no agent records it any more
+    from metaform import project as project_store
+    mapped = project_store.holds(project_store.stored_name(project))  # the project store holds its map
+    recording = agent_at_work(folder, project)
+    left = None  # an intake records straight into the project store: none is left half made in a layer of its own
     found = read_folder(folder) if not (mapped or recording or left) else None
     if found is not None:
         say(f'Read: {summary(found)}')

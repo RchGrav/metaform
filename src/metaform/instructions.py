@@ -61,13 +61,11 @@ def _listed(module: Module, folder: Path, project: str | None, *, full: bool = T
 
 
 def _mapped(folder: Path, project: str | None) -> bool:
-    """Whether the project has a finished intake, so the order of work has a map to orient on and record at; before
-    one the steps would speak to a state that does not hold, MCP-029."""
-    try:
-        store = context.build('map', folder, project=project, resolve=False).store
-        return store is not None and store.has_intake()
-    except Exception:  # noqa: BLE001  a project that cannot be read has no map to orient on
-        return False
+    """Whether the project store holds the project's map, so the order of work has a map to orient on and record at;
+    before one the steps would speak to a state that does not hold, MCP-029."""
+    from metaform import project as project_store
+    chosen = project if project is not None else context.project_for(folder)
+    return chosen is not None and project_store.holds(project_store.stored_name(chosen))
 
 
 def module_text(folder: Path, identifier: str, project: str | None = None) -> str | None:
