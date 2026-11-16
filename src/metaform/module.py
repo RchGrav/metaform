@@ -95,6 +95,7 @@ __all__ = [
     'read_report',
     'record_agent_context',
     'refresh_modules',
+    'request_cached',
     'request_scope',
     'result_json',
     'save_report',
@@ -1053,6 +1054,13 @@ def request_scope(*, fresh: bool = False) -> Generator[None, None, None]:
     from . import loader
     with loader.request_scope(fresh=fresh):
         yield
+
+
+def request_cached(key: Any, compute: Callable[[], Any]) -> Any:
+    """A value read once for the length of one command or server request, `loader.request_cached`: for a read a
+    module makes many times in one request and that cannot change within it."""
+    from . import loader
+    return loader.request_cached(key, compute)
 
 
 def context(module: str, folder: Path, *, project: str | None = None, nouns: dict[str, Any] | None = None,

@@ -76,6 +76,7 @@ from metaform.module import (
     project_for,
     provided,
     record_shown,
+    request_cached,
     request_scope,
     surface,
     work_reads,
@@ -510,12 +511,18 @@ def catalog_rows(store: Store | None) -> dict[str, dict[str, Any]]:
     extensions; none for an agent that has not run in this project yet."""
     if store is None:
         return {}
-    try:
-        with Store(store.project_id, module='dispatch').tables(write=False) as tx:
-            rows = [dict(row) for row in tx.rows('catalog', by=('agent', 'seq'), limit=0).results]
-    except StoreError:
-        return {}
-    return {row['agent']: row for row in rows}  # in seq order, so the latest of each agent is kept
+    project = store.project_id
+
+    def read() -> dict[str, dict[str, Any]]:
+        try:
+            with Store(project, module='dispatch').tables(write=False) as tx:
+                rows = [dict(row) for row in tx.rows('catalog', by=('agent', 'seq'), limit=0).results]
+        except StoreError:
+            return {}
+        return {row['agent']: row for row in rows}  # in seq order, so the latest of each agent is kept
+    # Read once in a request: every option of every agent asks for it, five times each, to describe its setting, and
+    # one settings read opened the project's store for each of those asks.
+    return cast(dict[str, dict[str, Any]], request_cached(('dispatch.catalog', project), read))
 
 
 def option_key(setting: dict[str, Any]) -> str:

@@ -25,7 +25,7 @@ import re
 import shutil
 import sys
 import threading
-from collections.abc import Coroutine, Generator
+from collections.abc import Callable, Coroutine, Generator
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -78,6 +78,7 @@ class _Request:
     followed: bool = False
     active: bool = True
     revision: tuple[Path, int] | None = None
+    values: dict[Any, Any] = field(default_factory=dict[Any, Any])  # what the request read once and reads again
 
 
 _request: ContextVar[_Request | None] = ContextVar('metaform_module_request', default=None)
@@ -86,6 +87,18 @@ _request: ContextVar[_Request | None] = ContextVar('metaform_module_request', de
 def in_request_scope() -> bool:
     request = _request.get()
     return request is not None and request.active
+
+
+def request_cached(key: Any, compute: Callable[[], Any]) -> Any:
+    """A value read once for the length of one command or server request and given again to every later asker in
+    it; outside a request, computed each time. For a read that one request asks many times and that cannot change
+    within it, such as a table a module reads to describe each of its settings."""
+    request = _request.get()
+    if request is None or not request.active:
+        return compute()
+    if key not in request.values:
+        request.values[key] = compute()
+    return request.values[key]
 
 
 def request_followed() -> bool:

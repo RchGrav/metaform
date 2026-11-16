@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from functools import wraps
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, ParamSpec, TypeVar, cast
 
@@ -136,6 +136,20 @@ def home() -> Path:
     return Path(os.environ.get('METAFORM_HOME') or Path.home() / '.metaform').expanduser()
 
 
+_RESOLVED: dict[str, Path] = {}
+
+
+def resolved_home() -> Path:
+    """`home().resolve()`, found on disk once for each home this process is given. A cached read asks for it
+    thousands of times in one request, and resolving a path is a system call each time: among threads, each call hands
+    the interpreter to another thread, so reads made together took several times what they take alone."""
+    raw = os.environ.get('METAFORM_HOME') or ''
+    found = _RESOLVED.get(raw)
+    if found is None:
+        found = _RESOLVED[raw] = home().resolve()
+    return found
+
+
 def chassis_path() -> Path:
     return home() / 'metaform.sqlite3'
 
@@ -220,7 +234,13 @@ def ignore_patterns(project_path: Path | str) -> list[str]:
 
 
 def path_key(path: Path | str) -> str:
-    """The comparison key of a folder: resolved and case-folded where the system folds case."""
+    """The comparison key of a folder: resolved and case-folded where the system folds case. Found on disk once for
+    each path in a process, for the reason `resolved_home` gives."""
+    return _path_key(str(path))
+
+
+@lru_cache(maxsize=4096)
+def _path_key(path: str) -> str:
     return os.path.normcase(str(Path(path).expanduser().resolve()))
 
 
@@ -271,12 +291,12 @@ def _registry_stamp(root: Path) -> tuple[Any, ...]:
 
 def in_registry_scope() -> bool:
     state = _REGISTRY_SCOPE.get()
-    return state is not None and state.active and state.registry.root == home().resolve()
+    return state is not None and state.active and state.registry.root == resolved_home()
 
 
 def registry_revision() -> tuple[Path, int]:
     """The local commit revision, including home identity, for request-level module refresh."""
-    root = home().resolve()
+    root = resolved_home()
     with _REGISTRY_LOCK:
         return root, _REGISTRY_INVALIDATIONS.get(root, 0)
 
@@ -289,7 +309,7 @@ def registry_scope(*, fresh: bool = False) -> Generator[None, None, None]:
     local writes invalidate immediately, while other processes are seen at the
     next outer request through the file and WAL stamps.
     """
-    root = home().resolve()
+    root = resolved_home()
     active = _REGISTRY_SCOPE.get()
     if not fresh and active is not None and active.active and active.registry.root == root:
         yield
@@ -309,11 +329,21 @@ def registry_scope(*, fresh: bool = False) -> Generator[None, None, None]:
         _REGISTRY_SCOPE.reset(token)
 
 
+_ABSENT = object()  # no value cached under a key, told from a cached None
+
+
 def registry_cached(key: tuple[Any, ...], compute: Callable[[], _R]) -> _R:
     with registry_scope():
         scope = _REGISTRY_SCOPE.get()
         assert scope is not None
         state = scope.registry
+        # A value already cached and still valid is read without the lock. A read takes this path thousands of times
+        # in one request, and threads that each take a process-wide lock that often hand the interpreter back and
+        # forth between them: six reads made together took four times what they take one after another.
+        if state.invalidation == _REGISTRY_INVALIDATIONS.get(state.root, 0):
+            held: Any = state.values.get(key, _ABSENT)
+            if held is not _ABSENT:
+                return cast(_R, deepcopy(held) if type(held) in (dict, list) else held)
         with _REGISTRY_LOCK:
             invalidation = _REGISTRY_INVALIDATIONS.get(state.root, 0)
             if state.invalidation != invalidation:
@@ -346,7 +376,7 @@ def _cached(function: Callable[_P, _R]) -> Callable[_P, _R]:
 
 def _invalidate_registry() -> None:
     with _REGISTRY_LOCK:
-        root = home().resolve()
+        root = resolved_home()
         _REGISTRY_INVALIDATIONS[root] = _REGISTRY_INVALIDATIONS.get(root, 0) + 1
         state = _REGISTRIES.pop(root, None)
         if state is not None:
