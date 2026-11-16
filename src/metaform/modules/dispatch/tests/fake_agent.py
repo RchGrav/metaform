@@ -63,7 +63,12 @@ FAKE_ACP_MCP_ACP=1 advertises MCP-over-ACP (`mcpCapabilities.acp`) and, once a s
 session/list and answers it in two pages of its own, the second holding seed-03, a session Metaform records too;
 FAKE_ACP_V2=1 negotiates ACP v2: `capabilities` and `info` at initialize, and every prompt answered at insertion with
 its messageId, then reported as a user message, an agent message streamed and replaced, a tool call that modifies a
-file, and an idle `state_update`.
+file, and an idle `state_update`. In v2 too: FAKE_ACP_V2_MODE=ask makes each turn ask permission for a tool call, v2's
+title and subject, between `requires_action` and `running`, and log the outcome as `permission`; FAKE_ACP_HOLD_LATER=1
+holds each prompt after the first until it is cancelled, then ends it idle `cancelled`; FAKE_ACP_RICH=1 offers its
+mode, model and effort as v2 config options by `configId` and takes session/set_config_option for each; session/resume
+takes the session id it is given, and with `replayFrom` start replays a user and an agent message and
+`replay_complete` first; session/close is taken.
 FAKE_ACP_MASCOT=1 makes it a system agent that drives the person's mascot: each prompt after the first runs the real
 metaform web say, web go (to FAKE_ACP_MASCOT_GO, when set, then web see and web look there) and web emote wave, then
 answers in one message; with FAKE_ACP_MASCOT_SCRIPT naming a file, it first runs each metaform command of its lines, a JSON
@@ -109,9 +114,20 @@ def options():
              'currentValue': EFFORT[0], 'options': [{'value': 'low', 'name': 'Low'}, {'value': 'high', 'name': 'High'}]}]
 
 
+def v2_options():
+    """A rich agent's settings as v2 has them: its mode an option of category mode, every option by configId."""
+    mode = {'configId': 'mode', 'name': 'Mode', 'type': 'select', 'category': 'mode',
+            'currentValue': MODES['currentModeId'],
+            'options': [{'value': one['id'], 'name': one['name']} for one in MODES['availableModes']]}
+    return [mode, *({'configId': one['id'], **{key: value for key, value in one.items() if key != 'id'}}
+                    for one in options())]
+
+
 def made():
-    """What session/new and session/load answer with: the modes and the options of a rich agent."""
-    return {'modes': MODES, 'configOptions': options()} if RICH else {}
+    """What session/new, session/load and session/resume answer with: the modes and the options of a rich agent."""
+    if not RICH:
+        return {}
+    return {'configOptions': v2_options()} if V2 else {'modes': MODES, 'configOptions': options()}
 
 
 def log(entry):
@@ -528,9 +544,26 @@ def main():
             MODES['currentModeId'] = message['params']['modeId']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
             update({'sessionUpdate': 'current_mode_update', 'currentModeId': MODES['currentModeId']})
+        elif method == 'session/set_config_option' and RICH and V2:
+            config, value = message['params']['configId'], message['params']['value']
+            if config == 'mode':
+                MODES['currentModeId'] = value
+            else:
+                (MODEL if config == 'model' else EFFORT)[0] = value
+            send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': v2_options()}})
         elif method == 'session/set_config_option' and RICH:
             (MODEL if message['params']['configId'] == 'model' else EFFORT)[0] = message['params']['value']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
+        elif method == 'session/resume' and V2:
+            SESSION = message['params']['sessionId']
+            if (message['params'].get('replayFrom') or {}).get('type') == 'start':  # its history, then the end of it
+                update({'sessionUpdate': 'user_message', 'messageId': 'fake-user-old',
+                        'content': [{'type': 'text', 'text': 'Earlier question'}]})
+                update({'sessionUpdate': 'agent_message', 'messageId': 'fake-agent-old',
+                        'content': [{'type': 'text', 'text': 'Earlier answer'}]})
+                update({'sessionUpdate': 'replay_complete'})
+            update({'sessionUpdate': 'state_update', 'state': 'idle'})  # the current state, before the answer
+            send({'jsonrpc': '2.0', 'id': ident, 'result': made()})
         elif method == 'session/list' and os.environ.get('FAKE_ACP_LIST') == '1':
             second = message['params'].get('cursor') == 'fake-page-2'
             listed = ['fake-listed-3', 'seed-03'] if second else ['fake-listed-1', 'fake-listed-2']
@@ -539,6 +572,7 @@ def main():
                              for one in listed], **({} if second else {'nextCursor': 'fake-page-2'})}})
         elif method == 'session/prompt' and V2:
             confirm_context(message['params'])
+            CANCELLED.clear()
             PROMPTS[0] += 1
             v2_turn(ident, message['params'], PROMPTS[0])
         elif method == 'session/prompt':
@@ -572,7 +606,8 @@ def main():
             CANCELLED.set()
         elif method == 'session/fork' and os.environ.get('FAKE_ACP_FORK') == '1':
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': f'fake-fork-{PROMPTS[0]}'}})
-        elif method in ('session/close', 'session/delete') and os.environ.get('FAKE_ACP_CLOSE') == '1':
+        elif method in ('session/close', 'session/delete') and os.environ.get('FAKE_ACP_CLOSE') == '1' or \
+                method == 'session/close' and V2:
             send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
         else:
             send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32601, 'message': 'Method not found'}})
@@ -606,6 +641,10 @@ def v2_turn(ident, params, number):
     """A v2 prompt: answered once inserted, its work reported by updates and ended by an idle state_update."""
     mine, said = f'fake-user-{number}', f'fake-agent-{number}'
     send({'jsonrpc': '2.0', 'id': ident, 'result': {'messageId': mine}})
+    held = os.environ.get('FAKE_ACP_HOLD_LATER') == '1' and number > 1
+    if held or os.environ.get('FAKE_ACP_V2_MODE') == 'ask':  # a turn that waits, on a thread of its own
+        threading.Thread(target=v2_waiting_turn, args=(mine, said, params, held), daemon=True).start()
+        return
     for body in ({'sessionUpdate': 'user_message', 'messageId': mine, 'content': params.get('prompt', [])},
                  {'sessionUpdate': 'state_update', 'state': 'running'},
                  {'sessionUpdate': 'agent_message_chunk', 'messageId': said, 'content': {'type': 'text', 'text': 'Hel'}},
@@ -619,6 +658,27 @@ def v2_turn(ident, params, number):
                       'patch': None}]},
                  {'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'end_turn'}):
         update(body)
+
+
+def v2_waiting_turn(mine, said, params, held):
+    """A v2 turn that waits: held until it is cancelled, or asking permission for a tool call."""
+    update({'sessionUpdate': 'user_message', 'messageId': mine, 'content': params.get('prompt', [])})
+    update({'sessionUpdate': 'state_update', 'state': 'running'})
+    if held:
+        CANCELLED.wait()
+        update({'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'cancelled'})
+        return
+    update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't2', 'title': 'Write notes.txt', 'kind': 'edit',
+            'status': 'pending'})
+    update({'sessionUpdate': 'state_update', 'state': 'requires_action'})
+    outcome = ask(900, {'sessionId': SESSION, 'title': 'Allow writing notes.txt?',
+                        'subject': {'type': 'tool_call', 'toolCall': {'toolCallId': 't2', 'status': 'pending'}},
+                        'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
+                                    {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]})
+    log({'permission': outcome})
+    update({'sessionUpdate': 'state_update', 'state': 'running'})
+    update({'sessionUpdate': 'agent_message_chunk', 'messageId': said, 'content': {'type': 'text', 'text': 'Asked'}})
+    update({'sessionUpdate': 'state_update', 'state': 'idle', 'stopReason': 'end_turn'})
 
 
 def turn_of(work, *args):
