@@ -71,13 +71,15 @@ def node(project: str, target: str) -> NodeView | None:
     if kind != 'element' or not address or commands.drawn(name) is None:
         return None
     path = f'{name}.{address}'
+    place = Node('element', address)
     read = commands.run({path: {}})
     if read.get('status') == 'error':
-        return None
+        # An element an intake has since removed or renamed: the page still holds it for a moment. It is answered as
+        # a place with nothing at it, as the page reads any part that is gone, and the page's next read lets go of it.
+        return NodeView(place, None, (), orphaned=True)
     overlays = cast(list[str], cast(dict[str, Any], read[path]).get('overlays') or [])
     asked: dict[str, object] = {key: {} for key in overlays}
     held = cast(dict[str, Any], commands.run({path: asked}).get(path) or {}) if overlays else {}
-    place = Node('element', address)
     groups = tuple(LayerGroup(key, key, 'layer', tuple(
         Item(id=f'{address}:{key}:{position}', layer_id=key, layer=key, target=place, value=record)
         for position, record in enumerate(cast(list[dict[str, Any]], held.get(key) or []))))
