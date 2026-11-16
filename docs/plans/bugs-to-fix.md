@@ -21,3 +21,6 @@ recorded, each becomes a ticket on the element it concerns.
    still expects Claude Code's `Agent` row among its option settings, which step 0 of `dispatch-owns-acp.md` removed
    from `OWN_OPTIONS`; `test_a_value_outside_its_choices_is_refused_with_them_and_a_staged_row_is_marked` fails with
    `KeyError: 'code_kinds'` at `tests/test_tui.py:319`.
+8. **A recovery test fails.** Found 2026-11-16 while removing client files and terminals; it fails the same way at
+   `68c1783d`, before that change. `test_liveness.py::test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_progress`
+   finds an orchestration "runner died" notification line in the transcript that the test does not expect.
