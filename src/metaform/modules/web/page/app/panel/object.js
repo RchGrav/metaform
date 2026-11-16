@@ -180,35 +180,27 @@ export function renderJoin(join) {
 export async function renderObject(id) {
   const {element} = S.elements.get(id);
   const pane = $('#p-object');
-  const held = S.joins.filter(join => join.receiver === id);
-  const serves = S.joins.filter(join => join.providers.includes(id));
   // The heading is its short name, the address read through name_length, VIEW-009; what the project calls it and its
   // address follow, each with its label, so neither is taken for the other.
   fill(pane,
     h('div', {class: 'eyebrow'}, 'Element'),
     h('h2', {}, element.short_name || element.address),
     h('dl', {class: 'facts'},
-      element.name ? [h('dt', {}, 'Project name'), h('dd', {class: 'canonical'}, element.name)] : null,
+      // `name` is what the element is referenced by, its branded or canonical name, as the intake records it
+      element.name ? [h('dt', {}, 'Known as'), h('dd', {class: 'canonical'}, element.name)] : null,
       h('dt', {}, 'Address'), h('dd', {class: 'addr'}, element.address)),
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
-      (element.open_work || []).map(workPill), layerPill(element.layer),
-      h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
+      (element.open_work || []).map(workPill), layerPill(element.layer)),
     h('div', {id: 'localview', class: 'localview', hidden: true}),
     h('button', {class: 'btn sm quiet tobrief', type: 'button', 'aria-controls': 'p-brief',
       title: 'The brief an agent working here is handed, and the memories, messages and work numbered here',
       onclick: () => { showTab('brief'); $('#t-brief').focus(); }},
     'What an agent reads here', h('i', {class: 'i i-chev', 'aria-hidden': 'true'})),
     // A person's context is far smaller than an agent's: first the memories, what a person opens a node for, then its
-    // open work; its past work, joins and knowledge fold, since the brief tab numbers the history and the map shows the
-    // joins and the layers.
+    // open work; its past work and knowledge fold, since the brief tab numbers the history and the map shows the
+    // layers. Its joins are what it wants and what wants it, above, `localview`.
     h('div', {id: 'memories'}, h('div', {class: 'eyebrow'}, 'Memories')),
     h('div', {id: 'work'}),
-    folded('Joins', held.length + serves.length,
-      h('div', {class: 'eyebrow'}, 'Joins held by this element'),
-      held.length ? held.map(join => joinCard(join, 'provider'))
-        : h('p', {class: 'empty'}, 'This element receives nothing here.'),
-      serves.length ? h('div', {class: 'eyebrow'}, 'Serves') : null,
-      serves.map(join => joinCard(join, 'receiver'))),
     folded('Knowledge', null, h('div', {id: 'items'})));
   renderWork(`element:${id}`, id);
   renderLocalView(id);
