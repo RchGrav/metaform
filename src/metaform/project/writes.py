@@ -28,10 +28,11 @@ from metaform.project.overlays import (
     Definition,
     Field,
     Records,
+    corrected_record,
     decode,
     definitions,
     encode_example,
-    example_record,
+    is_placeholder,
     key_of,
 )
 from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, Scalar, Store
@@ -111,7 +112,7 @@ class Writer:
             for key, records in change.overlays.items():
                 definition = defs.get(key)
                 if definition is None:
-                    raise Refusal('LAYER_NOT_REGISTERED', f"'{key}' at '{where}' is not an overlay. A list can be "
+                    raise Refusal('OVERLAY_NOT_DEFINED', f"'{key}' at '{where}' is not an overlay. A list can be "
                                   f"written only to an overlay defined beneath {self.project}.overlay, such as "
                                   f"{self.project}.overlay.wants.", {'map': self.project})
                 checked = None
@@ -168,14 +169,15 @@ class Writer:
                 ref = record.get('ref')
                 found = next((want for want in current if want['element'] == element and want['ref'] == ref), None)
                 merged: dict[str, Scalar] = {**(found or {'ref': ref}), **record, 'element': element}
-                missing = [name for name in ('why', 'how', 'direction') if not is_text(merged.get(name))]
+                missing = [name for name in ('why', 'how', 'direction')
+                           if not is_text(merged.get(name)) or is_placeholder(merged.get(name))]
                 if missing:
                     shown = {**{name: value for name, value in merged.items() if value is not None},
                              'element': self.full(element)}
                     rules = ' '.join(f'{name}: {definition.fields[name].rule}' for name in missing)
                     raise Refusal('WANT_INCOMPLETE', f"'{change.address.full}' wants '{self.full(element)}': the want "
                                   f"has no {', '.join(missing)}. {rules}", {'update': {change.address.full: {
-                                      'wants': [example_record(definition, cast(dict[str, object], shown),
+                                      'wants': [corrected_record(definition, cast(dict[str, object], shown),
                                                                tuple(missing))]}}})
                 if found is not None:
                     current.remove(found)
@@ -259,7 +261,7 @@ class Writer:
             return
         for address in changed:
             if address == LOCKED or address.startswith(LOCKED + '.'):
-                raise Refusal('LAYER_DEFINITION_LOCKED', f"'{self.full(LOCKED)}' is defined by the tool; agents write "
+                raise Refusal('OVERLAY_DEFINITION_LOCKED', f"'{self.full(LOCKED)}' is defined by the tool; agents write "
                               "wants records at elements, not its definition")
         if any(value is not None for value in after['overlay'].values()):
             raise refuse(f"'{self.full('overlay')}' is the overlay root and holds no fields; an overlay is defined at a "
@@ -366,12 +368,12 @@ class Writer:
                 continue
             key, path = key_of(address), self.full(address)
             if key in RESERVED or (key == 'wants' and address != LOCKED):
-                raise Refusal('LAYER_NAME_COLLISION', f"'{path}' would define the overlay {key}, a name that every "
+                raise Refusal('OVERLAY_NAME_COLLISION', f"'{path}' would define the overlay {key}, a name that every "
                               "element already uses; an overlay's key is its steps after overlay, reversed and joined "
                               "with underscores")
             other = next((each for each in defining if each != address and key_of(each) == key), None)
             if other is not None:
-                raise Refusal('LAYER_NAME_COLLISION', f"'{path}' would define the overlay {key}, which "
+                raise Refusal('OVERLAY_NAME_COLLISION', f"'{path}' would define the overlay {key}, which "
                               f"'{self.full(other)}' already defines; an overlay's key is its steps after overlay, "
                               "reversed and joined with underscores, and must be unique")
 
@@ -435,7 +437,7 @@ class Writer:
 
     def delete_part(self, address: str, wants: bool) -> None:
         if address == LOCKED or address.startswith(LOCKED + '.'):
-            raise Refusal('LAYER_DEFINITION_LOCKED', f"'{self.full(LOCKED)}' is defined by the tool; agents write "
+            raise Refusal('OVERLAY_DEFINITION_LOCKED', f"'{self.full(LOCKED)}' is defined by the tool; agents write "
                           "wants records at elements, not its definition")
         parts = self.store.parts()
         if address not in parts or wants:

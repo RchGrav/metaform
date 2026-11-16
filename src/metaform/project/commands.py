@@ -150,7 +150,7 @@ def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str
         elif name in defs:
             answer[name] = _records(opened, defs[name], at) if name in tables else []
         else:
-            raise Refusal('LAYER_NOT_REGISTERED', f"'{name}' is not an overlay of {project}; the overlays are defined "
+            raise Refusal('OVERLAY_NOT_DEFINED', f"'{name}' is not an overlay of {project}; the overlays are defined "
                           f"beneath {project}.overlay", {'map': project})
     return {address.full: answer}
 
@@ -202,11 +202,18 @@ def _orphaned(opened: Store, project: str) -> dict[str, object]:
 
 def _map(opened: Store, project: str) -> dict[str, object]:
     # The base map alone: an overlay's definition is read at its own address, and `overlays` names the ones defined.
+    # A bare branch on the way to an element is left out: the addresses beneath it already spell it.
     elements = opened.all_elements()
+    pairs = opened.pairs()
+    named = {address for pair in pairs for address in pair}
+    every = sorted(address for address, _ in elements)
+    above = {address.rsplit('.', 1)[0] for address in every if '.' in address}
+    kept = [address for address, values in sorted(elements)
+            if _fields(values) or address in named or address not in above]
     return {
-        'addresses': [full(project, address) for address in sorted(address for address, _ in elements)],
+        'addresses': [full(project, address) for address in kept],
         'overlays': sorted(definitions(opened.parts())),
-        'wants': [[full(project, holder), full(project, wanted)] for holder, wanted in opened.pairs()],
+        'wants': [[full(project, holder), full(project, wanted)] for holder, wanted in pairs],
         'defining': [full(project, address) for address, values in elements
                      if values['role'] == 'Defining Element' and address.split('.')[0] not in ('upstream', 'downstream')],
     }

@@ -70,7 +70,7 @@ def test_map_of_a_project_and_of_the_home(mapped):
     found = run({'map': P})
     assert found['wants'] == [[CS, WIDGET]]
     assert found['defining'] == [CS]
-    assert {WIDGET, CS, f'{P}.code'} <= set(found['addresses'])
+    assert found['addresses'] == sorted([WIDGET, CS])  # the bare branches above them are left out
     assert not [one for one in found['addresses'] if '.overlay' in one] and found['overlays'] == ['wants']
     assert run({'map': {}}) == {'projects': [P]}
 
@@ -123,9 +123,14 @@ def test_defined_overlay_takes_valid_records_and_refuses_wrong_ones(mapped):
     answer = run(wrong)
     assert answer['code'] == 'FIELD_MISMATCH'
     assert 'level' in answer['message'] and 'The heading level, 1 to 4.' in answer['message']
-    assert answer['remediation'] == {'add': {CS: {'project_specifications': [{'title': 'Use', 'level': 1}]}}}
+    # a wrong or missing value comes back as a placeholder; the example is shown in the message and never stored
+    assert answer['remediation'] == {'add': {CS: {'project_specifications': [{'title': 'Use', 'level': '<level>'}]}}}
+    assert 'Example: 1.' in answer['message']
     assert refusal(run({'add': {CS: {'project_specifications': [{'level': 2}]}}})) == (
-        'FIELD_MISMATCH', {'add': {CS: {'project_specifications': [{'level': 2, 'title': 'Purpose'}]}}})
+        'FIELD_MISMATCH', {'add': {CS: {'project_specifications': [{'level': 2, 'title': '<title>'}]}}})
+    before = snapshot()
+    assert run(answer['remediation'])['code'] == 'FIELD_MISMATCH'  # run as it is, the placeholder is refused
+    assert snapshot() == before
     assert run({CS: {'project_specifications': {}}})[CS]['project_specifications'] == [
         {'level': 1, 'title': 'Purpose', 'ref': 'a.md'}]
 
@@ -151,20 +156,20 @@ def test_a_field_of_an_overlay_with_records_cannot_be_deleted(mapped):
 
 def test_wants_definition_is_locked(mapped):
     assert refusal(run({'update': {f'{P}.overlay.wants.why': {'rule': 'Anything.'}}})) == (
-        'LAYER_DEFINITION_LOCKED', None)
-    assert refusal(run({'delete': {f'{P}.overlay.wants.ref': {}}}))[0] == 'LAYER_DEFINITION_LOCKED'
+        'OVERLAY_DEFINITION_LOCKED', None)
+    assert refusal(run({'delete': {f'{P}.overlay.wants.ref': {}}}))[0] == 'OVERLAY_DEFINITION_LOCKED'
 
 
 def test_two_definitions_cannot_share_a_key(mapped):
     run({'add': {f'{P}.overlay.notes_team': {'description': 'd', 'instruction': 'i'}}})
     assert refusal(run({'add': {f'{P}.overlay.team.notes': {'description': 'd', 'instruction': 'i'}}}))[0] == (
-        'LAYER_NAME_COLLISION')
+        'OVERLAY_NAME_COLLISION')
     assert refusal(run({'add': {f'{P}.overlay.name': {'description': 'd', 'instruction': 'i'}}}))[0] == (
-        'LAYER_NAME_COLLISION')
+        'OVERLAY_NAME_COLLISION')
 
 
 def test_records_of_an_undefined_overlay_are_refused(mapped):
-    assert refusal(run({'add': {CS: {'memory': [{'fact': 'x'}]}}})) == ('LAYER_NOT_REGISTERED', {'map': P})
+    assert refusal(run({'add': {CS: {'memory': [{'fact': 'x'}]}}})) == ('OVERLAY_NOT_DEFINED', {'map': P})
 
 
 def test_records_need_an_element(mapped):
@@ -191,7 +196,7 @@ def test_update_merges_into_a_want(mapped):
     assert run({CS: {'wants': {}}})[CS]['wants'] == [{**WANT, 'direction': 'both'}]
     code, remedy = refusal(run({'update': {CS: {'wants': [{'element': WIDGET, 'ref': 'x.c', 'direction': 'send'}]}}}))
     assert code == 'WANT_INCOMPLETE'
-    assert remedy['update'][CS]['wants'][0]['why'] == 'drain raw frames from the network interface card'
+    assert remedy['update'][CS]['wants'][0]['why'] == '<why>'
 
 
 @pytest.mark.parametrize(('command', 'code', 'remediation'), [
@@ -213,13 +218,13 @@ def test_update_merges_into_a_want(mapped):
     ({'add': {CS: {'dependencies': [WANT]}}}, 'FIELD_MISMATCH', {'add': {CS: {'wants': [WANT]}}}),
     ({'add': {CS: {'wants': [{**WANT, 'element': 'other.code.x'}]}}}, 'FIELD_MISMATCH', None),
     ({'add': {CS: {'wants': [{**WANT, 'direction': 'sideways'}]}}}, 'FIELD_MISMATCH',
-     {'add': {CS: {'wants': [{**WANT, 'direction': 'receive'}]}}}),
+     {'add': {CS: {'wants': [{**WANT, 'direction': '<direction>'}]}}}),
     ({'add': {CS: {'wants': [{**WANT, 'refs': ['a.c', 'b.c']}]}}}, 'FIELD_MISMATCH',
      {'add': {CS: {'wants': [{**WANT, 'ref': 'a.c'}, {**WANT, 'ref': 'b.c'}]}}}),
     ({'delete': {f'{P}.code': {}}}, 'ELEMENTS_BENEATH', {'delete': {CS: {}}}),
     ({'update': {'nothing.code.x': {'name': 'x'}}}, 'NOT_FOUND', {'map': {}}),
     ({f'{P}.code.absent': {}}, 'NOT_FOUND', {'map': P}),
-    ({WIDGET: {'memory': {}}}, 'LAYER_NOT_REGISTERED', {'map': P}),
+    ({WIDGET: {'memory': {}}}, 'OVERLAY_NOT_DEFINED', {'map': P}),
     ({'help': 'goto'}, 'FIELD_MISMATCH', {'help': {}}),
 ])
 def test_refusal_code_and_remediation(mapped, command, code, remediation):

@@ -6,8 +6,8 @@ An overlay is defined beneath the `overlay` root. The definition is the step tha
 after `overlay`, reversed and joined with underscores: `overlay.specifications.project` gives `project_specifications`.
 
 The definition is the schema an agent reads, the check the tool applies, and the text of each refusal: a wrong record
-is refused naming the field and quoting its rule, and the remediation fills each wrong or missing field with its
-example, keeping every value the command gave correctly.
+is refused naming the field, quoting its rule and showing its example, and the remediation keeps every value the
+command gave correctly and puts a placeholder, the field's name in angle brackets, where a value is wrong or missing.
 """
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ class Field:
                 'address': f'the path of an element of {project}'}[self.kind]
 
     def accepts(self, value: object, project: str) -> bool:
+        if is_placeholder(value):  # a corrected command run without its values supplied
+            return False
         if self.kind == 'text':
             return is_text(value)
         if self.kind == 'number':
@@ -129,16 +131,26 @@ def definitions(parts: dict[str, dict[str, Scalar]]) -> dict[str, Definition]:
     return found
 
 
-def example_record(definition: Definition, record: dict[str, object] | None = None,
-                   wrong: tuple[str, ...] = ()) -> dict[str, object]:
-    """A whole record: the values the record gives correctly, and the example of every field that is wrong or
-    missing. Without a record, every field's example."""
+def placeholder(name: str) -> str:
+    """What stands in a corrected command for a value only the agent can supply: the field's name in angle brackets.
+    The tool refuses it as a value, so a corrected command run as it is stores nothing the agent did not write."""
+    return f'<{name}>'
+
+
+def is_placeholder(value: object) -> bool:
+    return isinstance(value, str) and len(value) > 2 and value[0] == '<' and value[-1] == '>' and '<' not in value[1:]
+
+
+def corrected_record(definition: Definition, record: dict[str, object] | None = None,
+                     wrong: tuple[str, ...] = ()) -> dict[str, object]:
+    """A whole record for a corrected command: the values the record gives correctly, and a placeholder for every
+    field that is wrong or missing. An example value is never put in: it belongs to the message, where it is read
+    and not stored."""
     given = record or {}
-    out: dict[str, object] = {name: definition.fields[name].example if name in wrong else value
-                              for name, value in given.items()}
+    out: dict[str, object] = {name: placeholder(name) if name in wrong else value for name, value in given.items()}
     for name in definition.order:
         if name not in out and name in definition.fields and (not definition.fields[name].optional or not given):
-            out[name] = definition.fields[name].example
+            out[name] = placeholder(name)
     return out
 
 
@@ -157,11 +169,11 @@ class Records:
         return f"{self.definition.key} record {index} at '{self.holder}'"
 
     def fixed(self, index: int, record: dict[str, object], wrong: tuple[str, ...]) -> object:
-        return replaced(self.command, [*self.keys, index], example_record(self.definition, record, wrong))
+        return replaced(self.command, [*self.keys, index], corrected_record(self.definition, record, wrong))
 
     def rules(self, names: list[str]) -> str:
-        return ' '.join(f'{name}: {self.definition.fields[name].rule}' for name in names if name in
-                        self.definition.fields)
+        return ' '.join(f'{name}: {self.definition.fields[name].rule} Example: {self.definition.fields[name].example!r}.'
+                        for name in names if name in self.definition.fields)
 
     def check(self, records: list[object], partial: bool) -> list[dict[str, Scalar]]:
         """Each record, in order: an object, its ref, the names it takes, each field in the command's order, then the
