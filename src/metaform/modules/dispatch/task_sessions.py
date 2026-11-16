@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import json
 import time
-from importlib import resources
 from typing import Any, cast
 
-from metaform import home, prompt_files
+from metaform import home
 from metaform.data import Store
 from metaform.module import Context, Stop, context, provided
 
@@ -37,7 +36,6 @@ class TaskSessions:
         return self._start(ctx, called, task, agent)
 
     def _intake(self, ctx: Context, called: Context, task: dict[str, Any], agent: str) -> dict[str, Any]:
-        from metaform.project import stored_name
 
         from . import intake_folder, intake_map_choice, refuse_second_intake
         store = called.require_store()
@@ -62,9 +60,14 @@ class TaskSessions:
             metadata = {**chosen, 'mode': mode}
             task['payload']['intake'] = metadata
             asked = str(task['payload'].get('input') or '')
-            task['payload']['input'] = '## Intake request\n\n' + prompt_files.required(
-                resources.files('metaform.modules.intake'), 'selected_mode', mode=mode, request=asked,
-                project=stored_name(store.project_id))
+            # The first turn is the intake exactly as `intake prompt` serves it: the procedure with the selected mode
+            # and what the person asked in the place the procedure itself gives a request, and nothing after it.
+            from metaform.module import surface
+            serving = next(verb for module in surface(called.folder) if module.id == 'intake'
+                           for verb in module.verbs if verb.name == 'prompt')
+            task['payload']['instructions'] = str(serving.run(context(
+                'intake', called.folder, project=called.project, nouns={'mode': mode, **({'text': asked} if asked else {})})))
+            task['payload']['input'] = ''
             noted = {'work': task['work_id'], 'agent': agent, 'since': home.now(), **metadata}
             store.note_intake_launch(noted)
             try:
