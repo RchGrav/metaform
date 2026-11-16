@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from metaform import project as commands
-from metaform.data import Element, GraphElement, GraphPage, Held, Item, Join, LayerGroup, Node, NodeView
+from metaform.data import Element, GraphElement, GraphPage, Held, Item, Join, Layer, LayerGroup, Node, NodeView
 from metaform.project import ROLE_WORDS
 
 BASE = 'base'
@@ -62,7 +62,31 @@ def graph(project: str) -> GraphPage | None:
                      tuple(join(number, want) for number, want in enumerate(wants)))
 
 
-def node(project: str, target: str) -> NodeView | None:
+def layers(project: str, base: str) -> list[Layer] | None:
+    """The layers the page lists for a project in the project store: the base map, then each overlay that is defined
+    beside the wants, by its key and with its description. None when the store holds no such project."""
+    name = commands.stored_name(project)
+    if not commands.holds(name):
+        return None
+    found = commands.run({'map': name})
+    if found.get('status') == 'error':
+        return None
+
+    def layer(key: str, said: str) -> Layer:
+        return Layer(id=key, base_id=base, name=key, module='project', variable=said, kind='layer', mutable=True,
+                     hideable=key != BASE, result_id=None, created='', ready='recorded', on=True)
+
+    made = [layer(BASE, "The project's map: its elements and what each wants of another.")]
+    for key in cast(list[str], found.get('overlays') or []):
+        if key == 'wants':  # the wants are the base map's own joins
+            continue
+        steps = '.'.join(reversed(key.split('_')))
+        definition = cast(dict[str, Any], commands.run({f'{name}.overlay.{steps}': {}}).get(f'{name}.overlay.{steps}') or {})
+        made.append(layer(key, str(definition.get('description') or '')))
+    return made
+
+
+def node(project: str, target: str, chosen: str | None = None) -> NodeView | None:
     """One element as the page's panel reads it: each overlay that holds records there as a layer, each record an
     item whose value is the record's fields. None when the project store holds no such project or element, or the
     target is not an element."""
@@ -78,6 +102,9 @@ def node(project: str, target: str) -> NodeView | None:
         # a place with nothing at it, as the page reads any part that is gone, and the page's next read lets go of it.
         return NodeView(place, None, (), orphaned=True)
     overlays = cast(list[str], cast(dict[str, Any], read[path]).get('overlays') or [])
+    if chosen is not None:  # the layers the person has switched on in the page's Layers control
+        shown = set(chosen.split(','))
+        overlays = [key for key in overlays if key in shown]
     asked: dict[str, object] = {key: {} for key in overlays}
     held = cast(dict[str, Any], commands.run({path: asked}).get(path) or {}) if overlays else {}
     groups = tuple(LayerGroup(key, key, 'layer', tuple(

@@ -29,6 +29,7 @@ T = TypeVar('T')
 
 MAX_OPEN = 16  # open project databases in one owner; the least recently used idle one is closed to open another
 GROUP = 64  # the most waiting writes committed together as one transaction
+READERS = 4  # the most reading connections one database holds; a read waits for one when all are in use
 
 
 class Missing(Exception):
@@ -52,8 +53,9 @@ class Database:
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any]]]] = {}
         self._turn: deque[str] = deque()  # the callers with writes waiting, in the order they are served
         self._closing = False
-        self._local = threading.local()
-        self._readers: list[Store] = []
+        self._readers: list[Store] = []  # every reading connection made, closed with the database
+        self._idle: list[Store] = []  # those no read is using now
+        self._made = 0
         self._writing: Store | None = None
         self._failed: BaseException | None = None
         opened = threading.Event()
@@ -76,28 +78,39 @@ class Database:
                 waiting = self._jobs[caller] = deque()
                 self._turn.append(caller)
             waiting.append((work, future))
-            self._wake.notify()
+            self._wake.notify_all()
         return future
 
     def read(self, work: Callable[[Store], T]) -> T:
-        """Run one read on the calling thread's own connection, as one read-only transaction."""
-        reader: Store | None = getattr(self._local, 'reader', None)
-        if reader is None:
-            with self._wake:
-                if self._writing is None or self._closing:
-                    raise StoreError(f'{self.path.name} is closed')
+        """Run one read as one read-only transaction, on one of the database's reading connections. There are at
+        most `READERS` of them, made as they are first needed and handed from one read to the next; a read that finds
+        them all in use waits for one. A connection for each calling thread was never given back, and a service that
+        answers a thread for each caller ran the engine out of memory."""
+        with self._wake:
+            while not self._idle and self._made >= READERS and not self._closing:
+                self._wake.wait()
+            if self._writing is None or self._closing:
+                raise StoreError(f'{self.path.name} is closed')
+            if self._idle:
+                reader = self._idle.pop()
+            else:
                 reader = self._writing.reader()
                 self._readers.append(reader)
-            self._local.reader = reader
+                self._made += 1
         try:
-            with reader.reading():
-                return work(reader)
-        except StoreError:
-            # A read that began while a write was changing the tables, as a project's first write and a new overlay
-            # do, can fail on what it finds half made. A read changes nothing, so it is made once more, on the state
-            # that write committed.
-            with reader.reading():
-                return work(reader)
+            try:
+                with reader.reading():
+                    return work(reader)
+            except StoreError:
+                # A read that began while a write was changing the tables, as a project's first write and a new
+                # overlay do, can fail on what it finds half made. A read changes nothing, so it is made once more,
+                # on the state that write committed.
+                with reader.reading():
+                    return work(reader)
+        finally:
+            with self._wake:
+                self._idle.append(reader)
+                self._wake.notify_all()
 
     def _serve(self, create: str | None, opened: threading.Event) -> None:
         try:
@@ -175,7 +188,7 @@ class Database:
         """Serve every write already queued, then close the database."""
         with self._wake:
             self._closing = True
-            self._wake.notify()
+            self._wake.notify_all()
         self._thread.join()
 
 

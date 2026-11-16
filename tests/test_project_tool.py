@@ -534,3 +534,19 @@ def test_the_overlay_help_examples_are_commands_the_tool_accepts(mapped):
     assert run({WIDGET: {'concerns': {}}})[WIDGET]['concerns'] == write['add'][WIDGET]['concerns']
     refused = run({'add': {f'{P}.overlay.notes': {'fields': {'text': 'x'}}}})
     assert refusal(refused) == ('FIELD_MISMATCH', {'help': 'overlay'})
+
+
+def test_reads_from_many_threads_share_a_few_connections_and_none_is_left_behind(mapped):
+    from concurrent.futures import ThreadPoolExecutor
+    database = owner.of(metaform_home.home())._open[P]
+
+    def one(_):
+        import threading
+        answers = []
+        thread = threading.Thread(target=lambda: answers.append(run({WIDGET: {}})))  # a caller's own thread, then gone
+        thread.start()
+        thread.join()
+        return answers[0][WIDGET]['name']
+    with ThreadPoolExecutor(16) as pool:
+        assert set(pool.map(one, range(200))) == {'mashbox'}
+    assert len(database._readers) <= owner.READERS and len(database._idle) == len(database._readers)
