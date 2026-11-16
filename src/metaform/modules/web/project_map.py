@@ -110,7 +110,8 @@ def node(project: str, target: str, chosen: str | None = None) -> NodeView | Non
         overlays = [key for key in overlays if key in shown]
     asked: dict[str, object] = {key: {} for key in overlays}
     held = cast(dict[str, Any], commands.run({path: asked}).get(path) or {}) if overlays else {}
-    groups = tuple(LayerGroup(key, key, 'layer', tuple(
+    # the memories overlay is shown in the panel's Memories section, every other overlay under Knowledge
+    groups = tuple(LayerGroup(key, key, 'memory' if key == 'memories' else 'layer', tuple(
         Item(id=f'{address}:{key}:{position}', layer_id=key, layer=key, target=place, value=record)
         for position, record in enumerate(cast(list[dict[str, Any]], held.get(key) or []))))
         for key in overlays)
@@ -231,4 +232,25 @@ def assignment(project: str, work_id: str) -> str | None:
     return prompt_files.required(resources.files('metaform.modules.web'), 'ticket_assignment',
                                  path=str(record['element']), id=str(record.get('id') or ''),
                                  title=str(record.get('title') or ''), task=str(record.get('task') or ''))
+
+
+def memories(project: str) -> dict[str, Any] | None:
+    """The project's memories as the page reads the memory graph: each entity with its observations, and where each
+    is kept. A record of the memories overlay is one observation of the entity it names, at the element it is at.
+    None when the project store holds no such project."""
+    name = commands.stored_name(project)
+    found = commands.overlay_records(name, 'memories')
+    if found is None:
+        return None
+    lead = len(name) + 1
+    entities: dict[str, dict[str, Any]] = {}
+    joins: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in found:
+        entity, address = str(record.get('entity') or ''), str(record['element'])[lead:]
+        held = entities.setdefault(entity, {'name': entity, 'entityType': record.get('entity_type') or '',
+                                            'observations': []})
+        held['observations'].append({'content': record.get('observation') or '', 'by': ''})
+        joins.setdefault((entity, address), {'join_id': f'{address}:{entity}', 'entity': entity, 'address': address,
+                                             'by': '', 'orphaned': False, 'shows': True})
+    return {'entities': list(entities.values()), 'relations': [], 'joins': list(joins.values())}
 

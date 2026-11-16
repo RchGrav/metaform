@@ -1054,6 +1054,11 @@ class Handler(BaseHTTPRequestHandler):
         holds, for the orphaned menu; `note`, a node's one note; and `open_nodes`, one named memory's body."""
         if name not in MEMORY_READS:
             return self.send(404, {'error': f'No read memory-{name}.'})
+        if name in ('graph', 'orphaned'):  # a project in the project store: its memories overlay
+            from . import project_map
+            kept = project_map.memories(given.get('project', ''))
+            if kept is not None:
+                return self.send(200, kept if name == 'graph' else {'joins': []})
         arguments = {'node': given['node']} if name == 'note' and given.get('node') else {}
         try:
             if name == 'open_nodes':
