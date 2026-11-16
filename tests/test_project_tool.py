@@ -55,7 +55,7 @@ def test_founders_worked_sequence(mapped):
                        'remediation': {'delete': {CS: {'wants': [WIDGET]}}}}
     assert run(refused['remediation']) == {'status': 'ok'}
     assert run({'orphaned': P}) == {WIDGET: WIDGET_FIELDS, CS: CS_FIELDS}
-    assert run({WIDGET: {}}) == {WIDGET: {**WIDGET_FIELDS, 'wanted_by': [], 'overlays': {}}}
+    assert run({WIDGET: {}}) == {WIDGET: {**WIDGET_FIELDS, 'wants': [], 'wanted_by': [], 'overlays': []}}
     assert run({'update': {WIDGET: {'role': None}}}) == {'status': 'ok'}
     assert 'role' not in run({WIDGET: {}})[WIDGET]
     assert run({'delete': {WIDGET: {}}}) == {'status': 'ok'}
@@ -63,14 +63,15 @@ def test_founders_worked_sequence(mapped):
     assert f'{P}.code.masher' not in run({'map': P})['addresses']
 
 
-def test_addressed_read_gives_wanted_by_and_overlay_counts(mapped):
+def test_addressed_read_gives_wants_wanted_by_and_the_overlays_held_there(mapped):
     run({'add': {SPEC: SPEC_DEFINITION}})
     run({'add': {CS: {'project_specifications': [{'title': 'Purpose', 'level': 1}, {'title': 'Use', 'level': 2}]}}})
     assert run({WIDGET: {}})[WIDGET]['wanted_by'] == [CS]
-    read = run({CS: {'wants': {}}})[CS]
-    assert read['overlays'] == {'wants': 1, 'project_specifications': 2}
-    assert read['wants'] == [WANT]
+    read = run({CS: {}})[CS]
+    # one rule in the answer as in the stored form: a list is an overlay, a plain value is a field, nothing else
+    assert read['wants'] == [WANT] and read['overlays'] == ['project_specifications']
     assert 'project_specifications' not in read
+    assert not [value for value in read.values() if isinstance(value, dict)]
 
 
 def test_map_of_a_project_and_of_the_home(mapped):
@@ -123,7 +124,9 @@ def test_defined_overlay_takes_valid_records_and_refuses_wrong_ones(mapped):
     assert run({'add': {SPEC: SPEC_DEFINITION}}) == {'status': 'ok'}
     definition = run({SPEC: {}})[SPEC]
     assert definition['key'] == 'project_specifications'
-    assert definition['fields']['level'] == {'type': 'number', 'rule': 'The heading level, 1 to 4.', 'example': 1}
+    assert definition['level'] == {'type': 'number', 'rule': 'The heading level, 1 to 4.', 'example': 1}
+    # read back in the form and the order it was written in
+    assert [name for name in definition if isinstance(definition[name], dict)] == ['title', 'level', 'draft']
     assert run({'add': {CS: {'project_specifications': [{'title': 'Purpose', 'level': 1, 'ref': 'a.md'}]}}}) == {
         'status': 'ok'}
     wrong = {'add': {CS: {'project_specifications': [{'title': 'Use', 'level': 'two'}]}}}
@@ -154,11 +157,12 @@ def test_update_replaces_an_overlays_records(mapped):
 def test_a_field_of_an_overlay_with_records_cannot_be_deleted(mapped):
     run({'add': {SPEC: SPEC_DEFINITION}})
     run({'add': {CS: {'project_specifications': [{'title': 'A', 'level': 1}]}}})
-    assert refusal(run({'delete': {f'{SPEC}.draft': {}}})) == (
-        'DEPENDENCY_LOCK', {'update': {CS: {'project_specifications': None}}})
+    refused = run({'delete': {f'{SPEC}.draft': {}}})
+    # no corrected command is offered: the only one would remove records the delete did not ask to remove
+    assert refusal(refused) == ('DEPENDENCY_LOCK', None) and '1 record at 1 address' in refused['message']
     assert run({'update': {CS: {'project_specifications': None}}}) == {'status': 'ok'}
     assert run({'delete': {f'{SPEC}.draft': {}}}) == {'status': 'ok'}
-    assert 'draft' not in run({SPEC: {}})[SPEC]['fields']
+    assert 'draft' not in run({SPEC: {}})[SPEC]
 
 
 def test_wants_definition_is_locked(mapped):

@@ -115,8 +115,9 @@ def _fields(values: dict[str, Scalar]) -> dict[str, object]:
 
 
 def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str, object]:
-    """An addressed read: the element's own fields, the holders whose wants name it, a count of each overlay's records
-    there, and the records of each overlay the read names. Beneath `overlay`, the definition there."""
+    """An addressed read: the element's own fields, its wants, the holders whose wants name it, the names of the
+    other overlays that hold records there, and the records of each overlay the read names. Beneath `overlay`, the
+    definition there."""
     if address.in_overlay:
         return _read_part(opened, address, named)
     at, project = address.address, address.project
@@ -125,18 +126,20 @@ def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str
         raise Refusal('NOT_FOUND', f"'{address.full}' does not exist", {'map': project})
     tables = opened.overlay_keys()
     wants = opened.wants_of(at)
-    counts: dict[str, int] = {'wants': len(wants)} if wants else {}
-    for key in tables:
-        count = opened.record_count(key, at)
-        if count:
-            counts[key] = count
-    answer: dict[str, object] = {**_fields(element), 'wanted_by': [full(project, holder) for holder in
-                                                                    opened.holders(at)], 'overlays': counts}
+    # The answer keeps the stored form's one rule: a plain value is a field and a list is an overlay. `wants`, the
+    # default overlay, comes with every read. `wanted_by` lists the holders whose wants name this element, and
+    # `overlays` names the other overlays that hold records here; a read that names one of them gets its records.
+    answer: dict[str, object] = {
+        **_fields(element),
+        'wants': [_want(project, want) for want in wants],
+        'wanted_by': [full(project, holder) for holder in opened.holders(at)],
+        'overlays': [key for key in tables if opened.record_count(key, at)],
+    }
     defs = definitions(opened.parts()) if named else {}
     for name in named:
         if name == 'wants':
-            answer[name] = [_want(project, want) for want in wants]
-        elif name in defs:
+            continue
+        if name in defs:
             answer[name] = _records(opened, defs[name], at) if name in tables else []
         else:
             raise Refusal('OVERLAY_NOT_DEFINED', f"'{name}' is not an overlay of {project}; the overlays are defined "
@@ -179,9 +182,9 @@ def _read_part(opened: Store, address: Address, named: dict[str, object]) -> dic
     answer = _part(parts[at])
     definition = next((each for each in definitions(parts).values() if each.address == at), None)
     if definition is not None:
+        # Read back in the form it is written in: each field of a record is a step beneath the definition.
         answer['key'] = definition.key
-        answer['fields'] = {name: _part(parts[f'{at}.{name}']) for name in definition.order
-                            if name in definition.fields}
+        answer.update((name, _part(parts[f'{at}.{name}'])) for name in definition.order if name in definition.fields)
     return {address.full: answer}
 
 

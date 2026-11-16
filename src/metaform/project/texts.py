@@ -114,17 +114,20 @@ HELP: dict[str, object] = {
         'examples': [{'orphaned': 'mashtrac'}],
     },
     'map': {
-        'does': ("With a project's name, returns every address, each want as a pair (the element that holds it, then "
-                 "the wanted element), and the Defining Elements. It returns no fields. The overlays are the "
-                 "addresses beneath overlay. With {}, returns the names of the projects."),
+        'does': ("With a project's name, returns the base map: the address of every element (a bare branch on the "
+                 "way to one is left out), each want as a pair (the element that holds it, then the wanted "
+                 "element), the Defining Elements, and the names of the overlays defined. It returns no fields. An "
+                 "overlay's definition is read at its address beneath overlay. With {}, returns the names of the "
+                 "projects."),
         'examples': [{'map': 'mashtrac'}, {'map': {}}],
     },
     'addressed read': {
-        'does': ("A key that is a path reads that element's own fields, the elements whose wants name it "
-                 "(wanted_by), and the number of records of each overlay that holds records there (overlays). To add "
-                 "an overlay's records to the answer, name it with {} as its value. A path beneath overlay reads "
-                 "that overlay's definition."),
-        'examples': [{'mashtrac.code.masher.widget': {}}, {'mashtrac.code.masher.widget': {'wants': {}}}],
+        'does': ("A key that is a path reads that element: its own fields, its wants, the elements whose wants name "
+                 "it (wanted_by), and the names of the other overlays that hold records there (overlays). To add an "
+                 "overlay's records to the answer, name it with {} as its value. A path beneath overlay reads that "
+                 "overlay's definition, in the form it is written in."),
+        'examples': [{'mashtrac.code.masher.widget': {}},
+                     {'mashtrac.code.masher.widget': {'project_specifications': {}}}],
     },
     'help': {
         'does': '{} lists the names help takes. A command name returns what the command does, its fields and examples.',

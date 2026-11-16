@@ -34,7 +34,7 @@ _SCHEMA = (
      '`ref` STRING, `status` STRING)'),
     # Every column is quoted: `optional` is a word of the engine's Cypher, and a bare column of that name is refused.
     ('CREATE NODE TABLE OverlayPart(address STRING PRIMARY KEY, `description` STRING, `instruction` STRING, '
-     '`type` STRING, `rule` STRING, `example` STRING, `optional` BOOLEAN)'),
+     '`type` STRING, `rule` STRING, `example` STRING, `optional` BOOLEAN, ordinal INT64)'),
     'CREATE REL TABLE Wants(FROM Element TO Element, why STRING, how STRING, direction STRING, ref STRING)',
 )
 _ELEMENT_COLUMNS = ', '.join(f'e.`{field}`' for field in ELEMENT_FIELDS)
@@ -238,13 +238,20 @@ class Store:
     # Overlay definitions
 
     def parts(self) -> dict[str, dict[str, Scalar]]:
-        rows = self._rows(f'MATCH (p:OverlayPart) RETURN p.address, {_PART_COLUMNS} ORDER BY p.address')
+        """Every part of every overlay definition, in the order the parts were first written: a definition's fields
+        keep the order their writer gave them."""
+        rows = self._rows(f'MATCH (p:OverlayPart) RETURN p.address, {_PART_COLUMNS} ORDER BY p.ordinal, p.address')
         return {str(row[0]): dict(zip(PART_FIELDS, row[1:])) for row in rows}
 
     def put_part(self, address: str, fields: dict[str, Scalar]) -> None:
         sets = ', '.join(f'p.`{field}` = $p_{field}' for field in PART_FIELDS)
-        self._rows(f'MERGE (p:OverlayPart {{address: $address}}) SET {sets}', address=address,
-                   **{f'p_{field}': fields.get(field) for field in PART_FIELDS})
+        values = {f'p_{field}': fields.get(field) for field in PART_FIELDS}
+        if self._rows('MATCH (p:OverlayPart {address: $address}) RETURN count(*)', address=address)[0][0]:
+            self._rows(f'MATCH (p:OverlayPart {{address: $address}}) SET {sets}', address=address, **values)
+            return
+        last = self._rows('MATCH (p:OverlayPart) RETURN max(p.ordinal)')[0][0]
+        self._rows(f'CREATE (p:OverlayPart {{address: $address, ordinal: $ordinal}}) SET {sets}', address=address,
+                   ordinal=(int(last) + 1 if isinstance(last, (int, float)) else 0), **values)
 
     def delete_part(self, address: str) -> None:
         self._rows('MATCH (p:OverlayPart {address: $address}) DELETE p', address=address)
@@ -279,9 +286,10 @@ class Store:
         rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN count(*)', address=address)
         return int(rows[0][0] or 0)
 
-    def first_holder(self, key: str) -> str | None:
-        rows = self._rows(f'MATCH (r:{_table(key)}) RETURN r.address ORDER BY r.address LIMIT 1')
-        return str(rows[0][0]) if rows else None
+    def held(self, key: str) -> tuple[int, int]:
+        """How many records the overlay holds, and at how many addresses."""
+        rows = self._rows(f'MATCH (r:{_table(key)}) RETURN count(*), count(DISTINCT r.address)')
+        return int(rows[0][0] or 0), int(rows[0][1] or 0)
 
     def field_in_use(self, key: str, field: str) -> bool:
         rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.{_column(field)} IS NOT NULL RETURN count(*)')

@@ -79,7 +79,7 @@ class Definition:
 
     @property
     def order(self) -> list[str]:
-        names = [name for name in WANT_ORDER if name in self.fields] if self.key == 'wants' else sorted(self.fields)
+        names = [name for name in WANT_ORDER if name in self.fields] if self.key == 'wants' else list(self.fields)
         return names if 'ref' in names else [*names, 'ref']
 
 

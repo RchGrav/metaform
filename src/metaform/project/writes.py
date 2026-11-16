@@ -451,11 +451,13 @@ class Writer:
         owner = next((each for each in definitions(parts).values() if each.address == parent and name in each.fields),
                      None)
         if owner is not None and owner.key in self.store.overlay_keys():
-            holder = self.store.first_holder(owner.key)
-            if holder is not None:
-                raise Refusal('DEPENDENCY_LOCK', f"cannot delete '{self.address.full}': '{self.full(holder)}' holds "
-                              f"{owner.key} records, and this is one of their fields. Remove them first.",
-                              {'update': {self.full(holder): {owner.key: None}}})
+            records, places = self.store.held(owner.key)
+            if records:
+                # No corrected command: the only one would remove records, which this delete did not ask for.
+                raise Refusal('DEPENDENCY_LOCK', f"cannot delete '{self.address.full}': it is a field of the "
+                              f"{owner.key} overlay, which holds {records} {'record' if records == 1 else 'records'} "
+                              f"at {places} {'address' if places == 1 else 'addresses'}. A field is removed only "
+                              'from an overlay that holds no records.')
             if len(owner.fields) == 1:
                 self.store.drop_overlay(owner.key)
             elif name != 'ref':
