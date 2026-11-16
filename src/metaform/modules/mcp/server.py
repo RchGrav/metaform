@@ -532,11 +532,6 @@ def client_name(ctx: Any) -> str | None:
     return initialized.client_info.name if initialized is not None else None
 
 
-# Metaform's own budget for the connect message, MCP-029: Claude Code keeps 4,096 characters of a server's
-# instructions since v2.1.296 (2,048 before), and Metaform keeps to half that, since every agent reads all of it.
-HOST_KEEPS = 2048
-
-
 TOLD: set[str] = set()  # the agent sessions this server has given the provisioning notice, or found no need to
 
 
@@ -1078,15 +1073,6 @@ def instruction_uri(name: str, op: str | None = None, handle: str | None = None)
         f'?{HANDLE}={handle}' if handle else '')
 
 
-def instruction_op(listed: Listed, arguments: dict[str, Any]) -> str | None:
-    op = arguments.get('op')
-    if isinstance(op, str):
-        return op
-    if listed.verb is not None and (ops := ops_of(listed.verb)):
-        return 'read' if 'id' in arguments else ops[0]
-    return None
-
-
 def usage_components(folder: Path, listed: Listed, op: str | None, session: str | None) -> list[dict[str, Any]]:
     """Exact tool-owned usage, independently of who is allowed to execute the operation."""
     if listed.name in GUIDE_EXEMPT:
@@ -1169,21 +1155,6 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
-def catalog_schema(folder: Path, unkeyed: bool = False) -> dict[str, Any]:
-    """metaform_catalog's input schema: the module to open, the words to search, the tool
-    to run with its arguments, and the flag that says the agent's context was compacted. `unkeyed`: for a listing that
-    names no session, whose module's help says what opening it does there."""
-    def said(name: str) -> str:
-        return prompt_files.module('mcp', name) or ''
-    opening = said('catalog_module')
-    return {'type': 'object', 'additionalProperties': False, 'properties': {
-        'module': {'type': 'string', 'description': opening},
-        'search': {'type': 'string', 'description': said('catalog_search')},
-        'tool': {'type': 'string', 'description': said('catalog_run')},
-        'arguments': {'type': 'object', 'description': said('catalog_arguments')},
-        'compacted': {'type': 'boolean', 'description': said('catalog_compacted')}}}
-
-
 def openable(folder: Path) -> tuple[str, ...]:
     """Module ids available on this surface, without a separate registry of modules."""
     return tuple(sorted(module_descriptions(folder)))
@@ -1222,7 +1193,6 @@ HANDLED = re.compile(r'[0-9a-f]{12}')  # a handle as metaform_catalog makes it; 
 # with catalog:, so a compaction keeps them, shown.KEPT_THROUGH_COMPACTION.
 PENDING_KEY = 'catalog:pending'
 RELISTS_KEY = 'catalog:relists'
-PURPOSES_KEY = 'announce:purposes'
 
 
 def listed_names(folder: Path, session: str | None) -> tuple[str, ...]:
@@ -1245,32 +1215,6 @@ def relisted(session: str | None, opened: str | None) -> None:
     if session is not None and opened is not None and shown_before(session, PENDING_KEY) == opened:
         record_shown(session, PENDING_KEY, '')
         record_shown(session, RELISTS_KEY, True)
-
-
-def run_catalog(folder: Path, given: dict[str, Any], session: str | None, follows: bool = True) -> Outcome:
-    """Discover modules, select one, search its declared capabilities, or report compaction."""
-    if given.get('compacted') is True:
-        return False, [compaction_state(folder, session, follows)]
-    module, search = given.get('module'), given.get('search')
-    if module is not None and module not in openable(folder):
-        raise Stop(f'No active module {module}.', 'read metaform://modules')
-    if module is not None and not search:
-        text = module_tools_text(folder, str(module))
-        if follows:
-            record_shown(session, catalog.OPEN_KEY, module)
-            record_shown(session, PENDING_KEY, module)
-        return False, [discovery_delivery(folder, session, f'metaform://{module}/tools', text)]
-    if isinstance(search, str) and search.strip():
-        available = {name: one for name, one in given_tools(folder).items()
-                     if module is None or one.module == module}
-        homes = {name: one.module for name, one in available.items()}
-        found = catalog.ranked(search, {name: one.description for name, one in available.items()}, homes,
-                               module_descriptions(folder))[:8]
-        if not found:
-            return False, [prompt_files.module('mcp', 'catalog_none') or 'No tool fits.']
-        return False, ['\n'.join(f'{catalog_line(available[name])} [metaform://{homes[name]}/tools]'
-                                 for name in found)]
-    return False, [discovery_delivery(folder, session, MODULES_URI, modules_text(folder))]
 
 
 def discovery_delivery(folder: Path, session: str | None, uri: str, text: str) -> str:
@@ -1833,21 +1777,6 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
         listed += [{'uri': held.uri, 'name': held.name, 'description': held.description, 'mime_type': held.mime_type}
                    for held in module.resources if not held.fields]
     return [*listed, *skill_extension.resources(folder)]
-
-
-def glossary_repeat(folder: Path, session: str | None, uri: str) -> str | None:
-    """The line a second read of a glossary in one session answers with while it is unchanged, `already_read`: the
-    first is still in the agent's context, so the text is not given twice; None for the first read, a changed one, or
-    a session that keeps no record. `uri` is metaform://metaform or the project's own."""
-    if session is None:
-        return None
-    text = glossary(folder) if uri == GLOSSARY_URI else project_glossary_text(folder)
-    digest = _digest(text)
-    if record_shown(session, f'doc:{uri}', digest) != digest:
-        return None
-    again = (f'call {OWN}_instructions with module=metaform' if uri == GLOSSARY_URI else
-             'call map_glossary with view=full')
-    return prompt_files.module('mcp', 'already_read', uri=uri, again=again)
 
 
 def module_templates(folder: Path) -> list[tuple[str, str, str, str]]:

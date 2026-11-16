@@ -1774,25 +1774,6 @@ NOT_FOR_A_RESTRICTED_WORKER = ('distribute', 'glyph', 'gitignore', 'YIELD', 'upo
                     'The person writes', 'memory prompt', '<address>', "full worker's brief")
 
 
-@pytest.mark.req('MCP-003')
-def test_the_system_agent_is_listed_its_body_tools_while_the_web_module_is_on(run, home, mapped, monkeypatch):
-    """The system agent is listed the web body tools its prompt names while the web module is on, and none once the
-    module is off."""
-    from metaform.modules.mcp.server import listed_names, run_catalog
-    for module in ('dispatch', 'web'):
-        run('enable', module, cwd=mapped)
-    monkeypatch.setenv('METAFORM_TASK_NAME', 'user_agent')
-    import os
-
-    from metaform.modules.mcp.server import tools
-    running = tools(mapped)['web_say'][1].listed  # the body verbs are listed while the GUI runs, wherever web loaded from
-    monkeypatch.setitem(running.__globals__, 'recorded', lambda: {'pid': os.getpid()})
-    run_catalog(mapped, {'module': 'web'}, 'system-session')
-    assert {'web_say', 'web_look', 'web_embody', 'web_viewing'} <= set(listed_names(mapped, 'system-session'))
-    run('disable', 'web', cwd=mapped)
-    assert not any(name.startswith('web_') for name in listed_names(mapped, 'system-session'))
-
-
 
 
 @pytest.mark.req('MCP-007')
