@@ -216,3 +216,19 @@ def add_ticket(project: str, node: str, task: str, *, kind: object = None, held:
     _done(commands.run({'add': {path: {'tickets': [record]}}}))
     made = next((one for one in commands.overlay_records(name, 'tickets') or [] if one.get('id') == record['id']), None)
     return _shaped(made or {**record, 'element': path, 'position': 0}, len(name) + 1)
+
+
+def assignment(project: str, work_id: str) -> str | None:
+    """The assignment an agent started on a ticket receives: the ticket's own words and how it keeps the ticket
+    current with the project tool. None when the project store holds no such ticket."""
+    from importlib import resources
+
+    from metaform import prompt_files
+    found = _found(project, work_id)
+    if found is None:
+        return None
+    _, record = found
+    return prompt_files.required(resources.files('metaform.modules.web'), 'ticket_assignment',
+                                 path=str(record['element']), id=str(record.get('id') or ''),
+                                 title=str(record.get('title') or ''), task=str(record.get('task') or ''))
+

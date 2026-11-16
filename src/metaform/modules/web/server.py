@@ -2077,6 +2077,17 @@ class Handler(BaseHTTPRequestHandler):
         # the launch's own permissions, when the person chose them; dispatch start checks them
         own = [f'{key}={given[key]}' for key in ('prompts', 'mode', 'batch')
                if isinstance(given.get(key), str) and given[key]]
+        from . import project_map
+        assigned = project_map.assignment(str(given.get('project', '')), work_id)
+        if assigned is not None:
+            # A ticket of a project in the project store: the agent is assigned it as a task, by its own words, and
+            # keeps the ticket current itself with the project tool.
+            try:
+                started = cast(dict[str, Any], plain(module_verb(given, 'tasks', 'assign',
+                                                                 {'text': assigned, 'agent': agent})))
+            except (Stop, StoreError) as error:
+                return self.refuse(error, 400)
+            return self.send(200, {**started, 'ticket': work_id})
         self.dispatched(given, 'start', [work_id, agent, *own])
 
     def board_line(self, given: dict[str, Any]) -> None:

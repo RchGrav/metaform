@@ -86,4 +86,16 @@
      command it runs, and the output, the map page's address, is sent as the person's message. An empty <commands/>
      offers none. Off when the module is disabled. -->
 <commands><web verb="start"/></commands>
+<!-- The assignment an agent receives when the person presses Start agent on a ticket of the board, as its whole
+     first turn. <path/> is the element the ticket is at, <id/> the ticket's id, <title/> and <task/> the ticket's own
+     words. The agent keeps the ticket current itself, with the project tool: nothing else writes it. -->
+<ticket_assignment>You are assigned one ticket. Work it, and keep the ticket itself current as you go.
+
+Ticket <id/> at <path/>: <title/>
+
+<task/>
+
+The ticket is a record of the tickets overlay at that element. Read the element and its tickets first: {"<path/>": {"tickets": {}}}. Your ticket is the record whose id is <id/>; its place in that list, counted from 0, is its position.
+Take it before you start: {"update": {"<path/>": {"tickets": [{"position": &lt;position&gt;, "taken_by": "&lt;your name&gt;"}]}}}.
+When you stop, write where it stands in note. When the work is finished and checked, also set done to the time now, as 2026-11-16T09:30:00Z, and outcome to completed. If it cannot be done, say why in note and set outcome to failed with done.</ticket_assignment>
 </prompts>
