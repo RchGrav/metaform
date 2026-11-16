@@ -67,6 +67,10 @@ Do not write tests for reversible, low-impact changes that mirror the implementa
 
 Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
 
+## Landing work
+
+An assignment is complete when each feature it built has landed as its own feature commit and that commit is pushed to the remote. Commit each feature as it is finished, staging only its own files, with a one-line subject that names the change; then push the working branch and confirm it matches the remote. Work left uncommitted in the shared checkout is not done: it cannot be reviewed on GitHub, and it tangles with the next feature's edits.
+
 ** Database Schema
 
 - Update the compatibility level when the schema change instroduces an incompatability.
