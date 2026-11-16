@@ -213,7 +213,10 @@ export async function renderObject(id) {
     // While the page follows an intake being recorded, the element is shown as the building layer records it; that
     // layer is in no reading context until it finishes, LAYER-007, so a node read could only find nothing and is not
     // made.
-    const node = following() ? {layers: []} : await read('node', {target: `element:${id}`, ...viewLayers()});
+    // An element that is not on the map shown, as one remembered from before the project was cleared, has nothing to
+    // read: no request is made for it.
+    const node = following() || !S.elements.has(id) ? {layers: []}
+      : await read('node', {target: `element:${id}`, ...viewLayers()});
     if (S.selected !== id) return;
     const kept = $('#memories'), box = $('#items');
     for (const group of node.layers || []) layerItems(group.kind === 'memory' ? kept : box, group);
