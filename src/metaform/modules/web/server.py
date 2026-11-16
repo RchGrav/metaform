@@ -995,6 +995,12 @@ class Handler(BaseHTTPRequestHandler):
             listed = stored_layers(given.get('project', ''), given.get('base', ''))
             if listed is not None:
                 return self.send(200, {'results': plain(listed), 'next': None})
+        if name == 'layer-items':
+            # Nothing is read ahead for a project in the project store: an overlay's records are read with the
+            # element they are at, when the person opens it, and never the whole project's at a load.
+            from metaform import project as project_store
+            if project_store.holds(project_store.stored_name(given.get('project', ''))):
+                return self.send(200, {'results': [], 'next': None})
         if name == 'node':  # an element of a project in the project store, with its overlays' records
             from .project_map import node as stored_node
             held = stored_node(given.get('project', ''), given.get('target', ''), given.get('layers'))
