@@ -12245,8 +12245,8 @@ def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_
     assert body['connect']['chars'] == len(body['connect']['text']) and body['host_limit'] == 2048
     assert body['glossary']['text'] == mcp.glossary(mapped)
     assert body['glossary']['index']['text'] == mcp.modules_text(mapped)
-    # what a connecting agent is listed, as the Inspector lists it: the catalog that finds the rest by purpose, MCP-003
-    assert [tool['name'] for tool in body['tools']] == ['metaform_catalog']
+    # what a connecting agent is listed, as the Inspector lists it: the one tool
+    assert [tool['name'] for tool in body['tools']] == ['project']
     costs = [tool['model_bytes'] for tool in body['tools']]
     assert costs == sorted(costs, reverse=True)  # the costliest first, by what the model receives
     assert {one['entry']['uri'] for one in body['resources']} >= {one['uri'] for one in mcp.resource_list(mapped)}

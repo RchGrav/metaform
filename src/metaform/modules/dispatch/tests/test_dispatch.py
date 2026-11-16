@@ -25,7 +25,8 @@ MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events',
-          'metaform.prompt_files', 'metaform.home', 'metaform.jev', 'metaform.skills'}  # Jev, the decision service
+          'metaform.prompt_files', 'metaform.home', 'metaform.jev', 'metaform.skills',  # Jev, the decision service
+          'metaform.project'}  # the project map's store
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
@@ -3892,8 +3893,7 @@ def test_serve_as_a_proxy_of_a_conductors_chain_carries_metaforms_mcp_server_ove
         editor.send({'id': 77, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
             'serverId': server['serverId'], 'requestId': 'r-1', 'method': 'tools/list', 'params': {'_meta': meta}}}})
         tools = editor.answer(77)['result']['result']['tools']
-        assert any(tool['name'].startswith('map_') or tool['name'] == 'metaform_catalog' for tool in tools), \
-            'answered by Metaform\'s own MCP server'  # its catalog alone, as an agent is listed it by default
+        assert [tool['name'] for tool in tools] == ['project'], 'answered by Metaform\'s own MCP server'
         editor.send({'id': 78, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
             'serverId': 'another', 'requestId': 'r-2', 'method': 'tools/list'}}})
         passed = editor.until(lambda one: one.get('method') == 'mcp/message')

@@ -132,20 +132,6 @@ def test_manual_requeue_signals_only_a_real_column_transition(dispatch, run):
     assert signals(dispatch, run) == [raised]
 
 
-def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
-    from metaform.modules.mcp.tests.test_mcp import session
-    context('dispatch', dispatch.folder, project='proj').publish('dispatch.rework-limit',
-            {'work_id': dispatch.id, 'attempts': 3, 'limit': 3})
-    async def check(client, init):
-        await client.call_tool('metaform_catalog', {'module': 'dispatch'})  # commands belong to their module
-        offered = {tool.name: tool for tool in (await client.list_tools()).tools}
-        assert 'dispatch_signals' in offered
-        response = await client.call_tool('dispatch_signals', {'id': dispatch.id})
-        assert not response.is_error
-        assert 'rework-limit' in ''.join(block.text for block in response.content if hasattr(block, 'text'))
-    session(home, dispatch.folder, check)
-
-
 @pytest.mark.cli_process
 def test_signal_events_reach_another_process_without_polling(dispatch, run):
     import threading

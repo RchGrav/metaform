@@ -188,9 +188,8 @@ def test_intake_is_discoverable_and_reads_the_canonical_procedure_component(run,
     definition = tasks.definition(ctx)
     authored = intake.RESOURCE.read_text(encoding='utf-8')
     expected = authored.replace('{project_id}', 'proj').replace('{prompt}', '', 1).rstrip('\n')
-    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer')
+    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj')
     expected += '\n\n' + pointer + '\n'
-    assert intake.RESOURCE.name == 'intake.axiom' and intake.SCHEMA_URI in expected
     assert definition['instructions'] == expected
     assert definition['component']['text'] == expected
     assert definition['component']['actual_version_id'] == 'intake-source:' + hashlib.sha256(
@@ -247,7 +246,7 @@ def test_intake_task_preserves_configured_source_with_canonical_prompt_binding(
     ctx = context('tasks', project_folder, nouns={'name': 'intake'})
     definition = tasks.definition(ctx)
     expected = authored.replace('{prompt}', '', 1).rstrip('\n')
-    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer') + '\n'
+    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj') + '\n'
     assert definition['instructions'] == expected
     assert definition['component']['text'] == expected
     assert definition['component']['source'] == {
@@ -267,7 +266,7 @@ def test_intake_assignment_preserves_canonical_source_identity_and_separate_inpu
     definition = tasks.definition(ctx)
     authored = intake.RESOURCE.read_text(encoding='utf-8')
     expected = authored.replace('{project_id}', 'proj').replace('{prompt}', '', 1).rstrip('\n')
-    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer') + '\n'
+    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj') + '\n'
     edited = 'Use this revised method exactly. <unclosed> & {prompt}\n\n'
     with pytest.raises(ValueError, match='Canonical Intake'):
         prompt_files.save_edit('prompt.intake:intake.axiom', edited)

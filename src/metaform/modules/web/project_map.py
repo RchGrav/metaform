@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from metaform import project as commands
 from metaform.data import Element, GraphElement, GraphPage, Held, Item, Join, LayerGroup, Node, NodeView
-from metaform.project import commands
-from metaform.project.texts import ROLE_WORDS
+from metaform.project import ROLE_WORDS
 
 BASE = 'base'
 _CODES = {name: code for code, name in ROLE_WORDS.items() if len(code) <= 3}  # the page draws by the short role

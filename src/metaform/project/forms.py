@@ -23,11 +23,10 @@ from dataclasses import dataclass
 from typing import cast
 
 from metaform.project.store import ROOT_FIELDS
-from metaform.project.texts import ROLE_PLACEHOLDER, ROLE_WORDS, ROLES
+from metaform.project.texts import COMMANDS, ROLE_PLACEHOLDER, ROLE_WORDS, ROLES
 
 Key = str | int
 ROOTS = ('code', 'document', 'media', 'data', 'upstream', 'downstream', 'overlay')
-COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'help')
 TEXT_FIELDS = ('technical_name', 'name', 'role', 'status')
 PART_TEXT = ('description', 'instruction', 'rule')
 LEGACY_STATUS = ('missing', 'MISSING', 'BKN', 'broken', 'todo', 'TODO')

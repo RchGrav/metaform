@@ -135,7 +135,7 @@ def _procedure(ctx: Context) -> tuple[Any, str, str]:
 
 def _record_with_tool(ctx: Context) -> str:
     """How the procedure's records are written with the project tool, for this project by its name there."""
-    from metaform.project.commands import stored_name
+    from metaform.project import stored_name
     return prompt_files.required(resources.files(__name__), 'schema_pointer',
                                  project=stored_name(ctx.require_store().project_id))
 
@@ -185,7 +185,7 @@ def served(ctx: Context, asked: str = '') -> str:
     if mode:
         if mode not in ('fresh', 'refine', 'resume'):
             raise Stop('Intake mode is fresh, refine or resume.', 'metaform help intake prompt')
-        from metaform.project.commands import stored_name
+        from metaform.project import stored_name
         asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked,
                                       project=stored_name(ctx.require_store().project_id))
     source, text, _ = _procedure(ctx)

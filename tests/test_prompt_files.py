@@ -101,8 +101,8 @@ def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_sta
         startup = connect_instructions(folder)
         assert len(startup) <= 2048, len(startup)
         assert startup.splitlines()[0] == prompt_text(SOURCE / 'modules' / 'mcp', 'connect_directive')
-        assert {'metaform://rules', 'metaform://metaform', 'metaform://memory', 'metaform://modules',
-                'metaform://task/person', 'metaform://proj'} <= set(startup.splitlines())
+        assert {'metaform://rules', 'metaform://memory', 'metaform://modules',
+                'metaform://task/person'} <= set(startup.splitlines())  # no glossary is linked
         text = run('help', 'agents', cwd=folder).stdout
         assert more in text
         return text

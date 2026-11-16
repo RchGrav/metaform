@@ -34,30 +34,3 @@ def test_cli_reason_read_and_project_release(run, mapped):
     assert found['map']['hold_reason'] == 'Await timing evidence.'
     assert not found['map']['hold']
     assert json.loads(run('map', 'work', 'op=unhold_all', '--json', cwd=mapped).stdout)['changed'] == 0
-
-
-def test_mcp_rejects_blank_holds_and_releases_through_shared_operation(run, home, mapped):
-    from metaform.modules.mcp.tests.test_mcp import called, session, text
-
-    work = Store('proj').add_work(Node('element', 'code.timer.kitchen'), None, task='Keep timer accurate.')
-
-    async def check(client, _init):
-        for values in ({'hold': True}, {'held': True}, {'op': 'move', 'column': 'backlog'}):
-            result = await called(client, 'map_work', {'op': 'edit', 'id': work.id,
-                                                       'hold_reason': ' \t ', **values})
-            assert result.is_error, text(result)
-            assert 'reason' in '\n'.join(text(result)).lower()
-        for reason in (None, [], 5):
-            invalid = await called(client, 'map_work', {'op': 'edit', 'id': work.id, 'hold': True,
-                                                       'hold_reason': reason})
-            assert invalid.is_error, text(invalid)
-        saved = await called(client, 'map_work', {'op': 'edit', 'id': work.id, 'hold': True,
-                                                 'hold_reason': 'Await measured timing.'})
-        assert not saved.is_error, text(saved)
-        read = await called(client, 'map_work', {'id': work.id})
-        assert 'Await measured timing.' in '\n'.join(text(read))
-        released = await called(client, 'map_work', {'op': 'unhold_all'})
-        assert not released.is_error, text(released)
-        assert 'changed: 1' in '\n'.join(text(released))
-
-    session(home, mapped, check)

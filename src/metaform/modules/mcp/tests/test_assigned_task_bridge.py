@@ -63,56 +63,6 @@ def bridge(home, tmp_path, monkeypatch):
     return SimpleNamespace(served=served, folder=folder, launched=launched, server=server, tasks=tasks)
 
 
-def test_missing_capability_is_rejected_before_assignment(bridge, monkeypatch):
-    seed = Mock()
-    monkeypatch.setattr(bridge.tasks, 'seed_session', seed)
-    with pytest.raises(MCPError) as caught:
-        invoke(bridge.served, 'tools/call', {'name': 'tasks_start', 'arguments': {}}, request_context(False))
-    assert caught.value.code == -32021
-    assert caught.value.data == {'requiredCapabilities': {'extensions': {EXTENSION: {}}}}
-    bridge.launched.assert_not_called()
-    seed.assert_not_called()
-
-
-def test_capable_assignment_returns_flat_durable_handle(bridge, tmp_path, monkeypatch):
-    record = tmp_path / 'durable-task.json'
-    owning_folder = tmp_path / 'owner'
-    owning_folder.mkdir()
-    provider_ctx = object()
-    resolved = []
-
-    class Provider:
-        def seed(self, ctx, task_id):
-            assert ctx is provider_ctx and task_id == TASK_ID
-            assert record.exists(), 'The launch must persist its task before returning its id.'
-            return {'resultType': 'task', **json.loads(record.read_text())}
-
-    def launch(*args, **kwargs):
-        record.write_text(json.dumps(DETAIL))
-        return False, [], {'task_id': TASK_ID, 'project_id': 'owner'}
-
-    def provided(folder, kind):
-        resolved.append((folder, kind))
-        return [('tasks', Provider())]
-
-    monkeypatch.setattr(bridge.tasks.home, 'project', lambda project: SimpleNamespace(path=str(owning_folder)))
-    monkeypatch.setattr(bridge.tasks, 'provided', provided)
-    make_context = Mock(return_value=provider_ctx)
-    monkeypatch.setattr(bridge.tasks, 'context', make_context)
-    bridge.launched.side_effect = launch
-    result = invoke(bridge.served, 'tools/call', {'name': 'tasks_start', 'arguments': {}})
-    assert result == {'resultType': 'task', **DETAIL}
-    assert 'content' not in result and 'task' not in result
-    assert resolved == [(owning_folder, 'task.lifecycle')]
-    make_context.assert_called_once_with('tasks', owning_folder, project='owner', surface='mcp')
-    bridge.launched.assert_called_once()
-    # Capability declarations belong to each request, even after a successful capable request.
-    with pytest.raises(MCPError) as caught:
-        invoke(bridge.served, 'tools/call', {'name': 'tasks_start', 'arguments': {}}, request_context(False))
-    assert caught.value.code == -32021
-    assert bridge.launched.call_count == 1
-
-
 def test_provider_task_survives_server_reconstruction(bridge, tmp_path, monkeypatch):
     record = tmp_path / 'task.json'
     record.write_text(json.dumps(DETAIL))

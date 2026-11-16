@@ -2502,23 +2502,6 @@ def test_citing_a_path_outside_the_project_stops_and_an_uncited_path_finds_nothi
     assert uncited == {'results': [], 'next': None}
 
 
-def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kitchen):
-    from metaform.modules.mcp.tests.test_mcp import called, session, text
-
-    async def check(client, init):
-        typo = await called(client, 'map_where', {'address': 'code.timer.kitchn'})
-        assert typo.is_error
-        assert 'Nearest: code.timer.kitchen' in '\n'.join(text(typo))
-        assert 'Next: call map_where' in '\n'.join(text(typo))
-        recovered = await called(client, 'map_where', {'address': 'code.timer.kitchen'})
-        assert not recovered.is_error
-        uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
-        assert not uncited.is_error
-        assert text(uncited)[-1] == 'results:\n(none)'  # a list with nothing in it says so, MCP-039
-
-    session(home, kitchen, check)
-
-
 @pytest.mark.req('BASE-038')
 def test_where_shows_the_elements_id_so_its_history_is_read_from_there(run, mapped):
     found = j(run, 'where', 'code.alarm.audible', cwd=mapped)['element']

@@ -50,6 +50,7 @@ def wants_definition(project: str) -> dict[str, dict[str, str | bool]]:
     }
 
 
+COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'help')
 HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help')
 
 _WIDGET = {'technical_name': 'widget masher', 'name': 'mashbox', 'role': 'Coupled Element',

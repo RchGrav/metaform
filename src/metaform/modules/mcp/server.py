@@ -573,14 +573,6 @@ def task_text(folder: Path, client: str | None = None, session: str | None = Non
     intake = not own and catalog.task() == 'intake'  # it records with the project tool alone: no catalog is described
     if not intake and (said := prompt_files.module('mcp', 'connect_catalog')):
         lines.append(said)
-    if not keyed:
-        said = prompt_files.module('mcp', 'connect_unkeyed', handle=HANDLE)
-    elif session is None or session.startswith('process:'):  # no runner hears this session's compaction
-        said = prompt_files.module('mcp', 'connect_compaction')
-    else:
-        said = ''
-    if said:
-        lines.append(said)
     if own and project is not None and (said := prompt_files.module('mcp', 'connect_here', project=project)):
         lines.append(said)
     first_run = first_run_text(folder) if own else None
@@ -1167,6 +1159,14 @@ def instruction_required(folder: Path, name: str, arguments: dict[str, Any], ses
                              for one in prepared['components']],
             'next': 'Read the instruction URI, then repeat the operation' +
                     (f' with {HANDLE}={handle}.' if handle else '.')}
+
+
+def command_line(name: str) -> str:
+    """What a call to a command by a tool's name is answered: the command as it is run in a shell."""
+    module, _, verb = name.partition('_')
+    run = f'metaform {verb}' if module == OWN else f'metaform {module} {verb}'.rstrip()
+    return (f'{name} is a command, not a tool. Run it in your shell: {run} <argument>=<value>\n'
+            f'Next: metaform help {run.removeprefix("metaform ")} gives its arguments.')
 
 
 def tool_guide(folder: Path, name: str, op: str | None, session: str | None) -> str:
@@ -2299,8 +2299,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     relay = Relay(folder, not http and settings.value('mcp_recovery', folder) == 'relay')
     apps_on = bool(settings.value('mcp_apps', folder))
     apps_always = settings.value('mcp_apps_offer', folder) == 'always'
-    offered = settings.value('mcp_search_fetch', folder)
-    searching = offered == 'always' or (offered == 'remote' and http)
     running = tasked.Running()  # the tool calls this process runs as tasks
     held: dict[str, Any] = {}  # the task group tasks run in, while the server runs
 
@@ -2324,37 +2322,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         from .oauth import viewer as signed_in
         return signed_in(ctx) or client_of(ctx) or ''
 
-    def discussed(ctx: Any, name: str, arguments: dict[str, Any]) -> None:
-        said = views.discussed(arguments)
-        if said is None or not apps(ctx):
-            return
-        held = focus.get(viewer(ctx), {})
-        focus[viewer(ctx)] = {'address': said, 'tool': name, 'seq': int(held.get('seq', 0)) + 1}
-
     def client_of(ctx: Any) -> str | None:
         return client_name(ctx)
 
-    def handled(schema: dict[str, Any], on: bool) -> dict[str, Any]:
-        """A tool's input schema with `session_handle`, for a connection whose calls name no session otherwise."""
-        if not on:
-            return schema
-        said = prompt_files.module('mcp', 'handle_argument') or ''
-        return {**schema, 'properties': {**cast(dict[str, Any], schema.get('properties') or {}),
-                                         HANDLE: {'type': 'string', 'description': said}}}
-
-    def tool(one: Listed, shown: bool, unkeyed: bool = False) -> Any:
-        hints = one.annotations()
-        view = views.SHOWN_BY.get(one.name) if shown else None
-        made = types.Tool(name=one.name, description=usage_description(one), input_schema=handled(one.schema(), unkeyed),
-                          annotations=types.ToolAnnotations(
-                              read_only_hint=hints['read_only_hint'], destructive_hint=hints['destructive_hint'],
-                              idempotent_hint=hints['idempotent_hint'], open_world_hint=hints['open_world_hint']))
-        if view:
-            made.meta = {'ui': {'resourceUri': view}}
-        return made
-
-    # The views' own tool, listed only to a client that renders the views and hidden from its model, MCP Apps'
-    # visibility ["app"]: a view calls it through its host for what it draws.
     view_tool = types.Tool(
         name=views.TOOL, description='Read what the map and node views draw. Called by the views, not the model.',
         input_schema=VIEW_SCHEMA,
@@ -2363,34 +2333,15 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     view_tool.meta = {'ui': {'visibility': ['app']}}
 
     # ChatGPT's two, by the names it calls: read-only, over the map, memory and the terms (mcp_search_fetch).
-    searched_tools = [types.Tool(name=name, description=description, input_schema=schema,
-                                 annotations=types.ToolAnnotations(read_only_hint=True, destructive_hint=False,
-                                                                   idempotent_hint=True, open_world_hint=False))
-                      for name, (description, schema) in SEARCH_FETCH.items()]
-
-    def catalog_tool(unkeyed: bool = False) -> Any:
-        """metaform_catalog as it is listed: the tool every agent is listed, to find the others by purpose."""
-        said = prompt_files.module('mcp', 'catalog_tool_unkeyed' if unkeyed else 'catalog_tool') or ''
-        return types.Tool(name=catalog.CATALOG, description=said,
-                          input_schema=handled(catalog_schema(folder, unkeyed), unkeyed),
-                          annotations=types.ToolAnnotations(read_only_hint=False, destructive_hint=False,
-                                                            idempotent_hint=False, open_world_hint=False))
-
     project_listed = project_tool.listed()
 
     def build(shown: bool, client: str | None = None, session: str | None = None) -> list[Any]:
         """The tools listed to a session, MCP-003: `listed_names`, each as `tool` makes it; over HTTP to a listing
         that names no session, each takes the session handle its calls name their session by."""
-        everything = listing(folder, client)
-        names = listed_names(folder, session)
-        unkeyed = (http and session is None) or (not http and not os.environ.get('METAFORM_SESSION'))
-        listed = [tool(everything[name], shown, unkeyed) for name in names if name in everything]
-        if catalog.CATALOG in names:
-            listed = sorted([*listed, catalog_tool(unkeyed)], key=lambda one: one.name)
-        if searching:
-            listed = sorted([*listed, *searched_tools], key=lambda one: one.name)
-        listed = [*listed, project_listed]  # the project tool: the map is read and written through it alone
-        return sorted([*listed, view_tool], key=lambda one: one.name) if shown else listed
+        # One tool is listed, `project`: the map is read and written through it alone. A command of a module or of
+        # the chassis is no tool: an agent runs it in its shell, `metaform <module> <verb>`. A client that shows the
+        # map view is also listed the view's own tool, which only the view calls.
+        return [project_listed, view_tool] if shown else [project_listed]
 
     def build_prompts() -> list[Any]:
         return [types.Prompt(name=slash.name, description=slash.summary or None, arguments=[
@@ -2522,7 +2473,6 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
     async def call_tool(ctx: Any, params: Any) -> Any:
         name, arguments = params.name, dict(params.arguments or {})
-        client = client_of(ctx)
         if name == project_tool.TOOL:
             said = await anyio.to_thread.run_sync(project_tool.commands.run, project_tool.command(arguments), None,
                                                   os.environ.get('METAFORM_SESSION') or 'mcp')
@@ -2530,134 +2480,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                                         is_error=said.get('status') == 'error')
         if name == views.TOOL and apps(ctx):
             return await view_call(arguments, viewer(ctx))
-        if searching and name in SEARCH_FETCH:
-            found = await (search(folder, str(arguments.get('query') or ''), client) if name == 'search' else
-                           fetch(folder, str(arguments.get('id') or ''), client))
-            return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(found))],
-                                        structured_content=found, is_error='error' in found)
-        handle = arguments.pop(HANDLE, None)
-        session = session_of(ctx, handle)
-        if name == catalog.CATALOG:  # the catalog itself, or a tool it runs for an AI tool that keeps its first list
-            run = arguments.get('tool')
-            if run is None:
-                error, blocks = await anyio.to_thread.run_sync(catalog_call, arguments, session, follows(ctx))
-                await announce(ctx, [])
-                return outcome(error, blocks, None)
-            inner = arguments.get('arguments', {})
-            if not isinstance(run, str) or run == catalog.CATALOG or not isinstance(inner, dict):
-                return outcome(True, [(f'Error: tool is the name of another tool, and arguments an object.\n'
-                                       f'Next: {schema_step(catalog.CATALOG)}')], None)
-            name, arguments = run, dict(cast(dict[str, Any], inner))
-            if HANDLE in arguments:
-                session = session_of(ctx, arguments.pop(HANDLE))
-        listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
-        if listed is not None and listed.task == 'session' and not tasked.declared(capabilities(ctx)):
-            raise MCPError(-32021, 'Missing required client capability',
-                           {'requiredCapabilities': {'extensions': {tasked.EXTENSION: {}}}})
-        shape: shaping.Shape | None = None
-        if listed is not None and listed.verb is not None:  # a module tool's result, as the agent asks for it
-            shape, wrong = shaping.taken(arguments, {noun.name for noun in listed.verb.nouns})
-            if wrong is not None:
-                return outcome(True, [f'Error: {wrong}\nNext: {schema_step(name)}'], None)
-        if name == 'map_glossary' and shape is not None and shape.view == 'triage' and \
-                not set(arguments) - {'layers', 'project'} and (own := await anyio.to_thread.run_sync(project_uri,
-                                                                                                      folder)):
-            repeat = await anyio.to_thread.run_sync(glossary_repeat, folder, session, own)
-            if repeat:  # the project's glossary, read already in this session, as map_glossary or its resource
-                return outcome(False, [repeat], None)
-        try:
-            required = await anyio.to_thread.run_sync(instruction_required, folder, name, arguments, session)
-        except Stop as stop:
-            error, blocks = _error(stop, folder)
-            return outcome(error, blocks, None)
-        if required is not None:
-            return outcome(True, [result_json(required)], required)
-        given = arguments
-        tasked_as = listed.task if listed is not None and tasked.declared(capabilities(ctx)) else False
-        headers = ctx.request.headers if ctx.request is not None else None
-        identity = gateway_identity(headers)
-        if tasked_as is True and 'group' in held:
-            project = await anyio.to_thread.run_sync(tasked.owning, folder)
-            if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
-                return await start_task(project, name, given, client, session, identity)
-        fired: list[dict[str, Any]] = []
-        try:
-            error, blocks, structured = await answer(folder, name, given, client=client,
-                                                     session=session, identity=identity, shape=shape)
-        finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
-            # disabled since this server started is loaded or dropped first, BASE-037
-            fired = await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
-        if listed is not None and not error:  # errors carry only the error and its next step
-            op = given.get('op') if isinstance(given.get('op'), str) else None
-            if op is None and listed.verb is not None and ops_of(listed.verb) and 'id' in given:
-                op = 'read'  # a record named by id with no op is read, which no op's own help is for
-            guide = await anyio.to_thread.run_sync(guided, listed, client, session, op)
-            blocks = [guide, *blocks] if guide else blocks
-        if not error and shape is not None and shape.view == 'triage' and shape.given and listed is not None and \
-                listed.verb is not None and looks_up(listed.verb) and session is not None and \
-                await anyio.to_thread.run_sync(record_shown, session, 'announce:triage', 1) is None:
-            note = prompt_files.module('mcp', 'triage_note')
-            blocks = [*blocks, note] if note else blocks
-        await announce(ctx, fired)
-        if not error:
-            discussed(ctx, name, given)
-        if tasked_as == 'session' and not error:
-            launched = structured or {}
-            task_id, project = launched.get('task_id'), launched.get('project_id')
-            if not isinstance(task_id, str) or not isinstance(project, str):
-                raise MCPError(-32603, 'Task launch did not return task_id and project_id')
-            seeded = await anyio.to_thread.run_sync(tasked.seed_session, folder, project, task_id)
-            if seeded is None:
-                raise MCPError(-32603, 'Failed to retrieve the launched task')
-            return seeded
-        return outcome(error, blocks, structured)
-
-    def guided(listed: Listed, client: str | None, session: str | None, op: str | None = None) -> str:
-        """The guidance the call's result carries, `guidance`, in the agent session the call is made in."""
-        try:
-            ctx = context('mcp', folder, surface='mcp', client=client, session=session)
-        except (Stop, StoreError):
-            return ''
-        return guidance(folder, listed, ctx, op)
-
-    def catalog_call(arguments: dict[str, Any], session: str | None, listing_follows: bool) -> Outcome:
-        """metaform_catalog's own answer, `run_catalog`, its arguments checked as a chassis tool's are. A call that
-        names no session, over HTTP on the July wire, is given a session handle first, `catalog_handle`, so each guide
-        can be given it once from its next call."""
-        notices: list[str] = []
-        told: list[str] = []
-        if session is None and http:
-            handle = uuid.uuid4().hex[:12]
-            session = f'handle:{handle}'
-            told = [line for line in (prompt_files.module('mcp', 'catalog_handle', handle=handle, argument=HANDLE),
-                                      prompt_files.module('mcp', 'connect_compaction')) if line]
-        try:
-            given = _checked('catalog', arguments, catalog_schema(folder), notices)
-            error, blocks = run_catalog(folder, given, session, listing_follows)
-        except Stop as stop:
-            return _error(stop, folder)
-        before = (['\n'.join(notices)] if notices else []) + (['\n'.join(told)] if told else [])
-        # after a compaction the rules and the glossary's order come first in the turn, compaction_state
-        return error, blocks + before if given.get('compacted') is True else before + blocks
-
-    async def start_task(project: str, name: str, given: dict[str, Any], client: str | None,
-                         session: str | None, identity: dict[str, str]) -> Any:
-        """A tool call answered with a task: the task is written first, so tasks/get finds it at once, then the call
-        runs in this process and the task keeps its result."""
-        said = prompt_files.module('mcp', 'task_working', tool=name) or f'{name} is running.'
-        made = await anyio.to_thread.run_sync(tasked.create, running, project, name, said)
-
-        async def work() -> dict[str, Any]:
-            try:
-                error, blocks, structured = await answer(folder, name, given, client=client,
-                                                         session=session, identity=identity)
-            finally:  # shielded, so a cancel after the verb finished leaves its result to the task
-                with anyio.CancelScope(shield=True):
-                    await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
-            return outcome(error, blocks, structured).model_dump(by_alias=True, mode='json', exclude_none=True)
-        running.scopes[made['taskId']] = anyio.CancelScope()  # made here, in the loop, so a cancel finds it at once
-        held['group'].start_soon(tasked.run, running, project, made['taskId'], work)
-        return made
+        # a command of a module or the chassis, called as the tool it once was: how it is run now
+        return types.CallToolResult(content=[types.TextContent(type='text', text=command_line(name))], is_error=True)
 
     async def view_call(arguments: dict[str, Any], seen_by: str) -> Any:
         read = arguments.get('read')

@@ -16,8 +16,8 @@ from typing import Any
 
 import anyio
 
-from metaform.project import commands
-from metaform.project.forms import COMMANDS
+from metaform import project as commands
+from metaform.project import COMMANDS
 
 TOOL = 'project'
 DESCRIPTION = (

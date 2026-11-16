@@ -18,7 +18,7 @@ pytestmark = pytest.mark.kind('fixture')
 MODULES = Path(__file__).parents[1] / 'src' / 'metaform' / 'modules'
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events', 'metaform.jev',
           'metaform.prompt_files', 'metaform.home', 'metaform.outline', 'metaform.finish_xml',
-          'metaform.frames', 'metaform.skills'}
+          'metaform.frames', 'metaform.skills', 'metaform.project'}
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 
 

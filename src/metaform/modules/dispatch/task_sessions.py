@@ -37,7 +37,7 @@ class TaskSessions:
         return self._start(ctx, called, task, agent)
 
     def _intake(self, ctx: Context, called: Context, task: dict[str, Any], agent: str) -> dict[str, Any]:
-        from metaform.project.commands import stored_name
+        from metaform.project import stored_name
 
         from . import intake_folder, intake_map_choice, refuse_second_intake
         store = called.require_store()

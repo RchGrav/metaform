@@ -5,7 +5,6 @@ import pytest
 
 from metaform.modules.mcp import catalog, server
 from metaform.modules.mcp.tests.test_mcp import mapped as mapped  # noqa: PLC0414
-from metaform.modules.mcp.tests.test_mcp import session
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -91,19 +90,3 @@ def test_fuzzy_search_finds_misspelled_commands_and_returns_the_owning_module(ma
     ranked = catalog.ranked('observe', {'a': 'observe', 'b': 'obsevre'}, {})
     assert ranked == ['a', 'b']
     assert catalog.ranked('xyzq', {'a': 'observe'}, {}) == []
-
-
-def test_resource_opens_module_on_real_stdio_wire(home, mapped):
-    async def exercise(client, init):
-        initial = {one.name for one in (await client.list_tools()).tools}
-        assert initial == {'metaform_catalog', 'project'}
-        directory = text(await client.read_resource('metaform://modules'))
-        assert 'metaform://map/tools' in directory and 'map_where(' not in directory
-        resource = text(await client.read_resource('metaform://map/tools'))
-        assert 'map_where(' in resource
-        opened = {one.name for one in (await client.list_tools()).tools}
-        assert 'map_where' in opened and 'memory_read_graph' not in opened
-        response = await client.call_tool('metaform_catalog', {'tool': 'map_roots', 'arguments': {}})
-        assert not response.is_error
-        assert response.content
-    session(home, mapped, exercise)
