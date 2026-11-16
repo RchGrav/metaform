@@ -12,7 +12,15 @@ import {select} from '/page/app/selection/select.js';
  * why and how, and for a want the code that makes it. The answer lists what wants this element by address alone, so
  * each of those wants is read from the map the page holds, the same store. */
 const NS = 'http://www.w3.org/2000/svg';
-const ROW = 20, WIDE = 320, MID = 160, BOX = 16, REACH = 60, NAME = 18;  // REACH: from the middle to a name
+// a row's height, half the element's bar, a line's length, the room beside a name, and the longest name kept whole
+const ROW = 20, BOX = 16, REACH = 44, GAP = 4, NAME = 40;
+// the names are measured in the font they are drawn in, so the picture is as wide as its longest names and no wider
+const MEASURE = {context: null};
+function widthOf(text) {
+  MEASURE.context ??= document.createElement('canvas').getContext('2d');
+  MEASURE.context.font = `11px ${getComputedStyle(document.documentElement).getPropertyValue('--sans') || 'sans-serif'}`;
+  return Math.ceil(MEASURE.context.measureText(text).width);
+}
 const OPEN = {wants: false, wanted: false};  // which lists the person opened, kept as they move from part to part
 function svg(tag, props, ...children) {
   const node = document.createElementNS(NS, tag);
@@ -88,6 +96,8 @@ function list(id, key, title, entries, none, theirs) {
 function picture(id, wants, wantedBy) {
   const rows = Math.max(wants.length, wantedBy.length, 1);
   const high = rows * ROW + 8, middle = high / 2;
+  const widest = entries => Math.max(0, ...entries.map(entry => widthOf(cut(nameOf(entry.id)))));
+  const mid = GAP + widest(wantedBy) + GAP + REACH + BOX, wide = mid + BOX + REACH + GAP + widest(wants) + GAP;
   const at = (count, index) => middle + (index - (count - 1) / 2) * ROW;
   const said = entry => [entry.why, entry.how && `how: ${entry.how}`].filter(Boolean).join('\n') || nameOf(entry.id);
   const line = (x1, y1, x2, y2, start, end, title) => svg('line', {class: 'lv-line', x1, y1, x2, y2,
@@ -100,21 +110,21 @@ function picture(id, wants, wantedBy) {
     text.addEventListener('keydown', event => { if (event.key === 'Enter') select(entry.id, true); });
     return text;
   };
-  return svg('svg', {class: 'lv-map', viewBox: `0 0 ${WIDE} ${high}`, role: 'img',
+  return svg('svg', {class: 'lv-map', viewBox: `0 0 ${wide} ${high}`, width: wide, height: high, role: 'img',
     'aria-label': `${nameOf(id)}: wanted by ${wantedBy.length}, wants ${wants.length}`},
   svg('defs', {}, svg('marker', {id: 'lv-arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 7, markerHeight: 7,
     orient: 'auto-start-reverse'}, svg('path', {d: 'M0,0 L8,4 L0,8 z', class: 'lv-head'}))),
   // a line runs from the element that wants to the element wanted: its end is the wanted one, its start the wanter
   wantedBy.map((entry, index) => {
     const y = at(wantedBy.length, index);
-    return [line(MID - REACH, y, MID - BOX, y, entry.way === 'receive' || entry.way === 'both',
-      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID - REACH - 4, y, 'end')];
+    return [line(mid - BOX - REACH, y, mid - BOX, y, entry.way === 'receive' || entry.way === 'both',
+      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, mid - BOX - REACH - GAP, y, 'end')];
   }),
   wants.map((entry, index) => {
     const y = at(wants.length, index);
-    return [line(MID + BOX, y, MID + REACH, y, entry.way === 'receive' || entry.way === 'both',
-      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID + REACH + 4, y, 'start')];
+    return [line(mid + BOX, y, mid + BOX + REACH, y, entry.way === 'receive' || entry.way === 'both',
+      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, mid + BOX + REACH + GAP, y, 'start')];
   }),
-  svg('rect', {class: 'lv-self', x: MID - BOX, y: at(rows, 0) - 9, width: BOX * 2, height: (rows - 1) * ROW + 18,
+  svg('rect', {class: 'lv-self', x: mid - BOX, y: at(rows, 0) - 9, width: BOX * 2, height: (rows - 1) * ROW + 18,
     rx: 4}, svg('title', {}, nameOf(id))));
 }

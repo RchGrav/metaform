@@ -2794,7 +2794,7 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 /* The localized view in the element panel: what an agent assigned here receives, drawn small. */
 .localview{display:grid;gap:var(--s1);margin:var(--s2) 0}
 .localview .hint{margin:0;color:var(--muted);font-size:var(--t-sm);display:flex;flex-wrap:wrap;gap:var(--s1);align-items:center}
-.localview .lv-map{width:100%;max-width:360px;height:auto;display:block}
+.localview .lv-map{max-width:100%;height:auto;display:block}
 .localview .lv-line{stroke:var(--text);stroke-width:1.2;opacity:.75}
 .localview .lv-head{fill:var(--text)}
 .localview .lv-self{fill:var(--signal);opacity:.85}
