@@ -1228,6 +1228,10 @@ class Session:
         self.flowing: list[dict[str, Any]] = []
         self.flow_kind: str | None = None
         self.flow_text = ''
+        # the prompt just sent, which a harness may repeat back as user_message_chunk updates during its turn
+        # (Claude Code's adapter does, with replay-user-messages): matched against it, so it is not a second message
+        self.prompt_echo: str | None = None
+        self.prompt_echo_heard = ''
         self.flow_key: str | None = None  # the note the text being written grows in
         self.flow_at = 0.0
         self.lines_at = 0.0  # when the last `dispatch.session_lines` event was fired
@@ -1598,6 +1602,15 @@ class Session:
         heard, self.heard = self.heard, stamp()
         async with self.lock:
             await self.progress()
+            if kind == 'user_message_chunk' and self.prompt_echo is not None:
+                content = cast(dict[str, Any], data.get('content') or {})
+                if content.get('type') != 'text':
+                    return  # a link or an image the prompt carried, repeated
+                heard = self.prompt_echo_heard + str(content.get('text', ''))
+                if self.prompt_echo.startswith(heard):
+                    self.prompt_echo_heard = heard
+                    return  # the prompt just sent, repeated
+                self.prompt_echo = None  # not the prompt: a message of its own, written as one
             if kind in CHUNKS:
                 if kind != self.flow_kind:
                     await self.flush()
@@ -4409,7 +4422,9 @@ class Session:
                         if not self.prep:
                             from .progress import executed
                             await asyncio.to_thread(executed, self.store, self.work_id, str(self.runner))
+                        self.prompt_echo, self.prompt_echo_heard = text, ''
                         answer = await self.conn.prompt(session_id=self.session_id, prompt=blocks)
+                        self.prompt_echo = None
                         reason = str(answer.stop_reason)
                         if answer.usage is not None:  # the tokens of this turn, as the agent counts them
                             self.acp['tokens'] = answer.usage.model_dump(mode='json', exclude_none=True,

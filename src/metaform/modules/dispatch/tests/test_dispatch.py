@@ -1313,6 +1313,19 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
     dispatch.stop()
 
 
+def test_a_prompt_the_harness_repeats_back_is_one_message_in_the_thread(dispatch):
+    """Claude Code's adapter repeats each prompt it is sent as user_message_chunk updates during the turn; the thread
+    holds the turn's words once, not the prompt again as a second message."""
+    dispatch.start('ask', FAKE_ACP_ECHO='1')
+    eventually(dispatch.questions)
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        lines = list(tx.rows('session_lines', limit=0).results)
+    assert [row['kind'] for row in lines if row['kind'] == 'user_message_chunk'] == []
+    assert [row['text'] for row in lines if row['kind'] == 'agent_message_chunk'] == ['Hello from fake']
+    dispatch.stop()
+
+
 @pytest.mark.req('LAYER-029')
 @pytest.mark.req('VIEW-045')
 def test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed(dispatch, run):

@@ -33,6 +33,8 @@ and takes it into a turn in flight; FAKE_ACP_SUBAGENT=1 starts one subagent sess
 word and completes; FAKE_ACP_AUTH=1 offers an agent login method, advertises authStatus and pushes a logged-out
 status after initialize, and takes authenticate; FAKE_ACP_USAGE=<n> answers every prompt with n tokens used;
 FAKE_ACP_STDERR=1 writes two lines to stderr when it starts, one holding a secret-looking key.
+FAKE_ACP_ECHO=1 repeats each prompt back as user_message_chunk updates before its turn, its text in two pieces and
+any other block as it came, as claude-agent-acp does with replay-user-messages.
 FAKE_ACP_AUDIO=1 declares promptCapabilities.audio, so a person's spoken message may carry its recording;
 FAKE_ACP_IMAGE=1 declares promptCapabilities.image, so a person's message may carry a frame of their shared screen.
 FAKE_ACP_ELICIT=form puts one question to the person in its first turn with ACP's elicitation/create, a choice of
@@ -543,6 +545,13 @@ def main():
             confirm_context(message['params'])
             CANCELLED.clear()  # each serial turn receives only its own cancellation
             PROMPTS[0] += 1
+            if os.environ.get('FAKE_ACP_ECHO') == '1':
+                for block in message['params'].get('prompt', []):
+                    text = block.get('text') if block.get('type') == 'text' else None
+                    pieces = [text[:len(text) // 2], text[len(text) // 2:]] if text else [None]
+                    for piece in pieces:
+                        content = {'type': 'text', 'text': piece} if piece is not None else block
+                        update({'sessionUpdate': 'user_message_chunk', 'content': content})
             if MODE == 'replace':
                 with PROMPT_LOCK:
                     if ACTIVE_PROMPT[0] is not None:
