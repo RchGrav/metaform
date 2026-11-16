@@ -903,7 +903,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/projects':  # `opened`: the project of the folder `metaform web` ran in; `recent`: the
             # project the person's page showed last, VIEW-002
             return self.send(200, {'projects': [{'id': found.project_id, 'path': found.path}
-                                                for found in home.projects()], 'opened': opened_project(),
+                                                for found in own_workspace()], 'opened': opened_project(),
                                    'recent': shown_project()})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
@@ -3948,6 +3948,27 @@ def project_folder(given: dict[str, str]) -> tuple[str, Path]:
     if project is None:
         raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
     return project.project_id, Path(project.path)
+
+
+WORKSPACE = 'workspace'
+
+
+def own_workspace() -> tuple[Any, ...]:
+    """The registered projects, with the person's own workspace made when there is none. A page with no project
+    could not start the chat, since an agent's conversation is kept with a project: the person was shut out of asking
+    for help until they had registered a folder. The workspace is a folder in the Metaform home, registered as a
+    project like any other, so the chat, the board and the agents work in it from the first page; it goes with the
+    command that removes any project."""
+    found = home.projects()
+    if found:
+        return found
+    folder = home.home() / WORKSPACE
+    home.mkdir_private(folder)
+    try:
+        home.add_project(WORKSPACE, folder)
+    except StoreError as error:  # said in the log; the page then shows no project, as before
+        log(f'The workspace project could not be made: {error}')
+    return home.projects()
 
 
 def opened(given: dict[str, str]) -> Store:
