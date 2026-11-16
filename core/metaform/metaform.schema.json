@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Metaform Graph Model",
+  "description": "The JSON object is the functional namespace. Elements occupy nested paths. Each element owns its properties and native knowledge arrays. wants holds the wants of the receiving element as an array of records. Each record names the wanted element in element, a project-relative address. Each wanted element also exists at its own nested path. Tool command addresses do not replace this stored tree.",
+  "type": "object",
+  "$defs": {
+    "NamespaceValue": {
+      "title": "Value at a namespace address",
+      "description": "Objects extend the addressed hierarchy or hold structured data. Arrays denote composed element layers; scalars are direct values.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        },
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      ]
+    },
+    "NamespaceNode": {
+      "title": "Namespace branch or receiving element",
+      "description": "Namespace branch or receiving element. Its properties and layers are directly on the element. The same word can name metadata or a namespace branch according to its value and context.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The name used for this functionality in project documentation or specifications, such as Metaform.",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The element's role, written by its full name: Artifact Type (the type that groups the artifacts examined), Defining Element (whose loss would prevent the artifact from remaining the same type), Supporting Element (whose Encounter Function helps a Defining Element serve the purpose of the CQU), Coupled Element (a Supporting Element whose functionality cannot be changed apart from the elements that want it, so work on it and work on them is not assigned to different worktrees at the same time), Notable Element (which states an essential demand or requirement), Vested Beneficiary (the vested beneficiary of the project, who is not the user or developer working on it; the intake procedure calls it the CQU), Upstream Dependency (an element outside the artifact that an element depends on) or Downstream Dependant (an element outside the artifact that depends on it and is not a person). The intake procedure abbreviates them AT, DE, SE, CE, NE, CQU, UD and DD. A map may hold several Defining Elements."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Implementation state. Use un_built for intended functionality not yet built. Legacy missing/todo spellings and intake BKN/broken judgments are not accepted. Other lifecycle state names are not defined by this schema.",
+              "minLength": 1,
+              "pattern": "\\S",
+              "not": {
+                "enum": [
+                  "missing",
+                  "MISSING",
+                  "BKN",
+                  "broken",
+                  "todo",
+                  "TODO"
+                ]
+              }
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "technical_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "The well-understood practitioner short name derived from the leaf segments. Must exactly match the same number of leading words of the reversed, space-separated namespace address, and must not match `name`.",
+              "minLength": 1,
+              "pattern": "\\S"
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "wants": {
+          "$ref": "#/$defs/Wants"
+        },
+        "why": {
+          "$ref": "#/$defs/RelationshipWord"
+        },
+        "how": {
+          "$ref": "#/$defs/RelationshipWord"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "\\S",
+              "description": "Optional project metadata; does not introduce a required wrapper."
+            },
+            {
+              "$ref": "#/$defs/NamespaceNode"
+            },
+            {
+              "$ref": "#/$defs/ComposedElementLayer"
+            }
+          ]
+        },
+        "refs": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "\\S"
+              },
+              "description": "The entry point of this functionality in the material, or a discrete reference that shows it. It is not a list of every file or member. A relative file path is allowed."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uri": {
+          "not": {},
+          "description": "Not a field. Use refs."
+        },
+        "providers": {
+          "$ref": "#/$defs/NamespaceNode",
+          "description": "This word may name a namespace branch. The functional relationships are in wants, not providers."
+        },
+        "direction": {
+          "$ref": "#/$defs/RelationshipWord"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NamespaceValue"
+      },
+      "propertyNames": {
+        "pattern": "^[^.$\\[\\]\\s]+$",
+        "description": "One namespace segment, never a dotted reference or JSONPath expression."
+      }
+    },
+    "ComposedElementLayer": {
+      "title": "Array-valued composed element layer",
+      "description": "An array at an element is a knowledge layer. Its members retain their native formats and nesting. Do not reinterpret fields inside native members as functional namespace branches.",
+      "type": "array",
+      "items": true
+    },
+    "Wants": {
+      "title": "Wants",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/WantRecord"
+      },
+      "description": "What this receiving element wants: a list of want records. The intake procedure calls these dependency records."
+    },
+    "WantRecord": {
+      "title": "Want record",
+      "description": "One want of this receiving element: the element it wants, why it wants it, how that element serves the purpose, and the direction of the flow. These are one set. It may name the one artifact it is about in ref. An element may hold several wants on the same element.",
+      "type": "object",
+      "properties": {
+        "element": {
+          "type": "string",
+          "pattern": "^[^.$\\[\\]\\s]+(?:\\.[^.$\\[\\]\\s]+)*$",
+          "description": "The address of the element that this receiving element wants. The intake procedure calls it the Providing Element (PE). It refers to the actual element in the nested tree, which keeps its own fields at its own location."
+        },
+        "why": {
+          "type": "string",
+          "description": "What this receiving element seeks to accomplish through the wanted element. The intake procedure calls it the Operative Purpose (OP). Use clear, simple technical English.",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "how": {
+          "type": "string",
+          "description": "How the wanted element serves that purpose in this encounter. The intake procedure calls it the Encounter Function (EF). Use clear, simple technical English.",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "direction": {
+          "type": "string",
+          "description": "The direction of the movement of substance that satisfies the purpose, relative to the receiving element and not including the request: send, receive or both. The intake procedure calls it the Information Flow Direction (IFD).",
+          "enum": [
+            "send",
+            "receive",
+            "both"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "The uri of the one artifact this want is about. When a map covers several artifacts, such as a folder of photographs, each want names its artifact here, and an element holds one want for each artifact."
+        }
+      },
+      "required": [
+        "element",
+        "why",
+        "how",
+        "direction"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipWord": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NamespaceNode"
+        },
+        {
+          "$ref": "#/$defs/ComposedElementLayer"
+        }
+      ],
+      "description": "This word may name a namespace branch or native layer. The fields element, why, how and direction belong inside a want record, not on the element."
+    }
+  },
+  "$comment": "Owner-authorized terminology and tool-contract update, 2026-10-31. This schema validates one selected project namespace. A host may store it below a project key. Provider addresses resolve from that selected project, not from the host root. validate_metaform.py also checks reference resolution, duplicate relationships and name_length bounds. MCP command input has a separate schema. Validation does not prove functional reasoning. CQU and the authored concepts remain in force.",
+  "$ref": "#/$defs/NamespaceNode"
+}

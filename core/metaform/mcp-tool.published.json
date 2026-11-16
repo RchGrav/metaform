@@ -1,0 +1,32 @@
+{
+  "note": "The input schema the server publishes to agents in tools/list: one key, which is one of the listed operations or an address to read. The owner designed the tool surface to be well under 1 KB, with a list of operations. The shape of an element is the form the map stores, which every read shows; the server checks each command against the full contract (mcp-tools.proposed.json) and answers a wrong one with the reason and a corrected command.",
+  "inputSchema": {
+    "type": "object",
+    "minProperties": 1,
+    "maxProperties": 1,
+    "properties": {
+      "add": {
+        "type": "object"
+      },
+      "update": {
+        "type": "object"
+      },
+      "delete": {
+        "type": "object"
+      },
+      "orphaned": {
+        "type": "object"
+      },
+      "goto": {
+        "type": "string"
+      },
+      "map": {
+        "type": "object"
+      },
+      "help": {}
+    },
+    "additionalProperties": {
+      "type": "object"
+    }
+  }
+}
