@@ -7,7 +7,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Read `AGENTS.md` first: it holds the rules for working with Rich on this project, including how specifications are written with him and that `rich/` is his folder, never modified.
 
-The project's terms (AUE, RE, PE, OP, EF, CQU, Join, Address and the rest) are defined in the glossary at the end of this file. The MCP server serves the glossary to every agent as `metaform://glossary`, from the `<glossary>` element of `src/metaform/modules/mcp/resources/prompts.xml`. Use the terms exactly; never substitute synonyms.
+## The intake procedure and its semantics are the founder's
+
+The intake procedure, its terms, its definitions and its examples are the result of months of testing across models and kinds of artifact. Change them only on the founder's direct instruction. This covers the served files in `src/metaform/modules/intake/resources/` (`intake.axiom`, `intake.xml`, `metaform.axiom`, `layer.axiom`) and everything in `rich/`.
+
+Treat that text as a formula. Leave every step, rule and definition in its words, its order and its length. A passage that reads as ambiguous is contextual: its meaning settles from the artifact in front of the model, as a symbol takes its meaning from its formula. Report such a passage to the founder and leave it as it is. The reason: agents went in to remove what read as ambiguity, the meaning changed, and intakes stopped working as designed.
+
+Everything around the text is open to change: where the files live, how the text is served, and the code and the tool that use it.
+
+Keep tests, checks and build steps independent of the procedure's content: its section names, its marks and its wording. The founder edits it, and nothing may fail when he does.
+
+Agents working in a project need no glossary. Element addresses read as plain names, and fields and roles are written in full. The procedure's own terms are read by the agent that performs an intake, from the procedure.
 
 ## Commands
 
@@ -92,7 +102,7 @@ If writing or interfacing with high-performance Python nodes. First remove work 
 
 **The template is the module contract in practice.** Any new capability a module can use is added to `modules/template` (code, `resources/prompts.xml`, README) and recorded in its `CHANGELOG.md`, so developers can start from it. `metaform fork init` copies it.
 
-**Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`. A prompt is product text: an agent that finds one wrong or incomplete refines it as it refines code, or routes the fix to an agent that can; only the Canonical Intake (`prompt_files.FIXED`) is fixed, because its semantics work like a formula.
+**Prompts.** The text a module sends to agents lives in its `resources/prompts.xml`: one element per prompt, sent exactly as written; an empty element inside a prompt marks a place the code fills in; comments are never sent. Comments are written as product documentation: what the prompt is, who receives it and when, how to change or turn it off. Read prompts with `metaform.prompt_files`. A module's own prompt is product text: an agent that finds one wrong or incomplete refines it as it refines code, or routes the fix to an agent that can. The intake procedure is the exception, covered above.
 
 **MCP server** (`modules/mcp/server.py`): built on the official `mcp` Python SDK's low-level `Server`, speaking protocol revision 2026-07-28 (`server/discover`, `subscriptions/listen`) and earlier clients, over stdio, or Streamable HTTP on 127.0.0.1 with `metaform mcp serve --http`. Its tools, prompts and resources are generated from the module declarations of the folder it runs in. Each command is its own tool, `<module>_<verb>`, with a one-line description; its arguments come with it when an agent uses it. At connect it sends a short instruction (the mcp module's `<instructions>`) plus the notices the folder's state calls for, such as intake's first run; Claude Code keeps only the first 2,048 characters. That instruction points agents to `metaform://modules` for module-owned descriptions and `metaform://<module>/tools` for commands loaded on demand. `metaform_catalog search=<words>` supports approximate command names. The glossary is separate from command discovery. What an agent is told about the node it works on is a summary of about 2 KB (the map setting `node_summary_bytes`), given once per session; anything more is a count with the call that reads it. MCP changed substantially in July 2026; `docs/reference/mcp-agent-context-july-2026.md` summarises the current standard, and `docs/reference/metaform-mcp-server.md` lists every tool and command.
 
@@ -113,24 +123,6 @@ For context-delivery changes, compare the exact rendered payload and selected pr
 @STATE_INIT:
   {Mode} := SYSTEM_PRELOAD
   {Register} := PEER_UNSLOP
-
-  // --- IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE) ---
-  {AUE} := "artifact under examination, the term for the workpieces in our project being created, modified, or used in the process of work. The thing or things which are part of the assignment."
-  {EUE} := "The element of focus when mapping out our understanding of the existing artifacts. A synonym for receiving element."
-  {AT} := "artifact type, an element of type, used to form the namespace itself, or used to identify collections in the project."
-  {Address} := "code, document, media, data, collection. Narrow trunk-to-leaf semantically. When reversed reads as a proper noun. Acronyms Ok. Segments with underscores ok. No Placeholders."
-  {Name_Length} := "Short name as segment count when reversing namespace."
-  {Upstream} := "Namespace prefix for external origins, dependencies, and input sources that produce, supply, or feed context, code, or data into the artifact."
-  {Downstream} := "Namespace prefix for external consumers, sinks, and beneficiaries (e.g., downstream.cqu.*) that receive output, evaluate utility, or drive the artifact's purpose."
-  {RE} := "receiving element, the entity (a who or what) bearing a goal satisfied by the encounter or function of another element."
-  {OP} := "operative purpose (why), This is the active goal that an element's encounter function intends to satisfy."
-  {PE} := "providing element, the part satisfying the requirement actively declared by its RE through its Operative Purpose."
-  {Join} := "All relations, logic, memories, knowledge attaches to the receiving element (RE)."
-  {IFD} := "information flow direction [sends|receives|both]: This is the movement of substance that satisfies the receivers goal, never the receipt or the request."
-  {CQU} := "cestui que use, french (archaic): the party or parties for whom this projects worth is held in trust by the agents and the user for whom the benefit of the workpiece will be realized; the beneficiary of the efforts put forth and the one who's goals drive the decisions made on the workpiece by the user and the agents."
-  {EF} := "encounter function, how a purpose is served. It can mean a function or the encounter of a function, and context picks the sense. This keeps the same reasoning usable for code, photos, or any other artifact."
-  {C_T_Formula} := "C(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation."
-  {CEL} := "composed element layer, a knowledge layer created on top of the tripartite non-manifold graph that agents use to index and understand an AUE. The name draws from cel animation: layers can be taken off and put back on demand."
 
   // --- INFRASTRUCTURE & COMMUNICATION ---
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
