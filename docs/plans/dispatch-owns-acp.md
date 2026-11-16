@@ -292,7 +292,9 @@ Each was read in the code or seen on the live system on 2026-11-16. The step tha
 
 **The registry**
 
-8. Three harnesses are written into the code (`AGENTS`, `dispatch/__init__.py`). The other 43 of the registry can
+8. Three harnesses are written into the code (`AGENTS`, `dispatch/__init__.py`). An intake reads that table as what the
+   project uses: the `metaform` map of 2026-11-16 records the harness element (`upstream.code.harness.agent`) as
+   known as "Claude Code, Codex, Google Antigravity", where the project in fact works any harness of the ACP Registry. The other 43 of the registry can
    be added only with `metaform dispatch registry add=<id>` in a shell; the page has nothing for it. [3]
 9. The pinned versions are stale: Claude Code's adapter 0.100.0 against 0.107.2 listed, Codex's 2.5.0 against 2.6.0,
    Antigravity's 1.4.1 against 1.5.0. [3]

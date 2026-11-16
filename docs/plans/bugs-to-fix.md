@@ -24,3 +24,7 @@ recorded, each becomes a ticket on the element it concerns.
    Code". Remove it from the chat window; a Claude Code profile may name one (dispatch plan, step 4).
 5. **One dispatch test fails.** `test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended`
    expects an `intake` field in a session's state (issue 24 of `dispatch-owns-acp.md`).
+6. **The map names the harness element after three hard-coded harnesses.** Found by the person 2026-11-16. The
+   `metaform` intake recorded `upstream.code.harness.agent` as known as "Claude Code, Codex, Google Antigravity",
+   because dispatch's `AGENTS` table names those three and the intake agent reads the code as what the project uses.
+   Fixed by step 3 of `dispatch-owns-acp.md` (the registry replaces the table), then a re-intake that refines the map.
