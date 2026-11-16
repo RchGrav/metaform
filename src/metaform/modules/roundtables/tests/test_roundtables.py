@@ -165,12 +165,11 @@ def test_a_seats_short_name_means_the_newest_release_of_its_family_as_the_table_
     from metaform.modules.roundtables import seat_of  # as loaded now: a run loads the modules again
 
     def offers(agent: str, *values: str) -> None:
-        with Store('proj', module='dispatch').tables() as tx:
-            tx.delete('catalog', {'agent': agent, 'version': '9'})
-            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
-                                  'seq': time.time_ns(), 'settings': [
-                {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select', 'current': values[0],
-                 'options': [{'value': value, 'name': value} for value in values]}]})
+        from metaform.modules.dispatch import offered as harness_offered
+        harness_offered.keep(agent, {'state': 'ready', 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
+                                     'settings': [
+            {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select', 'current': values[0],
+             'options': [{'value': value, 'name': value} for value in values]}]})
     ctx = context('roundtables', folder, project='proj')
     assert seat_of(ctx, 'codex/sol') == 'acp:codex/sol', 'not run here: kept as written'
     offers('codex', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol')

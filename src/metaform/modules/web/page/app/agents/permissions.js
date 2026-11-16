@@ -38,8 +38,8 @@ export async function drawPermissions(box, agent, own, current) {
     one.name || one.value))) : null;
   fill(box.querySelector('.controls'), h('label', {class: 'setting'}, h('span', {}, 'Permission prompts'), promptsPick),
     modePick ? h('label', {class: 'setting'}, h('span', {}, 'Mode'), modePick) : null);
-  box.querySelector('.hint').textContent = (modePick ? '' : found?.next
-    ? `${agentName(agent)} offers its modes once it has run here: ${found.next}. `
+  box.querySelector('.hint').textContent = (modePick ? '' : found?.reason
+    ? `${found.reason} `
     : agent ? `${agentName(agent)} offers no mode to choose. ` : '')
     + 'Left at the project setting, each start follows the settings; a choice here is for the agents this window '
     + 'starts, and the settings stay as they are.';

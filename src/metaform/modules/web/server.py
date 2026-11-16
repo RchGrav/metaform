@@ -2390,9 +2390,9 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatched(given, 'cancel', [work_id], reason.strip() if reason and reason.strip() else None)
 
     def dispatch_options(self, given: dict[str, str]) -> None:
-        """What an agent offered at its last session in this project, its model, effort, mode and the rest, with the
-        value dispatch_<agent>_<option> gives each, as `metaform dispatch options` lists them, so the chat offers them
-        before the agent is called; it never primes an agent. With dispatch not enabled, none."""
+        """What an agent offers, its model, effort, mode and the rest, with the value dispatch_<agent>_<option> gives
+        each, as `metaform dispatch options` lists them, so the chat offers them before the agent is called. An agent
+        nothing has asked yet is asked by this read, once, with no prompt. With dispatch not enabled, none."""
         try:
             found = module_verb(given, 'dispatch', 'options', {'agent': given['agent']} if given.get('agent') else {})
         except StoreError as error:

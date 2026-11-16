@@ -72,9 +72,10 @@ export function sessionSummary(box, {agent, settings, usage, controls, used, res
     used ? h('p', {class: 'hint'}, used) : null,
     !controls.length && !used ? h('p', {class: 'hint'}, none) : null].filter(Boolean));
 }
-/* Before Call the chat offers what the agent to be called offered at its last session here, `dispatch options`: its
- * model, effort, mode and the rest, each chosen now and kept in its own setting, dispatch_<agent>_<option>, which
- * every session it starts is given. An agent that has not run here has none yet. */
+/* Before Call the chat offers what the agent to be called offers, `dispatch options`: its model, effort, mode and
+ * the rest, each chosen now and kept in its own setting, dispatch_<agent>_<option>, which every session it starts is
+ * given. An agent nothing has asked yet is asked by that read, which starts it once with no prompt, so the window
+ * says it is asking; one that needs a login or cannot start says why. */
 const PRECALL = {agent: null, at: 0, data: null};
 export async function preCallSettings(box) {
   // the agents there are
@@ -89,6 +90,8 @@ export async function preCallSettings(box) {
   if (!agent || DOCK.target) { box.hidden = true; return; }
   if (PRECALL.agent !== agent || Date.now() - PRECALL.at > 30000) {
     PRECALL.agent = agent; PRECALL.at = Date.now();
+    sessionSummary(box, {agent: agentName(agent), settings: [], usage: null, controls: [],
+      used: `Asking ${agentName(agent)} what it offers…`, resume: null, before: true});
     try { PRECALL.data = (await read('dispatch-options', {agent})).agents?.[0] || null; } catch { PRECALL.data = null; }
   }
   // a call began, or another agent was chosen
@@ -96,7 +99,7 @@ export async function preCallSettings(box) {
   const found = PRECALL.data || {};
   const {settings, controls} = agentOptionControls(agent, found);
   sessionSummary(box, {agent: found.label || agentName(agent), settings, usage: null, controls,
-    used: controls.length ? null : found.next ? `It has not run here yet: ${found.next}` : null, resume: null,
+    used: found.reason || null, resume: null,
     before: true});
 }
 /* An agent's own settings as controls, as it offered them at its last session here, `dispatch options`: its model,
@@ -123,7 +126,7 @@ function optionSelect(agent, setting) {
   return h('label', {class: 'setting'}, h('span', {}, setting.name), pick);
 }
 /* The intake's agent's model, thinking and the rest, chosen before it starts, as the chat offers them before a call;
- * an agent that has not run here offers none yet, and the window says how to read them. */
+ * an agent that needs a login or cannot start offers none, and the window says why. */
 export async function drawIntakeSettings() {
   const box = $('#intake .intakesettings'), agent = summonAgent();
   if (!agent) { box.hidden = true; return; }
@@ -133,7 +136,7 @@ export async function drawIntakeSettings() {
   const {controls} = agentOptionControls(agent, found || {});
   fill(box.querySelector('.controls'), controls);
   box.querySelector('.hint').textContent = controls.length ? ''
-    : found?.next ? `${agentName(agent)} offers its model and thinking once it has run here: ${found.next}`
+    : found?.reason ? found.reason
     : `${agentName(agent)} offers no settings to choose.`;
   box.hidden = false;
 }

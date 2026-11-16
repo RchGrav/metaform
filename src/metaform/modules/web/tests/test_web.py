@@ -11491,13 +11491,13 @@ def test_a_settings_line_cut_short_opens_in_place_at_a_click_or_enter_and_folds_
 @pytest.mark.req('VIEW-011')
 def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as_it_is_made(run, web, mapped, browser):
     from metaform import settings
-    from metaform.data import Store
     run('enable', 'dispatch')
-    with Store('proj', module='dispatch').tables() as tx:  # what Claude Code offered at its last session here
-        tx.insert('catalog', {'agent': 'claude', 'version': '1', 'name': 'Claude', 'seen': '2026-10-14T00:00:00Z',
-                              'seq': 1, 'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select', 'options': [
-                                  {'value': 'default', 'name': 'Manual'},
-                                  {'value': 'acceptEdits', 'name': 'Accept edits', 'description': 'Accepts edits'}]}]})
+    from metaform.modules.dispatch import offered as harness_offered
+    harness_offered.keep('claude', {  # what Claude Code offers
+        'state': 'ready', 'version': '1', 'name': 'Claude', 'seen': '2026-10-14T00:00:00Z',
+        'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select', 'options': [
+            {'value': 'default', 'name': 'Manual'},
+            {'value': 'acceptEdits', 'name': 'Accept edits', 'description': 'Accepts edits'}]}]})
     started(run)
     page, problems, remote = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')

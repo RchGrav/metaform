@@ -31,6 +31,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import signal
 import subprocess
 import sys
@@ -69,6 +70,7 @@ from acp.schema import (
     InitializeResponse,
     KillTerminalResponse,
     McpServerStdio,
+    NewSessionResponse,
     PermissionOption,
     ReadTextFileResponse,
     ReleaseTerminalResponse,
@@ -170,6 +172,7 @@ from . import (
     work_line,
     work_over,
 )
+from . import offered as harness_offered
 from .merge import (
     capture_state,
     checkpoint,
@@ -1728,6 +1731,8 @@ class Session:
             'close': bool(session is not None and session.close is not None),
             'fork': bool(session is not None and session.fork is not None),
             'delete': raw_session.get('delete') is not None,
+            # session/options, ACP's proposal of 2026-11-03: what a session would start with, asked without one
+            'options': raw_session.get('options') is not None,
             'image': bool(prompts is not None and prompts.image),
             'audio': bool(prompts is not None and prompts.audio),
             'embedded_context': bool(prompts is not None and prompts.embedded_context),
@@ -1778,29 +1783,40 @@ class Session:
                                          for mode in available], 'source': 'mode'})
         return found
 
-    async def remember(self) -> None:
-        """What the agent offered, kept per agent and version in this project, P199: the settings of this session, its
-        logins and extensions. The dispatch_<agent>_<option> settings offer them as their choices, and dispatch
-        options lists them."""
+    def harness_record(self, state: str, reason: str | None = None) -> dict[str, Any]:
+        """This harness's record as the home keeps it, `offered`: how asking it went, and what its initialize and its
+        session answered, as far as it got."""
         info = cast(dict[str, Any], self.acp['agent_info'] or {})
         caps = cast(dict[str, Any], self.acp['capabilities'])
-        row = {'agent': self.agent, 'version': str(info.get('version') or 'unknown'), 'name': info.get('title')
-               or info.get('name'), 'settings': self.settings(), 'auth': self.acp['auth_methods'],
-               'extensions': {key: caps.get(key) for key in ('steering', 'auth_status', 'logout', 'resume', 'load',
-                                                              'fork', 'close', 'delete')},
-               'seen': stamp(), 'seq': time.time_ns()}
+        return {'state': state, 'reason': reason, 'version': str(info.get('version') or 'unknown'),
+                'name': info.get('title') or info.get('name'),
+                'settings': self.settings(), 'auth': self.acp['auth_methods'],
+                'extensions': {key: caps.get(key) for key in ('steering', 'auth_status', 'logout', 'resume', 'load',
+                                                               'fork', 'close', 'delete', 'options')},
+                # the command that started it: a harness whose command has changed since is asked again
+                'command': shlex.join(self.command), 'seen': stamp()}
+
+    def login_state(self) -> tuple[str, str | None]:
+        """`ready`, or `needs login` when the harness itself says nobody is logged in, its authStatus push."""
+        status = cast(dict[str, Any] | None, self.acp['auth'])
+        if status is not None and status.get('kind') == 'none':
+            return 'needs login', f'{self.name} is not logged in.'
+        return 'ready', None
+
+    async def remember(self) -> None:
+        """What the harness offered, kept by harness in the Metaform home, `offered`: the settings of this session,
+        its logins and extensions. Every picker lists them as its choices, in every project."""
+        row = self.harness_record(*self.login_state())
 
         def kept() -> None:
-            with Store(self.store.project_id, module='dispatch').tables() as tx:
-                tx.concern(work_id=self.work_id, session_id=self.session_id, kind='session')  # BASE-053
-                held = tx.get('catalog', {'agent': row['agent'], 'version': row['version']})
-                if not self.offered and held is not None:  # an answer naming no settings leaves those known as kept
-                    row['settings'] = held['settings']
-                tx.delete('catalog', {'agent': row['agent'], 'version': row['version']})
-                tx.insert('catalog', row)
+            held = harness_offered.record(self.agent)
+            # an answer naming no settings leaves those known of this version as kept
+            if not self.offered and held is not None and held.get('version') == row['version']:
+                row['settings'] = held.get('settings') or []
+            harness_offered.keep(self.agent, row)
         try:
             await asyncio.to_thread(kept)
-        except StoreError as error:  # a catalog that cannot be written never keeps a session from starting
+        except OSError as error:  # a record that cannot be written never keeps a session from starting
             sys.stderr.write(f'Could not keep what {self.name} offered: {error}\n')
 
     async def apply_options(self) -> list[dict[str, Any]]:
@@ -5197,33 +5213,46 @@ def asked(ctx: Context, store: Store | None, agent: str, purpose: str) -> Sessio
     return probe
 
 
-async def prime(ctx: Context, store: Store, agent: str) -> dict[str, Any]:
-    """`dispatch options agent=<agent> prime=true`: start the agent, make one session in the project's folder with no MCP
-    server, keep what session/new answered, its settings, in the catalog, close the session where the agent offers
-    session/close and delete it where it offers session/delete, and end the agent. No prompt is sent."""
-    probe = asked(ctx, store, agent, 'prime')
+async def ask(ctx: Context, agent: str) -> dict[str, Any]:
+    """Ask a harness what it offers and keep its answer in the home, `offered`: start it and initialize it, then read
+    the settings a session of it would start with. A harness that has ACP's session/options is asked that, which makes
+    no session. Any other makes one session in the folder with no MCP server, and it is closed where the harness
+    offers session/close and deleted where it offers session/delete, so nothing is left in the person's own session
+    list. No prompt is sent, so no tokens are spent. A harness that wants a login first, or cannot start, is kept as
+    that with the reason, so every picker says why it has no choices rather than showing none. Returns the record."""
+    probe = asked(ctx, ctx.store, agent, 'ask')
+
+    async def unready(state: str, reason: str) -> dict[str, Any]:
+        return await asyncio.to_thread(harness_offered.keep, agent, probe.harness_record(state, reason))
     try:
         await probe.open_agent({})
-        made = await asyncio.wait_for(probe.conn.new_session(cwd=probe.folder, mcp_servers=[]), START_LIMIT)
-        probe.session_id = str(made.session_id)
-        probe.apply(made)
-        await probe.remember()
-        await probe.close_session()
-        # Deleted where the agent offers session/delete, so the throwaway session is not left in the person's own
-        # session list in Claude Code or Codex.
-        if probe.acp['capabilities'].get('delete') and (raw := probe.raw()) is not None:
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(raw.send_request('session/delete', {'sessionId': probe.session_id}), END_LIMIT)
-        return {'agent': agent, 'settings': probe.settings()}
+        raw = probe.raw()
+        if probe.acp['capabilities'].get('auth_status'):  # it pushes whether anyone is logged in; a bounded wait
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(probe_status(probe), 5.0)
+        if probe.acp['capabilities'].get('options') and raw is not None:
+            said: Any = await asyncio.wait_for(raw.send_request('session/options', {'cwd': probe.folder}), START_LIMIT)
+            probe.apply(NewSessionResponse.model_validate({**cast(dict[str, Any], said), 'sessionId': ''}))
+            await probe.remember()
+        else:
+            made = await asyncio.wait_for(probe.conn.new_session(cwd=probe.folder, mcp_servers=[]), START_LIMIT)
+            probe.session_id = str(made.session_id)
+            probe.apply(made)
+            await probe.remember()
+            await probe.close_session()
+            if probe.acp['capabilities'].get('delete') and raw is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(raw.send_request('session/delete', {'sessionId': probe.session_id}),
+                                           END_LIMIT)
+        return cast(dict[str, Any], harness_offered.record(agent))
     except acp.RequestError as error:
         if error.code == AUTH_REQUIRED:
-            raise Stop(f'{probe.name} needs a login before it makes a session.',
-                       f'metaform dispatch login {agent}') from None
-        raise Stop(f'{probe.name} refused a session: {error}.', 'metaform dispatch agents') from None
-    except (OSError, TimeoutError, ValueError) as error:
+            return await unready('needs login', f'{probe.name} needs a login before it makes a session.')
+        return await unready('cannot start', f'{probe.name} refused a session: {error}.')
+    except (OSError, TimeoutError, ValueError, RuntimeError) as error:
         last = probe.tail()
-        raise Stop(f'{probe.name} did not start: {error}' + (f'; its last stderr: {last}' if last else ''),
-                   'metaform dispatch agents') from None
+        return await unready('cannot start', f'{probe.name} did not start: {error}'
+                             + (f'; its last stderr: {last}' if last else ''))
     finally:
         await closed(probe)
 

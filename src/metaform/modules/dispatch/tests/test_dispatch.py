@@ -1204,13 +1204,12 @@ def test_dispatch_prompts_approve_all_answers_every_request_without_asking(dispa
 def test_a_launchs_own_prompts_answer_over_the_project_setting_and_only_the_person_gives_them(dispatch, run):
     """A start gives its launch its own prompts and mode, over dispatch_prompts and dispatch_agent_options; a value
     dispatch_prompts or the agent does not offer is refused."""
-    from metaform.data import Store
     from metaform.module import Stop, context
     from metaform.modules import dispatch as module
-    with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('catalog', {'agent': 'claude', 'version': '9', 'name': 'Claude Code', 'seen': '2026-10-14T00:00:00Z',
-                              'seq': 1, 'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select',
-                                                      'options': [{'value': 'default'}, {'value': 'plan'}]}]})
+    module.harness_offered.keep('claude', {
+        'state': 'ready', 'version': '9', 'name': 'Claude Code', 'seen': '2026-10-14T00:00:00Z',
+        'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select',
+                      'options': [{'value': 'default'}, {'value': 'plan'}]}]})
     for nouns, said in (({'prompts': 'yes'}, 'ask_all'), ({'mode': 'bogus'}, 'default, plan')):
         with pytest.raises(Stop, match=said):
             module.launch_permissions(context('dispatch', dispatch.folder, project='proj', nouns=nouns,
@@ -2641,21 +2640,18 @@ def test_the_handoff_carries_the_persons_note_at_the_node_whole_and_nothing_when
 
 @pytest.mark.req('BASE-052')
 def test_an_agents_options_are_kept_offered_as_settings_and_applied_with_the_tickets_own(dispatch, run):
-    """P199 and P015: what session/new offered is kept per agent and version and offered as the choices of the
+    """P199 and P015: what a harness offers is kept in the home by harness and offered as the choices of the
     agent's own settings, dispatch_claude_model and the rest; the agent's default and the ticket's own effort are set
     with session/set_config_option when the session starts, and a choice already current is not sent again."""
     from metaform import settings
-    from metaform.data import Store
-    empty = json.loads(run('dispatch', 'options', 'agent=claude', '--json', cwd=dispatch.folder).stdout)['agents'][0]
-    assert empty['version'] is None and empty['next'] == 'metaform dispatch options agent=claude prime=true'
+    from metaform.modules.dispatch import offered as harness_offered
     assert settings.SCHEMA['dispatch_claude_model'].options(dispatch.folder) == ['default'], 'none offered yet'
-    with Store('proj', module='dispatch').tables() as tx:  # what an earlier session offered
-        tx.insert('catalog', {'agent': 'claude', 'version': '0.9', 'name': 'Claude', 'seen': '2026-10-12T00:00:00Z',
-                              'seq': 1, 'settings': [
-                                  {'id': 'model', 'category': 'model', 'type': 'select',
-                                   'options': [{'value': 'small'}, {'value': 'large'}]},
-                                  {'id': 'reasoning', 'category': 'thought_level', 'type': 'select',
-                                   'options': [{'value': 'low'}, {'value': 'high'}]}]})
+    harness_offered.keep('claude', {  # what an earlier session offered
+        'state': 'ready', 'version': '0.9', 'name': 'Claude', 'seen': '2026-10-12T00:00:00Z', 'settings': [
+            {'id': 'model', 'category': 'model', 'type': 'select',
+             'options': [{'value': 'small'}, {'value': 'large'}]},
+            {'id': 'reasoning', 'category': 'thought_level', 'type': 'select',
+             'options': [{'value': 'low'}, {'value': 'high'}]}]})
     run('set', '--dispatch-claude-model', 'large', '--dispatch-claude-effort', 'low', cwd=dispatch.folder)
     run('dispatch', 'tune', dispatch.id, 'effort=high', cwd=dispatch.folder)
     dispatch.start('hold', **rich(dispatch))
@@ -2708,6 +2704,27 @@ def test_priming_reads_an_agents_options_without_a_prompt(dispatch, run):
     assert made['params']['mcpServers'] == []
     assert not dispatch.received('session/prompt'), 'priming spends no tokens'
     assert gone(dispatch.logged('pid')), 'the primed agent is ended'
+
+
+@pytest.mark.req('BASE-052')
+def test_options_asks_a_harness_itself_once_and_keeps_its_answer_in_the_home(dispatch, run):
+    """A harness nothing has asked is asked by `dispatch options`, with no prompt, and its answer is the home's, so
+    the next read starts nothing. One that says nobody is logged in is kept as needing a login, with the next step."""
+    from metaform.modules.dispatch import offered as harness_offered
+    assert harness_offered.record('claude') is None
+    env = dispatch.env('hold', FAKE_ACP_CLOSE='1', **rich(dispatch))
+    for _ in range(2):
+        asked = json.loads(run('dispatch', 'options', 'agent=claude', '--json', cwd=dispatch.folder,
+                               env=env).stdout)['agents'][0]
+        assert (asked['state'], asked['next']) == ('ready', None)
+        assert [one['key'] for one in asked['settings']] == ['mode', 'model', 'thought_level']
+    assert len(dispatch.received('session/new')) == 1, 'asked once, then read from the home'
+    assert not dispatch.received('session/prompt'), 'asking spends no tokens'
+    assert (harness_offered.record('claude') or {}).get('state') == 'ready'
+    out = json.loads(run('dispatch', 'options', 'agent=claude', 'prime=true', '--json', cwd=dispatch.folder,
+                         env=dispatch.env('hold', FAKE_ACP_AUTH='1', **rich(dispatch))).stdout)['agents'][0]
+    assert (out['state'], out['next']) == ('needs login', 'metaform dispatch login claude')
+    assert [one['key'] for one in out['settings']] == ['mode', 'model', 'thought_level'], 'its choices stay known'
 
 
 @pytest.mark.req('BASE-052')
@@ -3152,12 +3169,11 @@ def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offe
     """P015: tune refuses a value the ticket's agent did not offer at its last session, and the ticket read shows what
     it keeps; each of an agent's options is its own setting, so setting one leaves the others, and a value it never
     offered is refused with the list."""
-    from metaform.data import Store
-    with Store('proj', module='dispatch').tables() as tx:  # both agents publish their model choices
-        for seq, (agent, name) in enumerate((('claude', 'Claude Code'), ('codex', 'Codex')), 1):
-            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': name, 'seen': '2026-10-12T00:00:00Z',
-                                  'seq': seq, 'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
-                                                            'options': [{'value': 'small'}, {'value': 'large'}]}]})
+    from metaform.modules.dispatch import offered as harness_offered
+    for agent, name in (('claude', 'Claude Code'), ('codex', 'Codex')):  # both agents publish their model choices
+        harness_offered.keep(agent, {'state': 'ready', 'version': '9', 'name': name, 'seen': '2026-10-12T00:00:00Z',
+                                     'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
+                                                   'options': [{'value': 'small'}, {'value': 'large'}]}]})
     refused = run('dispatch', 'tune', dispatch.id, 'model=bogus', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'Codex offers model small, large' in refused.stdout + refused.stderr
     run('dispatch', 'tune', dispatch.id, 'model=large', cwd=dispatch.folder)
@@ -4416,11 +4432,10 @@ def test_claude_family_models_resolve_through_dispatch_and_roundtable_admission(
     model = f'claude-fable-5-1{qualifier}'
     choices = [{'value': value, 'name': value} for value in ('default', 'opus', model, 'sonnet', 'haiku')]
     offered = {'id': 'model', 'category': 'model', 'type': 'select', 'current': 'default', 'options': choices}
-    with module.own_store(dispatch.store).tables() as tx:
-        tx.insert('catalog', {'agent': 'claude', 'version': '9', 'name': 'Claude', 'seen': '2026-11-05T00:00:00Z',
-                              'seq': time.time_ns(), 'settings': [offered]})
-    assert module.model_for(dispatch.store, 'claude', 'fable') == model
-    assert module.model_for(dispatch.store, 'claude', model) == model
+    module.harness_offered.keep('claude', {'state': 'ready', 'version': '9', 'name': 'Claude',
+                                           'seen': '2026-11-05T00:00:00Z', 'settings': [offered]})
+    assert module.model_for('claude', 'fable') == model
+    assert module.model_for('claude', model) == model
     assert module.short_names(offered)['fable'] == model
     assert any(pick['value'] == 'fable' for pick in module.picker_entries(offered))
     assert roundtables.seat_of(context('roundtables', dispatch.folder), 'claude/fable') == f'acp:claude/{model}'
@@ -4467,10 +4482,12 @@ def test_model_pickers_list_default_then_short_names_then_specific_versions_and_
     offered = {'claude': [('default', 'Default (recommended)', 'Fable 5.1'), ('opus', 'Opus 5.5', None),
                           ('fable', 'Fable 5.1', None), ('claude-opus-5', 'Opus 5', None)],
                'codex': [('gpt-6.1-sol', '6.1 Sol', None), ('gpt-6-astra', '6 Astra', None), ('gpt-6-sol', '6 Sol', None)]}
-    with module.own_store(dispatch.store).tables() as tx:
-        for agent, models in offered.items():
-            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
-                                  'seq': time.time_ns(), 'settings': [
+    from metaform.module import context
+    asking = context('dispatch', dispatch.folder, project='proj')
+    for agent, models in offered.items():
+        module.harness_offered.keep(agent, {
+            'state': 'ready', 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
+            'command': shlex.join(module.argv(module.start_command(asking, agent))), 'settings': [
                 {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select', 'current': models[0][0],
                  'options': [{'value': value, 'name': name, 'description': said} for value, name, said in models]},
                 {'id': 'reasoning', 'category': 'thought_level', 'type': 'select', 'options': [{'value': 'high'}]}]})

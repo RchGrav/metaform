@@ -1,6 +1,5 @@
 """Ticket runtime edits use public providers and preserve the caller's identity."""
 import importlib
-import time
 from unittest.mock import Mock
 
 import pytest
@@ -19,13 +18,12 @@ def runtime_ticket(run, project_folder):
     store.add_element('parts', 'code.Example')
     ticket = store.add_work(Node('element', 'code.Example'), None, task='Implement the example.', title='Example').id
     module = importlib.import_module('metaform.modules.dispatch')
-    with module.own_store(store).tables() as tx:
-        tx.insert('catalog', {'agent': 'codex', 'version': 'fixture', 'seen': '2026-10-24T00:00:00Z',
-                             'seq': time.time_ns(), 'settings': [
-            {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select',
-             'options': [{'value': 'native-model', 'name': 'Native Model'}]},
-            {'id': 'effort', 'name': 'Effort', 'category': 'thought_level', 'type': 'select',
-             'options': [{'value': 'native-effort', 'name': 'Native Effort'}]}]})
+    module.harness_offered.keep('codex', {'state': 'ready', 'version': 'fixture', 'seen': '2026-10-24T00:00:00Z',
+                                          'settings': [
+        {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select',
+         'options': [{'value': 'native-model', 'name': 'Native Model'}]},
+        {'id': 'effort', 'name': 'Effort', 'category': 'thought_level', 'type': 'select',
+         'options': [{'value': 'native-effort', 'name': 'Native Effort'}]}]})
     return project_folder, store, ticket
 
 

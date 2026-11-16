@@ -76,13 +76,13 @@ from metaform.module import (
     project_for,
     provided,
     record_shown,
-    request_cached,
     request_scope,
     surface,
     work_reads,
 )
 
-from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
+from . import offered as harness_offered  # by another name: unloading a module drops its submodules' names
+from . import registry as agent_registry
 from .hold_review import HOLD_REVIEW_TABLES
 from .names import is_name, session_name
 from .progress import SOURCE as PROGRESS
@@ -196,9 +196,9 @@ TABLES = Tables(version=23, compatible_from=5, tables=(  # additive feature-comm
     Table('claim_work', key=('work_id',),
           columns=(Column('work_id', required=True), Column('claim_id', required=True)),
           indexes=(Index(('claim_id',)),)),
-    # What an agent offered the last time a session of it was made, by agent and the version its initialize answer
-    # named: its settings as the page shows them (config options and modes), its auth methods and its extensions. It
-    # is the project's, since every metaform of the project starts the same agents.
+    # No longer read or written: what a harness offers is the home's, `offered`, since it follows the harness and the
+    # account logged in on this machine, never a project. The table stays declared for older code that still opens
+    # these stores, as `spend` does.
     Table('catalog', place='project', key=('agent', 'version'),
           columns=(Column('agent', required=True), Column('version', required=True), Column('name'),
                    Column('settings', 'json'), Column('auth', 'json'), Column('extensions', 'json'),
@@ -506,23 +506,13 @@ for _agent, (_name, _command) in AGENTS.items():
 CATEGORIES = ('mode', 'model', 'model_config', 'thought_level')
 
 
-def catalog_rows(store: Store | None) -> dict[str, dict[str, Any]]:
-    """What each agent offered at the latest session made of it, by agent: its version, settings, auth methods and
-    extensions; none for an agent that has not run in this project yet."""
-    if store is None:
-        return {}
-    project = store.project_id
-
-    def read() -> dict[str, dict[str, Any]]:
-        try:
-            with Store(project, module='dispatch').tables(write=False) as tx:
-                rows = [dict(row) for row in tx.rows('catalog', by=('agent', 'seq'), limit=0).results]
-        except StoreError:
-            return {}
-        return {row['agent']: row for row in rows}  # in seq order, so the latest of each agent is kept
-    # Read once in a request: every option of every agent asks for it, five times each, to describe its setting, and
-    # one settings read opened the project's store for each of those asks.
-    return cast(dict[str, dict[str, Any]], request_cached(('dispatch.catalog', project), read))
+def catalog_rows() -> dict[str, dict[str, Any]]:
+    """What each harness offers, by harness: its version, settings, logins and extensions, as it answered when
+    dispatch asked it or at its latest session, `offered`. Only a harness whose settings are known is here: one that
+    answered, or one that answered before and now needs a login. The rest are in `harness_offered.records`, with
+    why."""
+    return {agent: row for agent, row in harness_offered.records().items()
+            if row.get('state') == 'ready' or row.get('settings')}
 
 
 def option_key(setting: dict[str, Any]) -> str:
@@ -601,12 +591,12 @@ def unknown_choice(agent: str, setting: dict[str, Any], given: str) -> str:
                                                != nearest[0] else '') if nearest else '') + '.')
 
 
-def model_for(store: Store | None, agent: str, given: str) -> str | None:
+def model_for(agent: str, given: str) -> str | None:
     """The exact model a person's word means for one of the agents now, as `dispatch.models` offers it to the
     roundtables module: a short name such as sol is its family's newest release, a value or the model's own name is
-    itself. None when the agent has not run in this project, so nothing can be checked; a word that means none of its
+    itself. None when the agent has not answered yet, so nothing can be checked; a word that means none of its
     models is refused with what it offers and the nearest one."""
-    offered = offered_option(store, agent, 'model')
+    offered = offered_option(agent, 'model')
     if offered is None:
         return None
     found = resolve_choice(offered, given)
@@ -667,19 +657,18 @@ def option_settings(agent: str) -> list[tuple[str, str, str]]:
     return [(f'dispatch_{agent}_{name}', label, key) for name, label, key in (*AGENT_OPTIONS, *OWN_OPTIONS.get(agent, ()))]
 
 
-def offered_option(store: Store | None, agent: str, key: str) -> dict[str, Any] | None:
-    """The option an agent offered at its last session here under a category or id, or None."""
-    row = catalog_rows(store).get(agent)
+def offered_option(agent: str, key: str) -> dict[str, Any] | None:
+    """The option a harness offers under a category or id, or None."""
+    row = catalog_rows().get(agent)
     return next((one for one in cast(list[dict[str, Any]], (row or {}).get('settings') or [])
                  if option_key(one) == key), None)
 
 
 def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
-    """A setting's choices: default, then each short name and each value the agent offered for the option at its last
-    session here, as its pickers list them; only default until it has run once, or `dispatch options agent=<agent>
-    prime=true` has asked it."""
+    """A setting's choices: default, then each short name and each value the harness offers for the option, as its
+    pickers list them; only default until it has answered, which `dispatch options` sees to."""
     def choices(ctx: Context) -> list[str]:
-        offered = offered_option(ctx.store, agent, key)
+        offered = offered_option(agent, key)
         return [one['value'] for one in picker_entries(offered)] if offered and (
             key != 'model_config' or offered.get('type') == 'boolean') else [AGENT_DEFAULT]
     return choices
@@ -688,7 +677,7 @@ def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
 def option_words(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
     """Each value in the agent's own words, its name and description as it offered them."""
     def words(ctx: Context) -> dict[str, str]:
-        offered = offered_option(ctx.store, agent, key) or {}
+        offered = offered_option(agent, key) or {}
         said = {AGENT_DEFAULT: f'Leave it to {agent_label(agent)}: Metaform sends nothing for it.'}
         described: dict[str, str] = {}
         for choice in cast(list[dict[str, Any]], offered.get('options') or []):
@@ -706,7 +695,7 @@ def option_words(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
 def option_names(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
     """Each choice by the name its pickers show, `picker_entries`."""
     def names(ctx: Context) -> dict[str, str]:
-        offered = offered_option(ctx.store, agent, key)
+        offered = offered_option(agent, key)
         return {one['value']: one['label'] for one in picker_entries(offered)} if offered else {}
     return names
 
@@ -714,7 +703,7 @@ def option_names(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
 def option_groups(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
     """The heading each choice sits under in its pickers, Specific version for an exact value beside short names."""
     def groups(ctx: Context) -> dict[str, str]:
-        offered = offered_option(ctx.store, agent, key)
+        offered = offered_option(agent, key)
         return {one['value']: one['group'] for one in picker_entries(offered) if one['group']} if offered else {}
     return groups
 
@@ -729,7 +718,7 @@ SKIPS_PROMPTS = re.compile(r'bypass|yolo|full[-_ ]?access|danger|skip[-_ ]?perm|
 def option_risky(agent: str, key: str) -> Callable[[Context], list[str]]:
     """The values the agent offered for the option that skip its own permission prompts."""
     def risky(ctx: Context) -> list[str]:
-        offered = offered_option(ctx.store, agent, key) or {}
+        offered = offered_option(agent, key) or {}
         return [str(choice.get('value')) for choice in cast(list[dict[str, Any]], offered.get('options') or [])
                 if SKIPS_PROMPTS.search(f'{choice.get("value")} {choice.get("name")}')]
     return risky
@@ -742,7 +731,7 @@ def chosen_options(ctx: Context, agent: str) -> dict[str, str]:
         value = ctx.setting(key) if key in settings.SCHEMA else None
         if value and value != AGENT_DEFAULT:
             if option == 'model_config':
-                offered = offered_option(ctx.store, agent, option)
+                offered = offered_option(agent, option)
                 if offered is None or offered.get('type') != 'boolean':
                     continue
             found[option] = str(value)
@@ -764,9 +753,9 @@ for _at, (_agent, (_name, _command)) in enumerate(AGENTS.items()):
                         help=f'{_name}\'s {_label.lower()} for every session it starts here: a value it offers, '
                              + ('a short name such as opus or sol, which means the newest release of its family, '
                                 if _option == 'model' else '') + f'or default to leave it to {_name}.',
-                        details=f'The choices are what {_name} offered at its last session in this project; until it '
-                                f'has run once there is only default: start it, or run dispatch options agent={_agent} '
-                                'prime=true, which starts it, reads its options and closes it without a prompt. Applied '
+                        details=f'The choices are what {_name} offers on this machine, kept for every project. '
+                                f'Metaform asks it itself, dispatch options agent={_agent}: it is started, read and '
+                                'closed without a prompt. Applied '
                                 'to every session it starts, new, loaded or resumed. A ticket\'s own model and effort, '
                                 'set with dispatch tune, go over these.',
                         category='agents')  # under Agents: a thinking level found nowhere else made no sense (2026-10-20)
@@ -1829,7 +1818,7 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
                    for field in fields if field in given})
     agent = agent or str(values.get('agent') or agent_for(ctx, record))
     if 'fast' in given and values['fast'] is not None:
-        offered_fast = offered_option(store, agent, 'model_config')
+        offered_fast = offered_option(agent, 'model_config')
         if offered_fast is None or offered_fast.get('type') != 'boolean':
             raise Stop(f'{agent_label(agent)} offers no boolean Fast mode.',
                        f'metaform dispatch options agent={agent}')
@@ -1838,12 +1827,12 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
     if 'agent' in given and values.get('agent') != kept.get('agent'):
         for field in ('model', 'effort'):
             if field not in given:
-                offered = offered_values(store, agent, 'model' if field == 'model' else 'thought_level')
+                offered = offered_values(agent, 'model' if field == 'model' else 'thought_level')
                 if offered is None or values[field] not in offered:
                     values[field] = None
                     overrides = {key: value for key, value in overrides.items() if key != field}
     if 'agent' in given and values.get('agent') != kept.get('agent') and 'fast' not in given:
-        offered_fast = offered_option(store, agent, 'model_config')
+        offered_fast = offered_option(agent, 'model_config')
         if offered_fast is None or offered_fast.get('type') != 'boolean':
             values['fast'] = None
             overrides = {key: value for key, value in overrides.items() if key != 'fast'}
@@ -1851,11 +1840,11 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
     for field in ('model', 'effort'):
         if field not in given or values[field] is None:
             continue
-        offered = offered_values(store, agent, 'model' if field == 'model' else 'thought_level')
+        offered = offered_values(agent, 'model' if field == 'model' else 'thought_level')
         if offered is None:
             notices.append({'where': field, 'message': f'{agent} has not run here; {field} is kept unchecked.'})
         elif values[field] not in offered:
-            raise Stop(unknown_choice(agent, offered_option(store, agent, 'model' if field == 'model'
+            raise Stop(unknown_choice(agent, offered_option(agent, 'model' if field == 'model'
                                                             else 'thought_level') or {}, str(values[field])),
                        f'metaform dispatch options agent={agent}')
     overrides = {**overrides, **{field: values[field] for field in fields if field in given}}
@@ -1897,10 +1886,10 @@ def launch_permissions(ctx: Context, store: Store, agent: str) -> tuple[dict[str
     if given['prompts'] is not None and given['prompts'] not in PROMPTS:
         raise Stop(f'prompts is one of {", ".join(PROMPTS)}, not {given["prompts"]}.', 'metaform help dispatch start')
     if given['mode'] is not None:
-        offered = offered_values(store, agent, 'mode')
+        offered = offered_values(agent, 'mode')
         if offered is None:
-            notices.append({'where': 'mode', 'message': f'{agent} has not run in this project yet, so mode='
-                            f'{given["mode"]} is kept unchecked; metaform dispatch options agent={agent} prime=true '
+            notices.append({'where': 'mode', 'message': f'{agent} has not said what it offers yet, so mode='
+                            f'{given["mode"]} is kept unchecked; metaform dispatch options agent={agent} '
                             'lists what it offers.'})
         elif given['mode'] not in offered:
             raise Stop(f'{agent_label(agent)} offers mode {", ".join(offered) or "none"} at its last session here, '
@@ -1948,11 +1937,11 @@ def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) 
         runtime = runtime_settings(ctx, work_id)
         if not runtime.get('agent') or runtime['agent'] == agent:
             chosen = ticket_options(store, work_id)
-            offered_fast = offered_option(store, agent, 'model_config')
+            offered_fast = offered_option(agent, 'model_config')
             if offered_fast is None or offered_fast.get('type') != 'boolean':
                 chosen = {key: value for key, value in chosen.items() if key != 'model_config'}
     result = {**chosen_options(ctx, agent), **chosen}
-    if offered_values(store, agent, 'thought_level') == []:
+    if offered_values(agent, 'thought_level') == []:
         result.pop('thought_level', None)
     return result
 
@@ -5119,7 +5108,7 @@ def harnesses(ctx: Context) -> dict[str, Any]:
     command is found on this system, and which is the default; with a project, how many more agents the person may
     summon now."""
     default = str(ctx.setting('dispatch_agent'))
-    known = catalog_rows(ctx.store)  # what each offered at its last session here, P199: its version and settings
+    known = harness_offered.records()  # what each answered when asked, or at its latest session
     found: list[dict[str, Any]] = []
     for agent in agent_choices():
         label = agent_label(agent)
@@ -5130,8 +5119,8 @@ def harnesses(ctx: Context) -> dict[str, Any]:
         path = located(command) if command else None
         row = known.get(agent)
         found.append({'agent': agent, 'label': label, 'command': command, 'available': path is not None,
-                      'path': path, 'default': agent == default,
-                      'version': row['version'] if row else None,
+                      'path': path, 'default': agent == default, 'state': harness_state(ctx, agent)[0],
+                      'version': row.get('version') if row else None,
                       'settings': len(cast(list[Any], row.get('settings') or [])) if row else None,
                       'pinned': registry_pins().get(agent),
                       'next': None if path else f'metaform set --dispatch-{agent} "<command>"' if agent in AGENTS
@@ -5170,6 +5159,7 @@ def registry_read(ctx: Context) -> dict[str, Any]:
             raise Stop(f'{removing} is not pinned.', 'metaform dispatch registry')
         changed.append({'agent': str(removing), 'removed': pins.pop(str(removing))})
         keep(pins)
+        harness_offered.forget(str(removing))
     if adding:
         wanted = str(adding)
         if wanted in ('antigravity', agent_registry.BUILTIN['antigravity']):
@@ -5606,28 +5596,52 @@ def launched(store: Store, work_id: str, pid: int) -> dict[str, Any]:
                 return {'state': 'failed', 'reason': 'its runner did not start the agent in time; its log says why'}
 
 
+def harness_state(ctx: Context, agent: str) -> tuple[str, str | None, str | None]:
+    """Where a harness stands on this machine: (state, reason, next step). `ready`, it answered with its settings;
+    `needs login` and `cannot start`, as it answered, with why; `not found`, its start command is not on this
+    machine; `not asked`, nothing has asked it yet, or its start command has changed since."""
+    try:
+        command = start_command(ctx, agent)
+    except Stop as error:
+        return 'not found', str(error), error.next_step
+    if located(command) is None:
+        return 'not found', f'{agent_label(agent)}\'s start command is not found on this machine: {command}', \
+            f'metaform set --dispatch-{agent} "<command>"' if agent in AGENTS else f'metaform dispatch registry add={agent}'
+    row = harness_offered.record(agent)
+    if row is None or row.get('command') != shlex.join(argv(command)):
+        return 'not asked', None, None
+    state = str(row['state'])
+    return state, row.get('reason'), {'needs login': f'metaform dispatch login {agent}',
+                                      'cannot start': 'metaform dispatch agents'}.get(state)
+
+
 async def options(ctx: Context) -> dict[str, Any]:
-    """What each agent offered at its last session in this project, P199: its settings with their names and choices,
-    `picks`, the list every picker shows (`picker_entries`), the value dispatch_<agent>_<option> gives each, its auth methods and its extensions. An agent that has not run has
-    none yet, and its next step primes it: prime=true starts it, makes one session with no MCP server and no prompt,
-    reads what session/new answered, and closes it, so no tokens are spent."""
-    store = ctx.require_store()
+    """What each harness offers: its settings with their names and choices, `picks`, the list every picker shows
+    (`picker_entries`), the value dispatch_<agent>_<option> gives each, its logins and its extensions. Dispatch asks
+    a harness itself when nothing has asked it yet or its start command has changed, `runner.ask`: it is started, read
+    and closed with no prompt, so no tokens are spent, and its answer is kept in the home for every project.
+    prime=true asks again now. A harness that needs a login or cannot start says so, with why and the next step."""
     named = str(ctx.nouns['agent']) if ctx.nouns.get('agent') else None
-    if ctx.nouns.get('prime'):
-        if named is None:
-            raise Stop('prime=true starts one agent; name it.', 'metaform dispatch options agent=claude prime=true')
-        runnable(ctx, agent_named(named))
-        from .runner import prime
-        await prime(ctx, store, named)
-    rows = await asyncio.to_thread(catalog_rows, store)
+    if ctx.nouns.get('prime') and named is None:
+        raise Stop('prime=true asks one agent again; name it.', 'metaform dispatch options agent=claude prime=true')
+    wanted = [agent_named(named)] if named else agent_choices()
+    states = {agent: harness_state(ctx, agent) for agent in wanted}
+    asking = [agent for agent in wanted if states[agent][0] == 'not asked'
+              or ctx.nouns.get('prime') and states[agent][0] != 'not found']
+    if asking:
+        from .runner import ask
+        await asyncio.gather(*(ask(ctx, agent) for agent in asking))
+        states.update({agent: harness_state(ctx, agent) for agent in asking})
+    rows = harness_offered.records()
     chosen = {agent: chosen_options(ctx, agent) for agent in agent_choices()}
     listed: list[dict[str, Any]] = []
-    for agent in [agent_named(named)] if named else agent_choices():
+    for agent in wanted:
+        state, reason, following = states[agent]
         row = rows.get(agent)
         offered = cast(list[dict[str, Any]], (row or {}).get('settings') or [])
         listed.append({
-            'agent': agent, 'label': agent_label(agent), 'version': row['version'] if row else None,
-            'seen': row['seen'] if row else None,
+            'agent': agent, 'label': agent_label(agent), 'state': state, 'reason': reason,
+            'version': row.get('version') if row else None, 'seen': row.get('seen') if row else None,
             'settings': [{'key': option_key(one), 'id': one.get('id'), 'name': one.get('name'),
                           'category': one.get('category'), 'type': one.get('type'), 'current': one.get('current'),
                           'choices': ([{'value': 'true', 'name': 'On', 'description': None},
@@ -5641,15 +5655,15 @@ async def options(ctx: Context) -> dict[str, Any]:
                                            if option == option_key(one)), None)} for one in offered],
             'unmatched': {key: value for key, value in chosen.get(agent, {}).items()
                           if key not in {option_key(one) for one in offered}},
-            'auth': row['auth'] if row else None, 'extensions': row['extensions'] if row else None,
-            'next': None if row else f'metaform dispatch options agent={agent} prime=true'})
+            'auth': row.get('auth') if row else None, 'extensions': row.get('extensions') if row else None,
+            'next': following})
     return {'agents': listed}
 
 
-def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
-    """The values an agent offered for one of its settings at its last session, by ACP category or id, then a model's
-    short names; None when it has not run in this project, so nothing can be checked."""
-    row = catalog_rows(store).get(agent)
+def offered_values(agent: str, key: str) -> list[str] | None:
+    """The values a harness offers for one of its settings, by ACP category or id, then a model's short names; None
+    when it has not answered yet, so nothing can be checked."""
+    row = catalog_rows().get(agent)
     if row is None:
         return None
     for setting in cast(list[dict[str, Any]], row.get('settings') or []):
@@ -5686,13 +5700,13 @@ def tune(ctx: Context) -> dict[str, Any]:
         if said in ('', 'none'):
             continue
         key = 'model' if field == 'model' else 'thought_level'
-        offered = offered_values(store, agent, key)
+        offered = offered_values(agent, key)
         if offered is None:
-            notices.append({'where': field, 'message': f'{agent} has not run in this project yet, so {field}={said} '
-                            f'is kept unchecked; metaform dispatch options agent={agent} prime=true lists what it '
+            notices.append({'where': field, 'message': f'{agent} has not said what it offers yet, so {field}={said} '
+                            f'is kept unchecked; metaform dispatch options agent={agent} lists what it '
                             'offers.'})
         elif said not in offered:
-            raise Stop(unknown_choice(agent, offered_option(store, agent, key) or {}, said),
+            raise Stop(unknown_choice(agent, offered_option(agent, key) or {}, said),
                        f'metaform dispatch options agent={agent}')
     with own_store(store).tables() as tx:
         tx.concern(work_id=record.id, kind='ticket')  # its event names the ticket, BASE-053
@@ -5740,8 +5754,12 @@ async def login(ctx: Context) -> dict[str, Any]:
     there is one, and an env_var method names the variable to set. Metaform never reads or stores a credential."""
     agent = agent_named(str(ctx.nouns['agent']))
     runnable(ctx, agent)
+    from .runner import ask
     from .runner import login as logging_in
-    return await logging_in(ctx, agent, str(ctx.nouns['method']) if ctx.nouns.get('method') else None)
+    done = await logging_in(ctx, agent, str(ctx.nouns['method']) if ctx.nouns.get('method') else None)
+    if done.get('logged_in'):  # what it offers follows the account logged in, so it is asked again now
+        await ask(ctx, agent)
+    return done
 
 
 def spend_read(ctx: Context) -> dict[str, Any]:
@@ -6199,14 +6217,16 @@ MODULE = Module(
                        ('metaform dispatch handoff id=198452e1... full=true',
                         'Prints the full brief, then the hand-off.')),
              effect='read', listed=in_session),
-        Verb('options', options, 'List the settings each agent offers, its model, effort, mode and the rest, as it '
-                                 'offered them at its last session in this project, and the ones dispatch_<agent>_<option> '
-                                 'gives it. prime=true starts the agent once to read them, with no prompt.',
-             nouns=(Noun('agent', 'claude, codex or antigravity; every agent when none is given.', required=False),
-                    Noun('prime', 'true: start the agent, read its options from session/new, and close it.',
+        Verb('options', options, 'List the settings each agent offers, its model, effort, mode and the rest, and the '
+                                 'ones dispatch_<agent>_<option> gives it. An agent nothing has asked yet is started '
+                                 'once to be asked, with no prompt, and its answer is kept for every project; one that '
+                                 'needs a login or cannot start says so.',
+             nouns=(Noun('agent', 'An agent dispatch starts, as dispatch agents lists them; every agent when none is '
+                                  'given.', required=False),
+                    Noun('prime', 'true: ask the agent again now, as after an update of it or a new login.',
                          kind='bool', required=False)),
-             examples=(('metaform dispatch options', 'Lists what each agent offered, or how to find out.'),
-                       ('metaform dispatch options agent=claude prime=true', 'Starts Claude Code once to read its options.'),
+             examples=(('metaform dispatch options', 'Lists what each agent offers, asking any not asked yet.'),
+                       ('metaform dispatch options agent=claude prime=true', 'Asks Claude Code again now.'),
                        ('metaform set --dispatch-claude-model opus --dispatch-codex-effort high',
                         'Gives each agent its default model or effort.')), open_world=True),
         Verb('tune', tune, 'Set the model, effort and Fast mode the agent working a ticket uses, over dispatch_<agent>_<option>. '

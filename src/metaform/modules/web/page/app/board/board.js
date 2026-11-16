@@ -117,7 +117,7 @@ function runtimeControls(ticket, agent, change, settings) {
           const current = option?.chosen ?? option?.current;
           const name = current === true || current === 'true' ? 'On'
             : current === false || current === 'false' ? 'Off' : null;
-          const unavailable = found?.next ? 'Fast availability is unknown until its list is read.'
+          const unavailable = found?.reason ? found.reason
             : 'This agent does not advertise Fast mode.';
           fill(picks[index], h('option', {value: '', selected: !chosen}, option
             ? name ? `Project setting: ${name}` : 'Project setting' : 'Unavailable'),
@@ -143,15 +143,15 @@ function runtimeControls(ticket, agent, change, settings) {
         pickerOptions(listed, chosen));
         picks[index].disabled = !choices.length;
       });
-      fill(hint, found?.next ? [`${agentName(agent)} has not run here, so its models are not known yet. `,
+      fill(hint, found?.reason ? [`${found.reason} `,
         h('button', {type: 'button', class: 'btn sm quiet', title: 'Starts it once, with no prompt, and reads the '
-          + 'models and thinking levels it offers', onclick: readOffered}, 'Read its list')]
+          + 'models and thinking levels it offers', onclick: readOffered}, 'Ask it again')]
         : 'Changes apply to this ticket’s next start.');
     } catch (error) { hint.textContent = error.message; reading = null; }
   };
   const readOffered = async event => {
     event.currentTarget.disabled = true;
-    hint.textContent = `Starting ${agentName(agent)} once to read its list…`;
+    hint.textContent = `Asking ${agentName(agent)} what it offers…`;
     const done = await posted('/api/settings/choices', {key: `dispatch_${agent}_model`});
     if (!done.ok) { hint.textContent = done.body.error || 'Its list could not be read.'; return; }
     reading = load();

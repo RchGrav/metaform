@@ -517,8 +517,8 @@ async function startTable() {
 /* Each seat an agent picker and a model picker. Metaform's agents list their models as every model picker does,
  * `pickerOptions`: the short names, such as sol, which follow the newest release of their family when the table
  * opens, then each exact value under Specific version. Any other seat is an OpenRouter model id, typed. An agent that
- * has not run here has no list yet: its model is typed and checked as the table opens, and Read its list starts it
- * once, with no prompt, to read it. */
+ * gave no list, as one that needs a login, has its model typed and checked as the table opens, and Ask it again
+ * starts it once, with no prompt, to read it. */
 const SEAT_AGENTS = ['claude', 'codex', 'antigravity'];
 const OFFERED = new Map();  // each agent's model picks, read once each time the stage opens
 function addSeat(seat) {
@@ -584,9 +584,9 @@ async function modelPicker(row, agent, model) {
     || (offered.choices || []).some(choice => choice.value === 'default'));
   if (!picks.length) {
     fill(box, h('input', {type: 'text', value: model, spellcheck: 'false', 'aria-label': `${agentName(agent)} model`,
-      placeholder: 'opus', title: `${agentName(agent)} has not run here, so its models are not known yet`}),
+      placeholder: 'opus', title: `${agentName(agent)} did not say which models it offers`}),
     h('button', {type: 'button', class: 'btn sm quiet', title: 'Starts it once, with no prompt, and reads the models '
-      + 'it offers', onclick: () => readModels(row, agent)}, 'Read its list'));
+      + 'it offers', onclick: () => readModels(row, agent)}, 'Ask it again'));
     return;
   }
   const listed = model && !picks.some(one => one.value === model)
@@ -595,7 +595,7 @@ async function modelPicker(row, agent, model) {
     pickerOptions(listed, model || picks.find(one => one.value !== 'default')?.value)));
 }
 async function readModels(row, agent) {
-  toast(`Starting ${agentName(agent)} once to read its models…`);
+  toast(`Asking ${agentName(agent)} which models it offers…`);
   const done = await posted('/api/settings/choices', {key: `dispatch_${agent}_model`});
   if (!done.ok) { toast(done.body.error || 'Its models could not be read.'); return; }
   OFFERED.delete(agent);

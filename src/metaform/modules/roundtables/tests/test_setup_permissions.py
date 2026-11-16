@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from metaform import events, settings
-from metaform.data import Store
 from metaform.module import Stop, context
 
 pytestmark = pytest.mark.kind('fixture')
@@ -30,11 +29,11 @@ def roundtables(permissions_project, monkeypatch):
 def test_setup_captures_project_defaults_and_overrides_without_changing_them(permissions_project, roundtables):
     folder = permissions_project
     settings.put('dispatch_prompts', 'approve-reads', folder)
-    with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('catalog', {'agent': 'claude', 'version': 'fixture', 'name': 'Claude',
-                              'seen': '2026-11-04T00:00:00Z', 'seq': 1,
-                              'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select',
-                                            'options': [{'value': 'default'}, {'value': 'plan'}]}]})
+    from metaform.modules.dispatch import offered as harness_offered
+    harness_offered.keep('claude', {'state': 'ready', 'version': 'fixture', 'name': 'Claude',
+                                    'seen': '2026-11-04T00:00:00Z',
+                                    'settings': [{'id': 'mode', 'category': 'mode', 'type': 'select',
+                                                  'options': [{'value': 'default'}, {'value': 'plan'}]}]})
     settings.put('dispatch_claude_mode', 'plan', folder)
     ctx = context('roundtables', folder)
     captured = roundtables.permission_settings(ctx, {'claude': {'prompts': 'approve-all'}}, {'claude', 'codex'})

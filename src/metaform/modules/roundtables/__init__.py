@@ -149,7 +149,7 @@ def model_of(ctx: Context, agent: str, model: str) -> str | None:
     family's newest release, and a word that is none of the agent's models is refused naming the nearest. None when
     the agent has not run here or dispatch is off, so nothing can check it."""
     for _, resolve in provided(ctx.folder, 'dispatch.models'):
-        return cast(str | None, resolve(ctx.store, agent, model))
+        return cast(str | None, resolve(agent, model))
     return None
 
 

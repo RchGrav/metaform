@@ -28,14 +28,16 @@ def post(port, **fields):
 
 
 def runtime_catalog():
-    with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('catalog', {'agent': 'codex', 'version': '1', 'name': 'Codex', 'seen': '2026-10-21T00:00:00Z',
-                              'seq': 1, 'settings': [
-                                  {'id': 'model', 'category': 'model', 'type': 'select', 'current': 'gpt-6',
-                                   'options': [{'value': 'gpt-6', 'name': 'GPT 6'}, {'value': 'small', 'name': 'Small'}]},
-                                  {'id': 'effort', 'category': 'thought_level', 'type': 'select', 'current': 'high',
-                                   'options': [{'value': 'medium', 'name': 'Medium'}, {'value': 'high', 'name': 'High'}]},
-                              ]})
+    from metaform.modules.dispatch import offered as harness_offered
+    harness_offered.keep('codex', {'state': 'ready', 'version': '1', 'name': 'Codex', 'seen': '2026-10-21T00:00:00Z',
+                                   'settings': [
+                                       {'id': 'model', 'category': 'model', 'type': 'select', 'current': 'gpt-6',
+                                        'options': [{'value': 'gpt-6', 'name': 'GPT 6'},
+                                                    {'value': 'small', 'name': 'Small'}]},
+                                       {'id': 'effort', 'category': 'thought_level', 'type': 'select', 'current': 'high',
+                                        'options': [{'value': 'medium', 'name': 'Medium'},
+                                                    {'value': 'high', 'name': 'High'}]},
+                                   ]})
 
 
 def test_card_runtime_choices_save_on_ticket_without_changing_project_defaults(run, web, mapped):
