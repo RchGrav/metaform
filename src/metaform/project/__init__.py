@@ -9,7 +9,7 @@ from pathlib import Path
 
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
-__all__ = ['COMMANDS', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'run', 'stored_name']
+__all__ = ['COMMANDS', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'overlay_records', 'run', 'stored_name']
 
 
 def run(command: object, home: Path | None = None, caller: str = '') -> dict[str, object]:
@@ -22,6 +22,13 @@ def drawn(project: str, home: Path | None = None) -> dict[str, object] | None:
     """Everything a display draws of a project in one read, or None when the store holds no such project."""
     from metaform.project import commands
     return commands.drawn(project, home)
+
+
+def overlay_records(project: str, key: str, home: Path | None = None) -> list[dict[str, object]] | None:
+    """Every record of one overlay across a project, each with its element's path and its position there, for a
+    display that lists them all; None when the store holds no such project."""
+    from metaform.project import commands
+    return commands.overlay_records(project, key, home)
 
 
 def clear(project: str, home: Path | None = None) -> bool:

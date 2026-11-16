@@ -62,6 +62,38 @@ def clear(project: str, home: Path | None = None) -> bool:
     return service.send(None, where, 'clear', clear=project).get('status') == 'ok'
 
 
+def overlay_records(project: str, key: str, home: Path | None = None) -> list[dict[str, object]] | None:
+    """Every record of one overlay across a project, each with the path of the element it is at and its position
+    there, for a display that lists them all, as a board lists tickets. None when the store holds no such project.
+    Not a command of the tool, which reads an overlay's records with the element they are at."""
+    from metaform.project import service
+    where = home if home is not None else metaform_home.home()
+    if project not in store_projects(where):
+        return None
+    answer = service.send(None, where, 'display', drawn=project, overlay=key)
+    return None if answer.get('status') == 'error' else cast(list[dict[str, object]], answer['records'])
+
+
+def perform_records(project: str, key: str, owned: Owner) -> dict[str, object]:
+    """Answer a display's read of one overlay's records in the service."""
+    def read(opened: Store) -> dict[str, object]:
+        definition = definitions(opened.parts()).get(key)
+        if definition is None or key not in opened.overlay_keys():
+            return {'records': []}
+        names = [name for name in definition.order if name != 'ref' and name in definition.fields]
+        return {'records': [
+            {'element': full(project, address), 'position': position,
+             **{name: decode(definition.fields[name].kind, row[name]) for name in names if row[name] is not None},
+             **({'ref': row['ref']} if row['ref'] is not None else {})}
+            for address, position, row in opened.all_records(key, names)]}
+    try:
+        return owned.read(project, read)
+    except Missing:
+        return refused({'records': project}, _missing(project))
+    except StoreError as error:
+        return refused({'records': project}, Refusal('INTERNAL_ERROR', f'the store failed: {error}'))
+
+
 def perform_drawn(project: str, owned: Owner) -> dict[str, object]:
     """Answer a display's read in the service. Not reachable through the tool, which sends commands only."""
     try:

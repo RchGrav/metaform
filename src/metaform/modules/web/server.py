@@ -995,6 +995,11 @@ class Handler(BaseHTTPRequestHandler):
             listed = stored_layers(given.get('project', ''), given.get('base', ''))
             if listed is not None:
                 return self.send(200, {'results': plain(listed), 'next': None})
+        if name == 'work':  # the tickets of a project in the project store: the records of its tickets overlay
+            from .project_map import tickets as stored_tickets
+            held_work = stored_tickets(given.get('project', ''), given)
+            if held_work is not None:
+                return self.send(200, {'results': held_work, 'next': None})
         if name == 'layer-items':
             # Nothing is read ahead for a project in the project store: an overlay's records are read with the
             # element they are at, when the person opens it, and never the whole project's at a load.

@@ -566,3 +566,13 @@ def test_every_project_is_given_tickets_and_memories_and_one_made_before_them_ga
                                         if address.startswith('overlay.memories')] and opened.drop_overlay('memories'))
     owner.close_all()
     assert run({f'{P}.overlay.memories': {}})[f'{P}.overlay.memories']['key'] == 'memories'
+
+
+def test_a_display_lists_every_record_of_one_overlay_across_the_project(served):
+    for path, title in ((WIDGET, 'Ring'), (CS, 'Relay')):
+        assert commands.run({'add': {path: {**(WIDGET_FIELDS if path == WIDGET else CS_FIELDS), 'tickets': [
+            {'id': f't-{title}', 'title': title, 'task': 'Do it.'}]}}}, served) == {'status': 'ok'}
+    assert commands.overlay_records(P, 'tickets', served) == [
+        {'element': WIDGET, 'position': 0, 'id': 't-Ring', 'title': 'Ring', 'task': 'Do it.'},
+        {'element': CS, 'position': 0, 'id': 't-Relay', 'title': 'Relay', 'task': 'Do it.'}]
+    assert commands.overlay_records(P, 'memories', served) == [] and commands.overlay_records('nosuch', 'tickets', served) is None

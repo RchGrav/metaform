@@ -16,7 +16,7 @@ import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import ladybug  # pyright: ignore[reportMissingTypeStubs]
 
@@ -326,6 +326,13 @@ class Store:
         rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN r.ref{columns} '
                           'ORDER BY r.position', address=address)
         return [dict(zip(['ref', *fields], row)) for row in rows]
+
+    def all_records(self, key: str, fields: list[str]) -> list[tuple[str, int, dict[str, Scalar]]]:
+        """Every record of an overlay in the project, each with the address it is at and its position there."""
+        columns = ''.join(f', r.{_column(field)}' for field in fields)
+        rows = self._rows(f'MATCH (r:{_table(key)}) RETURN r.address, r.position, r.ref{columns} '
+                          'ORDER BY r.address, r.position')
+        return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', *fields], row[2:]))) for row in rows]
 
     def record_count(self, key: str, address: str) -> int:
         rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN count(*)', address=address)

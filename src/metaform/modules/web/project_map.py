@@ -112,3 +112,34 @@ def node(project: str, target: str, chosen: str | None = None) -> NodeView | Non
         for position, record in enumerate(cast(list[dict[str, Any]], held.get(key) or []))))
         for key in overlays)
     return NodeView(place, address, groups)
+
+
+def tickets(project: str, given: dict[str, str]) -> list[dict[str, Any]] | None:
+    """The project's tickets as the page's board and panels read work records: each record of the tickets overlay,
+    with the element it is at. `node` keeps those at one element, `open` those not done, `ids` those named. None when
+    the project store holds no such project."""
+    name = commands.stored_name(project)
+    found = commands.overlay_records(name, 'tickets')
+    if found is None:
+        return None
+    lead = len(name) + 1
+    at = given.get('node', '').partition(':')[2] if given.get('node', '').startswith('element:') else None
+    wanted = set(given['ids'].replace(',', ' ').split()) if given.get('ids') else None
+    listed: list[dict[str, Any]] = []
+    for record in found:
+        address, position = str(record['element'])[lead:], cast(int, record['position'])
+        done = cast('str | None', record.get('done'))
+        if (at is not None and address != at) or (given.get('open') == 'true' and done) or (
+                wanted is not None and record.get('id') not in wanted):
+            continue
+        taken_by = cast('str | None', record.get('taken_by'))
+        listed.append({
+            'id': record.get('id'), 'node_kind': 'element', 'node_id': address, 'address': address,
+            'receiver_address': None, 'provider_address': None, 'condition': '', 'note': record.get('note'),
+            'task': record.get('task'), 'held': bool(record.get('held')), 'reviewed': False, 'created': '',
+            'done': done, 'resolution': None, 'notices': [], 'steps': None, 'steps_done': 0, 'said': [],
+            'taken': taken_by, 'taken_by': taken_by, 'position': position, 'links': [],
+            'kind': record.get('kind') or '', 'outcome': record.get('outcome'), 'age_seconds': None, 'is_work': True,
+            'map': {'item': f'{address}#{position + 1}', 'title': record.get('title') or ''}})
+    return listed
+
