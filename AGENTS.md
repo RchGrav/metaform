@@ -67,6 +67,10 @@ Do not write tests for reversible, low-impact changes that mirror the implementa
 
 Run tests appropriate to the change and complete required checks. Once those pass, broaden or repeat testing only when new changes, failures, or unresolved concerns justify it; otherwise, continue toward completing the task.
 
+## Scope is the assignment
+
+Change only what your assignment is about. Everything else in this project was built deliberately, often over months, and is right as it stands even where it looks improvable to you. When you notice a fault or an improvement outside your assignment, write it down as a bug or a ticket at the part it concerns and leave the code as it is. When your work needs a change outside its scope to succeed, stop and say so to whoever assigned it, with the change you need and why. Every line in your commit traces to the assignment named in its message.
+
 ## Landing work
 
 An assignment is complete when each feature it built has landed as its own feature commit and that commit is pushed to the remote. Commit each feature as it is finished, staging only its own files, with a one-line subject that names the change; then push the working branch and confirm it matches the remote. Work left uncommitted in the shared checkout is not done: it cannot be reviewed on GitHub, and it tangles with the next feature's edits.
