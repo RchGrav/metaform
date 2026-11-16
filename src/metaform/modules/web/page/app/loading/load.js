@@ -321,9 +321,17 @@ export function toProject(id) {
 }
 /* The project left's agents go: its threads, its agents key, its figures, its merges and the agents chosen there. */
 function leaveAgents() {
-  // the threads are the sessions of the project left, so they go with it
-  Object.assign(DOCK, {chats: [], chat: null, target: null, session: null, label: '', mine: null, calling: null});
-  $('#helpdesk .call').textContent = 'Call';
+  // The threads of the project left go with it. The lead's own does not: it is one agent for every project, so its
+  // conversation stays open in the chat box as the person moves between them.
+  const lead = DOCK.chats.filter(chat => chat.mine || chat.target === DOCK.mine);
+  if (lead.length) {
+    const open = lead.includes(DOCK.chat) ? DOCK.chat : null;
+    Object.assign(DOCK, {chats: lead, calling: null,
+      ...(open ? {} : {chat: null, target: null, session: null, label: ''})});
+  } else {
+    Object.assign(DOCK, {chats: [], chat: null, target: null, session: null, label: '', mine: null, calling: null});
+    $('#helpdesk .call').textContent = 'Call';
+  }
   drawTabs();
   ROAM.focus = null;
   for (const list of document.querySelectorAll('#agents .list')) fill(list);
@@ -336,7 +344,8 @@ function leaveAgents() {
   ROAM2D.figures.clear(); ROAM2D.seen.clear();
   Object.assign(MERGE, {rows: [], chat: null});
   $('#reviewNotice').hidden = $('#mergeAsk').hidden = true;
-  dockState('resting');  // the chat put away to its tab, so it can be opened again here
+  // the chat is put away to its tab, so it can be opened again here; the lead's stays open as it was
+  if (!lead.includes(DOCK.chat)) dockState('resting');
   forgetHarnesses();  // the agents another project's folder sets are its own, VIEW-039
   for (const one of [PICKERS.start, PICKERS.task, PICKERS.element]) one?.set(null);  // and so is a choice made there
   leaveApps();  // and the MCP Apps views shown for it, torn down, in the thread and in panels

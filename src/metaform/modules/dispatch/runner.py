@@ -137,7 +137,6 @@ from . import (
     handoff_parts,
     held_ticket,
     helper_id,
-    helper_item,
     holder,
     intake_id,
     intake_prompt,
@@ -4456,22 +4455,9 @@ class Session:
                     await self.raise_signal('stopped-open', stop_reason=reason, steps=record.steps_done)
 
     async def helper_done(self, reason: str) -> None:
-        """Keep the helper result visible in project updates and end its session without waking unrelated agents."""
+        """End the helper's session once its brief is done. Metaform sends the lead nothing because a helper ended:
+        the helper's own prompt asks it for one note to the lead, so what is said, and whether, is the prompt's."""
         state = 'done' if reason == 'end_turn' else 'failed'
-        named = helper_item(self.work_id)
-        brief = ' '.join(str(self.acp.get('brief') or '').split())
-        text = (f'{named[0].upper()}{named[1:]} {"finished" if state == "done" else f"stopped ({reason})"}: '
-                f'{brief[:117] + "..." if len(brief) > 120 else brief}. Its result is in its thread: '
-                f'metaform dispatch sessions id={self.work_id}')
-        message = {'text': text, 'work_id': self.work_id, 'kind': 'result', 'state': state,
-                   'from': {'item': named, 'agent': self.agent, 'session_id': self.session_id,
-                            'work_id': self.work_id}}
-        from .orchestration import TRANSPORT
-        try:
-            await asyncio.to_thread(TRANSPORT.notify_user, self.ctx, message,
-                                    f'helper:{self.session_id}:{time.time_ns()}')
-        except Exception as error:  # noqa: BLE001  the session ends whatever the report meets
-            sys.stderr.write(f'Could not report helper {self.work_id} to the system agent: {error}\n')
         if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
             await self.end('its brief is done' if state == 'done' else f'its brief stopped: {reason}')
 

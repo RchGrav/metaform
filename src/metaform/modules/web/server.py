@@ -503,6 +503,13 @@ class Server(ThreadingHTTPServer):
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
         if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
             self.watch_backgrounds(str(payload['project']), refresh=True)
+        if payload.get('project') == WORKSPACE:
+            # The lead is with the person on every project: what changes in its workspace, its thread and its agents,
+            # is told to each open page as a change of the project that page shows.
+            with self.listening:
+                watched = {shown for shown in self.watching.values() if shown and shown != WORKSPACE}
+            for shown in watched:
+                self.push({'topic': 'map.changed', 'payload': {**payload, 'project': shown, 'base_id': None}})
         return self.push({'topic': 'map.changed', 'payload': payload})
 
     def pages_changed(self, project_id: str) -> None:
@@ -1450,6 +1457,7 @@ class Handler(BaseHTTPRequestHandler):
         if given.get('confirm') is not True:
             return self.send(400, {'error': home.removal_caution(project), 'next': 'If you are sure: send confirm true'})
         home.remove_project(project)
+        ensure_workspace()  # the lead keeps its own, and the page has a project to show when this was the last
         self.send(200, {'project': project, 'said': f'Removed {project}. Its folder and files were not touched.'})
 
     def answer_question(self, given: dict[str, Any]) -> None:
@@ -1776,6 +1784,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'The agent is claude, codex or antigravity.'})
         if fresh is not None and not isinstance(fresh, bool):
             return self.send(400, {'error': 'fresh is true or false.'})
+        ensure_workspace()
+        given = {key: value for key, value in {**given, 'project': WORKSPACE}.items() if key != 'base'}  # the lead's own
         self.dispatched(given, 'system', [*([f'agent={agent}'] if agent else []), *(['fresh=true'] if fresh else [])])
 
     def lookup(self, project_id: str, refs: list[str]) -> None:
@@ -2583,6 +2593,8 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch_sessions(self, given: dict[str, str]) -> None:
         """The agent sessions and their threads, from the dispatch module's own tables, VIEW-039 and VIEW-036. With
         dispatch not enabled there are none."""
+        shown = given.get('project')
+        given = cast(dict[str, str], lead_given(dict(given)))
         try:
             nouns: dict[str, Any] = {'id': given['id']} if given.get('id') else {}
             for key in ('session', 'after'):
@@ -2611,6 +2623,16 @@ class Handler(BaseHTTPRequestHandler):
             if error.next_step == 'metaform dispatch sessions history=true':
                 return self.refuse(error, 400)
             return self.send(200, {'sessions': [], 'lines': [], 'states': {}})
+        if (shown != WORKSPACE and not given.get('id') and not given.get('history') and isinstance(found, dict)
+                and given.get('thread') == 'false'):
+            # the lead and the agents in its workspace are with the person on every project
+            try:
+                own = module_verb({'project': WORKSPACE}, 'dispatch', 'sessions', {'thread': False})
+                listed = cast(dict[str, Any], found)
+                listed['sessions'] = [*cast(list[Any], listed.get('sessions') or []),
+                                      *cast(list[Any], cast(dict[str, Any], own).get('sessions') or [])]
+            except (Stop, StoreError):
+                pass  # no workspace yet, or dispatch is off there: the project's own agents alone
         if given.get('thread') == 'false' and isinstance(found, dict):
             said(given, cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []))
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
@@ -2867,6 +2889,8 @@ class Handler(BaseHTTPRequestHandler):
         or with its error and next step. It runs as the command line, so dispatch enabled after this server started
         is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
         `--`, so no text a person writes is read as a switch. `module_id` runs another module's verb the same way."""
+        if module_id == 'dispatch':
+            given = lead_given(given)
         if module_id == 'dispatch' and verb in IN_PROCESS:
             try:
                 self.send(200, in_process_result(given, verb, nouns, text))
@@ -3951,24 +3975,54 @@ def project_folder(given: dict[str, str]) -> tuple[str, Path]:
 
 
 WORKSPACE = 'workspace'
+_LEADS: dict[str, bool] = {}  # work ids asked about, and whether the lead's workspace holds each
 
 
-def own_workspace() -> tuple[Any, ...]:
-    """The registered projects, with the person's own workspace made when there is none. A page with no project
-    could not start the chat, since an agent's conversation is kept with a project: the person was shut out of asking
-    for help until they had registered a folder. The workspace is a folder in the Metaform home, registered as a
-    project like any other, so the chat, the board and the agents work in it from the first page; it goes with the
-    command that removes any project."""
-    found = home.projects()
-    if found:
-        return found
+def ensure_workspace() -> None:
+    """Make the lead's workspace when it is missing.
+
+    The lead is one agent for the whole home: it stays in the chat box whatever project the page shows and works on
+    any of them. An agent's conversation is kept with a project, so the lead has one of its own, `workspace`, a folder
+    in the Metaform home. That is also what lets a person chat on a home that has no project yet. It is made when the
+    server starts, when the chat is called and when a project is removed, never by a read."""
+    if home.project(WORKSPACE) is not None:
+        return
     folder = home.home() / WORKSPACE
     home.mkdir_private(folder)
     try:
         home.add_project(WORKSPACE, folder)
-    except StoreError as error:  # said in the log; the page then shows no project, as before
+    except StoreError as error:  # said in the log; the page then shows what is registered, as before
         log(f'The workspace project could not be made: {error}')
-    return home.projects()
+
+
+def own_workspace() -> tuple[Any, ...]:
+    """The projects a page lists: the workspace only while there is no other, so the page has one to show."""
+    found = home.projects()
+    others = tuple(one for one in found if one.project_id != WORKSPACE)
+    return others or found
+
+
+def leads(work_id: object) -> bool:
+    """Whether the lead's workspace holds this work id: the lead's own conversation, or an agent it started there."""
+    if not isinstance(work_id, str) or not work_id:
+        return False
+    if work_id not in _LEADS:
+        try:
+            found = module_verb({'project': WORKSPACE}, 'dispatch', 'sessions', {'id': work_id, 'thread': False})
+            _LEADS[work_id] = bool(cast(dict[str, Any], found).get('sessions')) if isinstance(found, dict) else False
+        except (Stop, StoreError):
+            return False
+        if len(_LEADS) > 4096:
+            _LEADS.clear()
+    return _LEADS[work_id]
+
+
+def lead_given(given: dict[str, Any]) -> dict[str, Any]:
+    """A request about the lead, or about an agent in its workspace, is answered there whatever project the page
+    shows: `given` with the workspace as its project and no base of another project."""
+    if given.get('project') != WORKSPACE and (leads(given.get('work_id')) or leads(given.get('id'))):
+        return {key: value for key, value in {**given, 'project': WORKSPACE}.items() if key != 'base'}
+    return given
 
 
 def opened(given: dict[str, str]) -> Store:
@@ -4015,6 +4069,7 @@ def serve(given: argparse.Namespace) -> int:
     listener = events.listen('web', server.changed)
     ready(server)
     log(f'Process {os.getpid()} started on port {server.port}, code {server.code[:12]}, schema version {SCHEMA_VERSION}')
+    ensure_workspace()  # the lead's own, so the chat works on a home with no project
     # The projects' services start beside the loop, not before it: `metaform web start` asks the server it was told
     # listens to answer within two seconds, and starting every project's services first left that request waiting.
     threading.Thread(target=projects_started, args=(server,), daemon=True).start()
