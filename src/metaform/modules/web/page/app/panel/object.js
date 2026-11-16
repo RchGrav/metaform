@@ -19,6 +19,7 @@ import {showTab} from '/page/app/panel/prompts.js';
 import {summonAgent, summonPicker} from '/page/app/agents/pickers.js';
 import {following} from '/page/app/live/stream.js';
 import {openRoundtable} from '/page/app/roundtable/stage.js';
+import {renderLocalView} from '/page/app/panel/localview.js';
 
 export async function renderWork(target, key, also = null) {
   let records = [];
@@ -192,6 +193,7 @@ export async function renderObject(id) {
     h('div', {class: 'pills'}, element.role ? h('span', {class: 'pill'}, element.role) : null,
       (element.open_work || []).map(workPill), layerPill(element.layer),
       h('span', {class: 'pill'}, `${held.length} held · ${serves.length} served`)),
+    h('div', {id: 'localview', class: 'localview', hidden: true}),
     h('button', {class: 'btn sm quiet tobrief', type: 'button', 'aria-controls': 'p-brief',
       title: 'The brief an agent working here is handed, and the memories, messages and work numbered here',
       onclick: () => { showTab('brief'); $('#t-brief').focus(); }},
@@ -209,6 +211,7 @@ export async function renderObject(id) {
       serves.map(join => joinCard(join, 'receiver'))),
     folded('Knowledge', null, h('div', {id: 'items'})));
   renderWork(`element:${id}`, id);
+  renderLocalView(id);
   try {
     // While the page follows an intake being recorded, the element is shown as the building layer records it; that
     // layer is in no reading context until it finishes, LAYER-007, so a node read could only find nothing and is not

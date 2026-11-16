@@ -118,6 +118,20 @@ def node(project: str, target: str, chosen: str | None = None) -> NodeView | Non
     return NodeView(place, address, groups)
 
 
+def local_view(project: str, address: str) -> dict[str, Any] | None:
+    """What an agent assigned to an element receives there: the `project` tool's own answer at the element's address,
+    as the tool gives it, so the page's picture of it is the agent's view and not a copy. `lead` is the project's
+    prefix on every address in the answer. None when the project store holds no such project or element."""
+    name = commands.stored_name(project)
+    if not address or not commands.holds(name):
+        return None
+    path = f'{name}.{address}'
+    read = commands.run({path: {}})
+    if read.get('status') == 'error' or path not in read:
+        return None
+    return {'lead': f'{name}.', 'answer': read[path]}
+
+
 def _shaped(record: dict[str, Any], lead: int) -> dict[str, Any]:
     """One record of the tickets overlay as the page reads a work record."""
     address, position = str(record['element'])[lead:], cast(int, record['position'])

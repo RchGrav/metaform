@@ -974,6 +974,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.held_work({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/ticket-detail':
             return self.ticket_detail({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/local-view':
+            return self.local_view({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
             return self.memory_read(url.path[len('/api/memory-'):],
                                     {key: values[-1] for key, values in query.items() if key != 't'})
@@ -1054,6 +1056,15 @@ class Handler(BaseHTTPRequestHandler):
             if str(given.get('full') or '').lower() not in ('1', 'true'):
                 found = brief_work(found)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def local_view(self, given: dict[str, str]) -> None:
+        """What an agent assigned to an element receives there, for the panel's picture of it: the `project` tool's own
+        answer at the element's address."""
+        from .project_map import local_view
+        found = local_view(given.get('project', ''), given.get('address', ''))
+        if found is None:
+            return self.send(404, {'error': f'No element {given.get("address", "")} in the project store.'})
+        return self.send(200, found)
 
     def memory_read(self, name: str, given: dict[str, str]) -> None:
         """A read of the memory module for the page, VIEW-031 and VIEW-034: `graph`, the whole graph with each join
