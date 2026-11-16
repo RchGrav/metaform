@@ -446,6 +446,8 @@ export async function readSessionHistory() {
  * read keeps the agents drawn as last read. The conversations are the project's whatever its map holds, so they are
  * read with no metaform too, after a clear or before the first intake, PROJ-026. */
 async function readDispatch() {
+  // With no project chosen, as on a home that holds none, there is nothing to ask the server for.
+  if (!S.project) return {found: {sessions: []}, claimed: {claims: []}};
   let found = {sessions: []};
   let claimed = {claims: D.claims || []};
   try { found = await read('dispatch-sessions', {thread: 'false'}); }
