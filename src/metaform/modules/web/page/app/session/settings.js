@@ -37,8 +37,13 @@ function dockPicker() {
 }
 function refreshPreCall() {
   PRECALL.at = 0;
-  if (!DOCK.target) preCallSettings($('#helpdesk .sessionbar'));
+  if (!DOCK.target || afterEnd()) preCallSettings($('#helpdesk .sessionbar'), {resume: PRECALL.resume});
 }
+/* The person's own chat, the lead's, whose agent is not running: it was stopped or it ended. The chat then offers the
+ * next call as before any call, its harness chosen first, with the ended session's Resume beside it, so a person who
+ * stopped their agent can choose another and Call without reloading the page. */
+export const afterEnd = () => Boolean(DOCK.target) && !DOCK.live && !DOCK.calling
+  && (DOCK.target === DOCK.mine || DOCK.chat?.source === 'system');
 export function sessionSummary(box, {agent, settings, usage, controls, used, resume, before = false}) {
   const pop = sessionPop();
   // the line says the options in ACP's categories, and any switch that is on, such as Ultracode
@@ -77,8 +82,10 @@ export function sessionSummary(box, {agent, settings, usage, controls, used, res
  * the rest, each chosen now and kept in its own setting, dispatch_<agent>_<option>, which every session it starts is
  * given. An agent nothing has asked yet is asked by that read, which starts it once with no prompt, so the window
  * says it is asking; one that needs a login or cannot start says why. */
-const PRECALL = {agent: null, at: 0, data: null};
-export async function preCallSettings(box) {
+const PRECALL = {agent: null, at: 0, data: null, resume: null};
+export async function preCallSettings(box, {resume = null} = {}) {
+  PRECALL.resume = resume;
+  const called = () => Boolean(DOCK.target) && !afterEnd();  // a call is on: its own settings show instead
   // the agents there are
   if (S.project && (HARNESS.project !== S.project || !HARNESS.read)) await readHarnesses();
   const agent = summonAgent() || HARNESS.default;
@@ -88,19 +95,19 @@ export async function preCallSettings(box) {
     setTimeout(() => { if (!$('#helpdesk').hidden && !DOCK.target) drawHelpdesk(); }, 400);
     return;
   }
-  if (!agent || DOCK.target) { box.hidden = true; return; }
+  if (!agent || called()) { box.hidden = true; return; }
   if (PRECALL.agent !== agent || Date.now() - PRECALL.at > 30000) {
     PRECALL.agent = agent; PRECALL.at = Date.now();
     sessionSummary(box, {agent: agentName(agent), settings: [], usage: null, controls: [],
-      used: `Asking ${agentName(agent)} what it offers…`, resume: null, before: true});
+      used: `Asking ${agentName(agent)} what it offers…`, resume, before: true});
     try { PRECALL.data = (await read('dispatch-options', {agent})).agents?.[0] || null; } catch { PRECALL.data = null; }
   }
   // a call began, or another agent was chosen
-  if (DOCK.target || agent !== (summonAgent() || HARNESS.default)) return;
+  if (called() || agent !== (summonAgent() || HARNESS.default)) return;
   const found = PRECALL.data || {};
   const {settings, controls} = agentOptionControls(agent, found);
   sessionSummary(box, {agent: found.label || agentName(agent), settings, usage: null, controls,
-    used: found.reason || null, resume: null,
+    used: found.reason || null, resume,
     before: true});
 }
 /* An agent's own settings as controls, as it offered them at its last session here, `dispatch options`: its model,

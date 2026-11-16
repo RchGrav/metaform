@@ -11,7 +11,7 @@ import {wrote, movable} from '/page/app/board/history.js';
 import {renderAgents} from '/page/app/agents/dispatch.js';
 import {agentName, summonAgent} from '/page/app/agents/pickers.js';
 import {skipsPrompts, STATUS_WORDS, countOf} from '/page/app/session/tools.js';
-import {SESSIONPOP, sessionSummary, preCallSettings, groupedControls} from '/page/app/session/settings.js';
+import {SESSIONPOP, sessionSummary, preCallSettings, groupedControls, afterEnd} from '/page/app/session/settings.js';
 import {notificationState} from '/page/app/session/tasks.js';
 
 /* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
@@ -330,16 +330,17 @@ export function drawSession(box, {work, session, state}) {
   const resumable = ended, inPlace = Boolean(caps.load || caps.resume);
   const text = JSON.stringify([work, session?.session_id, session?.state, settings, usage, resumable,
     state?.tokens || null]);
-  if (box.dataset.drawn === text + (session ? '' : summonAgent()) || (box.contains(document.activeElement)
+  const before = !session || afterEnd();  // no call yet, or the person's own agent stopped: the next call is chosen
+  if (box.dataset.drawn === text + (before ? summonAgent() : '') || (box.contains(document.activeElement)
     || SESSIONPOP.el?.contains(document.activeElement)) && box.dataset.work === work) return;
-  box.dataset.drawn = text + (session ? '' : summonAgent());
+  box.dataset.drawn = text + (before ? summonAgent() : '');
   box.dataset.work = work || '';
   const agent = agentName(session?.agent);
   const controls = ended ? [] : groupedControls(agent, settings, settings.map(setting => setting.type === 'boolean'
     ? switchSetting(setting, work) : selectSetting(setting, work, agent)));
   const used = usage && usage.used !== null && usage.used !== undefined ? usageLine(usage) : null;
   const resume = resumable ? resumeButton(work, session, agent, inPlace) : null;
-  if (!session && !ended) { preCallSettings(box); return; }  // before Call: the agent's known options, chosen first
+  if (before) { preCallSettings(box, {resume}); return; }  // before Call: the harness and its options, chosen first
   sessionSummary(box, {agent, settings, usage, controls, used, resume});
 }
 /* A setting that is on or off, written as it is switched and put back when the write fails. */

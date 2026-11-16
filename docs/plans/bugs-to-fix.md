@@ -10,11 +10,6 @@ recorded, each becomes a ticket on the element it concerns.
    id=task-<id>` on an intake's work id answers "No work record has the id task-…" at once, because `wait` reads work
    records on the old store and an intake task is not one. A caller waiting for an intake to finish has no command
    for it. Goes with moving dispatch off the old store.
-2. **No harness picker after Stop agent.** Found by the system agent 2026-11-16
-   (`~/.metaform/workspace/plans/agent-profiles/images/bug-no-picker-after-stop.png`). After Stop agent the chat
-   keeps the ended session's window and never offers the harness picker or Call; only a reload recovers. Cause:
-   `session/text.js` `drawSession` draws the before-call settings only when there is no session at all, and the
-   `DOCK.target` checks in `session/settings.js` `preCallSettings`.
 3. **A message to Claude Code shows twice.** Found by the system agent 2026-11-16 (`bug-duplicate-hi.png`). Claude
    Code's adapter starts the CLI with `replay-user-messages`, so every prompt comes back as a `user_message_chunk`,
    and the thread shows it beside the person's own line. Fix in the runner: during a live turn, do not record the
