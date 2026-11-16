@@ -1711,7 +1711,10 @@ BLOCKS: tuple[Block, ...] = (
 )
 
 
-UNLINKED = ('metaform', 'project')  # blocks that are served when read and linked to no agent at connect
+# Blocks linked to no agent at connect. An agent is linked the rules it works by and its task. The memory text and
+# the module listing are not pushed at it: a module's commands and how each is used are in metaform help, read when
+# the work calls for one.
+UNLINKED = ('metaform', 'project', 'memory', 'modules')
 
 
 def links(agent: Agent) -> list[str]:
@@ -1721,7 +1724,7 @@ def links(agent: Agent) -> list[str]:
     if agent.task == 'intake' and not agent.own:
         return [uri for block in BLOCKS if block.name == 'task' and (uri := block.link(agent))]
     # No glossary is linked, the tool's or the project's: element addresses read as plain names, and fields and roles
-    # are written in full. Both stay readable at their addresses for whoever asks.
+    # are written in full.
     return [uri for block in BLOCKS if block.name not in UNLINKED and (uri := block.link(agent))]
 
 

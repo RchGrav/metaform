@@ -652,7 +652,7 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
             refused = str(error)
         return init.capabilities.resources.list_changed, fixed, templates, texts, refused
     changed, fixed, templates, texts, refused = session(home, mapped, check)
-    assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://task/person',
+    assert changed and set(fixed) == {'metaform://rules', 'metaform://task/person',
                                       'metaform://map/construction',
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://modules',
@@ -709,8 +709,7 @@ def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_h
     bare = tmp_path / 'bare'
     bare.mkdir()
     run('add', 'project', 'bare', str(bare))
-    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://memory',
-                                                           'metaform://modules', 'metaform://firstrun',
+    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://firstrun',
                                                            'metaform://task/person']
     first = prompt_files.required(here, 'no_intake')
     assert block_text(bare, 'metaform://firstrun') == first
@@ -1791,7 +1790,7 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     from metaform.modules.mcp.server import glossary, memory_text, modules_text, project_glossary_text, task_text
     run('enable', 'memory', cwd=mapped)
     block = 'metaform://task/person' if task is None else 'metaform://task/intake' if task == 'intake' else None
-    links = ['metaform://rules', 'metaform://memory', 'metaform://modules', *([block] if block else [])]  # no glossary
+    links = ['metaform://rules', *([block] if block else [])]  # the rules and the task: nothing else is linked
     if task == 'intake':  # a procedure is run with the procedure and nothing beside it: its task alone
         links = [block]
     directive = prompt_files.module('mcp', 'connect_directive') or ''
