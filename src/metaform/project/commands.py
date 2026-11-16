@@ -75,7 +75,8 @@ def perform_drawn(project: str, owned: Owner) -> dict[str, object]:
 def _drawn(opened: Store, project: str) -> dict[str, object]:
     return {'elements': [{'address': full(project, address), **_fields(values)}
                          for address, values in opened.all_elements()],
-            'wants': [{'holder': full(project, holder), **want, 'element': full(project, str(want['element']))}
+            'wants': [{'holder': full(project, holder), 'element': full(project, str(want['element'])),
+                       **{name: value for name, value in want.items() if name != 'element' and value is not None}}
                       for holder, want in opened.all_wants()]}
 
 
