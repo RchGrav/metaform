@@ -17,7 +17,7 @@ from metaform.data import Node, Store, export_document
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'intake.axiom'  # the served intake
+SPEC = Path(__file__).parents[1] / 'resources' / 'digital_typology.xml'  # the served intake
 RESOURCE = SPEC
 
 
@@ -29,7 +29,7 @@ def stored_with_pointer() -> str:
     from metaform import prompt_files
     if 'metaform://intake/schema' in SPEC.read_text(encoding='utf-8'):
         return SPEC.read_text(encoding='utf-8')
-    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer')
+    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='timer')
     return SPEC.read_text(encoding='utf-8').rstrip('\n') + '\n\n' + pointer + '\n'
 
 
@@ -1571,10 +1571,9 @@ def test_selected_intake_mode_reaches_first_turn_and_recording(run, home, projec
         assert ctx.require_store().intake_agent()['mode'] == mode
         first = intake_prompt(ctx, 'Examine current artifacts.')
         assert f'Selected intake mode: {mode}' in first
-        assert 'Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof' in first
-        assert 'Existing-map status cannot override fresh mode.' in first
+        assert "Apply only the selected mode's line." in first and '{"map": "timer"}' in first
         assert 'Examine current artifacts.' in first
-        assert first.startswith(SPEC.read_text(encoding='utf-8').rstrip('\n'))
+        assert first.startswith(SPEC.read_text(encoding='utf-8').split('{prompt}', 1)[0])
         reread = run('intake', 'prompt', 'text=Examine current artifacts.', cwd=project, env=mine).stdout
         assert reread == first
         assert 'This project has an intake' in run('intake', 'status', cwd=project, env=mine).stdout

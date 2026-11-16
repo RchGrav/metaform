@@ -25,8 +25,14 @@ def load_project_modules(project_folder):
 def test_procedure_component_retains_exact_source_and_ignores_focus_only_data(project_folder):
     ctx = context('intake', project_folder, nouns={'mode': 'fresh'})
     component = intake.procedure_component(ctx)
+    # The served procedure holds its request in a slot of its own, so the component, which is the source without a
+    # request, is the served text on both sides of what was asked.
+    source = intake.RESOURCE.read_text(encoding='utf-8')
+    before, after = source.split('{prompt}', 1)
+    assert component['text'].startswith(before + after.rstrip('\n'))
     for asked in ('Survey the timer.', 'Inspect its changed alarm.'):
-        assert component['text'] in intake.served(ctx, asked)
+        served = intake.served(ctx, asked)
+        assert served.startswith(before) and after.rstrip('\n') in served and asked in served
     assert component['source']['sha256'] == hashlib.sha256(intake.RESOURCE.read_bytes()).hexdigest()
     assert component['source']['path'] == str(intake.RESOURCE)
     assert component['rendered_fingerprint'] == hashlib.sha256(component['text'].encode()).hexdigest()
@@ -156,11 +162,12 @@ def test_dispatched_intake_records_exact_procedure_only_after_prompt_acceptance(
         component = intake.procedure_component(context('intake', project_folder))
         text = intake.served(context('intake', project_folder, nouns={'mode': 'fresh'}), 'Survey the timer.')
         outgoing = held.current_guidance(text, [])
-        assert outgoing.count(component['text']) == 1
-        assert component in held.inflight_context['components']
-        assert prepare_agent_context(project_folder, held.runner, [component])['components']
+        # The served procedure holds the request in a slot of its own, so the first turn carries it once, with the
+        # request in place, and the source without a request is never recorded as delivered: it was not what was sent.
+        before = intake.RESOURCE.read_text(encoding='utf-8').split('{prompt}', 1)[0]
+        assert outgoing.count(before) == 1 and 'Survey the timer.' in outgoing
+        assert component not in held.inflight_context['components']
         held.context_delivered()
-        assert not prepare_agent_context(project_folder, held.runner, [component])['components']
         following = held.current_guidance('Continue the same intake.', [])
-        assert component['text'] not in following
+        assert before not in following
     asyncio.run(exercise())

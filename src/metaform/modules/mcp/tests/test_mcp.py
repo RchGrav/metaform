@@ -440,7 +440,7 @@ def test_the_server_starts_on_any_surface_and_keeps_the_chassis_tools(run, home,
         refused = await called(client, 'map_where', {'address': 'code'})
         return names, said.is_error, json.loads(text(listed)[-1]), text(read), refused.is_error
     names, said_error, listed, read, refused = session(home, mapped, narrowed)
-    assert names == {'solo_hi', 'metaform_catalog'} | REGISTERED_TOOLS
+    assert names == {'solo_hi', 'metaform_catalog', 'project'} | REGISTERED_TOOLS
     assert not said_error and read == ['Narrowed to solo.'] and refused
     assert [row['kind'] for row in listed['results']] == ['feedback']
 
@@ -930,7 +930,7 @@ def test_each_command_is_its_own_tool_described_once_with_typed_arguments_and_an
     from metaform.module import on_this_system
     wanted = {f'{module.id}_{verb.name}' for module in loader.enabled() for verb in module.verbs
               if 'mcp' in verb.surfaces and on_this_system(verb) and (verb.listed is None or verb.listed(mapped))}
-    assert set(tools) == wanted | REGISTERED_TOOLS | HISTORY_TOOLS | {
+    assert set(tools) == wanted | REGISTERED_TOOLS | HISTORY_TOOLS | {'project'} | {
         'metaform_prompts', 'metaform_prompt', 'metaform_save_prompt', 'metaform_clear_project',
         'metaform_restore_project'}
     assert 'mcp_serve' not in tools and 'map' not in tools                   # no tool for a module, no wrapper
@@ -1387,7 +1387,7 @@ def test_the_tool_list_follows_the_folders_surface_in_a_running_session_and_an_a
     assert defined == before                                          # the alias is no tool
     assert said == 1                                                  # the narrowing; a tools/list is the new list itself
     # memory open lists its tools; with memory off the surface it holds none, so the catalog alone is listed
-    assert 'memory_read_graph' in before and narrowed == {'metaform_catalog'}
+    assert 'memory_read_graph' in before and narrowed == {'metaform_catalog', 'project'}
     assert 'memory_read_graph' in everything and 'memory_read_graph' not in after and 'map_where' in after
 
 
@@ -3311,7 +3311,7 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
         home, mapped, check, heard, env=env)
     assert said.splitlines()[0] == prompt_files.module('mcp', 'connect_directive') and 'metaform://task/' not in said
     assert 'metaform://modules' in said and 'You must use Metaform' not in said
-    assert set(first) == {'metaform_catalog'}
+    assert set(first) == {'metaform_catalog', 'project'}
     listing = blocks(categories)[-1]
     assert 'metaform://memory/tools' in listing and 'metaform://dispatch/tools' in listing
     assert 'memory_read_graph' not in listing
@@ -3528,7 +3528,7 @@ def test_a_session_no_task_names_gets_no_task_block_and_reaches_every_tool(run, 
             served = False
         return init.instructions, tools, refused, served
     said, tools, refused, served = session(home, mapped, check, env={'METAFORM_SESSION': 'first-plain'})
-    assert 'metaform://task/' not in said and set(tools) == {'metaform_catalog'}
+    assert 'metaform://task/' not in said and set(tools) == {'metaform_catalog', 'project'}
     assert not served, "the person's block is the person's"
     assert not any('not among the tools' in line for line in blocks(refused))
 
@@ -3673,7 +3673,7 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
     assert 'session handle' in connect and 'compacted=true' not in connect
     assert 'opens one category at a time' not in connect and 'carry only' not in connect  # its listing never narrows
     assert connect.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\nmetaform://metaform\n')
-    assert set(before) == set(after) == {'metaform_catalog', 'search', 'fetch'}
+    assert set(before) == set(after) == {'metaform_catalog', 'project', 'search', 'fetch'}
     assert 'pass session_handle=' in first[0] and 'compacted=true' in first[0]
     assert opened[0].startswith('map:') and 'map_where(' in opened[0]
     assert not any('listed to you now' in one for one in opened)

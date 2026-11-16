@@ -48,6 +48,15 @@ SCHEMA: dict[str, Any] = {
 }
 
 
+def listed() -> Any:
+    """The tool as it is listed. It writes and can delete, an add grows a list so a repeat is not the same call, and
+    it reaches nothing outside this machine."""
+    from mcp import types
+    return types.Tool(name=TOOL, description=DESCRIPTION, input_schema=SCHEMA,
+                      annotations=types.ToolAnnotations(read_only_hint=False, destructive_hint=True,
+                                                        idempotent_hint=False, open_world_hint=False))
+
+
 def command(arguments: dict[str, Any]) -> dict[str, Any]:
     """The command a client sent. A client that was given no type for a value sends an object as its text; such a
     value is read back as the object. No command takes a text that starts with a brace, so nothing else is changed."""
@@ -69,10 +78,10 @@ def build() -> Any:
 
     from metaform.module import chassis_version
 
-    listed = types.ListToolsResult(tools=[types.Tool(name=TOOL, description=DESCRIPTION, input_schema=SCHEMA)])
+    tools = types.ListToolsResult(tools=[listed()])
 
     async def list_tools(ctx: Any, params: Any) -> Any:
-        return listed
+        return tools
 
     async def call_tool(ctx: Any, params: Any) -> Any:
         if params.name != TOOL:

@@ -2366,8 +2366,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                           annotations=types.ToolAnnotations(read_only_hint=False, destructive_hint=False,
                                                             idempotent_hint=False, open_world_hint=False))
 
-    project_listed = types.Tool(name=project_tool.TOOL, description=project_tool.DESCRIPTION,
-                                input_schema=project_tool.SCHEMA)
+    project_listed = project_tool.listed()
 
     def build(shown: bool, client: str | None = None, session: str | None = None) -> list[Any]:
         """The tools listed to a session, MCP-003: `listed_names`, each as `tool` makes it; over HTTP to a listing
