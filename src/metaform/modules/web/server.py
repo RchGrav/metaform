@@ -985,6 +985,11 @@ class Handler(BaseHTTPRequestHandler):
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
         doing(f'the {name} read of {given.get("project", "")}')
+        if name == 'graph':  # a project the project store holds is drawn from there, whole, in one read
+            from .project_map import graph as stored_graph
+            drawn = stored_graph(given.get('project', '')) if not given.get('after') else None
+            if drawn is not None:
+                return self.send(200, plain(drawn))
         arguments = {key: value for key, value in given.items() if key not in RESERVED and key not in ('board', 'on')}
         board = given.get('board') if name == 'work' else None
         cutoff = ''

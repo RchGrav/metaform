@@ -496,3 +496,16 @@ def test_one_record_of_an_overlay_is_changed_or_removed_without_rewriting_the_li
     assert refusal(run({'delete': {CS: {'project_specifications': [5]}}})) == ('FIELD_MISMATCH', None)
     assert refusal(run({'add': {f'{P}.overlay.notes': {'description': 'd', 'instruction': 'i', 'position': {
         'type': 'number', 'rule': 'r', 'example': 1}}}}))[0] == 'FIELD_MISMATCH'  # the word is the tool's own
+
+
+def test_a_display_reads_a_whole_project_once_and_clearing_removes_it(served):
+    mapped = served
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+    assert commands.run({'add': {CS: {**CS_FIELDS, 'wants': [WANT]}}}, served) == {'status': 'ok'}
+    drawn = commands.drawn(P, mapped)
+    assert [element['address'] for element in drawn['elements'] if element.get('role')] == [WIDGET, CS]
+    assert drawn['wants'] == [{'holder': CS, **WANT}]
+    assert commands.drawn('nosuch', mapped) is None
+    assert commands.run({'drawn': P}, served)['status'] == 'error'  # not a command of the tool
+    assert commands.clear(P, mapped) is True
+    assert commands.drawn(P, mapped) is None and commands.clear(P, mapped) is False

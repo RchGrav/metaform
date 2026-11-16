@@ -94,8 +94,13 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 stopped.set()
                 listener.close()
                 return
-            answer = commands.perform(message.get('command'), owned, str(message.get('caller') or ''),
-                                      str(message.get('request') or ''))
+            if isinstance(message.get('clear'), str):  # clearing a project removes its database
+                answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear']) else 'error'}
+            elif isinstance(message.get('drawn'), str):  # a display's read of a whole project
+                answer = commands.perform_drawn(message['drawn'], owned)
+            else:
+                answer = commands.perform(message.get('command'), owned, str(message.get('caller') or ''),
+                                          str(message.get('request') or ''))
             try:
                 connection.send_bytes(json.dumps(answer).encode('utf-8'))
             except (EOFError, OSError):
@@ -157,7 +162,7 @@ def _writes(command: Any) -> bool:
     return isinstance(command, dict) and bool(set(cast(dict[object, object], command)) & {'add', 'update', 'delete'})
 
 
-def send(command: object, home: Path, caller: str = '') -> dict[str, object]:
+def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '') -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
     Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
@@ -166,7 +171,9 @@ def send(command: object, home: Path, caller: str = '') -> dict[str, object]:
     home = home.resolve()
     given: Any = command
     payload = json.dumps({'command': command, 'caller': caller or f'process {os.getpid()}',
-                          'request': uuid.uuid4().hex if _writes(given) else ''}).encode('utf-8')
+                          'request': uuid.uuid4().hex if _writes(given) else '',
+                          **({'drawn': drawn} if drawn else {}),
+                          **({'clear': clear} if clear else {})}).encode('utf-8')
     for attempt in range(ATTEMPTS):
         try:
             connection = _connection(home, fresh=attempt > 0)

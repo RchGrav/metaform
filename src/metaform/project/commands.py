@@ -20,6 +20,7 @@ from metaform.project.forms import Address, Refusal, as_object, full, parse, ref
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
 from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, ROOT_FIELDS, Scalar, Store, StoreError
+from metaform.project.store import projects as store_projects
 from metaform.project.writes import Writer
 
 OK: dict[str, object] = {'status': 'ok'}
@@ -34,6 +35,48 @@ def run(command: object, home: Path | None = None, caller: str = '') -> dict[str
     a database itself, so the writes of every process are serialized in one place."""
     from metaform.project import service
     return service.send(command, home if home is not None else metaform_home.home(), caller)
+
+
+def drawn(project: str, home: Path | None = None) -> dict[str, object] | None:
+    """What a display draws of a project in one read: every element with its own fields, and every want with its
+    fields. None when the project has no database. This is not a command of the tool, whose `map` returns no fields
+    so an agent's read stays small; a display needs each element's name and role to draw it."""
+    from metaform.project import service
+    if project not in store_projects(home if home is not None else metaform_home.home()):
+        return None  # asked of the folder, so a project never taken in starts no service
+    answer = service.send(None, home if home is not None else metaform_home.home(), 'display', drawn=project)
+    return None if answer.get('status') == 'error' else answer
+
+
+def stored_name(project_id: str) -> str:
+    """The name a registered project has in the project store: its id, with the underscores a step is written with."""
+    return project_id.lower().replace('-', '_')
+
+
+def clear(project: str, home: Path | None = None) -> bool:
+    """Remove a project's database, as clearing the project does. False when the project store holds none."""
+    from metaform.project import service
+    where = home if home is not None else metaform_home.home()
+    if project not in store_projects(where):
+        return False
+    return service.send(None, where, 'clear', clear=project).get('status') == 'ok'
+
+
+def perform_drawn(project: str, owned: Owner) -> dict[str, object]:
+    """Answer a display's read in the service. Not reachable through the tool, which sends commands only."""
+    try:
+        return owned.read(project, lambda opened: _drawn(opened, project))
+    except Missing:
+        return refused({'drawn': project}, _missing(project))
+    except StoreError as error:
+        return refused({'drawn': project}, Refusal('INTERNAL_ERROR', f'the store failed: {error}'))
+
+
+def _drawn(opened: Store, project: str) -> dict[str, object]:
+    return {'elements': [{'address': full(project, address), **_fields(values)}
+                         for address, values in opened.all_elements()],
+            'wants': [{'holder': full(project, holder), **want, 'element': full(project, str(want['element']))}
+                      for holder, want in opened.all_wants()]}
 
 
 def perform(command: object, owned: Owner, caller: str = '', request: str = '') -> dict[str, object]:

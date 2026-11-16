@@ -1425,7 +1425,10 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     # is left working, unseen and unstoppable, on a map that is gone; their conversations stay, `AT_WORK`. Every start
     # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
     with halted(project_id, 'clear'):
-        return _cleared(project_id, found, made_by)
+        cleared = _cleared(project_id, found, made_by)
+        from metaform.project import commands  # the project's map in the project store goes with it
+        commands.clear(commands.stored_name(project_id))
+        return cleared
 
 
 def _cleared(project_id: str, found: Cleared, made_by: str) -> Cleared:

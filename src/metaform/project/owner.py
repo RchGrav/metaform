@@ -238,6 +238,19 @@ class Owner:
             self._open[project] = database
         return database
 
+    def remove(self, project: str) -> bool:
+        """Remove the project's database, after the writes already queued for it. False when there is none."""
+        with self._opening:
+            with self._lock:
+                database = self._open.pop(project, None)
+            if database is not None:
+                database.close()
+            path = store.location(self.home, project)
+            if not path.exists():
+                return False
+            store.remove(path)
+            return True
+
     def _discard(self, project: str, database: Database) -> None:
         """Remove a database this process made whose first write failed, unless another caller is using it."""
         with self._lock:

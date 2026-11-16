@@ -259,6 +259,12 @@ class Store:
                           'ORDER BY h.address, e.address')
         return [(str(row[0]), str(row[1])) for row in rows]
 
+    def all_wants(self) -> list[tuple[str, dict[str, Scalar]]]:
+        """Every want of the project with its fields, each beside the address of the element that holds it."""
+        rows = self._rows('MATCH (h:Element)-[w:Wants]->(e:Element) RETURN h.address, e.address, w.why, w.how, '
+                          'w.direction, w.ref ORDER BY h.address, e.address')
+        return [(str(row[0]), {'element': row[1], **dict(zip(WANT_FIELDS, row[2:]))}) for row in rows]
+
     def remove_wants(self, holder: str, element: str, ref: str | None, every: bool = False) -> None:
         """Remove the holder's want on the element with this ref, or with no ref; with `every`, all its wants on it."""
         match = 'MATCH (h:Element {address: $holder})-[w:Wants]->(e:Element {address: $element})'
