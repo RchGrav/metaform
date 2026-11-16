@@ -1129,19 +1129,13 @@ class Handler(BaseHTTPRequestHandler):
         `HOST_LIMIT` of a server's instructions and of each tool's description."""
         try:
             _, folder = project_folder(given)
-            address = given.get('address', '').strip()
-            uris = ('metaform://metaform', 'metaform://modules', *((f'metaform://{address}',) if address else ()))
-            read = chassis.mcp_reads(folder, uris)
+            read = chassis.mcp_reads(folder, ())  # the server serves no glossary, listing or node brief to read
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
         found = cast(dict[str, Any], read['discover'])
         connect = str(found.get('instructions') or '')
-        texts = cast(dict[str, str], read['texts'])
-        glossary = texts.get('metaform://metaform', '')
-        index = texts.get('metaform://modules', '')  # each tool in one line, read apart from the glossary
         cost = agent_cost(read)
-        self.send(200, {'connect': sized(connect), 'glossary': {**sized(glossary), 'index': sized(index)},
-                        'brief': sized(texts[f'metaform://{address}']) if address else None,
+        self.send(200, {'connect': sized(connect), 'glossary': {**sized(''), 'index': sized('')}, 'brief': None,
                         'tools': cost['tools'], 'tool_bytes': sum(int(one['bytes']) for one in cost['tools']),
                         'resources': weighed(cast(list[Any], read['resources'])),
                         'templates': weighed(cast(list[Any], read['templates'])),

@@ -12,6 +12,8 @@ number of these may run.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
 
 import anyio
@@ -73,8 +75,10 @@ def command(arguments: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def build() -> Any:
-    """The server: one tool, whichever transport carries it."""
+def build(folder: Path | None = None) -> Any:
+    """The server: one tool, whichever transport carries it. With `folder`, the server an AI tool or a runner starts
+    for one agent working there: it also sends that agent its opening at connect, one line and the links to its
+    rules and its task, and serves those links (`opening`). Without, it sends and serves nothing but the tool."""
     from mcp import types
     from mcp.server import Server
 
@@ -92,11 +96,42 @@ def build() -> Any:
                                                     f"'{TOOL}'"}
         else:
             given = command(params.arguments or {})
-            answer = await anyio.to_thread.run_sync(commands.run, given, None, 'mcp')
+            answer = await anyio.to_thread.run_sync(commands.run, given, None, os.environ.get('METAFORM_SESSION') or 'mcp')
         return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(answer))],
                                     is_error=answer.get('status') == 'error')
 
-    return Server('metaform', version=chassis_version(), on_list_tools=list_tools, on_call_tool=call_tool)
+    if folder is None:
+        return Server('metaform', version=chassis_version(), on_list_tools=list_tools, on_call_tool=call_tool)
+
+    from mcp.shared.exceptions import MCPError
+
+    from . import opening
+
+    async def list_resources(ctx: Any, params: Any) -> Any:
+        found = await anyio.to_thread.run_sync(opening.listed, folder)
+        return types.ListResourcesResult(resources=[
+            types.Resource(uri=uri, name=name, description=description, mime_type='text/plain')
+            for uri, name, description in found])
+
+    async def read_resource(ctx: Any, params: Any) -> Any:
+        uri = str(params.uri)
+        said = await anyio.to_thread.run_sync(opening.block_text, folder, uri)
+        if said is None:
+            raise MCPError(-32002, f'No resource {uri} here.\nNext: list the resources')
+        return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=said,
+                                                                             mime_type='text/plain')])
+
+    # A host may ask for prompts and resource templates whatever a server offers: it is answered that there are none.
+    async def no_templates(ctx: Any, params: Any) -> Any:
+        return types.ListResourceTemplatesResult(resource_templates=[])
+
+    async def no_prompts(ctx: Any, params: Any) -> Any:
+        return types.ListPromptsResult(prompts=[])
+
+    return Server('metaform', version=chassis_version(), instructions=opening.connect_instructions(folder),
+                  on_list_tools=list_tools, on_call_tool=call_tool, on_list_resources=list_resources,
+                  on_read_resource=read_resource, on_list_resource_templates=no_templates,
+                  on_list_prompts=no_prompts)
 
 
 def http_app() -> Any:
@@ -114,3 +149,19 @@ def serve(port: int) -> None:
 
     print(f'Metaform project tool at http://127.0.0.1:{port}/mcp', file=sys.stderr, flush=True)
     serving(uvicorn.Config(http_app(), host='127.0.0.1', port=port, log_level='warning')).run()
+
+
+def serve_stdio(folder: Path) -> None:
+    """Serve one agent working in `folder` over stdio, the connection its AI tool or its runner holds: the tool, and
+    the agent's opening. The server ends when the host closes its input."""
+    from mcp.server.stdio import stdio_server
+
+    server = build(folder)
+
+    async def main() -> None:
+        async with stdio_server() as (read, write):
+            try:
+                await server.run(read, write, server.create_initialization_options())
+            finally:
+                await write.aclose()
+    anyio.run(main)

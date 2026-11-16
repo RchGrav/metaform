@@ -12233,26 +12233,20 @@ def test_the_page_reads_a_nodes_brief_and_items_exactly_as_an_agent_reads_them(r
 def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped,
                                                                                                 monkeypatch):
     from metaform import loader, settings
-    from metaform.modules.mcp import server as mcp
+    from metaform.modules.mcp import opening as told
     loaded = {'chassis', *(module.id for module in loader.enabled())}
     for key in [key for key, setting in settings.SCHEMA.items() if setting.owner not in loaded]:
         monkeypatch.delitem(settings.SCHEMA, key)  # declared by a test's own import of a module that ships disabled
     started(run)
     status, body = api(web, '/api/agent-view?project=proj&address=code.timer.kitchen')
     assert status == 200, body
-    assert body['connect']['text'] == mcp.connect_instructions(mapped)  # the person's own session's directive and links
+    assert body['connect']['text'] == told.connect_instructions(mapped)  # the person's own session's directive and links
     assert 'metaform://task/person' in body['connect']['text']
     assert body['connect']['chars'] == len(body['connect']['text']) and body['host_limit'] == 2048
-    assert body['glossary']['text'] == mcp.glossary(mapped)
-    assert body['glossary']['index']['text'] == mcp.modules_text(mapped)
-    # what a connecting agent is listed, as the Inspector lists it: the one tool
+    # what a connecting agent is listed, as the Inspector lists it: the one tool, and the links of its opening
     assert [tool['name'] for tool in body['tools']] == ['project']
-    costs = [tool['model_bytes'] for tool in body['tools']]
-    assert costs == sorted(costs, reverse=True)  # the costliest first, by what the model receives
-    assert {one['entry']['uri'] for one in body['resources']} >= {one['uri'] for one in mcp.resource_list(mapped)}
-    assert {one['entry']['name'] for one in body['prompts']} == set(mcp.slashes(mapped))
-    assert {'tools', 'resources', 'prompts'} <= set(body['capabilities']) and body['templates']
-    assert body['brief']['text'] == mcp.brief(mapped, 'code.timer.kitchen')
+    assert {one['entry']['uri'] for one in body['resources']} == {uri for uri, _, _ in told.listed(mapped)}
+    assert body['prompts'] == [] and body['templates'] == [] and body['brief'] is None
     assert body['tool_bytes'] == sum(tool['bytes'] for tool in body['tools'])
     # what is paid, as Claude Code sends tools to the model: mcp__<server>__<tool>, description and input schema only
     sent = [json.dumps({'name': f'mcp__metaform__{tool["name"]}', 'description': tool['entry'].get('description', ''),

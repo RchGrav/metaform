@@ -22,7 +22,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from metaform.data import Node, Store
-from metaform.modules.mcp.server import connect_instructions as startup_instructions
 
 
 def own(project_id):
@@ -499,52 +498,6 @@ def undeclared(reach, modules, changed=None):
     return wrong
 
 
-@pytest.mark.req('MCP-032')
-@pytest.mark.req('MCP-033')
-def test_the_slash_commands_are_mcp_prompts_whose_text_is_what_the_command_line_prints(run, home, mapped):
-    """Metaform still doesn't have its : commands, none for intake. Each command is an XML element
-    of its owner's prompts.xml naming the verb it runs; /metaform:intake puts into the conversation exactly what
-    metaform intake prompt prints for the same folder."""
-    from metaform import prompt_files
-    from metaform.data import prompts
-    prompts.add_prompt('practices', 'markdown', 'one\n')
-    prompts.add_prompt_version('practices', 'two\n', 1)
-
-    async def call(client, init):
-        listed = {prompt.name: prompt for prompt in (await client.list_prompts()).prompts}
-        got = {name: await client.get_prompt(name, {}) for name in ('intake', 'tasks', 'status', 'refine')}
-        got['prompt'] = await client.get_prompt('prompt', {'name': 'practices'})
-        got['prompt 1'] = await client.get_prompt('prompt', {'name': 'practices', 'version': '1'})
-        return listed, {name: [message.content.text for message in result.messages] for name, result in got.items()}, \
-            {name: [message.role for message in result.messages] for name, result in got.items()}
-    listed, texts, roles = session(home, mapped, call)
-    assert {'intake', 'status', 'config', 'web', 'messages', 'tasks', 'refine', 'prompt'} <= set(listed)
-    assert 'correct' not in listed                                     # dropped, D106
-    assert listed['intake'].description and listed['config'].description and listed['prompt'].description
-    assert all(role == ['user'] for role in roles.values())
-    assert texts['intake'] == [run('intake', 'prompt', cwd=mapped).stdout.strip()]
-    assert texts['tasks'] == [run('map', 'work', 'open=true', cwd=mapped).stdout.strip()]
-    assert texts['status'] == [run(cwd=mapped).stdout.strip()]
-    declared = {name: before for name, _, before, _, _ in prompt_files.module_commands('map')}
-    assert texts['refine'] == [declared['refine'].strip()]             # the survey instruction as declared, D107
-    assert not listed['refine'].arguments
-    # D105: the stored prompt's exact text, the newest or the version named, as metaform prompt prints it
-    assert [(one.name, one.required) for one in listed['prompt'].arguments] == [('name', True), ('version', False)]
-    assert texts['prompt'] == ['two'] and texts['prompt 1'] == ['one']
-    run('set', '--modules', 'intake,mcp', cwd=mapped)                  # map and web off the surface
-
-    async def narrowed(client, init):
-        names = {prompt.name for prompt in (await client.list_prompts()).prompts}
-        try:
-            await client.get_prompt('web', {})
-            refused = False
-        except Exception:  # noqa: BLE001  the server answers with an error
-            refused = True
-        return names, refused
-    names, refused = session(home, mapped, narrowed)
-    assert 'intake' in names and not {'web', 'tasks', 'messages', 'refine'} & names and refused
-
-
 def help_agents(run, folder):
     return run('help', 'agents', cwd=folder).stdout
 
@@ -554,20 +507,6 @@ def over_mcp(folder):
     line to each instruction block that applies to it now."""
     from metaform.modules.mcp.server import connect_instructions
     return connect_instructions(folder)
-
-
-@pytest.mark.req('MCP-004')
-@pytest.mark.cli_process
-def test_listing_the_prompts_then_calling_a_tool_announces_no_change(run, home, mapped):
-    """The prompts listed were kept in another shape than the one compared, so every call announced a change."""
-    heard = []
-
-    async def check(client, init):
-        await client.list_prompts()
-        await client.call_tool('map_layers', {})
-        await client.call_tool('map_layers', {})
-    session(home, mapped, check, heard)
-    assert 'notifications/prompts/list_changed' not in heard
 
 
 class Served:
@@ -635,63 +574,6 @@ def test_the_install_proof_passes_the_real_server_on_the_july_wire(home, mapped)
     assert proof.instructions.strip() == over_mcp(mapped).strip()
 
 
-@pytest.mark.req('MCP-037')
-def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, mapped, in_project_store):
-    """What an agent reads at discovery, before any tool runs: the instructions, a module's instructions, and the
-    resources a module declares, each read through one of its verbs; a command's arguments are in its tool. The intake module
-    declares its procedure and its forms. A URI nothing serves is refused with a next step."""
-    async def check(client, init):
-        fixed = {one.uri: one for one in (await client.list_resources()).resources}
-        templates = {one.uri_template for one in (await client.list_resource_templates()).resource_templates}
-        texts = {uri: (await client.read_resource(uri)).contents[0].text for uri in (
-            'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure')}
-        try:
-            await client.read_resource('metaform://instructions/nothing')
-            refused = None
-        except Exception as error:  # noqa: BLE001
-            refused = str(error)
-        return init.capabilities.resources.list_changed, fixed, templates, texts, refused
-    changed, fixed, templates, texts, refused = session(home, mapped, check)
-    assert changed and set(fixed) == {'metaform://rules', 'metaform://task/person',
-                                      'metaform://map/construction',
-                                      'metaform://metaform', 'metaform://proj',
-                                      'metaform://modules',
-                                      'metaform://runtime/compaction-state',
-                                      'metaform://instructions', 'metaform://intake/procedure'}
-    assert all(one.description and one.name for one in fixed.values())
-    assert templates == {'metaform://tools/{tool}/instructions', 'metaform://tools/{tool}/instructions/{op}',
-                         'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
-                         'metaform://tasks/definitions/{name}',
-                         'metaform://{address}', 'metaform://{address}/items/{n}'}
-    from metaform import prompt_files
-    assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
-    assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
-    assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
-    assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused
-
-
-
-
-
-
-@pytest.mark.req('MCP-007')
-def test_connect_points_to_the_glossary_and_the_glossary_resource_serves_it_whole(run, home, mapped):
-    from metaform import prompt_files
-    glossary = prompt_files.module('mcp', 'glossary')
-
-    async def check(client, init):
-        listed = [str(one.uri) for one in (await client.list_resources()).resources]
-        read = await client.read_resource('metaform://metaform')
-        return init.instructions, listed, read.contents[0].text
-    started, listed, served = session(home, mapped, check)
-    # the glossaries are served when read and linked to no agent at connect
-    assert started.splitlines()[1] == 'metaform://rules' and 'metaform://metaform' not in started
-    assert 'metaform://proj' not in started
-    assert len(startup_instructions(mapped)) <= 2048
-    assert listed[0] == 'metaform://rules' and listed[listed.index('metaform://metaform') + 1] == 'metaform://proj'
-    assert served == glossary.strip() + '\n' and len(served) > 2048  # whole and alone, past the connect text's cut
-
-
 SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web')
 
 
@@ -723,62 +605,6 @@ def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_h
     assert block_text(outside, 'metaform://firstrun') == prompt_files.required(here, 'no_intake', register=step)
     monkeypatch.setenv('METAFORM_SESSION', 'r1')  # an agent a runner started
     assert 'metaform://firstrun' not in connect_instructions(bare)
-
-
-@pytest.mark.req('MCP-037')
-def test_every_address_resolves_to_its_brief_and_each_numbered_item_with_the_july_code_when_missing(run, home,
-                                                                                                    mapped):
-    """metaform://<address> is the node's brief, map's first where read; metaform://<address>#<n> the one item numbered
-    n there, upper-case hex read too, its links shown as <address>#<n> and title; a missing address or item is
-    refused with a next step, -32602 on the July wire and -32002 on the 2025 handshake, whose resources page names it;
-    the fixed resources are never read as addresses."""
-    run('memory', 'create_entities', json.dumps([
-        {'name': 'tone', 'entityType': 'finding', 'observations': ['The tone is too quiet.'],
-         'why': 'The cook misses it.'},
-        {'name': 'piezo', 'entityType': 'part', 'title': 'The piezo drives the tone',
-         'observations': ['Rated 3 V.', 'Fed 5 V.'], 'why': 'It explains the quiet tone.'}]), 'node=code.alarm.audible',
-        cwd=mapped)
-    run('memory', 'create_relations', json.dumps([{'from': 'tone', 'to': 'piezo', 'relationType': 'comes from'}]),
-        cwd=mapped)
-    run('map', 'work', 'op=add', 'node=code.alarm.audible', 'task=Feed the piezo 3 V.', 'title=Feed the piezo 3 V',
-        cwd=mapped)
-
-    async def check(client, init):
-        read = {}
-        for uri in ('metaform://code.alarm.audible', 'metaform://code.alarm.audible#1',
-                    'metaform://code.alarm.audible#2', 'metaform://code.alarm.audible#3', 'metaform://metaform',
-                    'metaform://code.alarm.audible/items/1'):
-            read[uri] = (await client.read_resource(uri)).contents[0].text
-        refused = {}
-        for uri in ('metaform://code.nosuch.node', 'metaform://code.alarm.audible#FF',
-                    'metaform://code.alarm.audible#0'):
-            try:
-                await client.read_resource(uri)
-                refused[uri] = None
-            except Exception as error:  # noqa: BLE001
-                refused[uri] = (getattr(getattr(error, 'error', None), 'code', None), str(error))
-        return read, refused
-    read, refused = session(home, mapped, check)
-    brief = read['metaform://code.alarm.audible']  # map's where read as it gives it the first time, whatever its layout
-    assert 'code.alarm.audible' in brief and 'code.timer.kitchen' in brief  # the node and what relies on it
-    first = read['metaform://code.alarm.audible#1'].splitlines()
-    assert first[:2] == ['code.alarm.audible#1  The tone is too quiet.', 'memory · why: The cook misses it.']
-    assert '  comes from → code.alarm.audible#2  The piezo drives the tone' in first
-    assert read['metaform://code.alarm.audible/items/1'] == read['metaform://code.alarm.audible#1'], 'the path form'
-    assert read['metaform://code.alarm.audible#2'].startswith('code.alarm.audible#2  The piezo drives the tone\n')
-    assert read['metaform://code.alarm.audible#3'].splitlines()[:2] == ['code.alarm.audible#3  Feed the piezo 3 V',
-                                                                        'work']
-    assert read['metaform://metaform'].startswith('@STATE_INIT')
-    for uri, (code, said) in refused.items():
-        assert code == -32002 and 'Next:' in said, (uri, said)
-    july = july_wire(home, mapped)
-    try:
-        from metaform.probe import discover
-        discover(july)
-        with pytest.raises(RuntimeError, match='-32602'):
-            july.request('resources/read', {'uri': 'metaform://code.nosuch.node'}, deadline=time.monotonic() + 30)
-    finally:
-        july.close()
 
 
 def a2a(folder, calls):
@@ -1188,44 +1014,6 @@ def test_a_trace_views_mark_moves_only_for_a_change_to_its_ticket():
         assert traces.mark('proj', 't1') != mark
         traces.stop()
     anyio.run(main)
-
-
-@pytest.mark.req('MCP-037')
-def test_addresses_and_item_numbers_complete_and_a_listener_hears_items_added_at_its_node(run, home, mapped):
-    """completion/complete fills an Address a segment at a time and the numbers at an address; a client listening on
-    metaform://<address> is told when an item is numbered there by another process, the URI and nothing more."""
-    run('memory', 'create_entities', json.dumps([{'name': 'tone', 'entityType': 'finding', 'why': 'The cook misses it.',
-                                                   'observations': ['The tone is too quiet.']}]),
-        'node=code.alarm.audible', cwd=mapped)
-    wire = july_wire(home, mapped)
-    try:
-        def complete(uri, name, value, known=None):
-            return declaring(wire, 'completion/complete', {
-                'ref': {'type': 'ref/resource', 'uri': uri}, 'argument': {'name': name, 'value': value},
-                **({'context': {'arguments': known}} if known else {})}, {})['completion']['values']
-        assert complete('metaform://{address}', 'address', '') == ['code']
-        assert complete('metaform://{address}', 'address', 'code.a') == ['code.alarm']
-        assert complete('metaform://{address}', 'address', 'code.alarm') == ['code.alarm', 'code.alarm.audible']
-        assert complete('metaform://{address}#{n}', 'n', '', {'address': 'code.alarm.audible'}) == ['1']
-        assert complete('metaform://{address}/items/{n}', 'n', '', {'address': 'code.alarm.audible'}) == ['1']
-        listening = wire.open('subscriptions/listen', {'notifications': {
-            'resourceSubscriptions': ['metaform://code.alarm.audible']}})
-        declaring(wire, 'resources/templates/list', {}, {})  # the stream is open once a later request is answered
-        run('memory', 'create_entities', json.dumps([{'name': 'piezo', 'entityType': 'part', 'why': 'Rated 3 V.',
-                                                       'observations': ['Fed 5 V.']}]), 'node=code.alarm.audible',
-            cwd=mapped)
-
-        def heard():
-            return [notice['params'] for notice in wire.notices if notice['method'] == 'notifications/resources/updated']
-        deadline = time.monotonic() + 15
-        while not heard() and time.monotonic() < deadline:
-            declaring(wire, 'resources/templates/list', {}, {})
-            time.sleep(0.2)
-        (notice,) = heard()
-        assert notice['uri'] == 'metaform://code.alarm.audible'
-        assert notice['_meta'] == {'io.modelcontextprotocol/subscriptionId': listening}
-    finally:
-        wire.close()
 
 
 @pytest.fixture
@@ -1784,10 +1572,9 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     within what any host keeps, and each link reads back its block exactly as its prompt holds it: the rules, the
     glossary, the memory prompt, the task block where one applies, the person's own and the intake's, and the project's
     terms. A task whose text is its first turn gets no task block."""
-    import httpx
 
     from metaform import prompt_files
-    from metaform.modules.mcp.server import glossary, memory_text, modules_text, project_glossary_text, task_text
+    from metaform.modules.mcp.opening import task_text
     run('enable', 'memory', cwd=mapped)
     block = 'metaform://task/person' if task is None else 'metaform://task/intake' if task == 'intake' else None
     links = ['metaform://rules', *([block] if block else [])]  # the rules and the task: nothing else is linked
@@ -1800,10 +1587,8 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
         monkeypatch.setenv(name, value)
 
     def blocks_for(client, session, keyed):
-        every = {'metaform://rules': prompt_files.module('mcp', 'connect_rules'), 'metaform://metaform': glossary(mapped),
-                 'metaform://memory': memory_text(mapped), 'metaform://modules': modules_text(mapped),
-                 **({block: task_text(mapped, client, session, keyed)} if block else {}),
-                 'metaform://proj': project_glossary_text(mapped, client)}
+        every = {'metaform://rules': prompt_files.module('mcp', 'connect_rules'),
+                 **({block: task_text(mapped)} if block else {})}
         return {uri: every[uri] for uri in links}
 
     async def over_stdio(client, init):
@@ -1811,31 +1596,6 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     connect, read = session(home, mapped, over_stdio, env=identity)
     assert connect.splitlines() == [directive, *links] and len(connect) <= 512, connect
     assert read == blocks_for('mcp', f'links-{task}' if task else 'process:stdio', True)
-
-    served = Served(mapped)
-
-    async def over_july():
-        async with httpx.AsyncClient(timeout=30) as client:
-            async def request(method, params):
-                params = {**params, '_meta': {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
-                                              'io.modelcontextprotocol/clientCapabilities': {}}}
-                response = await client.post(served.url, headers={
-                    'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28',
-                    'MCP-Method': method, **({'MCP-Name': params['uri']} if 'uri' in params else {})},
-                    json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
-                assert response.is_success, response.text
-                if response.headers['content-type'].startswith('text/event-stream'):
-                    return json.loads(next(line[6:] for line in response.text.splitlines()
-                                           if line.startswith('data: ')))['result']
-                return response.json()['result']
-            said = (await request('server/discover', {}))['instructions']
-            return said, {uri: (await request('resources/read', {'uri': uri}))['contents'][0]['text'] for uri in links}
-    try:
-        connect, read = asyncio.run(over_july())
-    finally:
-        served.stop()
-    assert connect.splitlines() == [directive, *links] and len(connect) <= 512, connect
-    assert read == blocks_for(None, None, False)
 
 
 @pytest.mark.req('MCP-007')
@@ -2004,3 +1764,17 @@ def test_the_project_server_lists_one_tool_and_passes_its_arguments_as_the_comma
     assert sent == [{'add': {'p.code.a': {}}}, {'p.code.b': {}}]
     assert json.loads(wrote['content'][0]['text']) == {'status': 'ok'} and not wrote.get('isError')
     assert refused['isError'] and json.loads(refused['content'][0]['text'])['code'] == 'NOT_FOUND'
+
+
+def test_an_agent_is_linked_its_rules_and_its_task_and_an_intake_agent_its_task_alone(tmp_path, monkeypatch):
+    from metaform.modules.mcp import opening
+    monkeypatch.setattr(opening, 'first_run_text', lambda folder: None)
+    person, worker, intake = (opening.Agent(tmp_path, None, True), opening.Agent(tmp_path, 'project_agent', False),
+                              opening.Agent(tmp_path, 'intake', False))
+    assert opening.links(person) == ['metaform://rules', 'metaform://task/person']
+    assert opening.links(worker) == ['metaform://rules']  # its task is its first turn
+    assert opening.links(intake) == ['metaform://task/intake']  # a procedure is run with nothing beside it
+    monkeypatch.setattr(opening, 'first_run_text', lambda folder: 'first run')
+    assert opening.links(person) == ['metaform://rules', 'metaform://firstrun', 'metaform://task/person']
+    assert opening.links(worker) == ['metaform://rules']  # never said to an agent a runner started
+    assert opening.opening(intake).splitlines()[1:] == ['metaform://task/intake']

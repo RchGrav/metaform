@@ -136,6 +136,10 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
 
 
 def serve(ctx: Context) -> None:
+    if not ctx.setting('mcp_http'):
+        # Over stdio, for the one agent whose AI tool or runner started it: the project tool and the agent's opening.
+        from .project_tool import serve_stdio
+        return serve_stdio(Path(ctx.folder))
     from .server import serve as run_server
     run_server(Path(ctx.folder), http=bool(ctx.setting('mcp_http')), port=int(ctx.setting('mcp_port')),
                bind=str(ctx.setting('mcp_bind') or '127.0.0.1'), public_url=str(ctx.setting('mcp_public_url') or ''))
@@ -223,7 +227,7 @@ def agent_opening(folder: Path, task: str | None) -> str:
     """The directive and links that open a dispatched agent's session and its first turn after a compaction, for an
     agent on the task named `task` or on none, `server.opening`, offered as `agent.opening` so a runner reaches it
     through the chassis; imported here only when asked."""
-    from .server import dispatched_agent, opening
+    from .opening import dispatched_agent, opening
     return opening(dispatched_agent(folder, task))
 
 
