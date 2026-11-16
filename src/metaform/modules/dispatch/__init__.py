@@ -432,6 +432,16 @@ settings.boolean('dispatch_client_terminal', True, label='Terminals through Meta
                       'thread; off, they run commands on their own.',
                  details='Each terminal runs in a process group of its own in the session\'s folder or below it, and '
                          'ends with the session. Applies to the sessions started after the change.')
+# ACP v2, the protocol's draft: each agent is asked for it and spoken to in it where it selects it, as ACP's guidance for
+# supporting v1 and v2 side by side says; an agent that knows only v1 is spoken to in v1 either way. The switch exists
+# for the day a change to the draft breaks an agent, so v1 carries every agent until it is fixed (`acp.connection`).
+settings.boolean('dispatch_acp_v2', True, label='ACP v2',
+                 help='Ask each agent for ACP v2, the protocol\'s draft, and use it where the agent selects it; off, '
+                      'every agent is spoken to in ACP v1.',
+                 details='On, the default: an agent that knows v2 runs on it, and one that knows only v1 on v1. A '
+                         'session that needs files or terminals through Metaform, which only v1 has, runs on v1. Turn '
+                         'it off when a change to the v2 draft breaks an agent. Applies to the sessions started after '
+                         'the change.')
 # The spend budgets, M01, measured as what is billed rather than what is read: tokens are a turn's input, output and
 # cache writes, with cache reads at a tenth, since an agentic turn rereads its whole context on every model call and a
 # raw total would count it dozens of times; cost is what the agent itself reports, the only measure that knows the

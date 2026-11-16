@@ -201,6 +201,7 @@ Eligible agents is a map-owned ticket setting, MAP-058. Explicit `start` and `ru
 - The registry is read again after 24 hours (`REGISTRY_HOURS`), or at once with `refresh=true`.
 - `dispatch_registry_agents`, global: the ACP Registry's other agents dispatch starts, each pinned as `<id>@<version>` by `registry add=<id>`, which keeps its entry and, for a binary, its archive checked against its sha256 and unpacked, under `agents/<id>/<version>` in the Metaform home. `dispatch_registry_url`, the registry's `latest` file by default, or a private mirror's file; `dispatch_registry_hours`, 24, how long a read is kept.
 - `dispatch_client_files` and `dispatch_client_terminal`, on: the runner offers ACP's `fs/*` and `terminal/*`, confined to the session's folder; one terminal keeps 1024 KB of output when the agent names no limit (`TERMINAL_KB`).
+- `dispatch_acp_v2`, on: dispatch's ACP client (`acp/`) asks each agent for ACP v2 and speaks it where the agent selects it, v1 where it selects 1; off, every agent is spoken to in v1. The runner does not use that client yet: it speaks v1 as before.
 - Each turn is an OpenTelemetry `invoke_agent` span with its `gen_ai.usage` attributes, recorded only where an OpenTelemetry SDK is set up.
 - `dispatch_record_on_stop` and `dispatch_record_on_failure`, off: as `dispatch_record_on_finish`, once per session when an agent stops with its ticket open or its turn ends in an error.
 - `dispatch_abandoned_branch_days`, 30: a ticket closed without merging keeps its committed branch this long, with `dispatch_worktrees` on.
