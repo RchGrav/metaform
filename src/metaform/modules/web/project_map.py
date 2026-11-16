@@ -6,10 +6,13 @@ an element is drawn by its address, and a want is drawn as the join its holder r
 """
 from __future__ import annotations
 
+import secrets
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from metaform import project as commands
 from metaform.data import Element, GraphElement, GraphPage, Held, Item, Join, Layer, LayerGroup, Node, NodeView
+from metaform.module import Stop
 from metaform.project import ROLE_WORDS
 
 BASE = 'base'
@@ -114,6 +117,20 @@ def node(project: str, target: str, chosen: str | None = None) -> NodeView | Non
     return NodeView(place, address, groups)
 
 
+def _shaped(record: dict[str, Any], lead: int) -> dict[str, Any]:
+    """One record of the tickets overlay as the page reads a work record."""
+    address, position = str(record['element'])[lead:], cast(int, record['position'])
+    taken_by = cast('str | None', record.get('taken_by'))
+    return {
+        'id': record.get('id'), 'node_kind': 'element', 'node_id': address, 'address': address,
+        'receiver_address': None, 'provider_address': None, 'condition': '', 'note': record.get('note'),
+        'task': record.get('task'), 'held': bool(record.get('held')), 'reviewed': False, 'created': '',
+        'done': record.get('done'), 'resolution': None, 'notices': [], 'steps': None, 'steps_done': 0, 'said': [],
+        'taken': taken_by, 'taken_by': taken_by, 'position': position, 'links': [],
+        'kind': record.get('kind') or '', 'outcome': record.get('outcome'), 'age_seconds': None, 'is_work': True,
+        'map': {'item': f'{address}#{position + 1}', 'title': record.get('title') or ''}}
+
+
 def tickets(project: str, given: dict[str, str]) -> list[dict[str, Any]] | None:
     """The project's tickets as the page's board and panels read work records: each record of the tickets overlay,
     with the element it is at. `node` keeps those at one element, `open` those not done, `ids` those named. None when
@@ -125,21 +142,77 @@ def tickets(project: str, given: dict[str, str]) -> list[dict[str, Any]] | None:
     lead = len(name) + 1
     at = given.get('node', '').partition(':')[2] if given.get('node', '').startswith('element:') else None
     wanted = set(given['ids'].replace(',', ' ').split()) if given.get('ids') else None
-    listed: list[dict[str, Any]] = []
-    for record in found:
-        address, position = str(record['element'])[lead:], cast(int, record['position'])
-        done = cast('str | None', record.get('done'))
-        if (at is not None and address != at) or (given.get('open') == 'true' and done) or (
-                wanted is not None and record.get('id') not in wanted):
-            continue
-        taken_by = cast('str | None', record.get('taken_by'))
-        listed.append({
-            'id': record.get('id'), 'node_kind': 'element', 'node_id': address, 'address': address,
-            'receiver_address': None, 'provider_address': None, 'condition': '', 'note': record.get('note'),
-            'task': record.get('task'), 'held': bool(record.get('held')), 'reviewed': False, 'created': '',
-            'done': done, 'resolution': None, 'notices': [], 'steps': None, 'steps_done': 0, 'said': [],
-            'taken': taken_by, 'taken_by': taken_by, 'position': position, 'links': [],
-            'kind': record.get('kind') or '', 'outcome': record.get('outcome'), 'age_seconds': None, 'is_work': True,
-            'map': {'item': f'{address}#{position + 1}', 'title': record.get('title') or ''}})
-    return listed
+    return [_shaped(record, lead) for record in found
+            if (at is None or str(record['element'])[lead:] == at)
+            and not (given.get('open') == 'true' and record.get('done'))
+            and (wanted is None or record.get('id') in wanted)]
 
+
+def _done(answer: dict[str, object]) -> None:
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message') or 'The ticket was not changed.'), 'metaform help')
+
+
+def _found(project: str, work_id: str) -> tuple[str, dict[str, Any]] | None:
+    """The store's name for the project and the ticket's record there, or None when the project store holds no such
+    project or ticket, which leaves the change to whatever else holds the ticket."""
+    name = commands.stored_name(project)
+    for record in commands.overlay_records(name, 'tickets') or []:
+        if record.get('id') == work_id:
+            return name, record
+    return None
+
+
+def _changed(name: str, record: dict[str, Any], fields: dict[str, object]) -> dict[str, Any]:
+    """Change one ticket in place, by its position at its element, and give it back as the page reads it. A field
+    given as None is removed."""
+    _done(commands.run({'update': {str(record['element']): {'tickets': [{'position': record['position'], **fields}]}}}))
+    kept = {key: value for key, value in {**record, **fields}.items() if value is not None}
+    return _shaped(kept, len(name) + 1)
+
+
+# A column of the board is said by a ticket's own fields: done once `done` is set, doing once taken, backlog while
+# held, to do otherwise. Putting a card in a column writes those fields.
+def move_ticket(project: str, work_id: str, column: str, by: object) -> dict[str, Any] | None:
+    found = _found(project, work_id)
+    if found is None:
+        return None
+    name, record = found
+    now = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    columns: dict[str, dict[str, object]] = {
+        'backlog': {'held': True, 'taken_by': None, 'done': None, 'outcome': None},
+        'todo': {'held': None, 'taken_by': None, 'done': None, 'outcome': None},
+        'doing': {'held': None, 'taken_by': str(by or record.get('taken_by') or 'person'), 'done': None,
+                  'outcome': None},
+        'done': {'held': None, 'done': now, 'outcome': 'completed'}}
+    return _changed(name, record, columns[column])
+
+
+def edit_ticket(project: str, work_id: str, fields: dict[str, object]) -> dict[str, Any] | None:
+    found = _found(project, work_id)
+    if found is None:
+        return None
+    return _changed(found[0], found[1], {key: (value if value != '' else None) for key, value in fields.items()})
+
+
+def remove_ticket(project: str, work_id: str) -> dict[str, Any] | None:
+    found = _found(project, work_id)
+    if found is None:
+        return None
+    name, record = found
+    _done(commands.run({'delete': {str(record['element']): {'tickets': [record['position']]}}}))
+    return _shaped(record, len(name) + 1)
+
+
+def add_ticket(project: str, node: str, task: str, *, kind: object = None, held: bool = False) -> dict[str, Any] | None:
+    """A ticket a person wrote, put on the element it is assigned to. Its title is the task's first line."""
+    name = commands.stored_name(project)
+    kind_of, _, address = node.partition(':')
+    if kind_of != 'element' or not address or not commands.holds(name):
+        return None
+    record: dict[str, Any] = {'id': 't-' + secrets.token_hex(4), 'title': task.strip().splitlines()[0][:120],
+                              'task': task.strip(), **({'kind': kind} if kind else {}), **({'held': True} if held else {})}
+    path = f'{name}.{address}'
+    _done(commands.run({'add': {path: {'tickets': [record]}}}))
+    made = next((one for one in commands.overlay_records(name, 'tickets') or [] if one.get('id') == record['id']), None)
+    return _shaped(made or {**record, 'element': path, 'position': 0}, len(name) + 1)

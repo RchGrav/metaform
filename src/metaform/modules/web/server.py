@@ -1527,6 +1527,11 @@ class Handler(BaseHTTPRequestHandler):
         if condition and condition not in CONDITIONS:  # none: a task on a part that exists, MAP-046
             return self.send(400, {'error': 'The part is unbuilt, under construction, built or broken, or its state is not given.'})
         try:
+            from . import project_map
+            stored = project_map.add_ticket(str(given.get('project', '')), cast(list[str], nodes)[0], text,
+                                            kind=given.get('kind'), held=bool(given.get('held')))
+            if stored is not None:  # written to the project store, on the element it is assigned to
+                return self.send(200, {'results': [stored]})
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             if given.get('hold'):
                 map_service(store, 'work.hold_reason')(given.get('hold_reason'))
@@ -1584,6 +1589,13 @@ class Handler(BaseHTTPRequestHandler):
         if fields:
             if any(not isinstance(value, str) for value in fields.values()):
                 return self.send(400, {'error': 'Ticket text and kind must be strings.'})
+            try:
+                from . import project_map
+                stored = project_map.edit_ticket(str(given.get('project', '')), work_id, dict(fields))
+            except Stop as error:
+                return self.refuse(error, 400)
+            if stored is not None:  # a ticket of a project in the project store
+                return self.send(200, {'results': [stored], 'revision': ''})
             if not isinstance(given.get('revision'), str):
                 return self.send(400, {'error': 'Open the ticket before editing its text.'})
             try:
@@ -1628,6 +1640,13 @@ class Handler(BaseHTTPRequestHandler):
         work_id = given.get('work_id')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A ticket is deleted by its work id.'})
+        try:
+            from . import project_map
+            stored = project_map.remove_ticket(str(given.get('project', '')), work_id)
+        except Stop as error:
+            return self.refuse(error, 400)
+        if stored is not None:  # a ticket of a project in the project store
+            return self.send(200, {'results': [stored]})
         try:
             found: Any = plain(module_verb(given, 'dispatch', 'sessions', {'id': work_id, 'thread': False}, chosen=True))
             rows = cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []) \
@@ -1846,6 +1865,10 @@ class Handler(BaseHTTPRequestHandler):
         if position is not None and (not isinstance(position, int) or isinstance(position, bool)):
             return self.send(400, {'error': 'A place in a column is a whole number.'})
         try:
+            from . import project_map
+            stored = project_map.move_ticket(str(given.get('project', '')), work_id, column, given.get('by'))
+            if stored is not None:  # a ticket of a project in the project store
+                return self.send(200, {'results': [stored]})
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             moved = store.move_work(work_id, column, position, given.get('by'),
                                     hold_reason=given.get('hold_reason'))
