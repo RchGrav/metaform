@@ -439,6 +439,7 @@ def test_help_is_the_brief_overview_with_its_tips(run):
         f'Metaform {__version__}: gives agents a project\'s purpose before they work on it.\n\n'
         'Common commands\n'
         '  metaform                          Show status: home, folder, project.\n'
+        '  metaform demo                     Watch Metaform at work on a sample project.\n'
         '  metaform start                    Map the project in this folder and open it.\n'
         '  metaform add project <id> <path>  Register a project.\n'
         '  metaform config                   Open the settings screen.\n'
