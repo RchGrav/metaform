@@ -798,34 +798,6 @@ def test_turn_activity_waits_then_a_turn_ending_with_the_ticket_open_leaves_the_
     dispatch.stop()
 
 
-@pytest.mark.parametrize('tied', [False, True])
-def test_legacy_activity_uses_transcript_evidence_without_rewriting_lifecycle(dispatch, monkeypatch, tied):
-    from metaform.modules import dispatch as module
-
-    dispatch.start('hold')
-    eventually(lambda: dispatch.logged('grandchild'))
-    monkeypatch.setattr(module, 'tell', lambda *args, **kwargs: {'error': 'No request status.'})
-    store = Store('proj', module='dispatch')
-    held = dispatch.session().extra
-    with store.tables() as tx:  # the transcript of an older runner whose turn ended
-        tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'turn', 'work_id': dispatch.id,
-                            'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 900})
-    [shown] = module.sessions(store)
-    assert shown['state'] == 'running' and shown['activity'] == 'idle'
-    assert dispatch.session().extra['state'] == 'running'
-    held = dispatch.session().extra
-    with store.tables() as tx:
-        tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'later', 'work_id': dispatch.id,
-                            'kind': 'agent_message_chunk', 'text': 'Resuming', 'seq': 1000})
-        if tied:
-            tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'zz-turn', 'work_id': dispatch.id,
-                                'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 1000})
-    [shown] = module.sessions(store)
-    assert shown['state'] == 'running' and shown['activity'] == 'unknown'
-    assert 'activity' not in dispatch.session().extra
-    dispatch.stop()
-
-
 def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart(dispatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

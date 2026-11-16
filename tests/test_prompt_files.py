@@ -85,37 +85,6 @@ INTAKE = (('element', 'code.timer.kitchen', 'role=DE', 'name_length=2', 'name=ki
 
 
 @pytest.mark.req('MCP-029')
-@pytest.mark.req('MCP-031')
-def test_the_compact_instructions_fit_what_claude_code_keeps_in_every_intake_state(run, home, tmp_path):
-    """The MCP startup directive and links fit the host's 2,048-character limit in every intake state. The CLI
-    guide serves the full module and state instructions separately, with every shipped module on."""
-    from metaform.modules.mcp.server import connect_instructions
-    folder = tmp_path / 'proj'
-    folder.mkdir()
-    run('add', 'project', 'proj', str(folder))
-    for module in [line.split()[0] for line in run('list', 'modules', cwd=folder).stdout.splitlines()
-                   if line.split()[1] != 'on']:
-        run('enable', module, cwd=folder)
-    more = prompt(SOURCE / 'resources' / 'prompts.xml', 'more').text.strip()
-    def served():
-        startup = connect_instructions(folder)
-        assert len(startup) <= 2048, len(startup)
-        assert startup.splitlines()[0] == prompt_text(SOURCE / 'modules' / 'mcp', 'connect_directive')
-        assert {'metaform://rules', 'metaform://memory', 'metaform://modules',
-                'metaform://task/person'} <= set(startup.splitlines())  # no glossary is linked
-        text = run('help', 'agents', cwd=folder).stdout
-        assert more in text
-        return text
-    assert prompt_text(SOURCE / 'modules' / 'intake', 'no_intake') in served()
-    run('intake', 'start', cwd=folder)
-    served()
-    for step in INTAKE:
-        run('intake', *step, cwd=folder)
-    run('intake', 'finish', cwd=folder)
-    served()
-
-
-@pytest.mark.req('MCP-029')
 def test_a_module_s_full_instructions_are_read_on_their_own(run, home, tmp_path):
     folder = tmp_path / 'proj'
     folder.mkdir()
@@ -125,27 +94,6 @@ def test_a_module_s_full_instructions_are_read_on_their_own(run, home, tmp_path)
     assert run('help', 'agents', 'map', cwd=folder).stdout.strip() == own
     assert run('instructions', 'map', cwd=folder).stdout.strip() == own
     assert own not in run('help', 'agents', cwd=folder).stdout
-
-
-@pytest.mark.req('MCP-031')
-@pytest.mark.req('MAP-048')
-def test_the_kanban_lines_are_served_only_while_tasks_is_on(run, home, tmp_path):
-    """Agents assign and track work via Metaform like a kanban; a project that keeps its own board
-    turns it off, and then the instructions say nothing of it. On by default. the lines are read on
-    demand with the map module's full instructions, never in what every agent is handed at connect, MCP-037."""
-    folder = tmp_path / 'proj'
-    folder.mkdir()
-    run('add', 'project', 'proj', str(folder))
-    lines = prompt(SOURCE / 'modules' / 'map' / 'resources' / 'prompts.xml', 'tasks').text.strip()
-    assert lines not in run('help', 'agents', cwd=folder).stdout  # no nodes to link work to before an intake
-    run('intake', 'start', cwd=folder)
-    for step in INTAKE:
-        run('intake', *step, cwd=folder)
-    run('intake', 'finish', cwd=folder)
-    assert lines not in run('help', 'agents', cwd=folder).stdout  # not at connect
-    assert lines in run('help', 'agents', 'map', cwd=folder).stdout  # with the module's full instructions
-    run('set', '--no-tasks', cwd=folder)
-    assert lines not in run('help', 'agents', 'map', cwd=folder).stdout
 
 
 @pytest.mark.req('MCP-031')

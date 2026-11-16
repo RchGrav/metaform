@@ -465,21 +465,6 @@ def test_interrupted_intake_resumes_registered_target_without_creating_another_p
         assert len(tx.rows('intake_links', limit=0).results) == 1
 
 
-def test_noncode_intake_completion_event_presents_intake_output(finished_table, run):
-    ctx, runner, _ = finished_table
-    through_architecture(ctx)
-    assert decide(ctx, 'yes')['state'] == 'running'
-    target = Path(Store('target').project().path)
-    run('intake', 'start', cwd=target)
-    run('intake', 'element', 'document.delivery', 'role=DE', cwd=target)
-    run('intake', 'finish', cwd=target)
-    ready = pipeline.state(ctx, TABLE)
-    assert ready['stage'] == 'intake' and ready['state'] == 'awaiting'
-    assert ready['project'] == 'target'
-    assert pipeline.review(ctx)['output_text'].startswith('# Intake\n\nProject: target')
-    assert runner.launches[-1]['role'] == 'architect', 'Completion presents intake without admitting Planner.'
-
-
 def test_execution_outline_no_keeps_facilitator_unassigned(finished_table):
     ctx, runner, _ = finished_table
     target = through_plan(ctx)

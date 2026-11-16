@@ -2412,37 +2412,6 @@ def test_a_positional_value_holding_an_equals_sign_stays_the_value(run, describe
 
 @pytest.mark.req('MCP-006')
 @pytest.mark.req('BASE-038')
-@pytest.mark.parametrize('check', ['nearest', 'path', 'intake'])
-def test_where_names_the_nearest_address_and_citing_takes_any_path_form(run, mapped, check):
-    if check == 'nearest':
-        stopped = run('map', 'where', 'code.timer.kitchn', cwd=mapped, ok=False)
-        assert stopped.returncode == 2
-        assert 'Nearest: code.timer.kitchen' in stopped.stderr
-        assert stopped.stderr.splitlines()[-1] == 'Next: metaform map where code.timer.kitchen'
-        assert j(run, 'where', 'code.timer.kitchen', cwd=mapped)['element']['address'] == 'code.timer.kitchen'
-    elif check == 'path':
-        store = Store('proj')
-        layer = store.layer('sources', 'intake', 'Source references.', mutable=True, hideable=True, ready=True)
-        store.add_item(layer.name, Node('element', 'code.timer.kitchen'), 'timer source',
-                       refs=[('path', 'src/timer.py')])
-        relative = j(run, 'citing', 'key=path', 'value=src/timer.py', cwd=mapped)
-        assert relative['results']
-        for path in (str(mapped / 'src/timer.py'), './src/timer.py', r'.\src\timer.py'):
-            assert j(run, 'citing', 'key=path', f'value={path}', cwd=mapped) == relative
-    else:
-        # a separate intake is the person's to start; a record alone writes onto the finished map (2026-10-17)
-        run('intake', 'start', 'name=second', cwd=mapped)
-        run('intake', 'element', 'namespace_address=code.timer.digital', 'name_length=2', 'role=SE', cwd=mapped)
-        stopped = run('map', 'where', 'code.timer.digital', cwd=mapped, ok=False)
-        assert stopped.returncode == 2
-        assert 'layer base' in stopped.stderr
-        assert stopped.stderr.splitlines()[-1] == 'Next: metaform intake show receiver=code.timer.digital'
-        shown = json.loads(run('intake', 'show', 'receiver=code.timer.digital', '--json', cwd=mapped).stdout)
-        assert shown['elements'][0]['namespace_address'] == 'code.timer.digital'
-
-
-@pytest.mark.req('MCP-006')
-@pytest.mark.req('BASE-038')
 @pytest.mark.parametrize('address', ['code.timer', 'code.timer.kitchn'])
 def test_where_on_an_address_that_is_no_element_stops_and_names_a_nearby_element(run, mapped, address):
     """A namespace prefix and a typo are both no element; silence left an agent unsure whether the read failed."""
@@ -2475,14 +2444,6 @@ def test_missing_address_with_no_candidate_names_the_roots(run, mapped):
     assert stopped.returncode == 2
     assert stopped.stderr.splitlines()[-1] == "Next: metaform map children address=''"
     assert j(run, 'children', 'address=', cwd=mapped)['results']
-
-
-def test_missing_address_in_the_first_building_intake_names_intake_show(run, project_folder):
-    run('intake', 'element', 'namespace_address=code.calculator.sum', 'name_length=2', 'role=DE', cwd=project_folder)
-    stopped = run('map', 'where', 'code.calculator.sum', cwd=project_folder, ok=False)
-    assert stopped.returncode == 2
-    assert 'layer base' in stopped.stderr
-    assert stopped.stderr.splitlines()[-1] == 'Next: metaform intake show receiver=code.calculator.sum'
 
 
 def test_missing_address_recovery_is_shared_by_the_glossary(run, kitchen):

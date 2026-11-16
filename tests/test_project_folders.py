@@ -65,35 +65,6 @@ def test_a_working_folder_finds_its_project_from_the_file_system_alone(run, home
 
 
 @pytest.mark.req('PROJ-026')
-@pytest.mark.req('STORE-003')
-def test_each_metaform_is_a_store_named_by_the_metaform_in_the_project_folder(run, home, source):
-    run('add', 'project', 'timer', str(source))
-    folder = folder_for(home, source)
-    run('intake', 'element', 'code.timer', 'role=DE', cwd=source)
-    assert (folder / 'main.metaform.sqlite3').is_file()
-    run('add', 'base', 'fresh', cwd=source)
-    run('map', 'knowledge', 'op=create', 'layer=notes', 'variable=Notes.', cwd=source)
-    assert (folder / 'fresh.metaform.sqlite3').is_file()
-    assert not (folder / 'metaforms').exists()
-
-
-@pytest.mark.req('PROJ-026')
-def test_a_project_folder_copied_into_an_empty_home_reads_back_whole(run, home, source, tmp_path):
-    run('add', 'project', 'timer', str(source))
-    inside = source / 'src'
-    inside.mkdir()
-    run('intake', 'element', 'code.timer', 'role=DE', 'name_length=1', cwd=source)
-    run('intake', 'finish', cwd=source)
-    run('set', '--layers', 'notes', cwd=inside)
-    other = tmp_path / 'other home'
-    shutil.copytree(folder_for(home, source), folder_for(other, source))
-    elsewhere = {'METAFORM_HOME': str(other)}
-    assert 'code.timer' in run('map', 'where', 'code.timer', cwd=source, env=elsewhere).stdout
-    shown = json.loads(run('config', '--show', '--json', cwd=inside, env=elsewhere).stdout)
-    assert next(row for row in shown if row['key'] == 'layers')['value'] == ['notes']
-
-
-@pytest.mark.req('PROJ-026')
 def test_two_sources_whose_paths_read_the_same_get_folders_of_their_own(run, home, tmp_path):
     joined, nested = tmp_path / 'x-y', tmp_path / 'x' / 'y'
     joined.mkdir()

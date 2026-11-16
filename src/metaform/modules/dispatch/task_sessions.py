@@ -56,7 +56,10 @@ class TaskSessions:
                 raise Stop(f'An intake was left unfinished in layer {held.layer.name} of metaform {held.base}, with '
                            f'{held.parts} parts; resume that intake with resume=true.',
                            'metaform dispatch intake resume=true')
-            mode = 'resume' if building else 'refine' if chosen.get('map') == 'extend' and store.has_intake() else 'fresh'
+            # refine when the project store already holds this project's map and the person chose to extend it
+            from metaform import project as project_store
+            has_map = project_store.holds(project_store.stored_name(store.project_id))
+            mode = 'resume' if building else 'refine' if chosen.get('map') == 'extend' and has_map else 'fresh'
             metadata = {**chosen, 'mode': mode}
             task['payload']['intake'] = metadata
             asked = str(task['payload'].get('input') or '')

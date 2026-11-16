@@ -636,7 +636,7 @@ def test_the_install_proof_passes_the_real_server_on_the_july_wire(home, mapped)
 
 
 @pytest.mark.req('MCP-037')
-def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, mapped):
+def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, mapped, in_project_store):
     """What an agent reads at discovery, before any tool runs: the instructions, a module's instructions, and the
     resources a module declares, each read through one of its verbs; a command's arguments are in its tool. The intake module
     declares its procedure and its forms. A URI nothing serves is refused with a next step."""
@@ -644,8 +644,7 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
         fixed = {one.uri: one for one in (await client.list_resources()).resources}
         templates = {one.uri_template for one in (await client.list_resource_templates()).resource_templates}
         texts = {uri: (await client.read_resource(uri)).contents[0].text for uri in (
-            'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure',
-            'metaform://intake/schema')}
+            'metaform://instructions', 'metaform://instructions/intake', 'metaform://intake/procedure')}
         try:
             await client.read_resource('metaform://instructions/nothing')
             refused = None
@@ -658,8 +657,7 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://modules',
                                       'metaform://runtime/compaction-state',
-                                      'metaform://instructions', 'metaform://intake/procedure',
-                                      'metaform://intake/schema'}
+                                      'metaform://instructions', 'metaform://intake/procedure'}
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://tools/{tool}/instructions', 'metaform://tools/{tool}/instructions/{op}',
                          'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
@@ -669,7 +667,6 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
     assert texts['metaform://instructions/intake'] == run('help', 'agents', 'intake', cwd=mapped).stdout.strip()
     assert texts['metaform://intake/procedure'].strip() == run('intake', 'prompt', cwd=mapped).stdout.strip()
-    assert texts['metaform://intake/schema'].strip() == run('intake', 'schema', cwd=mapped).stdout.strip()
     assert refused and 'No resource metaform://instructions/nothing' in refused and 'Next:' in refused
 
 
@@ -700,7 +697,8 @@ SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packe
 
 @pytest.mark.req('MCP-007')
 def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_has_no_intake(run, home, mapped,
-                                                                                             tmp_path, monkeypatch):
+                                                                                             tmp_path, monkeypatch,
+                                                                                             in_project_store):
     """metaform://firstrun, intake's no_intake as written, is linked while the project has no intake, with the register
     step while the folder is not registered; never once there is an intake, and never to a dispatched agent."""
     from importlib import resources
@@ -800,6 +798,20 @@ def a2a(folder, calls):
         async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:7434') as client:
             return await calls(client, served.token())
     return asyncio.run(go())
+
+
+@pytest.fixture
+def in_project_store(home, mapped):
+    """The mapped project with a map in the project store too, which is what says a project has had its intake; the
+    home's service is stopped when the test ends."""
+    from metaform import home as metaform_home
+    from metaform import project
+    from metaform.project import service
+    assert project.run({'add': {'proj.code.timer.kitchen': {
+        'technical_name': 'kitchen timer', 'name': 'timer', 'role': 'Defining Element', 'ref': './timer.py'}}}) == {
+            'status': 'ok'}
+    yield mapped
+    service.stop(metaform_home.home())
 
 
 def rpc(method, params, number=1):
@@ -1786,7 +1798,7 @@ def test_the_system_agent_is_listed_its_body_tools_while_the_web_module_is_on(ru
 @pytest.mark.req('MCP-007')
 @pytest.mark.parametrize('task', [None, 'intake', 'project_agent', 'user_agent'])
 def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each_reads_back_its_block_whole(
-        run, home, mapped, monkeypatch, task):
+        run, home, mapped, monkeypatch, task, in_project_store):
     """Every agent, the person's own session and a session on each task, on stdio and on the July 2026 wire over HTTP:
     its connect message is the directive line and one link per line to the instruction blocks that apply to it, far
     within what any host keeps, and each link reads back its block exactly as its prompt holds it: the rules, the

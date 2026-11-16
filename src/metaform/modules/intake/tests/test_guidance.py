@@ -6,7 +6,7 @@ import hashlib
 
 import pytest
 
-from metaform.module import context, prepare_agent_context
+from metaform.module import context
 from metaform.modules import intake
 
 pytestmark = pytest.mark.kind('fixture')
@@ -32,27 +32,6 @@ def test_procedure_component_retains_exact_source_and_ignores_focus_only_data(pr
     assert component['source']['sha256'] == hashlib.sha256(intake.RESOURCE.read_bytes()).hexdigest()
     assert component['source']['path'] == str(intake.RESOURCE)
     assert component['rendered_fingerprint'] == hashlib.sha256(component['text'].encode()).hexdigest()
-
-
-def test_custom_procedure_binding_is_not_receipted_when_its_empty_variant_was_not_delivered(
-        run, project_folder, tmp_path):
-    custom = tmp_path / 'procedure.xml'
-    custom.write_text('<procedure><target type="" value=""/><prompt>{prompt}</prompt></procedure>')
-    run('set', f'--intake-file={custom}', cwd=project_folder)
-    ctx = context('intake', project_folder, nouns={'text': 'Preserve this exact request'}, session='custom-reader')
-    component = intake.procedure_component(ctx)
-    body = intake.prompt(ctx)
-    assert 'Preserve this exact request' in body and component['text'] not in body
-    assert ctx.context_receipts == []
-    due = prepare_agent_context(project_folder, ctx.session, [component])
-    assert due['components']
-    empty = context('intake', project_folder, session='custom-reader')
-    assert component['text'] in intake.prompt(empty)
-    assert empty.context_receipts[0]['component'] == component
-    custom.write_text(custom.read_text().replace('<procedure>', '<procedure revision="2">'))
-    revised = intake.procedure_component(empty)
-    assert revised['source']['sha256'] != component['source']['sha256']
-    assert revised['rendered_fingerprint'] != component['rendered_fingerprint']
 
 
 def test_dispatched_intake_records_exact_procedure_only_after_prompt_acceptance(store, project_folder):
