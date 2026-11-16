@@ -225,7 +225,7 @@ def test_update_merges_into_a_want(mapped):
 @pytest.mark.parametrize(('command', 'code', 'remediation'), [
     ({'add': {}, 'map': {}}, 'FIELD_MISMATCH', None),
     ({'goto': WIDGET}, 'FIELD_MISMATCH', {WIDGET: {}}),
-    ({'fetch': {}}, 'FIELD_MISMATCH', {'help': {}}),
+    ({'fetch': {}}, 'NOT_FOUND', {'map': {}}),  # one word: not a command, and not a project of this home
     ({'add': {'mashtrac.lib.x': {'name': 'x'}}}, 'ROOT_SCOPE_NOT_ALLOWED', None),
     ({'add': {'Mashtrac.Code.x': {'name': 'x'}}}, 'FIELD_MISMATCH', {'add': {'mashtrac.code.x': {'name': 'x'}}}),
     ({'add': {WIDGET: {'refs': ['a.c']}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'ref': 'a.c'}}}),
@@ -456,3 +456,14 @@ def test_a_write_after_the_service_was_killed_is_sent_again_to_a_new_one(served)
     # this caller still holds its connection to the service that is gone; the write goes to a new one
     assert commands.run({'add': {CS: {**CS_FIELDS, 'wants': [WANT]}}}, home=served) == {'status': 'ok'}
     assert commands.run({'map': P}, home=served)['wants'] == [[CS, WIDGET]]
+
+
+def test_the_project_root_holds_the_projects_own_fields(home):
+    root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
+    assert run({'add': {P: root}}) == {'status': 'ok'}  # the first write makes the project
+    assert run({P: {}}) == {P: root} and run({'map': {}}) == {'projects': [P]}
+    assert run({'update': {P: {'project': None, 'name': 'Mashtrac'}}}) == {'status': 'ok'}
+    assert run({P: {}}) == {P: {'id': root['id'], 'name': 'Mashtrac'}}
+    assert refusal(run({'add': {P: {'role': 'Defining Element'}}})) == ('FIELD_MISMATCH', None)
+    assert refusal(run({'delete': {P: {}}})) == ('FIELD_MISMATCH', None)
+    assert refusal(run({'nosuch': {}})) == ('NOT_FOUND', {'map': {}})

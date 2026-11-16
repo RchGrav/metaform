@@ -24,6 +24,7 @@ from metaform.project import texts
 
 Scalar = str | int | float | bool | None
 ELEMENT_FIELDS = ('technical_name', 'name', 'role', 'ref', 'status')
+ROOT_FIELDS = ('id', 'name', 'project')  # what the project's root holds: the project's own id, name and source
 PART_FIELDS = ('description', 'instruction', 'type', 'rule', 'example', 'optional')
 WANT_FIELDS = ('why', 'how', 'direction', 'ref')
 COLUMN_TYPES = ('STRING', 'DOUBLE', 'BOOLEAN')
@@ -36,6 +37,8 @@ _SCHEMA = (
     ('CREATE NODE TABLE OverlayPart(address STRING PRIMARY KEY, `description` STRING, `instruction` STRING, '
      '`type` STRING, `rule` STRING, `example` STRING, `optional` BOOLEAN, ordinal INT64)'),
     'CREATE REL TABLE Wants(FROM Element TO Element, why STRING, how STRING, direction STRING, ref STRING)',
+    # The project's own fields, held at its root: one row.
+    'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
     # The id of each write that was stored, written in the write's own transaction, so a write sent twice is done once.
     'CREATE NODE TABLE Request(id STRING PRIMARY KEY, seq SERIAL)',
 )
@@ -183,6 +186,16 @@ class Store:
                 self._rows('COMMIT')
             except StoreError:
                 pass  # a query that failed has already ended the transaction
+
+    def root(self) -> dict[str, Scalar]:
+        columns = ', '.join(f'r.`{field}`' for field in ROOT_FIELDS)
+        rows = self._rows(f"MATCH (r:Root {{k: 'root'}}) RETURN {columns}")
+        return dict(zip(ROOT_FIELDS, rows[0])) if rows else dict.fromkeys(ROOT_FIELDS)
+
+    def put_root(self, fields: dict[str, Scalar]) -> None:
+        sets = ', '.join(f'r.`{field}` = $r_{field}' for field in ROOT_FIELDS)
+        self._rows(f"MERGE (r:Root {{k: 'root'}}) SET {sets}",
+                   **{f'r_{field}': fields.get(field) for field in ROOT_FIELDS})
 
     def request_done(self, request: str) -> bool:
         return bool(self._rows('MATCH (r:Request {id: $id}) RETURN count(*)', id=request)[0][0])

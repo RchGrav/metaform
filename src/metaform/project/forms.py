@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
+from metaform.project.store import ROOT_FIELDS
 from metaform.project.texts import ROLE_PLACEHOLDER, ROLE_WORDS, ROLES
 
 Key = str | int
@@ -184,7 +185,10 @@ def check(command: object) -> tuple[str, object]:
         if body != {} and not (isinstance(body, str) and body):
             raise refuse('help takes {} or the name of a command', {'help': {}})
     elif key in ('add', 'update', 'delete'):
-        Form(command).write(key, body)
+        if root_of(body) is not None:
+            root_write(key, body)
+        else:
+            Form(command).write(key, body)
     elif key == 'goto':
         target = body if isinstance(body, str) else None
         remedy: object = None
@@ -192,12 +196,43 @@ def check(command: object) -> tuple[str, object]:
             remedy = {target: {}}
         raise refuse('there is no goto: a read of a path returns its fields, wanted_by and its overlays, such as '
                      '{"mashtrac.code.masher.widget": {}}', remedy)
+    elif is_name(key) and key not in ROOTS:
+        if body != {}:
+            raise refuse(f"a read of the project's root takes {{}}, such as {{\"{key}\": {{}}}}", {key: {}})
     elif '.' not in key:
         raise refuse(f"'{key}' is not a command or a path: the commands are {', '.join(COMMANDS)}, and a path to read "
                      "starts with the project's name, such as mashtrac.code.masher.widget", {'help': {}})
     else:
         read(key, body)
     return key, body
+
+
+def root_of(body: object) -> str | None:
+    """The project a write names when its one path is the project's root, the name alone."""
+    entries = as_object(body)
+    if entries is None or len(entries) != 1:
+        return None
+    path = next(iter(entries))
+    return path if is_name(path) and path not in ROOTS else None
+
+
+def root_write(verb: str, body: object) -> None:
+    """A write to the project's root, which holds the project's own id, name and project, each a text."""
+    ((project, value),) = cast(dict[str, object], body).items()
+    takes = (f"the root of a project takes {', '.join(ROOT_FIELDS)}; an element is written at its own path, such as "
+             f"{project}.code.masher.widget")
+    if verb == 'delete':
+        raise refuse(f"'{project}' is the root of the project and cannot be deleted")
+    fields = as_object(value)
+    if not fields:
+        raise refuse(f"{verb} needs at least one field at '{project}': {takes}")
+    for name, given in fields.items():
+        if name not in ROOT_FIELDS:
+            raise refuse(f"'{name}' at '{project}': {takes}")
+        if given is None and verb == 'update':
+            continue
+        if not is_text(given):
+            raise refuse(f"{name} at '{project}' must be text that is not blank")
 
 
 def _parses(text: str) -> bool:

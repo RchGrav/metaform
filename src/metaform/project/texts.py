@@ -125,7 +125,8 @@ HELP: dict[str, object] = {
         'does': ("A key that is a path reads that element: its own fields, its wants, the elements whose wants name "
                  "it (wanted_by), and the names of the other overlays that hold records there (overlays). To add an "
                  "overlay's records to the answer, name it with {} as its value. A path beneath overlay reads that "
-                 "overlay's definition, in the form it is written in."),
+                 "overlay's definition, in the form it is written in. A project's name alone reads the project's own "
+                 "fields, id, name and project, which add and update write at that same one-word path."),
         'examples': [{'mashtrac.code.masher.widget': {}},
                      {'mashtrac.code.masher.widget': {'project_specifications': {}}}],
     },

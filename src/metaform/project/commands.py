@@ -12,13 +12,14 @@ first `add`, and the database is removed again if that first command is refused.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from metaform import home as metaform_home
 from metaform.project import forms, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
-from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, Scalar, Store, StoreError
+from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, ROOT_FIELDS, Scalar, Store, StoreError
 from metaform.project.writes import Writer
 
 OK: dict[str, object] = {'status': 'ok'}
@@ -77,7 +78,16 @@ def _answer(verb: str, body: object, command: object, owned: Owner, caller: str,
                               else _orphaned(opened, project))
         if verb in ('add', 'update', 'delete'):
             ((path, value),) = as_dict(body).items()
+            if forms.root_of(body) is not None:
+                return _write_root(verb, path, as_dict(value), owned, caller, request)
             return _write(verb, path, value, command, owned, caller, request)
+        if '.' not in verb:  # the project's root: its own fields
+            try:
+                return owned.read(verb, lambda opened: {verb: _named(opened.root(), ROOT_FIELDS)})
+            except Missing:  # one word that is no project may be a command written wrongly: the answer names both
+                raise Refusal('NOT_FOUND', f"'{verb}' is not a command and not a project of this home: the commands "
+                              f"are {', '.join(forms.COMMANDS)}, and {{\"map\": {{}}}} names the projects",
+                              {'map': {}}) from None
         address = parse(verb)
         return owned.read(address.project, lambda opened: _read(opened, address, as_dict(body)))
     except Missing as missing:
@@ -125,8 +135,26 @@ def _write(verb: str, path: str, value: object, command: object, owned: Owner, c
     return dict(OK)
 
 
+def _named(values: dict[str, Scalar], names: tuple[str, ...]) -> dict[str, object]:
+    return {name: values[name] for name in names if values.get(name) is not None}
+
+
 def _fields(values: dict[str, Scalar]) -> dict[str, object]:
-    return {name: values[name] for name in ELEMENT_FIELDS if values.get(name) is not None}
+    return _named(values, ELEMENT_FIELDS)
+
+
+def _write_root(verb: str, project: str, fields: dict[str, object], owned: Owner, caller: str,
+                request: str) -> dict[str, object]:
+    """Write the project's own fields at its root. `add` makes a project that does not exist."""
+    def work(opened: Store) -> None:
+        if request and opened.request_done(request):
+            return
+        opened.put_root({**opened.root(), **cast(dict[str, Scalar], fields)})
+        if request:
+            opened.record_request(request)
+
+    owned.write(project, caller, work, create=verb == 'add')
+    return dict(OK)
 
 
 def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str, object]:
