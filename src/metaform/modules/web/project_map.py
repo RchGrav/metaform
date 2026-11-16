@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from metaform.data import Element, GraphElement, GraphPage, Held, Join
+from metaform.data import Element, GraphElement, GraphPage, Held, Item, Join, LayerGroup, Node, NodeView
 from metaform.project import commands
 from metaform.project.texts import ROLE_WORDS
 
@@ -25,7 +25,11 @@ def graph(project: str) -> GraphPage | None:
     if found is None:
         return None
     lead = len(project) + 1
-    rows = cast(list[dict[str, Any]], found['elements'])
+    every = cast(list[dict[str, Any]], found['elements'])
+    wants = cast(list[dict[str, Any]], found['wants'])
+    named = {str(want[end]) for want in wants for end in ('holder', 'element')}
+    # A bare branch on the way to an element is not drawn: it holds nothing of its own and no want names it.
+    rows = [row for row in every if len(row) > 1 or row['address'] in named]
     known = {str(row['address'])[lead:] for row in rows}
 
     def element(row: dict[str, Any]) -> GraphElement:
@@ -55,4 +59,27 @@ def graph(project: str) -> GraphPage | None:
                                    role=_CODES.get(str(held.get('role') or ''))),))
 
     return GraphPage(tuple(element(row) for row in rows),
-                     tuple(join(number, want) for number, want in enumerate(cast(list[dict[str, Any]], found['wants']))))
+                     tuple(join(number, want) for number, want in enumerate(wants)))
+
+
+def node(project: str, target: str) -> NodeView | None:
+    """One element as the page's panel reads it: each overlay that holds records there as a layer, each record an
+    item whose value is the record's fields. None when the project store holds no such project or element, or the
+    target is not an element."""
+    kind, _, address = target.partition(':')
+    name = commands.stored_name(project)
+    if kind != 'element' or not address or commands.drawn(name) is None:
+        return None
+    path = f'{name}.{address}'
+    read = commands.run({path: {}})
+    if read.get('status') == 'error':
+        return None
+    overlays = cast(list[str], cast(dict[str, Any], read[path]).get('overlays') or [])
+    asked: dict[str, object] = {key: {} for key in overlays}
+    held = cast(dict[str, Any], commands.run({path: asked}).get(path) or {}) if overlays else {}
+    place = Node('element', address)
+    groups = tuple(LayerGroup(key, key, 'layer', tuple(
+        Item(id=f'{address}:{key}:{position}', layer_id=key, layer=key, target=place, value=record)
+        for position, record in enumerate(cast(list[dict[str, Any]], held.get(key) or []))))
+        for key in overlays)
+    return NodeView(place, address, groups)

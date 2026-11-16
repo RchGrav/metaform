@@ -49,7 +49,7 @@ request right after.
      dispatch intake) unless the procedure already names metaform://intake/schema.
      Must not be deleted: the code requires it. Empty adds nothing. -->
 <schema_pointer>Record the map with the project tool, each element and join as soon as it is reasoned. This project's name in the tool is <project/>, and it leads every path: the element code.loop.main is written {"add": {"<project/>.code.loop.main": {...}}}. {"help": "add"} gives the fields and an example.
-In the tool's words: an element's functional_name is technical_name, and its uri is ref. A role is written by its abbreviation or in full. A join is a want held by its Receiving Element: element is the Providing Element's address, why is the purpose, how is the ef, and direction is the ifd, written send, receive or both.
+In the tool's words: an element's functional_name is technical_name, and its uri is ref. A role is written in full, such as Defining Element. A join is a want held by its Receiving Element: element is the Providing Element's address, why is the purpose, how is the ef, and direction is the ifd, written send, receive or both.
 {"map": "<project/>"} reads back what is recorded.</schema_pointer>
 <!-- The selected analysis mode, bound inside the procedure's existing Prompt parameter. Dispatch persists this
      input with its recording destination. The fixed Canonical Intake remains unchanged. One shared section

@@ -990,6 +990,11 @@ class Handler(BaseHTTPRequestHandler):
             drawn = stored_graph(given.get('project', '')) if not given.get('after') else None
             if drawn is not None:
                 return self.send(200, plain(drawn))
+        if name == 'node':  # an element of a project in the project store, with its overlays' records
+            from .project_map import node as stored_node
+            held = stored_node(given.get('project', ''), given.get('target', ''))
+            if held is not None:
+                return self.send(200, plain(held))
         arguments = {key: value for key, value in given.items() if key not in RESERVED and key not in ('board', 'on')}
         board = given.get('board') if name == 'work' else None
         cutoff = ''
