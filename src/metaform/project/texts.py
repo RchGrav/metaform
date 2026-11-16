@@ -50,7 +50,7 @@ def wants_definition(project: str) -> dict[str, dict[str, str | bool]]:
     }
 
 
-HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'help')
+HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help')
 
 _WIDGET = {'technical_name': 'widget masher', 'name': 'mashbox', 'role': 'Coupled Element',
            'ref': './src/widgets/mashbox.c'}
@@ -133,6 +133,36 @@ HELP: dict[str, object] = {
                  "fields, id, name and project, which add and update write at that same one-word path."),
         'examples': [{'mashtrac.code.masher.widget': {}},
                      {'mashtrac.code.masher.widget': {'project_specifications': {}}}],
+    },
+    'overlay': {
+        'does': ("An overlay is a list of records an element can hold, such as its wants. It exists once it is "
+                 "defined: add its definition at a path beneath <project>.overlay. The definition holds a "
+                 "description and an instruction, and one entry for each field of a record. A field's entry holds "
+                 "its type, the rule its value follows and an example, and optional: true when a record may leave it "
+                 "out. The overlay's key is the steps after overlay, read in reverse and joined with underscores: "
+                 "overlay.specifications.project is written on an element as project_specifications. Records are "
+                 "then written under that key with add, as a list. Reading the definition's path returns it with "
+                 "its key."),
+        'fields': {
+            'description': 'What the overlay holds.',
+            'instruction': 'How an agent writes a record of it.',
+            '<field>': ('One entry for each field of a record: {"type": ..., "rule": ..., "example": ...}. type is '
+                        'text, number, boolean or address, or the allowed values written "first | second | third".'),
+        },
+        'examples': [
+            {'add': {'mashtrac.overlay.concerns': {
+                'description': 'What an examination found wrong at an element.',
+                'instruction': 'One record for each finding, with where it shows.',
+                'mark': {'type': 'missing | broken | exclude', 'rule': 'What kind of finding it is.',
+                         'example': 'broken'},
+                'finding': {'type': 'text', 'rule': 'One sentence that states it.',
+                            'example': 'The relay drops packets that arrive while it reconnects.'},
+                'evidence': {'type': 'text', 'rule': 'The uri that shows it.', 'example': './src/relay.c#L88',
+                             'optional': True}}}},
+            {'add': {'mashtrac.code.masher.widget': {'concerns': [
+                {'mark': 'broken', 'finding': 'The relay drops packets that arrive while it reconnects.'}]}}},
+            {'mashtrac.overlay.concerns': {}},
+        ],
     },
     'help': {
         'does': '{} lists the names help takes. A command name returns what the command does, its fields and examples.',

@@ -27,6 +27,8 @@ DESCRIPTION = (
     '{"<project>.<root>.<steps>": {}} reads one element. The project\'s name leads every path.\n'
     '{"add": {...}}, {"update": {...}} and {"delete": {...}} write; {"orphaned": "<project>"} lists elements nothing '
     'wants.\n'
+    'An element holds lists of records in overlays, each defined beneath <project>.overlay; {"help": "overlay"} '
+    'shows how.\n'
     '{"help": {}} lists the commands, and {"help": "<command>"} gives a command\'s fields and examples.\n'
     'A refused command comes back with status, code, message and remediation.')
 _BODY: dict[str, Any] = {'type': 'object', 'description': 'One path and what is written there.'}

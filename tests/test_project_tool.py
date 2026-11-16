@@ -525,3 +525,12 @@ def test_a_service_running_code_older_than_the_code_on_disk_is_replaced(served, 
     monkeypatch.setattr(service, '_code', lambda: real() if seen else seen.append(1) or 'changed')
     assert commands.run({WIDGET: {}}, served)[WIDGET]['name'] == 'mashbox'  # answered by a new service, data kept
     assert json.loads((served / 'maps' / 'service.json').read_text())['pid'] != first
+
+
+def test_the_overlay_help_examples_are_commands_the_tool_accepts(mapped):
+    define, write, read = commands.texts.HELP['overlay']['examples']
+    assert run(define) == {'status': 'ok'} and run(write) == {'status': 'ok'}
+    assert run(read)[f'{P}.overlay.concerns']['key'] == 'concerns'
+    assert run({WIDGET: {'concerns': {}}})[WIDGET]['concerns'] == write['add'][WIDGET]['concerns']
+    refused = run({'add': {f'{P}.overlay.notes': {'fields': {'text': 'x'}}}})
+    assert refusal(refused) == ('FIELD_MISMATCH', {'help': 'overlay'})

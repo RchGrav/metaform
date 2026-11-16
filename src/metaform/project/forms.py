@@ -418,7 +418,7 @@ class Form:
             elif key not in ('description', 'instruction', 'type', 'rule', 'example', 'optional'):
                 raise refuse(f"'{key}' at '{where}' is not a field of an overlay definition: a definition takes "
                              "description and instruction, and each field beneath it takes type, rule, example and "
-                             "optional")
+                             'optional. {"help": "overlay"} gives an example', {'help': 'overlay'})
             elif value is None:
                 if not update:
                     raise refuse(f"{key} at '{where}' cannot be null in add; update removes a field with null")
