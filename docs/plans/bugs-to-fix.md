@@ -24,12 +24,3 @@ recorded, each becomes a ticket on the element it concerns.
    Code". Remove it from the chat window; a Claude Code profile may name one (dispatch plan, step 4).
 5. **One dispatch test fails.** `test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended`
    expects an `intake` field in a session's state (issue 24 of `dispatch-owns-acp.md`).
-6. **The 3D map is crowded and never spreads out.** Found by the person 2026-11-16, on the `metaform` intake. Shapes
-   bunch around the root and their names pile on one another. Cause, measured on the live page: the page links each
-   element to its nearest recorded ancestor (`graph/data.js` `addElements`, `project_map.py`), and this intake records
-   leaf addresses without the steps between them (`…context.interface.user.voice` and `…interface.user.web` with no
-   `…interface.user` or `…interface`), so 22 of the 23 hierarchy links go to the root: one star instead of a branching
-   tree. The 3D map's own code has not changed since 2026-10-23. The node sizes are as the person set them on
-   2026-10-17 and stay. A second, smaller factor: the layout's spacing (`views/bar.js` `applyPhysics`) predates those
-   sizes, so the least gap between two elements is 1 unit. Fix awaits the person's choice of how the namespace steps
-   between an element and its recorded ancestor are drawn.

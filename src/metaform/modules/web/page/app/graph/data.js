@@ -25,8 +25,8 @@ export function graphData() {
   addMemories(graph, drawn, onNode);
   return graph;
 }
-/* Each element shown, linked to its nearest parent element; one deeper than the depth stays inside the node that
- * holds it, which says how many it holds, VIEW-051. */
+/* Each element shown, linked to its parent element, the address one step up, where the map records one; one deeper
+ * than the depth stays inside the node that holds it, which says how many it holds, VIEW-051. */
 function addElements({nodes, links}) {
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
   const {shown, held} = depthView(), work = workShown();
@@ -36,7 +36,10 @@ function addElements({nodes, links}) {
     nodes.push({id: element.id, t: 'el', name: heldName(labelOf(element), held.get(element.id)),
       address: element.address, role: element.role, work: work.get(element.id) || [], layer: element.layer,
       held: held.get(element.id) || 0});
-    const above = parent && byAddress.get(parent);  // a parent held deeper than the depth is not drawn to
+    // a parent held deeper than the depth is not drawn to; nor is an ancestor reached over address steps the map
+    // records nothing at, which would draw every element of a sparse map to its root, as the 2D map never does
+    const direct = parent === element.address.slice(0, element.address.lastIndexOf('.'));
+    const above = direct && byAddress.get(parent);
     if (above && (!shown || shown.has(above))) links.push({source: above, target: element.id, k: 'tree'});
   }
 }
