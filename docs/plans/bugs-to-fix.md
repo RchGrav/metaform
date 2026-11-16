@@ -14,9 +14,6 @@ recorded, each becomes a ticket on the element it concerns.
    Code's adapter starts the CLI with `replay-user-messages`, so every prompt comes back as a `user_message_chunk`,
    and the thread shows it beside the person's own line. Fix in the runner: during a live turn, do not record the
    echo of the prompt just sent; keep `user_message_chunk` lines on a load or resume, which are the history.
-4. **Claude Code's "Agent" option in the chat window.** Found 2026-11-16 (`bug-claude-agent-option-subagents.png`).
-   It runs the whole session as one of the person's plugin subagents and is confusing even under "More from Claude
-   Code". Remove it from the chat window; a Claude Code profile may name one (dispatch plan, step 4).
 5. **One dispatch test fails.** `test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended`
    expects an `intake` field in a session's state (issue 24 of `dispatch-owns-acp.md`).
 6. **The map names the harness element after three hard-coded harnesses.** Found by the person 2026-11-16. The

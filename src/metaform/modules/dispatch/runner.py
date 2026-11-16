@@ -151,6 +151,7 @@ from . import (
     option_key,
     origin,
     over_budget,
+    profile_only,
     prompt,
     release,
     require_eligible,
@@ -1781,7 +1782,8 @@ class Session:
                              'options': [{'value': mode['id'], 'name': mode['name'],
                                           'description': mode.get('description'), 'group': None}
                                          for mode in available], 'source': 'mode'})
-        return [{**one, 'key': option_key(one)} for one in found]  # the name dispatch's choices use, as `options`
+        # the name dispatch's choices use, as `options`, and whether a profile rather than the chat chooses it
+        return [{**one, 'key': option_key(one), 'profile_only': profile_only(self.agent, one)} for one in found]
 
     def harness_record(self, state: str, reason: str | None = None) -> dict[str, Any]:
         """This harness's record as the home keeps it, `offered`: how asking it went, and what its initialize and its

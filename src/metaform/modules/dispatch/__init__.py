@@ -657,6 +657,14 @@ def picker_entries(setting: dict[str, Any]) -> list[dict[str, Any]]:
 AGENT_OPTIONS = (('mode', 'Mode', 'mode'), ('model', 'Model', 'model'), ('effort', 'Effort', 'thought_level'),
                  ('fast', 'Fast mode', 'speed'))
 OWN_OPTIONS = {'codex': (('collaboration_mode', 'Collaboration mode', 'collaboration_mode'),)}
+# Options that choose what kind of agent a whole session is, which a launch's profile decides and a chat window does
+# not: Claude Code's `agent`, one of the person's subagent definitions (dispatch-owns-acp.md, profiles).
+PROFILE_ONLY = {'claude': ('agent',)}
+
+
+def profile_only(agent: str, setting: dict[str, Any]) -> bool:
+    """Whether one of a harness's options is chosen by a launch's profile rather than in a chat window."""
+    return str(setting.get('id')) in PROFILE_ONLY.get(agent, ())
 AGENT_DEFAULT = 'default'  # the value of each that sends nothing, leaving the agent's own
 
 
@@ -5661,7 +5669,8 @@ async def options(ctx: Context) -> dict[str, Any]:
                           'picks': picker_entries(one),
                           'chosen': chosen.get(agent, {}).get(option_key(one)),
                           'setting': next((key for key, _, option in option_settings(agent)
-                                           if option == option_key(one)), None)} for one in offered],
+                                           if option == option_key(one)), None),
+                          'profile_only': profile_only(agent, one)} for one in offered],
             'unmatched': {key: value for key, value in chosen.get(agent, {}).items()
                           if key not in {option_key(one) for one in offered}},
             'auth': row.get('auth') if row else None, 'extensions': row.get('extensions') if row else None,

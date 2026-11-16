@@ -47,7 +47,8 @@ export const afterEnd = () => Boolean(DOCK.target) && !DOCK.live && !DOCK.callin
 export function sessionSummary(box, {agent, settings, usage, controls, used, resume, before = false}) {
   const pop = sessionPop();
   // the line says the options in ACP's categories, and any switch that is on, such as Ultracode
-  const words = settings.filter(one => optionRank(one) >= 0 || one.type === 'boolean').map(optionWords).filter(Boolean);
+  const words = settings.filter(one => !one.profile_only && (optionRank(one) >= 0 || one.type === 'boolean'))
+    .map(optionWords).filter(Boolean);
   const tokens = usage && usage.used !== null && usage.used !== undefined
     ? (usage.size ? `${countOf(usage.used)}/${countOf(usage.size)}` : countOf(usage.used)) : null;
   const line = [agent, ...words, tokens].filter(Boolean).join(' · ');
@@ -130,6 +131,7 @@ const optionRank = setting => MAIN_OPTIONS.indexOf(setting.key ?? setting.catego
 export function groupedControls(harness, settings, controls) {
   const main = [], more = [];
   settings.forEach((setting, at) => {
+    if (setting.profile_only) return;  // what kind of agent a whole session is: a launch's profile chooses it
     const rank = optionRank(setting);
     if (rank < 0) more.push(controls[at]); else main.push([rank, controls[at]]);
   });
