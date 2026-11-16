@@ -159,7 +159,7 @@ class V2(Harness):
             # Claude Code's adapter says it as auth.status and in _meta; Codex's in auth's _meta
             auth_status=present(auth, 'status') or 'authStatus' in obj(caps.get('_meta'))
             or 'authStatus' in obj(auth.get('_meta')),
-            logout=bool(logins), client_files=False, client_terminals=False, terminal_login=offer.terminal_login,
+            logout=bool(logins), terminal_login=offer.terminal_login,
             logins=logins, raw=answer)
 
     # ------------------------------------------------------------------ sessions

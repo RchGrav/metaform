@@ -15,7 +15,7 @@ v2:
 - settings: session modes are presented as one config option of category `mode` (unless a config option already is
   the mode, which ACP says supersedes them), set with `session/set_mode`.
 - resume: with the history replayed is `session/load`, without is `session/resume`, each where the harness offers it.
-- the client's own files and terminals, v1-only, answered by the `ClientTools` the connection was given.
+- the client's own files and terminals, which v1 has, are not offered: they serve an editor, and Metaform has none.
 """
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ from .model import (
     INFO,
     INVALID,
     MESSAGE,
-    METHOD_NOT_FOUND,
     NOTICE,
     OPTIONS,
     OTHER,
@@ -44,7 +43,6 @@ from .model import (
     Capabilities,
     Choice,
     Client,
-    ClientTools,
     ConfigOption,
     Harness,
     Login,
@@ -84,9 +82,8 @@ def text_of(blocks: list[dict[str, Any]]) -> str:
 class V1(Harness):
     protocol = 1
 
-    def __init__(self, process: Any, client: Client, tools: ClientTools | None = None) -> None:
+    def __init__(self, process: Any, client: Client) -> None:
         super().__init__(process, client)
-        self.tools = tools
         self.writing: dict[str, list[tuple[Prompt, list[dict[str, Any]]]]] = {}  # prompts sent, not yet written
 
     # ------------------------------------------------------------------ initialize
@@ -97,9 +94,7 @@ class V1(Harness):
             session['notices'] = {}
         if offer.compaction:
             session['compaction'] = {}
-        capabilities: dict[str, Any] = {
-            'fs': {'readTextFile': offer.files, 'writeTextFile': offer.files}, 'terminal': offer.terminals,
-            'session': session, 'auth': {'terminal': offer.terminal_login}}
+        capabilities: dict[str, Any] = {'session': session, 'auth': {'terminal': offer.terminal_login}}
         if offer.elicitation:
             capabilities['elicitation'] = {'form': {}, 'url': {}}
         if offer.subagents:
@@ -147,8 +142,7 @@ class V1(Harness):
             additional_directories=marked(session, 'additionalDirectories'), providers=marked(agent, 'providers'),
             steering=bool(obj(obj(answer.get('_meta')).get('steering')).get('supported')),
             auth_status='authStatus' in obj(agent.get('_meta')), logout=marked(auth, 'logout'),
-            client_files=offer.files, client_terminals=offer.terminals, terminal_login=offer.terminal_login,
-            logins=logins, raw=answer)
+            terminal_login=offer.terminal_login, logins=logins, raw=answer)
 
     # ------------------------------------------------------------------ sessions
 
@@ -495,44 +489,3 @@ class V1(Harness):
         if chosen is None:
             return {'outcome': {'outcome': 'cancelled'}}
         return {'outcome': {'outcome': 'selected', 'optionId': chosen}}
-
-    async def client_request(self, method: str, params: dict[str, Any]) -> Any:
-        """The client's own files and terminals, answered by its tools when the connection offered them."""
-        caps = self.caps()
-        tools = self.tools
-        files = method.startswith('fs/') and caps.client_files
-        terminals = method.startswith('terminal/') and caps.client_terminals
-        if tools is None or not (files or terminals):
-            raise RequestError(METHOD_NOT_FOUND, f'Method not found: {method}')
-        session_id, path = str(params.get('sessionId') or ''), str(params.get('path') or '')
-        terminal = str(params.get('terminalId') or '')
-        if method == 'fs/read_text_file':
-            line, limit = params.get('line'), params.get('limit')
-            return {'content': await tools.read_text_file(session_id, path, line if isinstance(line, int) else None,
-                                                          limit if isinstance(limit, int) else None)}
-        if method == 'fs/write_text_file':
-            await tools.write_text_file(session_id, path, str(params.get('content') or ''))
-            return {}
-        if method == 'terminal/create':
-            given = params.get('outputByteLimit')
-            ident = await tools.create_terminal(
-                session_id, str(params.get('command') or ''), [str(one) for one in cast(list[Any], params.get('args') or [])],
-                {str(one.get('name')): str(one.get('value') or '') for one in dicts(params.get('env'))},
-                text_or_none(params.get('cwd')), given if isinstance(given, int) else None)
-            return {'terminalId': ident}
-        if method == 'terminal/output':
-            out = await tools.terminal_output(session_id, terminal)
-            status = out.exit_status
-            return {'output': out.output, 'truncated': out.truncated,
-                    **({'exitStatus': {'exitCode': status.exit_code, 'signal': status.signal}}
-                       if status is not None else {})}
-        if method == 'terminal/wait_for_exit':
-            ended = await tools.wait_for_terminal_exit(session_id, terminal)
-            return {'exitCode': ended.exit_code, 'signal': ended.signal}
-        if method == 'terminal/kill':
-            await tools.kill_terminal(session_id, terminal)
-            return {}
-        if method == 'terminal/release':
-            await tools.release_terminal(session_id, terminal)
-            return {}
-        raise RequestError(METHOD_NOT_FOUND, f'Method not found: {method}')

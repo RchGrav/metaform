@@ -89,10 +89,7 @@ class SelectedVersion(Exception):
 
 @dataclass(slots=True)
 class Offer:
-    """What the client offers the harness at `initialize`. Client files and terminals are v1 features; a connection
-    that needs them is made in v1. A terminal login is offered in both versions."""
-    files: bool = False  # v1 fs/read_text_file and fs/write_text_file, answered by `ClientTools`
-    terminals: bool = False  # v1 terminal/*, answered by `ClientTools`
+    """What the client offers the harness at `initialize`. A terminal login is offered in both versions."""
     terminal_login: bool = False  # login methods of type terminal, which the client runs itself
     elicitation: bool = True  # questions to the person, forms and URLs, answered by `Client.elicitation`
     subagents: bool = False  # v1: a subagent's work as a child session of its own (claude-agent-acp, codex-acp)
@@ -142,8 +139,6 @@ class Capabilities:
     steering: bool  # the `_session/steering` extension (claude-agent-acp, codex-acp)
     auth_status: bool  # the `_auth/status_update` extension
     logout: bool
-    client_files: bool  # this connection answers the harness's file reads and writes (v1)
-    client_terminals: bool  # this connection runs the harness's terminals (v1)
     terminal_login: bool  # this connection offered terminal logins
     logins: list[Login]
     raw: dict[str, Any]  # the initialize answer as received
@@ -434,39 +429,6 @@ class BaseClient:
         raise RequestError(METHOD_NOT_FOUND, f'Method not found: {method}')
 
 
-@dataclass(slots=True)
-class ExitStatus:
-    exit_code: int | None
-    signal: str | None
-
-
-@dataclass(slots=True)
-class TerminalOutput:
-    output: str
-    truncated: bool
-    exit_status: ExitStatus | None
-
-
-class ClientTools(Protocol):
-    """The client's own files and terminals, a v1 feature (ACP's file-system and terminals), offered when a session
-    needs every read, write and command to pass through the client."""
-
-    async def read_text_file(self, session_id: str, path: str, line: int | None, limit: int | None) -> str: ...
-
-    async def write_text_file(self, session_id: str, path: str, content: str) -> None: ...
-
-    async def create_terminal(self, session_id: str, command: str, args: list[str], env: dict[str, str],
-                              cwd: str | None, output_byte_limit: int | None) -> str: ...
-
-    async def terminal_output(self, session_id: str, terminal_id: str) -> TerminalOutput: ...
-
-    async def wait_for_terminal_exit(self, session_id: str, terminal_id: str) -> ExitStatus: ...
-
-    async def kill_terminal(self, session_id: str, terminal_id: str) -> None: ...
-
-    async def release_terminal(self, session_id: str, terminal_id: str) -> None: ...
-
-
 # ------------------------------------------------------------------ patch rules shared by both adapters
 
 def dicts(value: Any) -> list[dict[str, Any]]:
@@ -573,7 +535,6 @@ class Harness:
         self.client = client
         self.capabilities: Capabilities | None = None
         self.sessions: dict[str, SessionState] = {}
-        self.unsupported: list[str] = []  # what the caller asked of the connection that it could not give
         self.ended = asyncio.Event()
         self.tasks: set[asyncio.Task[Any]] = set()
         self.waiting: dict[str, list[Prompt]] = {}  # the prompts of each session whose work has not ended
@@ -644,10 +605,6 @@ class Harness:
 
     def answer_permission(self, chosen: str | None) -> dict[str, Any]:
         raise NotImplementedError
-
-    async def client_request(self, method: str, params: dict[str, Any]) -> Any:
-        """An agent request this version has beyond the shared ones; v1's files and terminals."""
-        raise RequestError(METHOD_NOT_FOUND, f'Method not found: {method}')
 
     def user_wait(self, session_id: str | None, change: int) -> None:
         """An agent's request of the session began (+1) or ended (-1) waiting on the person."""
@@ -787,12 +744,8 @@ class Harness:
             return await self.elicitation(given, key)
         if method.startswith('_'):
             return await self.client.extension(method, params)
-        try:
-            return await self.client_request(method, given)
-        except RequestError as error:
-            if error.code == METHOD_NOT_FOUND:
-                self.tell(str(given.get('sessionId') or ''), UNSUPPORTED, method, given)
-            raise
+        self.tell(str(given.get('sessionId') or ''), UNSUPPORTED, method, given)
+        raise RequestError(METHOD_NOT_FOUND, f'Method not found: {method}')
 
     def notification(self, method: str, params: dict[str, Any]) -> None:
         """A notification, applied before the handler first awaits, so updates keep the order they were sent in."""

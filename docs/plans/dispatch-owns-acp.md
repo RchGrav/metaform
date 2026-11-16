@@ -231,7 +231,7 @@ The connection is built as the protocol's guidance lays out, in `dispatch/acp/`:
 
 - **`connection`** starts the harness process, sends `initialize` asking for version 2, reads the version the
   harness selected, and hands the stream to that version's adapter. A harness that selects 1 gets a v1 adapter, on a
-  fresh v1 `initialize` when the session needs client files, terminals or a terminal login.
+  fresh v1 `initialize`, which carries what the v2 request left out, such as a terminal login.
 - **`v1` and `v2`** are the two adapters. Each owns its version's capabilities, validation and lifecycle, and
   nothing outside them sees a wire shape.
 - **One model above them,** which is what dispatch's work and every other module deal with. It follows v2, because
@@ -243,8 +243,8 @@ The connection is built as the protocol's guidance lays out, in `dispatch/acp/`:
   - settings are config options, by `configId`. The v1 adapter presents modes as one option of category `mode` and
     sets it with `session/set_mode`.
   - resume takes "replay from the start" or not. The v1 adapter uses `session/load` for the first.
-  - client files and terminals are a v1-only feature of the v1 adapter. Client-side tools for both versions are MCP
-    servers passed at session setup, which Metaform already does with its own.
+  - client files and terminals are not offered in either version (see step 2). Client-side tools for both versions
+    are MCP servers passed at session setup, which Metaform already does with its own.
   - whatever a version cannot express is reported as unsupported by its adapter, never dropped silently.
 - **v2 first, v1 as the fallback.** The client asks for version 2 on every connection, and a harness that knows
   only v1 selects 1. Asking costs nothing, and v2 removes what the v1 code works hardest around: the end of a turn
@@ -379,8 +379,14 @@ list; a question to the person is for a decision only they can make, never for l
   Claude Code and Codex adapters. That decides how much of the work is exercised by real harnesses.
 - Write the model above the adapters: turn state, messages and tool calls by id, config options by `configId`,
   permission requests, logins, capabilities.
-- `connection`: start the process, `initialize` asking for 2, read the selected version, hand over to its adapter;
-  reconnect in v1 when a session needs client files, terminals or a terminal login.
+- `connection`: start the process, `initialize` asking for 2, read the selected version, hand over to its adapter.
+- Client files and terminals (v1's `fs/*` and `terminal/*`) are removed, not carried into the connection
+  (2026-11-16). ACP made them for code editors, so an assistant's reads see unsaved buffers and its edits land in
+  open documents; Metaform has no editor, so the offer serves nothing here. The harnesses never used it: Claude
+  Code's adapter only passes the methods through, and none of the 50 recorded dispatch sessions read or wrote a file
+  through the client. v2 removed them, and offering them would have kept every session on v1. File placement and
+  command output come from what the harnesses report on their tool calls, in both versions. If Metaform gains an
+  editor, the v2 way is client tools offered as an MCP server.
 - `v2` adapter on the SDK's `acp.experimental.v2`, starting from `roundtable/harness.py`. `v1` adapter from what
   `runner.Session` does today.
 - Move `runner.Session` onto the connection one concern at a time, in this order, with the dispatch tests passing

@@ -3,15 +3,14 @@ adapter.
 
 The client asks for version 2 on every connection, as ACP's version negotiation says a client asks for the latest it
 supports. A harness that knows v2 selects it; one that knows only v1 selects 1 and reads the v2 request without the
-client capabilities v1 has (client files, client terminals, terminal login and the rest). So a harness that selects
-1 is started again and initialized afresh in v1, with them: a v1-only harness may refuse a second `initialize` on one
-connection, and the stream is the process's. The evidence for v1 is the protocol's: the answer says 1, or it is in
-v1's shape, or the refusal lists 1 (`v2.evidence`). Anything else is an error, never a guess.
+client capabilities v1 has (terminal login and the rest). So a harness that selects 1 is started again and
+initialized afresh in v1, with them: a v1-only harness may refuse a second `initialize` on one connection, and the
+stream is the process's. The evidence for v1 is the protocol's: the answer says 1, or it is in v1's shape, or the
+refusal lists 1 (`v2.evidence`). Anything else is an error, never a guess.
 
-Client files and terminals exist only in v1. A connection that needs them asks for v1 at once, rather than starting
-the harness in v2 and again in v1: for that connection v1 is the latest version the client can use. A harness that
-knows only v2 refuses it, and is then spoken to in v2 with what it cannot give listed in `Harness.unsupported`.
-A terminal login is in both versions and needs no v1.
+v1's client files and terminals are never offered: the protocol made them for an editor, so an assistant's reads see
+unsaved buffers and its edits land in open documents, and Metaform has no editor. The files a tool call touched and
+its output come from what the harness reports on the call, in both versions.
 
 The setting `dispatch_acp_v2`, on by default, turns v2 off, for the day a change to the draft breaks a harness; the
 caller reads it and passes `v2`.
@@ -23,7 +22,7 @@ import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from .model import Client, ClientTools, Harness, Offer, SelectedVersion
+from .model import Client, Harness, Offer, SelectedVersion
 from .v1 import V1
 from .v2 import V2
 
@@ -48,26 +47,17 @@ def starter(command: list[str], *, cwd: str, env: dict[str, str] | None = None,
 
 
 async def connect(start: Starter, client: Client, *, info: dict[str, str], offer: Offer | None = None,
-                  v2: bool = True, tools: ClientTools | None = None, timeout: float = START_LIMIT) -> Harness:
+                  v2: bool = True, timeout: float = START_LIMIT) -> Harness:
     """A started, initialized harness on the version it selected. `info` is the client's name, title and version;
-    `offer` what the client offers; `tools` answer client files and terminals, which `offer` may ask for only with
-    them."""
+    `offer` what the client offers."""
     offer = offer or Offer()
-    if (offer.files or offer.terminals) and tools is None:
-        raise ValueError('Client files and terminals are offered only with the tools that answer them.')
-    if v2 and not (offer.files or offer.terminals):
+    if v2:
         harness = await opened(V2(await start(), client), info, offer, timeout)
         if harness is not None:
             return harness
-    made = await opened(V1(await start(), client, tools), info, offer, timeout, fallback=v2)
-    if made is not None:
-        return made
-    # a harness that knows only v2, asked for v1 for what only v1 has: spoken to in v2 without it
-    harness = await opened(V2(await start(), client), info, offer, timeout, fallback=False)
-    assert harness is not None
-    harness.unsupported += [name for name, wanted in (('client files', offer.files),
-                                                      ('client terminals', offer.terminals)) if wanted]
-    return harness
+    made = await opened(V1(await start(), client), info, offer, timeout, fallback=False)
+    assert made is not None
+    return made
 
 
 async def opened(harness: Harness, info: dict[str, str], offer: Offer, timeout: float, *,

@@ -327,8 +327,8 @@ def test_session_new_is_in_the_project_folder_with_metaform_mcp_and_the_person_e
     init = dispatch.received('initialize')[0]['params']
     assert init['protocolVersion'] == 1
     capabilities = init.get('clientCapabilities', {})  # the SDK leaves out a capability that is off
-    # the runner's own files and terminals, P019, on by default and confined to the folder
-    assert all(capabilities['fs'].values()) and capabilities['terminal'] is True
+    # the client's own files and terminals are an editor's, and Metaform has none: never offered
+    assert not any(capabilities['fs'].values()) and capabilities['terminal'] is False
     assert {entry['secret'] for entry in dispatch.entries() if 'secret' in entry} == {'the-person-own-value'}
     assert not any(entry['crlf'] for entry in dispatch.entries() if 'crlf' in entry)
     assert {tuple(entry['argv']) for entry in dispatch.entries() if 'argv' in entry} == {(str(FAKE),)}, \
@@ -1785,6 +1785,7 @@ def test_the_session_state_and_each_edit_are_structured_and_a_file_is_placed_on_
     assert state['usage'] == {'used': 1200, 'size': 200000, 'cost': None}
     assert [entry['status'] for entry in state['plan']] == ['completed', 'pending']
     assert [(one['address'], one['action']) for one in state['touched']] == [(NODE, 'edit')]
+    assert state['files'] == [{'path': 'src/engine.py', 'action': 'edit'}], 'the edited file, kept in the state'
     [edit] = [line for line in found['lines'] if line['name'] == 'tool:t-edit']
     assert edit['text'] == 'Edit engine (completed)', 'the thread reads as it did'
     detail = edit['data']
@@ -4047,49 +4048,19 @@ def test_serve_in_the_reference_conductors_chain_answers_the_agents_mcp_over_acp
         editor.close()
 
 
-# ------------------------------------------------------------------ the client's files, terminals and forks, P019, P030
-
-@pytest.mark.req('BASE-052')
-def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(dispatch, run):
-    """P019: the runner offers ACP's fs and terminal methods; a file inside the session's folder is written and read
-    by line, one outside it is refused and said in the thread, and a terminal runs, exits, gives its output and is
-    released, its line kept in the thread."""
-    dispatch.start('ask', FAKE_ACP_CLIENT='1')
-    [client] = eventually(lambda: dispatch.logged('client'))
-    offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
-    assert offered['fs'] == {'readTextFile': True, 'writeTextFile': True} and offered['terminal'] is True
-    assert client['read'] == {'content': 'two\n'}
-    assert (dispatch.folder / 'fake-client' / 'note.txt').read_text(encoding='utf-8') == 'one\ntwo\nthree\n'
-    assert 'error' in client['outside'] and 'outside the session' in json.dumps(client['outside'])
-    assert client['exit']['exitCode'] == 0
-    assert 'hi from terminal' in client['output']['output'] and client['output']['exitStatus']['exitCode'] == 0
-    assert client['output']['truncated'] is False and 'error' in client['gone'], 'a released terminal is gone'
-    lines = eventually(lambda: [one for one in dispatch.items('note') if one.extra['kind'] == 'terminal'
-                                and json.loads(one.value)['exit']])
-    assert 'hi from terminal' in json.loads(lines[0].value)['output']
-    assert any(one.extra['kind'] == 'notice' and 'refused' in one.value for one in dispatch.items('note'))
-    state = eventually(lambda: next((json.loads(one.value) for one in dispatch.items('note')
-                                     if one.extra['name'] == 'state' and json.loads(one.value)['files']), None))
-    assert {'path': 'fake-client/note.txt', 'action': 'read'} in state['files']
-    dispatch.stop()
-
+# ------------------------------------------------------------------ links to the map and forks, P030
 
 @pytest.mark.req('CTX-060')
-def test_a_worker_is_asked_once_to_link_entry_points_and_a_write_to_an_unlinked_file_goes_through(dispatch):
+def test_a_worker_is_asked_once_to_link_entry_points(dispatch):
     """CTX-060: a ticket worker's first prompt ends with work_link, the request to link the files that are entry points
-    of its functionality, said once; it is asked, not forced, so a write to a file no ref names is not refused."""
+    of its functionality, said once; it is asked, not forced."""
     from metaform.modules.dispatch import prompt
-    (dispatch.folder / 'src').mkdir(exist_ok=True)
-    (dispatch.folder / 'src' / 'fresh.py').write_text('old\n', encoding='utf-8')
-    dispatch.start('hold', FAKE_ACP_WRITES='src/fresh.py')
+    dispatch.start('hold')
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
     text = sent['params']['prompt'][0]['text']
     asked = prompt('work_link')
     assert asked and 'dispatch_link file=' in asked and 'lock' not in asked
     assert text.endswith(f'\n\n{asked}') and text.count(asked) == 1
-    [writes] = eventually(lambda: dispatch.logged('writes'))
-    assert 'error' not in writes['write'][0], writes['write'][0]
-    assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'written\n'
     dispatch.stop()
 
 
@@ -4135,21 +4106,13 @@ def test_a_burst_of_reads_of_linked_files_reads_the_sources_layer_once(dispatch,
     session.session_id = 'unit-session'
 
     async def burst():
-        for _ in range(10):
+        for at in range(10):
             for name in ('a', 'b', 'c'):
-                await session.read_text_file('unit-session', str(dispatch.folder / 'src' / f'{name}.py'))
+                call = {'toolCallId': f'read-{at}-{name}', 'kind': 'read', 'status': 'completed',
+                        'locations': [{'path': str(dispatch.folder / 'src' / f'{name}.py')}]}
+                assert (await session.tool_detail(call))['locations'][0]['exact']
     asyncio.run(burst())
     assert len(reads) == 1, 'thirty reads, one read of the sources layer'
-
-
-@pytest.mark.req('BASE-052')
-def test_the_client_files_and_terminal_settings_turn_them_off(dispatch, run):
-    run('set', '--no-dispatch-client-files', '--no-dispatch-client-terminal', cwd=dispatch.folder)
-    dispatch.start('hold')
-    eventually(lambda: dispatch.logged('grandchild'))
-    offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
-    assert offered['fs'] == {'readTextFile': False, 'writeTextFile': False} and offered['terminal'] is False
-    dispatch.stop()
 
 
 @pytest.mark.req('BASE-052')

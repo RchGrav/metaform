@@ -52,11 +52,11 @@ def received(folder, method):
     return [entry['message'] for entry in logged(folder) if entry.get('message', {}).get('method') == method]
 
 
-async def opened(folder, version, client, *, v2=True, offer=None, tools=None, **switches):
+async def opened(folder, version, client, *, v2=True, offer=None, **switches):
     env = {**os.environ, 'FAKE_ACP_LOG': str(folder / 'fake.jsonl'), 'FAKE_ACP_MODE': 'plain',
            **({'FAKE_ACP_V2': '1'} if version == 2 else {}), **switches}
     return await connect(starter([sys.executable, str(FAKE)], cwd=str(folder), env=env), client, info=INFO, v2=v2,
-                         offer=offer, tools=tools, timeout=30)
+                         offer=offer, timeout=30)
 
 
 def ran(work):
@@ -213,21 +213,3 @@ def test_a_v1_only_harness_asked_for_v2_is_started_again_and_initialized_in_v1(t
     (tmp_path / 'fake.jsonl').unlink()
     assert ran(work(False)) == 1
     assert [one['params']['protocolVersion'] for one in received(tmp_path, 'initialize')] == [1]
-
-
-def test_a_session_needing_client_files_asks_for_v1_and_a_v2_only_harness_says_it_cannot(tmp_path):
-    """Client files exist only in v1, so v1 is asked for at once; a harness that answers only v2 is spoken to in v2,
-    with the files listed as what the connection could not give."""
-    class Tools:
-        pass
-
-    async def work(version):
-        harness = await opened(tmp_path, version, Recorder(), offer=Offer(files=True), tools=Tools())
-        await harness.close()
-        return harness.protocol, harness.unsupported, harness.capabilities.client_files
-    assert ran(work(1)) == (1, [], True)
-    [asked] = received(tmp_path, 'initialize')
-    assert asked['params']['clientCapabilities']['fs'] == {'readTextFile': True, 'writeTextFile': True}
-    (tmp_path / 'fake.jsonl').unlink()
-    assert ran(work(2)) == (2, ['client files'], False)
-    assert [one['params']['protocolVersion'] for one in received(tmp_path, 'initialize')] == [1, 2]

@@ -56,33 +56,24 @@ from acp.schema import (
     CancelElicitationResponse,
     ClientCapabilities,
     ClientSessionCapabilities,
-    CreateTerminalResponse,
     DeclineElicitationResponse,
     DeniedOutcome,
     ElicitationCapabilities,
     ElicitationFormCapabilities,
     ElicitationUrlCapabilities,
     EnvVariable,
-    FileSystemCapabilities,
     ImageContentBlock,
     Implementation,
     InitializeRequest,
     InitializeResponse,
-    KillTerminalResponse,
     McpServerStdio,
     NewSessionResponse,
     PermissionOption,
-    ReadTextFileResponse,
-    ReleaseTerminalResponse,
     RequestPermissionResponse,
     ResourceContentBlock,
     SessionConfigOptionsCapabilities,
-    TerminalExitStatus,
-    TerminalOutputResponse,
     TextContentBlock,
     ToolCallUpdate,
-    WaitForTerminalExitResponse,
-    WriteTextFileResponse,
 )
 
 from metaform import home, prompt_files
@@ -128,7 +119,6 @@ from . import (
     agent_named,
     argv,
     billable,
-    claimed,
     end_group,
     eyes_line,
     fork_capacity,
@@ -233,9 +223,6 @@ STDERR_TAIL = 12  # the last lines of the agent's stderr a failure note carries
 # Kilobytes of the agent's stderr one session's thread keeps, redacted; past it one line counts the rest, which the
 # runner's log keeps. Settings cleanup 2026-10-15 made it fixed (dispatch_stderr_kb): a buffer size has one right answer.
 STDERR_KB = 64
-# Kilobytes of one terminal's output kept when the agent names no outputByteLimit; the oldest is dropped first, as ACP
-# says. Fixed in the same cleanup (dispatch_terminal_kb).
-TERMINAL_KB = 1024
 LOGIN_LIMIT = 600.0  # the one wait for an agent's own login, which may wait on the person in a browser
 AUTH_REQUIRED = -32000  # ACP's auth_required error: the agent needs a login before it makes a session
 # The order a session's chosen settings are applied in, by ACP category: a model switch may replace the effort and
@@ -928,7 +915,6 @@ def worked_in(store: Store, work_id: str, session_id: str) -> str | None:
     return str(cwd) if cwd else None
 
 
-TERMINALS_KEPT = 64  # the terminals a session's recovery record keeps, the latest, for the sweep after its runner dies
 # the thread lines that change what a session is, its state and its subagents, announced with kind session
 STATE_LINES = frozenset({'state', 'subagent'})
 # the map's tables a change to a ticket or its questions writes, for a change that does not say which ticket it concerns
@@ -993,41 +979,6 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
                  'Read historical details only when needed for the current request, limited to relevant context; '
                  'never replay the prior transcript automatically'))
     return f'the node {ref} of the map', f'`metaform map where {ref}`'
-
-
-@dataclass
-class Terminal:
-    """One terminal the agent asked the runner for, ACP's terminal/create: its process in a group of its own, the
-    output kept so far, at most `limit` bytes with the oldest dropped first, and how it exited once it has."""
-    command: str
-    cwd: str
-    process: asyncio.subprocess.Process
-    limit: int
-    output: bytearray
-    truncated: bool = False
-    exit: TerminalExitStatus | None = None
-    reader: asyncio.Task[None] | None = None
-    shown: float = 0.0  # when its line in the thread was last written
-
-
-def trimmed(output: bytearray, limit: int) -> bool:
-    """Drop the oldest output past `limit` bytes, at a character boundary as ACP asks; whether anything was dropped."""
-    if len(output) <= limit:
-        return False
-    del output[:len(output) - limit]
-    while output and output[0] & 0xC0 == 0x80:  # a UTF-8 continuation byte: the character began in what was dropped
-        del output[0]
-    return True
-
-
-def exit_status(code: int | None) -> TerminalExitStatus:
-    """A process's end as ACP says it: its exit code, or the signal that ended it, by name."""
-    if code is not None and code < 0:
-        try:
-            return TerminalExitStatus(exit_code=None, signal=signal.Signals(-code).name)
-        except ValueError:
-            return TerminalExitStatus(exit_code=None, signal=str(-code))
-    return TerminalExitStatus(exit_code=code, signal=None)
 
 
 PROVIDERS = {'claude': 'anthropic', 'codex': 'openai', 'antigravity': 'gcp'}  # gen_ai.provider.name, semconv
@@ -1188,7 +1139,7 @@ class Session:
                                     'protocol_version': acp.PROTOCOL_VERSION, 'compactions': {},
                                     'touched': [], 'resumed': None, 'before_resume': [],
                                     'spent': None, 'auth': None, 'auth_methods': [],
-                                    # the files it read and wrote through the runner, P019, the latest first
+                                    # the files its tool calls named, the latest first, `filed`
                                     'files': [], 'ticket_git': None, 'tool_windows': {},
                                     # how the person chose this session's permission requests are answered, one of
                                     # dispatch_prompts' choices over the launch's and the project's, `answering`
@@ -1339,8 +1290,6 @@ class Session:
         self.probe = False  # started only to be asked something, P199 and P031: it keeps no thread
         self.sent: list[prompt_files.Sent] = []  # the prompt versions served since the last turn went out
         self.left_out = ''  # what initialize could not offer, said in the thread once it exists
-        self.terminals: dict[str, Terminal] = {}  # the agent's terminals, ACP's terminal/*, by their id, P019
-        self.terminal_count = 0
         self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
         self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
         self.interrupted = False  # the last turn ended by the person's interrupt, so no recording turn follows it
@@ -1653,7 +1602,9 @@ class Session:
                 if detail is not None:
                     self.flowed(ident, detail['nodes'], str(known.get('kind') or 'other'))
                     await self.note(f'detail:{ident}', 'tool_detail', json.dumps(detail, ensure_ascii=False))
-                    await self.touch(detail['nodes'], str(known.get('kind') or 'other'))
+                    filed = self.filed(detail)
+                    if not await self.touch(detail['nodes'], str(known.get('kind') or 'other')) and filed:
+                        await self.save_state()
                     if known.get('status') == 'completed' and not known.get('commit_recorded'):
                         paths = [str(one['path']) for one in detail['diffs']]
                         if known.get('kind') in ('edit', 'delete', 'move'):
@@ -2377,16 +2328,35 @@ class Session:
                              'from': {'kind': self.node.kind, 'id': self.node.id} if self.node is not None else None,
                              'to': fresh, 'action': action})
 
-    async def touch(self, nodes: list[dict[str, str]], action: str) -> None:
-        """The parts of the map this session has touched, the latest first, kept in its state."""
+    async def touch(self, nodes: list[dict[str, str]], action: str) -> bool:
+        """The parts of the map this session has touched, the latest first, kept in its state; whether the state was
+        saved."""
         if not nodes:
-            return
+            return False
         held = cast(list[dict[str, str]], self.acp['touched'])
         fresh = [{**place, 'action': action} for place in nodes]
         kept = fresh + [one for one in held if (one['kind'], one['id']) not in {(p['kind'], p['id']) for p in fresh}]
         if kept[:TOUCHED_KEPT] != held:
             self.acp['touched'] = kept[:TOUCHED_KEPT]
             await self.save_state()
+            return True
+        return False
+
+    def filed(self, detail: dict[str, Any]) -> bool:
+        """The files a tool call named, as the harness reported them in its diffs and locations, kept in the session's
+        state, the latest first: `edit` for a file the call changed, else the call's kind. Whether the list changed;
+        the caller saves the state."""
+        changes = bool(detail['diffs']) or detail.get('kind') in ('edit', 'delete', 'move')
+        named = [{'path': str(one['path']), 'action': 'edit'} for one in detail['diffs']] + \
+            [{'path': str(one['path']), 'action': 'edit' if changes else str(detail.get('kind') or 'read')}
+             for one in detail['locations']]
+        fresh = [one for at, one in enumerate(named) if one['path'] and one not in named[:at]]
+        held = cast(list[dict[str, str]], self.acp['files'])
+        kept = (fresh + [one for one in held if one not in fresh])[:TOUCHED_KEPT]
+        if kept == held:
+            return False
+        self.acp['files'] = kept
+        return True
 
     async def configure(self, setting: str, value: str) -> dict[str, Any]:
         """Set one of the session's settings, as the person chose: a mode with session/set_mode, anything else with
@@ -2437,193 +2407,6 @@ class Session:
             await self.note(None, 'setting', f'{found["name"]} set to {shown}.')
             await self.save_state()
         return {'setting': found['id'], 'value': chosen, 'settings': self.settings()}
-
-    # ------------------------------------------------------------------ the client's files and terminals, P019
-
-    async def refuse(self, what: str, path: str, why: str) -> acp.RequestError:
-        """A file or terminal request refused, said in the thread so the person sees it, and returned for the SDK to
-        answer the agent with as invalid params, its reason in the error's data."""
-        async with self.lock:
-            await self.flush()
-            await self.note(None, 'notice', f'{self.name} asked to {what} {path}: refused, {why}.')
-        return acp.RequestError.invalid_params({'path': path, 'reason': why})
-
-    async def confined(self, what: str, path: str | None) -> Path:
-        """An absolute path inside the session's folder, its worktree when it has one, its links followed; a path
-        outside it is refused, as is a relative one, which ACP does not allow."""
-        if not path or not os.path.isabs(path):
-            raise await self.refuse(what, str(path), 'ACP paths are absolute')
-        found, root = Path(path).resolve(), Path(self.folder).resolve()
-        if found != root and root not in found.parents:
-            raise await self.refuse(what, path, f'it is outside the session\'s folder, {root}')
-        return found
-
-    async def filed(self, path: Path, action: str) -> list[dict[str, str]]:
-        """A file the agent read or wrote through the runner: placed on the map, kept among the parts it touched, and
-        kept in the session's state, the latest first."""
-        named = relative(str(path), [self.folder, self.root]) or str(path)
-        nodes, _ = placed(await self.places(), named)
-        files = [{'path': named, 'action': action}] + [one for one in cast(list[dict[str, str]], self.acp['files'])
-                                                        if one != {'path': named, 'action': action}]
-        self.acp['files'] = files[:TOUCHED_KEPT]
-        async with self.lock:
-            await self.touch(nodes, action)
-            await self.save_state()
-        return nodes
-
-    async def read_text_file(self, session_id: str, path: str, line: int | None = None, limit: int | None = None,
-                             **kwargs: Any) -> ReadTextFileResponse:
-        """ACP's fs/read_text_file: the file's text from `line`, 1-based, at most `limit` lines."""
-        found = await self.confined('read', path)
-        try:
-            text = await asyncio.to_thread(found.read_text, encoding='utf-8', errors='replace')
-        except OSError as error:
-            raise acp.RequestError.resource_not_found(path) if isinstance(error, FileNotFoundError) else \
-                acp.RequestError.internal_error({'path': path, 'reason': str(error)}) from None
-        if line is not None or limit is not None:
-            lines = text.splitlines(keepends=True)
-            start = max((line or 1) - 1, 0)
-            text = ''.join(lines[start:start + limit] if limit is not None else lines[start:])
-        await self.filed(found, 'read')
-        return ReadTextFileResponse(content=text)
-
-    async def write_text_file(self, session_id: str, path: str, content: str,
-                              **kwargs: Any) -> WriteTextFileResponse | None:
-        """ACP's fs/write_text_file: the file written whole, made with its folders when it does not exist; refused
-        inside a part of the map another ticket's claim reserves, LAYER-029."""
-        found = await self.confined('write', path)
-        named = relative(str(found), [self.folder, self.root])
-        for place in placed(await self.places(), named)[0]:
-            lock = await asyncio.to_thread(claimed, self.store, place.get('address'), self.work_id)
-            if lock is not None:
-                raise await self.refuse('write', path, f'{place.get("address")} is claimed by "{lock["name"]}"')
-
-        def written() -> None:
-            found.parent.mkdir(parents=True, exist_ok=True)
-            found.write_text(content, encoding='utf-8')
-        try:
-            await asyncio.to_thread(written)
-        except OSError as error:
-            raise acp.RequestError.internal_error({'path': path, 'reason': str(error)}) from None
-        await self.filed(found, 'edit')
-        async with self.lock:
-            await self.changed_files([str(found)])
-        return WriteTextFileResponse()
-
-    async def create_terminal(self, session_id: str, command: str, args: list[str] | None = None,
-                              env: list[EnvVariable] | None = None, cwd: str | None = None,
-                              output_byte_limit: int | None = None, **kwargs: Any) -> CreateTerminalResponse:
-        """ACP's terminal/create: the command started at once in a process group of its own, in the session's folder
-        or a folder inside it, with the agent's environment and the variables it names; its output, stdout and stderr
-        together, kept up to its limit, or TERMINAL_KB when it names none."""
-        folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
-        given = windowless({**child_environment(), **{one.name: one.value for one in env or []}})
-        try:
-            process = await asyncio.create_subprocess_exec(
-                command, *(args or []), cwd=str(folder), env=given, stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **group_options())
-        except OSError as error:
-            raise await self.refuse('run', command, str(error)) from None
-        await self.keep_terminal(process.pid)
-        self.terminal_count += 1
-        ident = f'term-{self.terminal_count}'
-        limit = output_byte_limit if output_byte_limit is not None else 1024 * TERMINAL_KB
-        held = Terminal(' '.join([command, *(args or [])]), str(folder), process, max(int(limit), 0), bytearray())
-        self.terminals[ident] = held
-        held.reader = asyncio.create_task(self.terminal_read(ident, held))
-        self.tasks.add(held.reader)
-        held.reader.add_done_callback(self.tasks.discard)
-        await self.terminal_line(ident, held)
-        return CreateTerminalResponse(terminal_id=ident)
-
-    async def keep_terminal(self, pid: int) -> None:
-        """A terminal's process group, with its leader's birth, kept in the session's private `recovery` beside the
-        agent's, so the groups a runner leaves when it dies are ended by settle, recovery and reset, BASE-052. A
-        terminal runs in a session of its own, so the runner's own end alone reached it. UX review round 1, 2026-10-17,
-        interrupt-failure-recovery F3. The row is written without an announcement: no reader shows it."""
-        if self.recovery is None or self.session_id is None:
-            return
-        from .recovery import identity
-        born = await asyncio.to_thread(identity, pid)
-        if not born:
-            return
-        # the latest TERMINALS_KEPT, so a long session's record stays small and its sweep quick
-        terminals = [*cast(list[dict[str, Any]], self.recovery.get('terminals') or []),
-                     {'pid': pid, 'identity': born}][-TERMINALS_KEPT:]
-        self.recovery = {**self.recovery, 'terminals': terminals}
-        recovery, session_id = self.recovery, self.session_id
-
-        def kept() -> None:
-            with self.store.tables() as tx:
-                tx.update('agent_sessions', {'session_id': session_id}, {'recovery': recovery})
-        try:
-            await asyncio.to_thread(kept)
-        except Exception as error:  # noqa: BLE001  the terminal runs whether or not its group is kept
-            sys.stderr.write(f'The terminal {pid} of session {session_id} was not kept for recovery: {error}\n')
-
-    async def terminal_read(self, ident: str, held: Terminal) -> None:
-        """A terminal's output read as it comes, its line in the thread kept at its latest every STREAM_EVERY, then
-        its exit."""
-        stream = held.process.stdout
-        if stream is not None:
-            while chunk := await stream.read(65536):
-                held.output += chunk
-                held.truncated = trimmed(held.output, held.limit) or held.truncated
-                if time.monotonic() - held.shown >= STREAM_EVERY:
-                    await self.terminal_line(ident, held)
-        held.exit = exit_status(await held.process.wait())
-        await self.terminal_line(ident, held)
-
-    async def terminal_line(self, ident: str, held: Terminal) -> None:
-        """A terminal's line in the thread: its command, folder, the last of its output and its exit."""
-        held.shown = time.monotonic()
-        said = {'terminal_id': ident, 'command': held.command, 'cwd': relative(held.cwd, [self.folder]) or '.',
-                'output': held.output[-4096:].decode('utf-8', errors='replace'), 'truncated': held.truncated,
-                'exit': held.exit.model_dump(mode='json', by_alias=True, exclude_none=True) if held.exit else None}
-        async with self.lock:
-            await self.note(f'terminal:{ident}', 'terminal', json.dumps(said, ensure_ascii=False))
-
-    def terminal(self, ident: str) -> Terminal:
-        held = self.terminals.get(ident)
-        if held is None:
-            raise acp.RequestError.invalid_params({'terminalId': ident, 'reason': 'no such terminal, or released'})
-        return held
-
-    async def terminal_output(self, session_id: str, terminal_id: str, **kwargs: Any) -> TerminalOutputResponse:
-        """ACP's terminal/output: what it has written so far, whether some was dropped, and its exit once it has."""
-        held = self.terminal(terminal_id)
-        return TerminalOutputResponse(output=held.output.decode('utf-8', errors='replace'), truncated=held.truncated,
-                                      exit_status=held.exit)
-
-    async def wait_for_terminal_exit(self, session_id: str, terminal_id: str,
-                                     **kwargs: Any) -> WaitForTerminalExitResponse:
-        """ACP's terminal/wait_for_exit: answered once the command has ended."""
-        held = self.terminal(terminal_id)
-        if held.reader is not None:
-            await asyncio.shield(held.reader)
-        ended = held.exit or exit_status(await held.process.wait())
-        return WaitForTerminalExitResponse(exit_code=ended.exit_code, signal=ended.signal)
-
-    async def kill_terminal(self, session_id: str, terminal_id: str, **kwargs: Any) -> KillTerminalResponse | None:
-        """ACP's terminal/kill: its process group ended; the terminal stays readable until it is released."""
-        held = self.terminal(terminal_id)
-        if held.process.returncode is None:
-            await asyncio.to_thread(end_group, held.process.pid)
-        return KillTerminalResponse()
-
-    async def release_terminal(self, session_id: str, terminal_id: str,
-                               **kwargs: Any) -> ReleaseTerminalResponse | None:
-        """ACP's terminal/release: ended when it still runs, and forgotten; its line stays in the thread."""
-        held = self.terminals.pop(terminal_id, None)
-        if held is not None and held.process.returncode is None:
-            await asyncio.to_thread(end_group, held.process.pid)
-        return ReleaseTerminalResponse()
-
-    async def terminals_ended(self) -> None:
-        """Every terminal still running ends with the session."""
-        for ident in list(self.terminals):
-            with contextlib.suppress(Exception):
-                await self.release_terminal(self.session_id or '', ident)
 
     # ------------------------------------------------------------------ session/fork, P030
 
@@ -3663,9 +3446,7 @@ class Session:
 
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
-        The client offers its own file reads and writes and its own terminals while dispatch_client_files and
-        dispatch_client_terminal are on, P019, each confined to the folder the agent works in. It takes boolean config
-        options, so every setting reaches the page;
+        The client takes boolean config options, so every setting reaches the page;
         subagent sessions, so a subagent's work is a child session rather than mixed into its parent's, P016; ACP's
         elicitation in both modes, so a question the agent or one of its MCP servers puts to the person reaches them
         rather than being answered empty; and ACP's session notices, so what the agent says of its own state is a
@@ -3689,13 +3470,9 @@ class Session:
             version = metadata.version('metaform')
         except metadata.PackageNotFoundError:
             version = '0'
-        # The client's own files and terminals, P019, each offered while its setting is on.
-        files, terminal = bool(self.option('dispatch_client_files', False)), \
-            bool(self.option('dispatch_client_terminal', False))
         asked = InitializeRequest(
             protocol_version=acp.PROTOCOL_VERSION,
             client_capabilities=ClientCapabilities(
-                fs=FileSystemCapabilities(read_text_file=files, write_text_file=files), terminal=terminal,
                 session=ClientSessionCapabilities(config_options=SessionConfigOptionsCapabilities(
                     boolean=BooleanConfigOptionCapabilities())),
                 auth=AuthCapabilities(terminal=terminal_login),
@@ -5096,7 +4873,6 @@ class Session:
                         process.stdin.close()
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self.exited.wait(), END_LIMIT)
-            await self.terminals_ended()  # the terminals it asked for end with it, P019
             if self.folder != self.root and not self.prep and self.node is not None:  # nothing lost on a crash, P009
                 with contextlib.suppress(Exception):
                     record = await asyncio.to_thread(ticket, self.store, self.work_id)

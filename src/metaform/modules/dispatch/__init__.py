@@ -416,32 +416,15 @@ settings.number('dispatch_retries', 2, min=0, label='Retries',
 # Seconds before the first retry of a session that stopped without the person's stop; each later retry waits twice as
 # long. A backoff base has one right answer, so settings cleanup 2026-10-15 made it fixed (dispatch_retry_seconds).
 RETRY_SECONDS = 30
-# What the runner offers the agent as its ACP client, P019: files and terminals of its own, so every file an agent
-# reads or writes and every command it runs passes through Metaform, confined to the session's folder, placed on the
-# map and kept in the thread. ACP lets an agent use them only when the client advertises them, protocol/file-system
-# and protocol/terminals; an agent that does not still works in its folder on its own.
-settings.boolean('dispatch_client_files', True, label='Files through Metaform',
-                 help='Offer agents ACP\'s file reads and writes, confined to the session\'s folder; off, they read '
-                      'and write on their own.',
-                 details='A read or write outside the folder the agent works in, its worktree when it has one, is '
-                         'refused and said in its thread; a write into a part of the map another ticket\'s claim '
-                         'reserves is refused too. Each file is placed on the map through the sources layer and kept '
-                         'in the session\'s state. Applies to the sessions started after the change.')
-settings.boolean('dispatch_client_terminal', True, label='Terminals through Metaform',
-                 help='Offer agents ACP\'s terminals, run in the session\'s folder with their output kept in its '
-                      'thread; off, they run commands on their own.',
-                 details='Each terminal runs in a process group of its own in the session\'s folder or below it, and '
-                         'ends with the session. Applies to the sessions started after the change.')
 # ACP v2, the protocol's draft: each agent is asked for it and spoken to in it where it selects it, as ACP's guidance for
 # supporting v1 and v2 side by side says; an agent that knows only v1 is spoken to in v1 either way. The switch exists
 # for the day a change to the draft breaks an agent, so v1 carries every agent until it is fixed (`acp.connection`).
 settings.boolean('dispatch_acp_v2', True, label='ACP v2',
                  help='Ask each agent for ACP v2, the protocol\'s draft, and use it where the agent selects it; off, '
                       'every agent is spoken to in ACP v1.',
-                 details='On, the default: an agent that knows v2 runs on it, and one that knows only v1 on v1. A '
-                         'session that needs files or terminals through Metaform, which only v1 has, runs on v1. Turn '
-                         'it off when a change to the v2 draft breaks an agent. Applies to the sessions started after '
-                         'the change.')
+                 details='On, the default: an agent that knows v2 runs on it, and one that knows only v1 on v1. '
+                         'Turn it off when a change to the v2 draft breaks an agent. Applies to the sessions started '
+                         'after the change.')
 # The spend budgets, M01, measured as what is billed rather than what is read: tokens are a turn's input, output and
 # cache writes, with cache reads at a tenth, since an agentic turn rereads its whole context on every model call and a
 # raw total would count it dozens of times; cost is what the agent itself reports, the only measure that knows the
@@ -2546,7 +2529,7 @@ def recover(ctx: Context) -> dict[str, Any]:
 
 def reset(ctx: Context) -> dict[str, Any]:
     """Put the agent bookkeeping back in order after crashes: every session recorded as running whose runner is gone is
-    recorded as ended, and what its runner left running, its agent's processes and its terminals, is ended first;
+    recorded as ended, and what its runner left running, its agent's processes, is ended first;
     every ticket taken with no live agent behind it goes back to the queue. Live agents and their tickets are left
     alone, and so is a ticket whose agent the person stopped, or the supervisor handed to them, which waits for them
     as before, `kept_for_you`; a ticket whose leftover processes cannot be verified ended stays taken, `deferred`; a
@@ -4515,7 +4498,7 @@ def ended_launch(store: Store, starting: dict[str, Any]) -> dict[str, Any]:
 
 def ended_gone(store: Store, row: dict[str, Any], by: str | None) -> dict[str, Any]:
     """A stop of a session whose runner had ended already, by a kill or a crash: what the runner left running, its
-    agent's group and its terminals, is ended where its record says, its row is written as ended by the stop, so no
+    agent's group, is ended where its record says, its row is written as ended by the stop, so no
     surface shows it at work and the supervisor does not resume it, and the stop says it was gone."""
     from .recovery import swept
     raw: Any = row.get('recovery')

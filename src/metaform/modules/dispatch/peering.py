@@ -105,8 +105,8 @@ def touched(tx: Any, session_id: str) -> list[dict[str, Any]]:
     """The files a session's tool calls named, the latest first, each once: `edit` when a call changed it, else the
     call's kind; with the file lines its calls named (`lines`, from ACP's locations, which an adapter gives for the
     place it reads or edits) and how many lines its edits added and removed (`changed`), so another agent can tell
-    work in the same lines from work in the same file. The files it read or wrote through the runner, kept in its
-    state, are among them."""
+    work in the same lines from work in the same file. The files its state keeps, from the same tool calls, are among
+    them."""
     named: list[tuple[int, str, str, int | None, int]] = []
     for row in _prefixed(tx, session_id, 'detail:'):
         detail = _parsed(row['text'])

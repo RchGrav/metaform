@@ -19,6 +19,13 @@ def session_for(dispatch):
                           Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
 
 
+async def edited(made, path, text):
+    """An agent's edit as its tool call reports it once completed: the file written, and the write kept for
+    completion, as the runner does for each path a completed edit names."""
+    path.write_text(text)
+    await made.changed_files([str(path)])
+
+
 def initialize(folder):
     for args in [('init', '-q', '-b', 'dev'), ('config', 'user.name', 'Test'),
                  ('config', 'user.email', 'test@example.com')]:
@@ -103,13 +110,13 @@ def test_failed_shared_check_retry_saves_and_verifies_current_fix(dispatch, run,
     monkeypatch.setenv('METAFORM_TASK_NAME', 'project_agent')
 
     async def scenario():
-        await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'broken\n')
+        await edited(made, dispatch.folder / 'owned.py', 'broken\n')
         dispatch.store.finish_work(dispatch.id, 'Fix verified.')
         await made.commit_done()
         assert made.acp['ticket_git']['result']['why']
         assert dispatch.ticket().done
         old = made.acp['ticket_git']['result']['committed']
-        await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'fixed\n')
+        await edited(made, dispatch.folder / 'owned.py', 'fixed\n')
         await made.commit_done()
         assert not made.acp['ticket_git']['result']['why']
         assert made.acp['ticket_git']['result']['committed'] != old
@@ -142,8 +149,8 @@ def test_completion_commits_linked_writes_once_and_preserves_peer_edits(dispatch
     monkeypatch.setattr(made, 'note', note)
 
     async def scenario():
-        await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'own edit\n')
-        await made.write_text_file('test', str(dispatch.folder / 'capture.txt'), 'diagnostic\n')
+        await edited(made, dispatch.folder / 'owned.py', 'own edit\n')
+        await edited(made, dispatch.folder / 'capture.txt', 'diagnostic\n')
         dispatch.store.finish_work(dispatch.id, 'Owned edit completed.', 'Preserve peer edits.')
         await made.commit_done()
         await made.commit_done()

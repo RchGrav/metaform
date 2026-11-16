@@ -15,7 +15,6 @@ from .model import (
     BaseClient,
     Capabilities,
     Client,
-    ClientTools,
     ConfigOption,
     Elicitation,
     ElicitationAnswer,
@@ -39,7 +38,7 @@ from .model import (
 
 __all__ = [
     'ACTIVE', 'IDLE', 'REQUIRES_ACTION', 'RUNNING', 'START_LIMIT', 'BaseClient', 'Capabilities', 'Client',
-    'ClientTools', 'ConfigOption', 'Elicitation', 'ElicitationAnswer', 'Event', 'Harness', 'Login', 'McpServer',
+    'ConfigOption', 'Elicitation', 'ElicitationAnswer', 'Event', 'Harness', 'Login', 'McpServer',
     'Message', 'Offer', 'OptionValue', 'PermissionRequest', 'Prompt', 'SelectedVersion', 'SessionSetup',
     'SessionState', 'Starter', 'SystemPrompt', 'ToolCall', 'Turn', 'Unsupported', 'connect', 'starter',
 ]

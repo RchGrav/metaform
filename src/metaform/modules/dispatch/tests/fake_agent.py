@@ -49,11 +49,7 @@ later, and logs what the question was answered with. FAKE_ACP_USED=<a,b,...> sen
 the adapters do after each model call. FAKE_ACP_COST=<a,b,...> sends a usage update with each cumulative cost in USD in its first turn;
 FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_COMPACT=<status,...> sends
 ACP's compaction_update with each status in turn as the first turn ends, when the client advertises session compaction; FAKE_ACP_CLOSE=1 advertises session/close
-and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
-FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals, ACP's fs/* and terminal/*: it writes and
-reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
-its output and releases it, and logs every answer as `client`. FAKE_ACP_WRITES=<a,b,...> makes its first turn read and
-then write each of those files, from its folder, through fs/*, logging the answers as `writes`.
+and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>.
 FAKE_ACP_INTAKE=1 makes its first turn call intake_element and log `intake_recorded`.
 FAKE_ACP_INFO=1 writes, in one write with its session/new answer and after it, a session_info_update giving the
 session a title and its last activity; FAKE_ACP_SILENT=<seconds> makes a hold turn fall silent that long, say one word,
@@ -202,29 +198,6 @@ def first_turn(prompt_id, text):
     update({'sessionUpdate': 'tool_call', 'toolCallId': 't1', 'title': 'Read file', 'kind': 'read',
             'status': 'pending'})
     update({'sessionUpdate': 'tool_call_update', 'toolCallId': 't1', 'status': 'completed'})
-    if os.environ.get('FAKE_ACP_CLIENT') == '1':  # the client's files and terminals, ACP fs/* and terminal/*
-        inside = os.path.join(os.getcwd(), 'fake-client', 'note.txt')
-        done = {'write': request(800, 'fs/write_text_file', {'sessionId': SESSION, 'path': inside,
-                                                              'content': 'one\ntwo\nthree\n'}),
-                'read': request(801, 'fs/read_text_file', {'sessionId': SESSION, 'path': inside, 'line': 2,
-                                                            'limit': 1}),
-                'outside': request(802, 'fs/read_text_file', {'sessionId': SESSION, 'path': os.path.join(
-                    os.path.dirname(os.getcwd()), 'outside.txt')})}
-        made = request(803, 'terminal/create', {'sessionId': SESSION, 'command': sys.executable,
-                                                 'args': ['-c', 'print("hi from terminal")'], 'outputByteLimit': 1000})
-        own = {'sessionId': SESSION, 'terminalId': made.get('terminalId')}
-        done.update(create=made, exit=request(804, 'terminal/wait_for_exit', own),
-                    output=request(805, 'terminal/output', own), release=request(806, 'terminal/release', own),
-                    gone=request(807, 'terminal/output', own))
-        log({'client': done})
-    writes = [one for one in os.environ.get('FAKE_ACP_WRITES', '').split(',') if one]
-    if writes:  # each file read then written through the client
-        paths = [os.path.join(os.getcwd(), one) for one in writes]
-        log({'writes': {'read': [request(810 + at, 'fs/read_text_file', {'sessionId': SESSION, 'path': path})
-                                 for at, path in enumerate(paths)],
-                        'write': [request(820 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
-                                                                            'content': 'written\n'})
-                                  for at, path in enumerate(paths)]}})
     if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake: its first turn records one element
         update({'sessionUpdate': 'tool_call', 'toolCallId': 'i1', 'title': 'mcp__metaform__intake_element',
                 'kind': 'other', 'status': 'pending', 'rawInput': {'address': 'code.engine'}})

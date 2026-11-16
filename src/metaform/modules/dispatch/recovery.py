@@ -128,8 +128,7 @@ def _pidfd_call(number: int, *args: Any) -> int:
 
 
 def stop_adapter(held: dict[str, Any]) -> None:
-    """Stop only the recorded adapter's group, and the group of each terminal the runner recorded for the session.
-    Unknown or reused roots do not authorize killing another process."""
+    """Stop only the recorded adapter's group. Unknown or reused roots do not authorize killing another process."""
     pid, expected = held.get('adapter_pid'), held.get('adapter_identity')
     if not isinstance(pid, int) or not isinstance(expected, str) or not expected:
         raise ValueError('the adapter identity was not recorded')
@@ -137,28 +136,16 @@ def stop_adapter(held: dict[str, Any]) -> None:
     if current is None or current not in ('', expected):
         raise ValueError('the adapter identity cannot be verified')
     stop_group(pid, expected)
-    stop_terminals(held)
-
-
-def stop_terminals(held: dict[str, Any]) -> None:
-    """Stop the group of each terminal the runner recorded for the session; one whose pid holds another birth is
-    gone already."""
-    raw: Any = held.get('terminals') or []
-    for terminal in cast(list[Any], raw) if isinstance(raw, list) else []:
-        one = cast(dict[str, Any], terminal) if isinstance(terminal, dict) else {}
-        if isinstance(one.get('pid'), int) and isinstance(one.get('identity'), str) and one['identity']:
-            stop_group(int(one['pid']), str(one['identity']))
 
 
 def swept(held: dict[str, Any]) -> None:
-    """What a runner verifiably dead left running is stopped: its agent's group, its leader alive or ended, and its
-    terminals'. An agent pid that holds another birth, as every pid does after the machine restarts, means its group
-    is gone, since a group's id is not reused while it has members; one that cannot be inspected raises."""
+    """What a runner verifiably dead left running is stopped: its agent's group, its leader alive or ended. An agent
+    pid that holds another birth, as every pid does after the machine restarts, means its group is gone, since a
+    group's id is not reused while it has members; one that cannot be inspected raises."""
     pid, expected = held.get('adapter_pid'), held.get('adapter_identity')
     if not isinstance(pid, int) or not isinstance(expected, str) or not expected:
         raise ValueError('the adapter identity was not recorded')
     stop_group(pid, expected)
-    stop_terminals(held)
 
 
 def stop_group(pid: int, expected: str) -> None:
@@ -304,8 +291,8 @@ def recover(ctx: Context) -> dict[str, Any]:
 def gone(held: dict[str, Any]) -> bool:
     """Whether a session's runner and its agent are verifiably no longer running, from the births recorded when its
     ticket was taken: the runner's PID is absent or holds another process's birth, as after a crash or a restart of
-    the machine, and the agent's group, whatever of it survived with its leader alive or gone, and each terminal's the
-    runner recorded, are stopped here, `swept`. False when any of it cannot be established: a missing record or
+    the machine, and the agent's group, whatever of it survived with its leader alive or gone, is stopped here,
+    `swept`. False when any of it cannot be established: a missing record or
     an uninspectable process is never taken for death."""
     runner, born = held.get('runner_pid'), held.get('runner_identity')
     if not isinstance(runner, int) or not isinstance(born, str) or not born:
@@ -316,7 +303,7 @@ def gone(held: dict[str, Any]) -> bool:
     adapter, adapter_born = held.get('adapter_pid'), held.get('adapter_identity')
     if not isinstance(adapter, int) or not isinstance(adapter_born, str) or not adapter_born:
         return False
-    try:  # the runner died: what it left of its agent and terminals is stopped first, or the session waits
+    try:  # the runner died: what it left of its agent is stopped first, or the session waits
         swept(held)
     except (OSError, ValueError, subprocess.SubprocessError):
         return False

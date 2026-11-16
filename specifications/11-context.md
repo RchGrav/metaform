@@ -720,6 +720,7 @@ This section specifies the addressed-context design, the system's key innovation
 - Relates to: VIEW-005 (the flow drawn to touched nodes uses the same placement), LAYER-029, MCP-030, CTX-040, CTX-043.
 - Status: confirmed, 2026-10-15, in conversation with the owner (decision 16).
 - Amendment, 2026-10-18, the owner's decision, no ticket, landed with the change that removed the lock: the lock was withdrawn after its drawbacks were weighed, and replaced by the entry-point request (CTX-060). "(and is locked for writing until linked, decision 19)" no longer holds: a file with no exact ref places the agent nowhere and is written like any other.
+- Amendment, 2026-11-16, docs/plans/dispatch-owns-acp.md step 2: dispatch no longer offers ACP v1's client files and terminals, so the files are those of a tool call's diffs and locations alone; "and the client's own `fs/read_text_file` and `fs/write_text_file`" and the acceptance case for `fs/read_text_file` no longer hold. The client files were an editor feature, Metaform has no editor, the harnesses never used them, and ACP v2 removed them. The session state's `files` is now filled from the tool calls.
 
 ### CTX-043 A push waits for the agent's next turn and never interrupts the turn in flight
 
@@ -880,6 +881,7 @@ This section specifies the addressed-context design, the system's key innovation
   - Build: built 2026-10-18. `work_link` (src/metaform/modules/dispatch/resources/prompts.xml:194) is appended in `Session.prompted` for the role `worker` (src/metaform/modules/dispatch/runner.py:4017), once per runner (`link_asked`). Deleted: `LINK_LOCK`, `Session.locked`, `edit_locked`, `ruled`, and the prompts `write_unlinked` and `link_call`. `write_text_file` now refuses only for LAYER-029's claim. `placed()`, `sources_index`, `tool_detail`'s `exact` and the runner's cached sources index are unchanged.
   - Acceptance: test_a_worker_is_asked_once_to_link_entry_points_and_a_write_to_an_unlinked_file_goes_through (src/metaform/modules/dispatch/tests/test_dispatch.py:4546); test_a_burst_of_reads_of_linked_files_reads_the_sources_layer_once (:4590); test_dispatch_link_adds_the_ref_beside_the_elements_own_and_never_makes_an_element (:4564). Acceptance 1 above, its test, and the case still to add (a ref naming only `src/` leaves `src/fresh.py` locked) are withdrawn.
   - Status: built 2026-10-18. Open question 26 is withdrawn with the lock.
+- Amendment, 2026-11-16, docs/plans/dispatch-owns-acp.md step 2: dispatch no longer answers ACP v1's `fs/write_text_file`, so no write passes through the runner, and none is refused for LAYER-029's claim either; the claim still keeps another ticket on its elements from starting. The write part of the acceptance test is gone with it: test_a_worker_is_asked_once_to_link_entry_points.
 
 ### CTX-061 The lock holds in every permission mode, ahead of every automatic approval
 

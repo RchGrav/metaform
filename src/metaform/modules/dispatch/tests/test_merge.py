@@ -382,7 +382,7 @@ def test_the_shared_checkout_is_never_committed_or_removed_by_a_tickets_completi
 def test_shared_completion_preserves_peer_edits_and_carries_ticket_record(dispatch, repo, monkeypatch, board):
     from metaform.data import Store
     from metaform.modules.dispatch.merge import capture_state
-    from metaform.modules.dispatch.tests.test_completion_commit import session_for
+    from metaform.modules.dispatch.tests.test_completion_commit import edited, session_for
 
     dispatch.store.edit_work(dispatch.id, {'title': 'Owned feature'})
     with Store('proj', module='map').tables() as tx:
@@ -407,7 +407,7 @@ def test_shared_completion_preserves_peer_edits_and_carries_ticket_record(dispat
     monkeypatch.setattr(made.ctx, 'publish_async', publish)
 
     async def scenario():
-        await made.write_text_file('test', str(repo / 'README.md'), 'owned feature\n')
+        await edited(made, repo / 'README.md', 'owned feature\n')
         dispatch.store.finish_work(dispatch.id, 'Feature delivered.', 'Keep history independently readable.')
         await made.commit_done()
         await made.commit_done()
