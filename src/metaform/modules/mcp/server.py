@@ -570,7 +570,8 @@ def task_text(folder: Path, client: str | None = None, session: str | None = Non
     lines: list[str] = []
     if said := prompt_files.module('mcp', 'connect_use' if own else f'task_{catalog.task()}'):
         lines.append(said)
-    if said := prompt_files.module('mcp', 'connect_catalog'):
+    intake = not own and catalog.task() == 'intake'  # it records with the project tool alone: no catalog is described
+    if not intake and (said := prompt_files.module('mcp', 'connect_catalog')):
         lines.append(said)
     if not keyed:
         said = prompt_files.module('mcp', 'connect_unkeyed', handle=HANDLE)
@@ -1805,7 +1806,11 @@ BLOCKS: tuple[Block, ...] = (
 
 
 def links(agent: Agent) -> list[str]:
-    """The links of the instruction blocks that apply to `agent` now, in BLOCKS' order."""
+    """The links of the instruction blocks that apply to `agent` now, in BLOCKS' order. An agent a runner started on
+    the intake is linked its task alone: a procedure is run with the procedure and nothing beside it, so no rule,
+    glossary or module listing of the project reaches the reading it makes."""
+    if agent.task == 'intake' and not agent.own:
+        return [uri for block in BLOCKS if block.name == 'task' and (uri := block.link(agent))]
     return [uri for block in BLOCKS if (uri := block.link(agent))]
 
 

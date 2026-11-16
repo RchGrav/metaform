@@ -3365,6 +3365,8 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     block = 'metaform://task/person' if task is None else 'metaform://task/intake' if task == 'intake' else None
     links = ['metaform://rules', 'metaform://metaform', 'metaform://memory', 'metaform://modules',
              *([block] if block else []), 'metaform://proj']
+    if task == 'intake':  # a procedure is run with the procedure and nothing beside it: its task alone
+        links = [block]
     directive = prompt_files.module('mcp', 'connect_directive') or ''
     assert directive and 'metaform://' not in directive
     identity = {} if task is None else {'METAFORM_TASK_NAME': task, 'METAFORM_SESSION': f'links-{task}'}
@@ -3372,10 +3374,11 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
         monkeypatch.setenv(name, value)
 
     def blocks_for(client, session, keyed):
-        return {'metaform://rules': prompt_files.module('mcp', 'connect_rules'), 'metaform://metaform': glossary(mapped),
-                'metaform://memory': memory_text(mapped), 'metaform://modules': modules_text(mapped),
-                **({block: task_text(mapped, client, session, keyed)} if block else {}),
-                'metaform://proj': project_glossary_text(mapped, client)}
+        every = {'metaform://rules': prompt_files.module('mcp', 'connect_rules'), 'metaform://metaform': glossary(mapped),
+                 'metaform://memory': memory_text(mapped), 'metaform://modules': modules_text(mapped),
+                 **({block: task_text(mapped, client, session, keyed)} if block else {}),
+                 'metaform://proj': project_glossary_text(mapped, client)}
+        return {uri: every[uri] for uri in links}
 
     async def over_stdio(client, init):
         return init.instructions, {uri: (await client.read_resource(uri)).contents[0].text for uri in links}
