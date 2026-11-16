@@ -39,7 +39,8 @@ ONE_ENTRY = ('a command has one entry: add, update, delete, orphaned, map, help,
              '{"mashtrac.code.masher.widget": {}}')
 REF_FORM = 'the entry point of this functionality, or a discrete reference to it'
 DELETE_FORM = ('delete takes {} to delete the element, or {"wants": ["<path>"]} to remove wants; '
-               '{"wants": [{"element": "<path>", "ref": "<ref>"}]} removes the one want about that artifact')
+               '{"wants": [{"element": "<path>", "ref": "<ref>"}]} removes the one want about that artifact; '
+               '{"<overlay>": [0, 2]} removes the records at those positions of another overlay\'s list')
 STEP_FORM = 'a step is lowercase letters and digits, with single underscores between words'
 
 
@@ -408,6 +409,9 @@ class Form:
             here = [*keys, key]
             self.name(key, address, here)
             if as_object(value) is not None:
+                if key == 'position':
+                    raise refuse(f"'position' at '{where}' cannot name a field or an overlay: it is the tool's word "
+                                 "for a record's place in its list")
                 self.part(cast(dict[str, object], value), address.child(key), here, update)
             elif as_list(value) is not None:
                 raise Refusal('ELEMENT_NOT_IN_SKELETON', f"'{where}': {key} records do not go on overlay definitions")
@@ -483,6 +487,15 @@ class Form:
         if fields is None:
             raise refuse(DELETE_FORM)
         if not fields:
+            return
+        if len(fields) == 1 and 'wants' not in fields:
+            # Records of another overlay, by their positions in the list at this element.
+            ((key, positions),) = fields.items()
+            items = as_list(positions)
+            if not is_name(key) or not items or not all(
+                    isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in items) or len(
+                    set(cast(list[int], items))) != len(items):
+                raise refuse(DELETE_FORM)
             return
         if list(fields) != ['wants']:
             raise refuse(DELETE_FORM)

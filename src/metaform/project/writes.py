@@ -106,6 +106,7 @@ class Writer:
         defs = definitions(self.store.parts())
         tables = set(self.store.overlay_keys())
         overlay_writes: list[tuple[Change, str, list[dict[str, Scalar]] | None]] = []
+        placed: list[tuple[Change, str, list[tuple[int, dict[str, Scalar]]]]] = []
         want_writes: list[tuple[Change, list[dict[str, Scalar]]]] = []
         for change in changes:
             where = change.address.full
@@ -116,6 +117,10 @@ class Writer:
                                   f"written only to an overlay defined beneath {self.project}.overlay, such as "
                                   f"{self.project}.overlay.wants.", {'map': self.project})
                 checked = None
+                if records is not None and self.verb == 'update' and key != 'wants' and any(
+                        'position' in (as_object(record) or {}) for record in records):
+                    placed.append((change, key, self.placed(definition, change, key, records, key in tables)))
+                    continue
                 if records is not None:
                     checked = Records(definition, where, self.project, [*change.keys, key], self.command).check(
                         records, False)
@@ -147,6 +152,9 @@ class Writer:
         for (holder, element, ref), want in changed_wants.items():
             self.store.remove_wants(holder, element, ref)
             self.store.add_want(holder, element, want)
+        for change, key, changed in placed:
+            for position, record in changed:
+                self.store.replace_record(key, change.address.address, position, record)
         for change, key, records in overlay_writes:
             address = change.address.address
             if key in tables and (self.verb == 'update' or records is None):
@@ -154,6 +162,49 @@ class Writer:
             start = self.store.next_position(key, address) if records and self.verb == 'add' else 0
             for offset, record in enumerate(records or []):
                 self.store.insert_record(key, address, start + offset, record)
+
+    def current_records(self, definition: Definition, address: str) -> list[dict[str, object]]:
+        """The overlay's records at an address, as a read gives them."""
+        names = [name for name in definition.order if name != 'ref' and name in definition.fields]
+        out: list[dict[str, object]] = []
+        for row in self.store.records(definition.key, address, names):
+            record: dict[str, object] = {name: decode(definition.fields[name].kind, row[name]) for name in names
+                                         if row[name] is not None}
+            if row['ref'] is not None:
+                record['ref'] = row['ref']
+            out.append(record)
+        return out
+
+    def placed(self, definition: Definition, change: Change, key: str, records: list[object],
+               stored: bool) -> list[tuple[int, dict[str, Scalar]]]:
+        """An update whose records each give a `position` changes those records and leaves the rest of the list as it
+        is: the fields given are laid over the record at that position, null removing one, and the result is checked
+        whole. No corrected command is offered for these, since a corrected list without positions would replace the
+        whole list."""
+        where = change.address.full
+        current = self.current_records(definition, change.address.address) if stored else []
+        merged: dict[int, dict[str, object]] = {}
+        for record in records:
+            given = as_object(record)
+            position = given.get('position') if given is not None else None
+            if given is None or 'position' not in given:
+                raise refuse(f"update of {key} at '{where}': give a position in every record to change those "
+                             'records, or in none to replace the whole list')
+            if not isinstance(position, int) or isinstance(position, bool) or not 0 <= position < len(current):
+                held = (f'positions 0 to {len(current) - 1}' if current else 'no records')
+                raise refuse(f"position {position!r} of {key} at '{where}' is not a record there: the list holds "
+                             f'{held}')
+            if position in merged:
+                raise refuse(f"update of {key} at '{where}' names position {position} more than once")
+            laid = {**current[position], **{name: value for name, value in given.items() if name != 'position'}}
+            merged[position] = {name: value for name, value in laid.items() if value is not None}
+        order = sorted(merged)
+        try:
+            checked = Records(definition, where, self.project, [*change.keys, key], self.command).check(
+                [merged[position] for position in order], False)
+        except Refusal as refusal:
+            raise Refusal(refusal.code, refusal.message) from None
+        return list(zip(order, checked))
 
     def merge_wants(self, want_writes: list[tuple[Change, list[dict[str, Scalar]]]],
                     existing: dict[str, dict[str, Scalar]], definition: Definition,
@@ -386,6 +437,19 @@ class Writer:
             self.delete_part(address, bool(fields))
             return
         if address not in self.store.elements([address]):
+            return
+        if fields and 'wants' not in fields:
+            ((key, positions),) = fields.items()
+            definition = definitions(self.store.parts()).get(key)
+            if definition is None:
+                raise Refusal('OVERLAY_NOT_DEFINED', f"'{key}' at '{self.address.full}' is not an overlay of "
+                              f'{self.project}', {'map': self.project})
+            held = self.store.record_count(key, address) if key in self.store.overlay_keys() else 0
+            wrong = [position for position in cast(list[int], positions) if position >= held]
+            if wrong:
+                raise refuse(f"position {wrong[0]} of {key} at '{self.address.full}' is not a record there: the list "
+                             f"holds {f'positions 0 to {held - 1}' if held else 'no records'}")
+            self.store.delete_records_at(key, address, cast(list[int], positions))
             return
         if fields:
             targets: list[str] = []

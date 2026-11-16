@@ -90,7 +90,9 @@ HELP: dict[str, object] = {
     },
     'update': {
         'does': ("Changes fields of an element. A field set to null is removed; a field left out is unchanged. A "
-                 "wants record names its element and gives only the fields to change."),
+                 "wants record names its element and gives only the fields to change. A list written to another overlay "
+                 "replaces that overlay's list at the element; a record that gives its position, its place in the "
+                 "list counted from 0, changes that one record and leaves the others as they are."),
         'fields': {
             'technical_name, name, role, ref, status': 'As in add.',
             'wants': ("A list of records. Each holds element, and ref to say which want when the element has "
@@ -103,7 +105,9 @@ HELP: dict[str, object] = {
     'delete': {
         'does': ("Deletes an element with {}, or removes wants by naming their elements. A want named by its element "
                  "and ref, {\"element\": \"<path>\", \"ref\": \"<ref>\"}, removes that one want. An element that "
-                 "another element wants is not deleted; the refusal returns the command that removes that want."),
+                 "another element wants is not deleted; the refusal returns the command that removes that want. "
+                 "Records of another overlay are removed by their positions, {\"<overlay>\": [0, 2]}, and the "
+                 "records after them close up."),
         'examples': [{'delete': {'mashtrac.code.protocol.network.tracker.cs': {
                          'wants': ['mashtrac.code.masher.widget']}}},
                      {'delete': {'mashtrac.code.masher.widget': {}}}],

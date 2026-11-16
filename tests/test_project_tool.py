@@ -467,3 +467,32 @@ def test_the_project_root_holds_the_projects_own_fields(home):
     assert refusal(run({'add': {P: {'role': 'Defining Element'}}})) == ('FIELD_MISMATCH', None)
     assert refusal(run({'delete': {P: {}}})) == ('FIELD_MISMATCH', None)
     assert refusal(run({'nosuch': {}})) == ('NOT_FOUND', {'map': {}})
+
+
+def test_one_record_of_an_overlay_is_changed_or_removed_without_rewriting_the_list(mapped):
+    run({'add': {SPEC: SPEC_DEFINITION}})
+    blocks = [{'title': 'Purpose', 'level': 1}, {'title': 'Use', 'level': 2, 'draft': True}, {'title': 'Limits', 'level': 2}]
+    run({'add': {CS: {'project_specifications': blocks}}})
+
+    def stored():
+        return run({CS: {'project_specifications': {}}})[CS]['project_specifications']
+
+    # a record that gives its position is changed in place: the fields given are laid over it, null removes one
+    assert run({'update': {CS: {'project_specifications': [{'position': 1, 'title': 'Usage', 'draft': None}]}}}) == {
+        'status': 'ok'}
+    assert stored() == [blocks[0], {'title': 'Usage', 'level': 2}, blocks[2]]
+    before = stored()
+    wrong = [{'position': 1, 'level': 'two'}, {'position': 9, 'title': 'x'}, {'position': 0, 'title': None}]
+    for record in wrong:
+        refused = run({'update': {CS: {'project_specifications': [record]}}})
+        assert refusal(refused) == ('FIELD_MISMATCH', None)  # no corrected command: one would replace the list
+    assert refusal(run({'update': {CS: {'project_specifications': [{'position': 0, 'title': 'a'}, {'title': 'b'}]}}}))
+    assert stored() == before
+    # records are removed by position, and the ones after them close up
+    assert run({'delete': {CS: {'project_specifications': [0]}}}) == {'status': 'ok'}
+    assert stored() == [{'title': 'Usage', 'level': 2}, blocks[2]]
+    assert run({'update': {CS: {'project_specifications': [{'position': 1, 'title': 'Bounds'}]}}}) == {'status': 'ok'}
+    assert stored()[1] == {'title': 'Bounds', 'level': 2}
+    assert refusal(run({'delete': {CS: {'project_specifications': [5]}}})) == ('FIELD_MISMATCH', None)
+    assert refusal(run({'add': {f'{P}.overlay.notes': {'description': 'd', 'instruction': 'i', 'position': {
+        'type': 'number', 'rule': 'r', 'example': 1}}}}))[0] == 'FIELD_MISMATCH'  # the word is the tool's own

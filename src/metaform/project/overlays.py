@@ -20,7 +20,7 @@ from metaform.project.store import ELEMENT_FIELDS, Scalar
 
 # Names an overlay's key cannot take: the fields of an element, the words the tool answers in their place, and the
 # parts of an addressed read's answer.
-RESERVED = (*ELEMENT_FIELDS, 'refs', 'uri', 'dependencies', 'providers', 'wanted_by', 'overlays')
+RESERVED = (*ELEMENT_FIELDS, 'refs', 'uri', 'dependencies', 'providers', 'wanted_by', 'overlays', 'position')
 WANT_ORDER = ('element', 'why', 'how', 'direction', 'ref')
 
 

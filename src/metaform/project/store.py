@@ -347,6 +347,23 @@ class Store:
         self._rows(f'CREATE (:{_table(key)} {{address: $address, position: $position, ref: $ref{columns}}})',
                    address=address, position=position, ref=record.get('ref'), **values)
 
+    def replace_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
+        """Rewrite the one record at `position`; the other records of the list are not touched."""
+        self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address AND r.position = $position DELETE r',
+                   address=address, position=position)
+        self.insert_record(key, address, position, record)
+
+    def delete_records_at(self, key: str, address: str, positions: list[int]) -> None:
+        """Remove the records at `positions`, and close the gaps so a record's position stays its place in the list."""
+        self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address AND r.position IN $positions DELETE r',
+                   address=address, positions=positions)
+        rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN r.id, r.position '
+                          'ORDER BY r.position', address=address)
+        for index, (ident, position) in enumerate(rows):
+            if position != index:
+                self._rows(f'MATCH (r:{_table(key)}) WHERE r.id = $id SET r.position = $position', id=ident,
+                           position=index)
+
     def delete_records(self, key: str, address: str) -> None:
         self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address DELETE r', address=address)
 
