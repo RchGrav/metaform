@@ -22,7 +22,7 @@ import {FLOW} from '/page/app/flow/flow.js';
 import {flow3d} from '/page/app/flow/fx3d.js';
 import {flight, FLIGHT} from '/page/app/camera/flight.js';
 import {turn3d} from '/page/app/map3d/rotation.js';
-import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet, pivot3d, meetEnds} from '/page/app/camera/fly3d.js';
+import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet, meetEnds} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
 import {joinOf} from '/page/app/graph/data.js';
@@ -536,7 +536,6 @@ export function prepare3d() {
   const now = performance.now(), data = G.graphData();
   frameWhileSpreading(now, data);
   holdMet(data);  // the small area's met node, followed as the layout moves it, before the flight puts the camera
-  pivot3d(now, data);  // the point the camera turns about kept on the selected node, `PIVOT`
   flight(now);
   G.camera().updateMatrixWorld();
   colorGlass(data);

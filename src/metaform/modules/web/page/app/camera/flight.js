@@ -10,7 +10,7 @@ import {ballOf} from '/page/app/figures/agents.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {LABEL} from '/page/app/map3d/labels.js';
-import {small3d, fly3d, meetEnds, workShot, pivotEnds} from '/page/app/camera/fly3d.js';
+import {small3d, fly3d, meetEnds, workShot} from '/page/app/camera/fly3d.js';
 import {VIEW, PEEK, saveView} from '/page/app/views/settings.js';
 import {flatNow, flatFacing} from '/page/app/views/bar.js';
 import {resize} from '/page/app/views/lens.js';
@@ -115,7 +115,6 @@ function flightAt(now) {
 export function flyTo(to, {length = null, done = null} = {}) {
   if (!G || V3.eyes) return;  // seen through an agent's eyes, the camera is the agent's, `eyesOf`, and never flies
   V3.focus = V3.hold = null;  // a flight elsewhere lets the held node go; a meeting holds it again, `flyToSign`
-  pivotEnds();  // and the point turned about, which a flight to the selection's node takes again on arrival, `pivotOn`
   meetEnds();  // every flight starts with the whole scene drawn again; a meeting clears its foreground on arrival
   const now = performance.now(), under = FLIGHT.on ? flightAt(now) : null, here = under ? under.at : cameraNow();
   const goal = {...to, turn: here.turn + Math.atan2(Math.sin(to.turn - here.turn), Math.cos(to.turn - here.turn)),
