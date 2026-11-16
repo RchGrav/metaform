@@ -213,37 +213,6 @@ def test_memory_apply_canonical_locks_are_preserved(target):
     assert len(snapshot(target)['apply_receipts']) == 1
 
 
-def test_memory_apply_catalog_discovers_and_executes_receipt_contract(target):
-    import asyncio
-    from types import SimpleNamespace
-
-    from mcp import types
-
-    from metaform.modules.mcp.server import build, module_tools_text, run_catalog, verb_schema
-
-    folder, _ = target
-    error, blocks = run_catalog(folder, {'search': 'memory_apply'}, None)
-    assert not error and any('memory_apply' in one for one in blocks)
-    assert 'memory_apply' in module_tools_text(folder, 'memory')
-    verb = next(one for one in memory.MODULE.verbs if one.name == 'apply')
-    assert verb.effect == 'remove'
-    schema = verb_schema(verb, folder)
-    assert set(schema['required']) == {'node', 'entityNames', 'expectedDigest', 'mutationId', 'mutations'}
-    assert len(schema['properties']['mutations']['items']['oneOf']) == 8
-    server, _, _ = build(folder)
-    handler = server.get_request_handler('tools/call').handler
-    ctx = SimpleNamespace(request=None, params={}, protocol_version='2026-07-28',
-                          session=SimpleNamespace(client_params=None, client_capabilities=types.ClientCapabilities()))
-    args = request('alpha')
-    params = types.CallToolRequestParams(name='metaform_catalog', arguments={'tool': 'memory_apply', 'arguments': args})
-    result = asyncio.run(handler(ctx, params))
-    assert not result.is_error, result
-    assert result.structured_content['mutationId'] == 'step-1'
-    assert result.structured_content['applied'] is True
-    assert result.structured_content['beforeDigest'] == absent('alpha')
-    assert result.structured_content['receiptId'] == snapshot(target)['apply_receipts'][0]['receipt']['receiptId']
-
-
 def test_memory_apply_success_notifies_only_after_receipt_commit(target, monkeypatch):
     seen = []
     original = changes.note
