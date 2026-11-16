@@ -1,7 +1,6 @@
 """Map construction uses exact canonical grammar, with separately versioned operation guidance."""
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from pathlib import Path
 
@@ -69,20 +68,6 @@ def test_canonical_excerpt_changes_refresh_guide_identity_without_copying_rules(
     assert actual['source']['canonical']['sha256'] != first['source']['canonical']['sha256']
     assert actual['actual_version_id'] == first['actual_version_id']  # the wrapper did not change
     assert actual['rendered_fingerprint'] != first['rendered_fingerprint']
-
-
-def test_cli_and_explicit_resource_read_share_complete_guide_and_queue_only_delivery(run, project_folder):
-    from metaform.modules.mcp.server import read_resource_text
-
-    ctx = context('map', project_folder, session='guide-reader', surface='mcp')
-    expected = guidance.construction_component(ctx)
-    assert ctx.context_receipts == []
-    assert guidance.guide(ctx) == expected['text']
-    assert len(ctx.context_receipts) == 1
-    assert ctx.context_receipts[0]['component'] == expected
-    assert run('map', 'guide', cwd=project_folder).stdout.strip() == expected['text']
-    read = asyncio.run(read_resource_text(project_folder, guidance.URI, session='other-reader'))
-    assert read is not None and read[0] == expected['text']
 
 
 @pytest.mark.parametrize('tool,operation,construction', [

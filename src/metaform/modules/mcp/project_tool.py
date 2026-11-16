@@ -134,21 +134,95 @@ def build(folder: Path | None = None) -> Any:
                   on_list_prompts=no_prompts)
 
 
-def http_app() -> Any:
-    """The Streamable HTTP app, stateless: each request is answered on its own, as JSON, with no session kept. The
-    SDK checks each request's Host and Origin against this machine, so a web page cannot reach it."""
-    return build().streamable_http_app(host='127.0.0.1', stateless_http=True, json_response=True)
+def http_app(folder: Path | None = None, *, bind: str = '127.0.0.1', exposed: Any = None, verifier: Any = None) -> Any:
+    """The Streamable HTTP app, stateless: each request is answered on its own, as JSON, with no session kept. For a
+    local server the SDK checks each request's Host and Origin against this machine, so a web page cannot reach it.
+    For one reached from outside (`exposed`), as the cloud module's tunnel and the node service serve it, every
+    request's bearer is checked against its resource, with `verifier` (introspection at the Node's authorization
+    server by default, the broker's signed assertions through the tunnel), and a call to the tool needs the scope to
+    write."""
+    server = build(folder)
+    if exposed is None:
+        return server.streamable_http_app(host='127.0.0.1', stateless_http=True, json_response=True)
+    from . import oauth
+    app = server.streamable_http_app(host=bind, stateless_http=True, json_response=True,
+                                     transport_security=oauth.transport_security(exposed),
+                                     auth=oauth.auth_settings(exposed),
+                                     token_verifier=verifier or oauth.Introspection(exposed, exposed.mcp))
+    oauth.protect(app, exposed, lambda name: oauth.required_scope(name, 'write', False),
+                  getattr(verifier, 'allowed', None))
+    return app
+
+
+def serving(config: Any) -> Any:
+    """uvicorn's server waiting on its exit rather than looking for it ten times a second, QUAL-015: uvicorn's own main
+    loop wakes every 0.1 s to read `should_exit`; this one sleeps until the flag is set, by uvicorn's signal handler or
+    anything else, as the node module's server does."""
+    import asyncio
+    import contextlib
+
+    import uvicorn
+
+    class Serving(uvicorn.Server):
+        def __init__(self, config: uvicorn.Config) -> None:
+            self.loop: asyncio.AbstractEventLoop | None = None
+            self.exiting = asyncio.Event()
+            self.exit = False
+            super().__init__(config)
+
+        @property
+        def should_exit(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+            return self.exit
+
+        @should_exit.setter
+        def should_exit(self, value: bool) -> None:
+            self.exit = value
+            if value and self.loop is not None:
+                with contextlib.suppress(RuntimeError):  # its loop has closed: it is not serving
+                    self.loop.call_soon_threadsafe(self.exiting.set)
+
+        async def startup(self, sockets: list[Any] | None = None) -> None:
+            self.loop = asyncio.get_running_loop()
+            await super().startup(sockets=sockets)
+
+        async def main_loop(self) -> None:
+            await self.on_tick(0)  # the default headers, as uvicorn's own first tick sets them
+            if not self.should_exit:
+                await self.exiting.wait()
+    return Serving(config)
 
 
 def serve(port: int) -> None:
+    """Serve the tool alone on this machine, `metaform mcp project`."""
     import sys
 
     import uvicorn
 
-    from .server import serving
-
     print(f'Metaform project tool at http://127.0.0.1:{port}/mcp', file=sys.stderr, flush=True)
     serving(uvicorn.Config(http_app(), host='127.0.0.1', port=port, log_level='warning')).run()
+
+
+def serve_http(folder: Path, *, port: int, bind: str, public_url: str, introspection: str | None = None) -> None:
+    """Serve `folder` over Streamable HTTP, `metaform mcp serve --http`: one server any number of clients connect
+    to, with the opening of the person's own session. Beyond this machine only with the Node's authorization server
+    checking every caller. A2A is served on the same port while `mcp_a2a` is on."""
+    import sys
+
+    import uvicorn
+
+    from metaform import settings
+
+    from . import oauth
+    exposed = oauth.exposure(public_url, bind, introspection or oauth.DEFAULT_INTROSPECTION)
+    app = http_app(folder, bind=bind, exposed=exposed)
+    where = exposed.mcp if exposed is not None else f'http://127.0.0.1:{port}/mcp'
+    print(f'Metaform MCP server for {folder} at {where}', file=sys.stderr, flush=True)
+    if settings.value('mcp_a2a', folder):
+        from .a2a import attach
+        from .a2a_out import attach as follow_exchanges
+        print(attach(app, folder, port, exposed), file=sys.stderr, flush=True)
+        follow_exchanges(app, folder)  # what agents here sent to peers, followed to its end
+    serving(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
 
 
 def serve_stdio(folder: Path) -> None:

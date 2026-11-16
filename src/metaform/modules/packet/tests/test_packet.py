@@ -155,14 +155,6 @@ def test_a_packet_made_from_another_takes_the_next_place_in_its_lineage(run, mad
 
 
 @pytest.mark.req('PROJ-027')
-@pytest.mark.req('CLI-037')
-def test_the_packet_commands_are_commands_and_never_tools(run, made, home, monkeypatch):
-    monkeypatch.setenv('METAFORM_HOME', str(home))
-    from metaform.modules.mcp import server
-    assert not [name for name in server.tools(made[0]) if name.startswith('packet')]
-
-
-@pytest.mark.req('PROJ-027')
 def test_the_work_opens_with_any_zip_reader(made):
     _, packet = made
     assert zipfile.is_zipfile(packet)

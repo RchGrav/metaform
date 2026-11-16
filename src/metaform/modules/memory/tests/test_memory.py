@@ -74,51 +74,6 @@ def where(run, address, cwd, *more):
 
 
 @pytest.mark.req('LAYER-013')
-@pytest.mark.req('BASE-040')
-def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_shapes(run, mapped):
-    from metaform.modules.mcp import shaping
-    from metaform.modules.mcp.server import verb_schema
-    from metaform.modules.memory import MODULE
-    verbs = {verb.name: verb for verb in MODULE.verbs}
-    assert set(REFERENCE) <= set(verbs)
-    shapes = {name: verb_schema(verbs[name], mapped)['properties'] for name in REFERENCE}
-    text, texts = {'type': 'string'}, {'type': 'array', 'items': {'type': 'string'}}
-
-    def bare(schema):  # a schema without its descriptions, to compare with the reference's types
-        if isinstance(schema, dict):
-            return {key: bare(value) for key, value in schema.items() if key != 'description'}
-        return schema
-    reference = {
-        'create_entities': {'entities': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'name': text, 'entityType': text, 'observations': texts, 'title': text, 'why': text, 'cite': texts},
-            'required': ['name', 'entityType', 'observations']}}},
-        'create_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
-        'add_observations': {'observations': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'entityName': text, 'contents': texts, 'cite': texts}, 'required': ['entityName', 'contents']}}},
-        'delete_entities': {'entityNames': texts},
-        'delete_observations': {'deletions': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'entityName': text, 'observations': texts}, 'required': ['entityName', 'observations']}}},
-        'delete_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
-        'read_graph': {}, 'search_nodes': {'query': text}, 'open_nodes': {'names': texts}}
-    chassis = {'node', 'receiver', 'provider', 'address', 'project', 'layers', *shaping.SCHEMAS}
-    assert {name: {key: bare(value) for key, value in shape.items() if key not in chassis}
-            for name, shape in shapes.items()} == reference
-    assert shapes['create_entities']['entities']['items']['required'] == ['name', 'entityType', 'observations']
-    assert shapes['create_relations']['relations']['items']['required'] == ['from', 'to', 'relationType']
-    assert shapes['add_observations']['observations']['items']['required'] == ['entityName', 'contents']
-    assert shapes['delete_entities']['entityNames'] == {'type': 'array', 'items': {'type': 'string'},
-                                                        'description': 'An array of entity names to delete'}
-    assert shapes['delete_observations']['deletions']['items']['required'] == ['entityName', 'observations']
-    assert shapes['delete_relations']['relations']['items']['required'] == ['from', 'to', 'relationType']
-    assert shapes['search_nodes']['query']['type'] == 'string'
-    assert shapes['open_nodes']['names']['type'] == 'array'
-    assert all('node' in shape and 'node' not in verb_schema(verbs[name], mapped)['required']
-               for name, shape in shapes.items())
-
-
-@pytest.mark.req('LAYER-013')
 @pytest.mark.req('STORE-020')
 def test_the_whole_graph_behaves_as_the_reference_memory_server(run, mapped):
     made = mj(run, 'create_entities', J([entity('route', 'part', 'Drifts.'), entity('probe', 'part'),
@@ -698,26 +653,6 @@ def test_a_purpose_the_map_does_not_hold_or_cannot_tell_apart_is_refused_by_its_
     twice = m(run, 'create_entities', J([entity('x', 'fact')]), *PURPOSE, cwd=mapped, ok=False)
     assert twice.returncode == 2 and 'Know a route is alive.' in twice.stderr and 'Measure the route delay.' in twice.stderr
     assert mj(run, 'read_graph', cwd=mapped)['entities'] == []
-
-
-@pytest.mark.req('MAP-005')
-def test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id(run, mapped):
-    """What an agent reads of a command: its help on the command line, its MCP schema, which carries each noun's
-    help, a required one's included, and the refusal of a node written wrong. Every command that takes node also takes
-    receiver, provider and address."""
-    from metaform.modules.mcp.server import verb_schema
-    from metaform.modules.memory import MODULE
-    for verb in MODULE.verbs:
-        if verb.name == 'unjoin':  # a memory join's own id, which joins and orphaned give
-            continue
-        assert 'join:<id>' not in run('help', 'memory', verb.name, cwd=mapped).stdout, verb.name
-        schema = verb_schema(verb, mapped)
-        assert 'join:<id>' not in json.dumps(schema), verb.name
-        if 'node' in schema['properties']:
-            named = {'provider', 'address'} if verb.name == 'note' else {'receiver', 'provider', 'address'}
-            assert named <= set(schema['properties']), verb.name
-    wrong = m(run, 'read_graph', 'node=join:', cwd=mapped, ok=False)
-    assert wrong.returncode == 2 and 'join:<id>' not in wrong.stderr
 
 
 @pytest.mark.req('STORE-020')

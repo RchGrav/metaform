@@ -1,13 +1,11 @@
-"""mcp: serves Metaform's tools to AI tools over MCP, MCP-001.
+"""mcp: serves the `project` tool to AI tools over MCP, MCP-001.
 
-`metaform mcp serve` starts the server over stdio, and `metaform mcp serve
---http` over Streamable HTTP on 127.0.0.1, MCP-002, with A2A beside it on the
-same port, `a2a.py`, while `mcp_a2a` is on. It is declared for the CLI
-only, so it is never itself a tool. Every tool comes from a module verb on the
-folder's command surface, `<module>_<verb>`, or is one of the chassis's own
-commands, `metaform_<command>`, MCP-003; the server gets no private access to
-the chassis. `mcp a2a_send`, `a2a_exchanges` and `a2a_cancel` are its own tools: an agent here sends an A2A peer
-the person names work about an Address and follows it there, `a2a_out.py`, MCP-040 to MCP-043.
+`metaform mcp serve` serves one agent over stdio: the tool, and at connect one line with the links to the agent's
+rules and its task (`project_tool.py`, `opening.py`). `metaform mcp serve --http` serves a folder over Streamable
+HTTP, with A2A beside it on the same port, `a2a.py`, while `mcp_a2a` is on, and `metaform mcp project` serves the
+tool alone. No command is a tool: an agent runs `metaform <module> <verb>` in its shell. `mcp a2a_send`,
+`a2a_exchanges` and `a2a_cancel` send an A2A peer the person names work about an Address and follow it there,
+`a2a_out.py`, MCP-040 to MCP-043.
 """
 from __future__ import annotations
 
@@ -61,37 +59,6 @@ settings.choice('mcp_transport', ['stdio', 'http'], 'stdio', scope='global', lab
                 details='stdio is the default: a host starts metaform mcp serve in the folder it opens, so each '
                         'folder is served as itself. http registers http://127.0.0.1:<mcp_port>/mcp, which serves '
                         'the folder metaform mcp serve --http was started in, for every AI tool that connects.')
-settings.boolean('mcp_apps', True, label='Map views in AI tools',
-                 help='Offer the map, node, agent trace and glossary views to AI tools that show MCP Apps, such as '
-                      'Claude Desktop.',
-                 details='map_where and map_roots then open the map focused on their address, map_item and map_node '
-                         'the node with its numbered items, dispatch_sessions and dispatch_start the ticket\'s agent '
-                         'trace, followed while it works, and metaform_instructions and map_glossary the glossary, inside the '
-                         'conversation. Selecting a node there tells the agent which Address you are looking at, and '
-                         'an Address the agent names in a call turns the open views to it. AI tools without MCP Apps, '
-                         'such as Claude Code, get the text as before.')
-settings.choice('mcp_apps_offer', ['declared', 'always'], 'declared', label='Offer views to',
-                help='declared offers the views only to AI tools that say they show MCP Apps; always offers them to '
-                     'every AI tool.',
-                details='MCP Apps asks an AI tool to declare the io.modelcontextprotocol/ui extension, and a server to '
-                        'check for it. Some tools show the views without declaring it, such as the specification\'s own '
-                        'test host, basic-host. With always, each view-opening tool carries its view and the views\' '
-                        'own tool metaform_view is listed to every AI tool; one that does not show MCP Apps may list '
-                        'metaform_view to its agent, which only reads.')
-settings.choice('mcp_search_fetch', ['remote', 'always', 'never'], 'remote', label='search and fetch tools',
-                help='Offer the two tools ChatGPT calls by name, search and fetch: remote offers them over HTTP and the '
-                     'cloud tunnel, always everywhere, never nowhere.',
-                details='ChatGPT\'s connectors and deep research call tools named exactly search and fetch. Both only '
-                        'read: search finds layer items, memories and terms and returns metaform:// ids, fetch reads '
-                        'one. Over stdio a local agent has the real tools (map_search, memory_search_nodes), so remote '
-                        'leaves the two generic ones out there.')
-settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
-                help='On a newer store or changed code on disk, relay this connection to the code on disk, or '
-                     'require a manual restart.',
-                details='Relay preserves the host connection and retries calls refused before dispatch, and serves a '
-                        'tool call made after the package code on disk changed from that code. Manual returns the '
-                        'schema error and serves the code it started with. Unchanged package code never starts a '
-                        'replacement.')
 # A2A, P004 and P005: other agents send work to Metaform as tickets.
 settings.boolean('mcp_a2a', True, scope='global', label='Serve A2A',
                  help='Serve A2A beside MCP on metaform mcp serve --http, so other agents can send this home tickets.',
@@ -130,9 +97,6 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
     served = sys.modules.get(f'{__name__}.a2a')
     if served is not None:
         served.heard(payload)
-    shown = sys.modules.get(f'{__name__}.views')  # the trace views' held reads, views.Traces
-    if shown is not None:
-        shown.heard(payload)
 
 
 def serve(ctx: Context) -> None:
@@ -140,9 +104,9 @@ def serve(ctx: Context) -> None:
         # Over stdio, for the one agent whose AI tool or runner started it: the project tool and the agent's opening.
         from .project_tool import serve_stdio
         return serve_stdio(Path(ctx.folder))
-    from .server import serve as run_server
-    run_server(Path(ctx.folder), http=bool(ctx.setting('mcp_http')), port=int(ctx.setting('mcp_port')),
-               bind=str(ctx.setting('mcp_bind') or '127.0.0.1'), public_url=str(ctx.setting('mcp_public_url') or ''))
+    from .project_tool import serve_http
+    serve_http(Path(ctx.folder), port=int(ctx.setting('mcp_port')), bind=str(ctx.setting('mcp_bind') or '127.0.0.1'),
+               public_url=str(ctx.setting('mcp_public_url') or ''))
 
 
 def serve_project(ctx: Context) -> None:
@@ -171,11 +135,6 @@ def carry_peers(ctx: Context | None = None) -> list[str]:
     return carry(ctx)
 
 
-def agent_actions(ctx: Context, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
-    from .server import action_bindings
-    return action_bindings(ctx, capabilities)
-
-
 def list_peers(ctx: Context) -> Any:
     from .a2a_peers import show
     return show(ctx)
@@ -198,7 +157,7 @@ class HttpService:
 
     @staticmethod
     def http_app(folder: Path, **given: Any) -> Any:
-        from .server import http_app
+        from .project_tool import http_app
         return http_app(folder, **given)
 
     @staticmethod
@@ -233,12 +192,12 @@ def agent_opening(folder: Path, task: str | None) -> str:
 
 MODULE = Module(
     id='mcp',
-    summary="Serve Metaform's tools to AI tools over MCP.",
-    purpose="Serves Metaform's tools to AI tools over MCP. Every tool is also a metaform command on the CLI. "
+    summary='Serve the project tool to AI tools over MCP.',
+    purpose='Serves the project tool to AI tools over MCP. Every command is run on the command line. '
             'Details: metaform help mcp.',
-    details='A host starts it with uvx --from <source> metaform mcp serve. It serves the folder it starts in, '
-            "whatever that folder's command surface; the surface narrows the tools it serves. With --http it serves "
-            'Streamable HTTP at http://127.0.0.1:<mcp_port>/mcp until stopped.',
+    details='A host starts it with uvx --from <source> metaform mcp serve. It serves the folder it starts in: one '
+            "tool, project, and the agent's rules and task. With --http it serves Streamable HTTP at "
+            'http://127.0.0.1:<mcp_port>/mcp until stopped.',
     verbs=(Verb('serve', serve, 'Serve the MCP server over stdio, or with --http over Streamable HTTP.',
                 switches=('mcp_http', 'mcp_port', 'mcp_bind', 'mcp_public_url'),
                 surfaces=('cli',), transport=True),
@@ -290,6 +249,5 @@ MODULE = Module(
     tables=TABLES,
     start=carry_peers,
     subscriptions=(Subscription('map.changed', changed),),
-    provides=(Provides('mcp.http', HttpService()), Provides('agent.opening', agent_opening),
-              Provides('agent.actions', agent_actions)),
+    provides=(Provides('mcp.http', HttpService()), Provides('agent.opening', agent_opening)),
 )

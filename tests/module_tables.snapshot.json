@@ -2477,131 +2477,7 @@
    }
   }
  },
- "intake": {
-  "version": 1,
-  "compatible_from": 1,
-  "tables": {
-   "assessment_history": {
-    "place": "metaform",
-    "key": [
-     "id"
-    ],
-    "columns": {
-     "at": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "by": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "condition": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "evidence": [
-      "json",
-      "TEXT",
-      false,
-      null
-     ],
-     "id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "node_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "node_kind": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "source_item": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ]
-    },
-    "indexes": [],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "assessments": {
-    "place": "metaform",
-    "key": [
-     "node_kind",
-     "node_id"
-    ],
-    "columns": {
-     "at": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "by": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "condition": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "evidence": [
-      "json",
-      "TEXT",
-      false,
-      null
-     ],
-     "node_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "node_kind": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "source_item": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ]
-    },
-    "indexes": [],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   }
-  }
- },
+ "intake": null,
  "map": {
   "version": 26,
   "compatible_from": 9,
@@ -5539,7 +5415,7 @@
   }
  },
  "roundtables": {
-  "version": 6,
+  "version": 8,
   "compatible_from": 5,
   "tables": {
    "events": {
@@ -5610,6 +5486,68 @@
       "text",
       "TEXT",
       true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "live_summaries": {
+    "place": "project",
+    "key": [
+     "table_id"
+    ],
+    "columns": {
+     "error": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "permissions": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      "'idle'"
+     ],
+     "table_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "through_seq": [
+      "int",
+      "INTEGER",
+      true,
+      "0"
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "usage": [
+      "json",
+      "TEXT",
+      false,
       null
      ]
     },
@@ -5910,6 +5848,12 @@
      "task_id": [
       "text",
       "TEXT",
+      false,
+      null
+     ],
+     "token_budget": [
+      "int",
+      "INTEGER",
       false,
       null
      ],

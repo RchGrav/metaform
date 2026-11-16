@@ -1241,17 +1241,6 @@ def test_the_markdown_document_is_written_to_a_file_when_one_is_named(run, descr
     assert target.read_text(encoding='utf-8') == run('map', 'markdown', cwd=described).stdout
 
 
-@pytest.mark.req('MAP-052')
-@pytest.mark.req('MAP-059')
-@pytest.mark.req('CLI-037')
-def test_the_markdown_document_is_a_command_and_never_a_tool(run, described, home, monkeypatch):
-    """Writing a document is a person's or an orchestrator's act; it adds nothing to what an agent meets."""
-    monkeypatch.setenv('METAFORM_HOME', str(home))
-    from metaform.modules.mcp import server
-    names = set(server.tools(described))
-    assert 'map_where' in names and 'map_markdown' not in names and 'map_xml' not in names
-
-
 @pytest.fixture(params=['timer-first', 'alarm-first'])
 def recorded(run, tmp_path, monkeypatch, request):
     """An intake in the metaform's shape: a CQU receiving from the DE, the DE receiving from an alarm and from a
@@ -1472,18 +1461,6 @@ def test_a_question_answered_by_mistake_is_reopened_and_waits_again_with_its_sug
     refused = run('map', 'reopen', told.id, cwd=mapped, ok=False)  # only a question is reopened
     assert refused.returncode != 0 and 'Only a question is reopened' in refused.stderr + refused.stdout
     assert j(run, 'messages', 'kind=message', 'open=false', cwd=mapped)['results'][0]['id'] == told.id
-
-
-@pytest.mark.req('MAP-050')
-@pytest.mark.req('CLI-037')
-def test_reopening_a_question_is_a_command_and_never_a_tool(run, described, home, monkeypatch):
-    """Reopening is the person's act, from the page and the command line; it adds nothing to what an agent meets."""
-    monkeypatch.setenv('METAFORM_HOME', str(home))
-    from metaform.modules.mcp import server
-    names = set(server.tools(described))
-    assert 'map_reply' in names and 'map_reopen' not in names
-    listed = set(server.listing(described))  # every tool the server lists, one per command
-    assert 'map_reply' in listed and 'map_reopen' not in listed
 
 
 @pytest.mark.req('STORE-025')
@@ -2117,18 +2094,6 @@ def test_map_work_at_an_element_lists_the_tickets_on_the_joins_it_receives_or_pr
     assert listed(f'node=join:{alarm.id}', 'open=true') == [on_join]
     # The web panel's read of one object stays that object's own records.
     assert [row.id for row in store.work(Node('element', 'code.alarm.audible'), limit=0).results] == [on_alarm]
-
-
-@pytest.mark.req('MAP-005')
-def test_map_work_never_tells_an_agent_to_name_a_node_by_a_join_id(run, mapped):
-    """What an agent reads of a verb: its help on the command line and its MCP schema, which carries each noun's
-    help, a required one's included."""
-    from metaform.modules.map import MODULE
-    from metaform.modules.mcp.server import verb_schema
-    verbs = {verb.name: verb for verb in MODULE.verbs}
-    for name in ('work',):
-        assert 'join:<id>' not in run('help', 'map', name, cwd=mapped).stdout, name
-        assert 'join:<id>' not in json.dumps(verb_schema(verbs[name], mapped)), name
 
 
 @pytest.mark.req('MAP-005')

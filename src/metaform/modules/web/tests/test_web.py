@@ -12203,33 +12203,6 @@ def briefed(run, mapped):
 
 
 @pytest.mark.req('MCP-037')
-def test_the_page_reads_a_nodes_brief_and_items_exactly_as_an_agent_reads_them(run, web, mapped):
-    from metaform.modules.mcp import server as mcp
-    briefed(run, mapped)
-    started(run)
-    status, body = api(web, '/api/brief?project=proj&address=code.timer.kitchen')
-    assert status == 200, body
-    assert body['text'] == mcp.brief(mapped, 'code.timer.kitchen')            # the resource an agent reads, exactly
-    assert body['uri'] == 'metaform://code.timer.kitchen' and body['budget'] == 2048
-    assert body['bytes'] == len(body['text'].encode('utf-8')) and body['brief']['element']['address'] == 'code.timer.kitchen'
-    numbers = [item['number'] for item in body['items']]
-    assert numbers == sorted(numbers, reverse=True) and body['latest']['number'] == numbers[0]
-    by_kind = {item['kind']: item for item in body['items']}
-    assert by_kind['question']['title'] == 'Which tick source?' and by_kind['question']['why'] == 'The drift depends on it'
-    memory = by_kind['memory']
-    assert (memory['title'], memory['why']) == ('Countdown drifts', 'A cook trusts the time left.')
-    assert 'nextCursor' not in body                                        # one page holds them all
-    status, found = api(web, f'/api/item?project=proj&item={memory["item"].replace("#", "%23")}')
-    assert status == 200 and found['text'] == mcp.item(mapped, 'code.timer.kitchen', memory['number'])
-    assert any('code.alarm.audible#' in link for link in found['links'])  # a link to walk to, address#n
-    assert api(web, '/api/item?project=proj&item=code.timer.kitchen%23fff')[0] == 404
-    assert api(web, '/api/brief?project=proj&address=code.nowhere')[0] == 400
-    # the AI tool's map view reads the same answers through metaform_view, so it draws the same brief and items
-    assert plain(mcp.view_read(mapped, 'brief', {'address': 'code.timer.kitchen'})) == body
-    assert plain(mcp.view_read(mapped, 'item', {'item': memory['item']})) == found
-
-
-@pytest.mark.req('MCP-037')
 def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped,
                                                                                                 monkeypatch):
     from metaform import loader, settings
@@ -12429,42 +12402,6 @@ def test_the_export_menu_copies_and_saves_the_2d_map_as_mermaid_that_mermaid_dra
 
 
 @pytest.mark.req('MCP-037')
-def test_the_brief_and_the_mcp_view_list_a_nodes_items_from_one_read_per_module_past_deleted_ones(
-        run, web, mapped, monkeypatch):
-    import time
-
-    from metaform import module as chassis
-    from metaform.modules.mcp import server as mcp
-    run('set', '--layers', ','.join([*TOGGLED, 'memory']), cwd=mapped)
-    made = [{**entity(f'drift {n}', f'Drift seen {n}.'), 'why': f'Seen {n}.'} for n in range(80)]
-    remember(run, mapped, 'create_entities', made, 'element:code.timer.kitchen')
-    remember(run, mapped, 'delete_entities', [f'drift {n}' for n in range(40, 80)])
-    started(run)
-    used = []
-    listed = chassis.node_items
-    monkeypatch.setattr(chassis, 'node_items', lambda *args, **kwargs: used.append(args[1]) or listed(*args, **kwargs))
-    read_one = chassis.item_read
-    monkeypatch.setattr(chassis, 'item_read', lambda *args, **kwargs: used.append('item_read') or read_one(*args,
-                                                                                                          **kwargs))
-    began = time.monotonic()
-    status, body = api(web, '/api/brief?project=proj&address=code.timer.kitchen&kind=memory')
-    took = time.monotonic() - began
-    assert status == 200, body
-    assert len(body['items']) == 40 and 'nextCursor' not in body
-    assert [one['title'] for one in body['items'][:2]] == ['Drift seen 39.', 'Drift seen 38.']
-    assert body['items'][0]['why'] == 'Seen 39.' and body['kinds'] == ['memory']
-    viewed = mcp.view_read(mapped, 'items', {'address': 'code.timer.kitchen'})
-    assert [one['item'] for one in viewed['items'] if one['kind'] == 'memory'] == [one['item'] for one in body['items']]
-    assert used == ['code.timer.kitchen']                                 # the view's list is node_items's, read
-    direct = listed(mapped, 'code.timer.kitchen', kinds=('memory',), project='proj')  # without one item_read
-    assert [one['item'] for one in direct['items']] == [one['item'] for one in body['items']]  # and the page's too
-    assert took < 3, took                                                 # one read per module, not one per number
-    assert api(web, '/api/brief?project=proj&address=code.timer.kitchen&cursor=zz')[0] == 400  # not a cursor given
-    work = api(web, '/api/brief?project=proj&address=code.timer.kitchen&kind=work')[1]['items']
-    assert [one['kind'] for one in work] == ['work']                     # past forty memories, the one ticket
-
-
-@pytest.mark.req('MCP-037')
 def test_on_a_phone_the_brief_wraps_its_tree_names_its_node_as_the_map_and_clears_the_chat_tab(
         run, web, mapped, browser):
     page, problems = brief_page(run, web, mapped, browser)
@@ -12519,46 +12456,6 @@ def test_the_brief_and_what_the_agent_sees_are_page_views_and_no_tool_runs_a_ver
             if item.verb is not None:
                 verb = verbs[item.verb]
                 assert verb.effect == 'read' and 'file' not in {noun.name for noun in verb.nouns}, (owner, item.id)
-
-
-@pytest.mark.req('MCP-037')
-def test_the_mcp_views_items_page_through_with_the_cursor_each_page_gives_and_kinds_skip_other_modules(
-        run, mapped, monkeypatch):
-    import dataclasses
-
-    from metaform import module as chassis
-    from metaform.data import Store
-    from metaform.modules.mcp import server as mcp
-    run('set', '--layers', ','.join([*TOGGLED, 'memory']), cwd=mapped)
-    remember(run, mapped, 'create_entities', [entity(f'drift {n}', f'Drift seen {n}.') for n in range(20)],
-             'element:code.timer.kitchen')
-    whole = [one['item'] for one in chassis.node_items(mapped, 'code.timer.kitchen', limit=1000)['items']]
-    monkeypatch.setattr(mcp, 'VIEW_LIMIT', 7)
-    pages, cursor = [], None
-    while True:  # each page's nextCursor passed back unchanged, as MCP pages a list
-        page = mcp.view_read(mapped, 'items', {'address': 'code.timer.kitchen', **({'cursor': cursor} if cursor else {})})
-        pages.append([one['item'] for one in page['items']])
-        cursor = page.get('nextCursor')
-        if cursor is None:
-            break
-    assert len(pages) >= 3 and [item for page in pages for item in page] == whole and len(set(whole)) == len(whole)
-    with pytest.raises(chassis.Stop):
-        mcp.view_read(mapped, 'items', {'address': 'code.timer.kitchen', 'cursor': 'not one'})
-    # a list of one kind reads only the modules that number that kind
-    real, asked = chassis.surface, []
-    monkeypatch.setattr(chassis, 'surface', lambda folder: [dataclasses.replace(
-        module, items_at=lambda ctx, *rest, module=module: asked.append(module.id) or module.items_at(ctx, *rest))
-        if module.items_at else module for module in real(folder)])
-    work = chassis.node_items(mapped, 'code.timer.kitchen', kinds=('work',))['items']
-    assert [one['kind'] for one in work] == ['work'] and 'memory' not in asked and 'map' in asked
-    # completing #n reads the address's counter, not its items
-    read = []
-    monkeypatch.setattr(chassis, 'node_items', lambda *args, **kwargs: read.append(args))
-    monkeypatch.setattr(chassis, 'item_read', lambda *args, **kwargs: read.append(args))
-    top = Store('proj').latest_number('code.timer.kitchen')
-    assert mcp._numbers(mapped, 'code.timer.kitchen', '1') == [f'{n:x}' for n in range(top, 0, -1)
-                                                               if f'{n:x}'.startswith('1')]
-    assert mcp._numbers(mapped, 'code.timer.kitchen', 'zz') == [] and read == []
 
 
 @pytest.mark.req('VIEW-011')

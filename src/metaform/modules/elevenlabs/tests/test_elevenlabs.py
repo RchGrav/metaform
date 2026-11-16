@@ -176,23 +176,6 @@ def test_voice_named_asks_again_after_elevenlabs_failed_once(eleven, monkeypatch
     assert eleven('api').voice_named('Daniel') == 'abcdefghijklmnopqrst' and len(calls) == 2
 
 
-def test_showing_the_settings_and_an_agents_tool_list_never_ask_elevenlabs(run, eleven, monkeypatch, tmp_path):
-    """The model choices are computed without the network, though the key is set: ElevenLabs slow or down never holds
-    up config --show, help or an agent's tools/list."""
-    from metaform import settings
-    from metaform.modules.mcp import server
-    monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
-    calls = []
-
-    def urlopen(request, timeout=None):
-        calls.append(request.full_url)
-        raise urllib.error.URLError('refused')
-    monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
-    run('config', '--show')
-    server._setting_type(settings.SCHEMA['elevenlabs_model'], tmp_path)
-    assert calls == []
-
-
 def test_disabling_the_module_withdraws_the_engine_from_voice(run, eleven, tmp_path):
     from metaform.module import provided
     assert provided(tmp_path, 'voice.engine')

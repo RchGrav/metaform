@@ -21,7 +21,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from metaform.data import Node, Store
+from metaform.data import Store
 
 
 def own(project_id):
@@ -152,33 +152,6 @@ def test_mcp_is_a_module_and_off_means_no_server(run, module_row, tmp_path):
 
 HISTORY_TOOLS = {'metaform_add_origin', 'metaform_list_origins', 'metaform_add_variant', 'metaform_list_variants',
                  'metaform_extract'}
-
-
-@pytest.mark.req('VIEW-045')
-def test_the_persons_own_agent_is_told_once_when_the_map_it_reads_changes(run, home, mapped, monkeypatch):
-    """UX review round 2, 2026-10-17 (project-scope F1): the person's own agent follows the active base, and was never
-    told when it changed. Its next call after a switch says which map it reads now, once; a pinned agent, or any
-    other agent, is told nothing (decision pending Rich's confirmation, wording his to give)."""
-    from metaform import home as metaform_home
-    from metaform.modules.mcp.server import _READ_ON, map_moved
-    monkeypatch.setitem(_READ_ON, 'proj', '')
-    _READ_ON.pop('proj')
-    monkeypatch.delenv('METAFORM_BASE', raising=False)
-
-    def moved(task: str) -> str | None:  # the agent's MCP server, as its runner's environment names its task
-        monkeypatch.setenv('METAFORM_TASK_NAME', task)
-        try:
-            return map_moved('proj')
-        finally:
-            monkeypatch.delenv('METAFORM_TASK_NAME')
-    assert moved('user_agent') is None, 'a first call is told nothing'
-    run('map', 'add-base', 'fresh', '--confirm', cwd=mapped)
-    assert metaform_home.active_base('proj').name == 'fresh'
-    assert moved('user_agent') == ('The person made fresh the active map: your map tools read fresh from here; main '
-                                   'is kept as it was.')
-    assert moved('user_agent') is None, 'once per change'
-    run('activate', 'base', 'main', cwd=mapped)
-    assert moved('project_agent') is None, 'a project agent stays on its own base and is told nothing here'
 
 
 LOOPBACK = ('127.0.0.1', 'localhost', '::1')
@@ -517,7 +490,6 @@ class Served:
         import threading
 
         import uvicorn
-
         from metaform.modules.mcp.server import http_app
         with socket.socket() as held:
             held.bind(('127.0.0.1', 0))
@@ -565,46 +537,7 @@ async def heard_until(heard, method, count, limit=5):
         await asyncio.sleep(0.05)
 
 
-@pytest.mark.req('MCP-017')
-def test_the_install_proof_passes_the_real_server_on_the_july_wire(home, mapped):
-    from metaform.probe import probe
-    proof = probe([sys.executable, '-m', 'metaform', 'mcp', 'serve'], cwd=mapped,
-                  env={**os.environ, 'METAFORM_HOME': str(home)})
-    assert proof.ok and proof.tools >= 1, proof.reason  # the person's own session starts with metaform_catalog
-    assert proof.instructions.strip() == over_mcp(mapped).strip()
-
-
 SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packet', 'template', 'web')
-
-
-@pytest.mark.req('MCP-007')
-def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_has_no_intake(run, home, mapped,
-                                                                                             tmp_path, monkeypatch,
-                                                                                             in_project_store):
-    """metaform://firstrun, intake's no_intake as written, is linked while the project has no intake, with the register
-    step while the folder is not registered; never once there is an intake, and never to a dispatched agent."""
-    from importlib import resources
-
-    from metaform import prompt_files
-    from metaform.modules.mcp.server import block_text, connect_instructions, task_text
-    here = resources.files('metaform.modules.intake')
-    bare = tmp_path / 'bare'
-    bare.mkdir()
-    run('add', 'project', 'bare', str(bare))
-    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://firstrun',
-                                                           'metaform://task/person']
-    first = prompt_files.required(here, 'no_intake')
-    assert block_text(bare, 'metaform://firstrun') == first
-    assert first not in task_text(bare, None, 'process:test-firstrun')  # served once, as its own block
-    assert 'metaform://firstrun' not in connect_instructions(mapped)
-    assert block_text(mapped, 'metaform://firstrun') is None
-    outside = tmp_path / 'outside'
-    outside.mkdir()
-    step = '   ' + prompt_files.required(here, 'register_step') + '\n'
-    assert 'metaform://firstrun' in connect_instructions(outside)
-    assert block_text(outside, 'metaform://firstrun') == prompt_files.required(here, 'no_intake', register=step)
-    monkeypatch.setenv('METAFORM_SESSION', 'r1')  # an agent a runner started
-    assert 'metaform://firstrun' not in connect_instructions(bare)
 
 
 def a2a(folder, calls):
@@ -822,30 +755,6 @@ def every_listed(wire, capabilities):
 FORMS = {'elicitation': {'form': {}}}
 
 
-@pytest.mark.req('MCP-031')
-def test_enabled_modules_rules_close_the_glossary_and_a_rule_without_its_why_stops_its_module(run, home, mapped,
-                                                                                               user_module,
-                                                                                               module_row):
-    """`<rules>` in a module's prompts.xml: each rule of each enabled module is one line after the tool index in
-    metaform://modules, prefixed with its module; a rule without a why is refused as any faulty declaration is."""
-    from metaform import prompt_files
-    run('enable', 'memory')
-    rules = prompt_files.module_rules('memory')
-    assert any('Record each memory at the RE' in rule and 'Join rule' in why for rule, why in rules)
-    folder = user_module('ruled', '''
-        from metaform.module import Module
-        SUPPORTED_OS = ('linux', 'macos', 'windows')
-        MODULE = Module(id='ruled', summary='Rules.', purpose='Shows a rule.')
-    ''')
-    (folder / 'resources').mkdir()
-    (folder / 'resources' / 'prompts.xml').write_text('<prompts><rules><rule>No reason given.</rule></rules></prompts>')
-    run('enable', 'ruled', ok=False)
-    assert 'has no why' in ' '.join(module_row('ruled', cwd=mapped))
-    run('disable', 'memory')
-    from metaform.modules.mcp.server import modules_text
-    assert 'metaform://memory/tools' not in modules_text(mapped)
-
-
 # Changes that concern no task, no followed ticket t1 and no exchange of the project 'proj': another project's, an
 # agent's thread lines and signals, another ticket's, its sessions'.
 UNRELATED = (
@@ -857,78 +766,6 @@ UNRELATED = (
     {'project': 'proj', 'tables': ['work', 'work_steps'], 'work_ids': ['t2'], 'session_ids': [], 'kinds': ['ticket']},
     {'project': 'proj', 'tables': ['dispatch.sessions'], 'work_ids': ['t2'], 'session_ids': ['s2'], 'kinds': ['session']},
 )
-
-
-@pytest.mark.req('BASE-030')
-def test_a_task_hears_a_cancel_from_another_process_and_reads_nothing_for_changes_that_name_no_task(monkeypatch):
-    """The owner of a running task reads its own task rows only on a change naming the tool tasks, CLAUDE.md
-    Architecture section 2: a burst of changes that do not costs no read, and nothing wakes on a clock."""
-    import anyio
-    import anyio.lowlevel
-
-    from metaform.modules.mcp import task_records, tasks
-    reads: list[list[str]] = []
-    monkeypatch.setattr(task_records, 'ended', lambda project, running: reads.append(list(running)) or list(running))
-
-    async def main() -> bool:
-        scope = anyio.CancelScope()
-        running = tasks.Running(scopes={'t1': scope}, project='proj', token=anyio.lowlevel.current_token())
-
-        def burst() -> None:  # on another thread, as the listener hears them
-            for _ in range(20):
-                for payload in UNRELATED:
-                    tasks.heard(running, payload)
-        await anyio.to_thread.run_sync(burst)
-        assert reads == []
-        await anyio.to_thread.run_sync(tasks.heard, running, {'project': 'proj', 'tables': ['mcp.tool_tasks'],
-                                                              'work_ids': [], 'session_ids': [], 'kinds': ['task']})
-        return scope.cancel_called
-    assert anyio.run(main) is True
-    assert reads == [['t1']]
-
-
-@pytest.mark.req('MCP-004')
-def test_the_resource_watcher_reads_nothing_for_changes_that_number_nothing_at_its_nodes(mapped):
-    """A watched node is read again only for a change that can number an item there; a burst of changes of another
-    project, of an agent's threads and signals, or of the mcp module's records reads nothing."""
-    import anyio
-
-    from metaform.module import project_for
-    from metaform.modules.mcp import server
-    project = project_for(mapped)
-    reads: list[str] = []
-
-    class Bus:
-        async def publish(self, message):
-            pass
-
-    async def main() -> None:
-        watch = server.Watch(mapped, Bus(), lambda **given: given)
-        await watch.open(['metaform://code.alarm.audible', 'metaform://code.loop.tick'])
-        number, check, checked = watch._number, watch.check, anyio.Event()
-        watch._number = lambda uri: reads.append(uri) or number(uri)
-
-        async def counted(uris=None) -> None:
-            await check(uris)
-            checked.set()
-        watch.check = counted
-        async with anyio.create_task_group() as group:
-            watch.group = group
-
-            def burst() -> None:  # on another thread, as the listener hears them; a ticket's change can number one
-                for _ in range(20):
-                    for payload in UNRELATED[:3] + UNRELATED[4:]:
-                        watch._heard({**payload, 'project': project if payload['project'] == 'proj' else 'other'})
-                    watch._heard({'project': project, 'tables': ['mcp.tool_tasks', 'mcp.a2a_exchanges']})
-            await anyio.to_thread.run_sync(burst)
-            await anyio.wait_all_tasks_blocked()
-            assert reads == []
-            await anyio.to_thread.run_sync(watch._heard, {'project': project, 'tables': ['memory.entities']})
-            with anyio.fail_after(10):
-                await checked.wait()
-            watch.stop()
-    anyio.run(main)
-    assert sorted(reads) == ['metaform://code.alarm.audible', 'metaform://code.loop.tick']
 
 
 @pytest.mark.req('MCP-043')
@@ -991,29 +828,6 @@ def test_a_followed_a2a_task_and_the_exchange_followers_read_only_for_changes_th
             group.cancel_scope.cancel()
     anyio.run(main)
     assert tasks_read == ['t1', 't1'] and exchanges_read[1:] == [{'proj'}]
-
-
-@pytest.mark.req('MCP-037')
-def test_a_trace_views_mark_moves_only_for_a_change_to_its_ticket():
-    """A trace view's next read reads the store only after a change to its ticket: a burst of changes that do not
-    concern the ticket leaves its mark as it was, so the read is answered unchanged without reading; a change that
-    does moves it."""
-    import anyio
-
-    from metaform.modules.mcp import views
-
-    async def main() -> None:
-        traces = views.Traces()
-        mark = traces.track('proj', 't1')
-        for _ in range(20):
-            for payload in UNRELATED:
-                traces.heard(payload)
-        assert traces.mark('proj', 't1') == mark
-        traces.heard({'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'],
-                      'work_ids': ['t1'], 'session_ids': ['s1'], 'kinds': ['line']})
-        assert traces.mark('proj', 't1') != mark
-        traces.stop()
-    anyio.run(main)
 
 
 @pytest.fixture
@@ -1410,36 +1224,6 @@ def test_the_trace_view_follows_a_tickets_thread_as_lines_are_added(run, home, m
         wire.close()
 
 
-@pytest.mark.req('MCP-037')
-def test_metaform_serves_its_glossary_alone_the_projects_own_and_the_tools_in_a_line_each(run, home, mapped,
-                                                                                        monkeypatch):
-    """metaform://metaform is the mcp glossary prompt as written and nothing more, metaform://glossary is gone with no
-    alias, metaform://<project> is the map module's glossary of the project after the register standard, or the
-    standard and a note while map is off, and metaform://modules gives each category with what it is for and its tools
-    by name, the rules after them, within its strict limit."""
-    import asyncio
-
-    from metaform import prompt_files
-    from metaform.modules.mcp import server
-    run('enable', 'memory')
-
-    def read(uri):
-        return asyncio.run(server.read_resource_text(mapped, uri))[0]
-    assert read('metaform://metaform') == prompt_files.module('mcp', 'glossary').strip() + '\n'
-    with pytest.raises(server.Missing):
-        read('metaform://glossary')
-    standard = prompt_files.module('map', 'register_standard')
-    project = read('metaform://proj')
-    assert project.startswith(standard) and '@STATE_INIT' in project and 'audible alarm' in project
-    tools = read('metaform://modules')
-    assert 'metaform://map/tools' in tools and 'metaform://memory/tools' in tools
-    assert 'memory_add_observations' not in tools and 'map_where(' not in tools
-    commands = read('metaform://memory/tools')
-    assert 'memory_add_observations(' in commands and 'map_where(' not in commands
-    run('set', '--modules', 'memory', cwd=mapped)  # map off: the standard as written, and why no terms follow
-    assert read('metaform://proj') == standard + '\n\n' + prompt_files.module('mcp', 'project_glossary_absent') + '\n'
-
-
 
 @pytest.mark.req('MCP-040')
 def test_a2a_peers_are_records_the_person_adds_and_removes_one_at_a_time(run, home, mapped):
@@ -1462,86 +1246,6 @@ def test_a2a_peers_are_records_the_person_adds_and_removes_one_at_a_time(run, ho
     assert set(listed()) == {'old', 'other'}, 'adding one keeps the others'
     run('mcp', 'a2a_peer_remove', 'old', cwd=mapped)
     assert set(listed()) == {'other'}
-
-
-@pytest.mark.req('MCP-041')
-@pytest.mark.req('MCP-042')
-@pytest.mark.req('MCP-043')
-def test_an_a2a_send_carries_its_address_and_sender_and_what_the_peer_does_lands_at_the_address(run, home, mapped,
-                                                                                               monkeypatch):
-    import httpx
-    from a2a.types import Message, Part, Role, TaskState, TaskStatus
-    from starlette.applications import Starlette
-
-    from metaform.module import Stop, context
-    run('enable', 'dispatch')
-    card_url = 'http://127.0.0.1:7491/.well-known/agent-card.json'  # never reached: the peer is in-process
-    run('mcp', 'a2a_peer_add', 'peer', card_url, 'token=PEER_TOKEN', cwd=mapped)
-    # imported after the last command, which may load the modules again, so the stub reaches the code that runs
-    from metaform.modules.mcp import a2a as served
-    from metaform.modules.mcp import a2a_out, a2a_records
-    from metaform.modules.mcp.server import gateway_session
-    app = Starlette()  # the stubbed peer: Metaform's own A2A routes
-    served.attach(app, mapped, 7491)
-    monkeypatch.setattr(a2a_out, 'TRANSPORT', httpx.ASGITransport(app=app))
-    monkeypatch.setenv('PEER_TOKEN', served.token() or '')
-
-    def verb(name, **nouns):  # a child agent's own session, never its parent's, MCP-042
-        return getattr(a2a_out, name)(context('mcp', mapped, nouns=nouns, surface='mcp', session='child-session'))
-    with pytest.raises(Stop, match=r'\(peer\)'):  # the list, in its refusal, MCP-040
-        verb('send', peer='stranger', address='code.alarm.audible', text='Make it louder')
-    sent = verb('send', peer='peer', address='code.alarm.audible', text='Make it louder\nThe cook misses it.')
-    assert sent['state'] == 'submitted' and sent['sender'] == 'child-session'
-    ticket = Store('proj').ticket(sent['peer_task']).work  # the peer's task is the ticket the message opened there
-    assert ticket.address == 'code.alarm.audible' and 'child-session' in (ticket.note or '')
-    assert a2a_records.kept_card('proj', 'peer', card_url)
-    run('map', 'work', 'op=take', f'id={sent["peer_task"]}', cwd=mapped)
-    run('map', 'work', 'op=done', f'id={sent["peer_task"]}', 'resolution=Louder now', 'why=The cook hears it',
-        cwd=mapped)
-    assert verb('exchanges', id=sent['exchange'])['state'] == 'completed'  # read again: no server follows it here
-    held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
-    assert [one.text for one in held if one.by == 'a2a peer'] == ['Louder now']  # the artifact, an item there
-    flash = json.loads(run('map', 'work', 'op=add', 'node=code.alarm.audible', 'task=Make it flash', 'title=Flash',
-                           '--json', cwd=mapped).stdout)['id']
-    other = verb('send', peer='peer', address='code.alarm.audible', text='Make it flash', work=flash)
-    question = TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=Message(
-        message_id='q-1', role=Role.ROLE_AGENT, parts=[Part(text='Which fan is it?')]))
-    for _ in range(2):  # heard twice, by two followers: asked once
-        a2a_out.heard('proj', other['exchange'], question)
-    held = Store('proj').messages(Node('element', 'code.alarm.audible'), limit=0).results
-    assert [one.kind for one in held if one.text == 'Which fan is it?'] == ['question']
-    # the exchange keeps the ticket; the question is no permission request, so an agent may answer it too
-    assert a2a_records.exchange('proj', other['exchange']).work_id == flash
-    assert [one.work_id for one in held if one.text == 'Which fan is it?'] == [None]
-    posts = []  # what reaches the peer from here on
-
-    class Recording(httpx.ASGITransport):
-        async def handle_async_request(self, request):
-            if request.method == 'POST':
-                posts.append(json.loads(await request.aread() or b'null'))
-            return await super().handle_async_request(request)
-    monkeypatch.setattr(a2a_out, 'TRANSPORT', Recording(app=app))
-    asked = next(one.id for one in held if one.text == 'Which fan is it?')
-    def answers():
-        return [post['params']['message'] for post in posts if isinstance(post, dict)
-                and post.get('method') == 'SendMessage']
-    reached = []  # a call from the copy of a2a_out the command line loads again, which the stub never sees
-
-    async def unreached(self, request):
-        reached.append(str(request.url))
-        raise httpx.ConnectError('no peer here', request=request)
-    with monkeypatch.context() as patched:
-        patched.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', unreached)
-        run('map', 'reply', asked, 'answer=Red', cwd=mapped)
-    assert answers() == [] and reached == []  # the reply is a local write; it never waits on the peer
-    verb('exchanges', id=other['exchange'])
-    assert [(one.get('taskId'), [part.get('text') for part in one['parts']]) for one in answers()] \
-        == [(other['peer_task'], ['Red'])]  # the answer, once, on the peer's task, MCP-041
-    assert a2a_records.exchange('proj', other['exchange']).asked is None
-    cancelled = verb('cancel', id=other['exchange'])
-    assert cancelled['state'] == 'cancelled' and Store('proj').ticket(other['peer_task']).work.outcome == 'cancelled'
-    gateway = {'x-paperclip-agent-id': 'a-7', 'x-paperclip-run-id': 'r-9'}
-    assert gateway_session(gateway) == 'paperclip:agent=a-7,run=r-9' and gateway_session({}) is None
 
 
 # What each agent is given, since 2026-10-17: tools found by purpose, results trimmed, each piece at its moment.
@@ -1598,57 +1302,6 @@ def test_every_agent_connects_to_the_directive_and_the_links_that_apply_and_each
     assert read == blocks_for('mcp', f'links-{task}' if task else 'process:stdio', True)
 
 
-@pytest.mark.req('MCP-007')
-@pytest.mark.parametrize(('uri', 'name'), [
-    ('metaform://rules', 'prompt.mcp:connect_rules'),
-    ('metaform://metaform', 'prompt.mcp:glossary'),
-    ('metaform://memory', 'prompt.memory:instructions'),
-])
-def test_shared_resource_versions_keep_canonical_receipts_fallback_and_epoch(run, mapped, uri, name):
-    from metaform import prompt_files
-    from metaform.data import prompts
-    from metaform.module import advance_agent_context
-    from metaform.modules.mcp.server import read_resource_text
-
-    run('enable', 'memory', cwd=mapped)
-    named = 'shared-resource-reader'
-    agents = Store('proj', module='agents')
-
-    def read(recipient=named):
-        return asyncio.run(read_resource_text(mapped, uri, session=recipient))[0]
-
-    def receipt(recipient=named, epoch=0):
-        with agents.tables(write=False) as tx:
-            return tx.get('receipts', {'session_id': recipient, 'epoch': epoch, 'name': name})
-
-    original = read()
-    first = receipt()
-    assert first and first['component']['text'] in original
-    assert first['channel'] == 'mcp_resource'
-    assert first['component']['source']['kind'] == 'shipped'
-    assert first['component']['text'] not in read(), 'An unchanged body is delivered once per context epoch.'
-
-    revised = 'Selected shared instructions preserve this exact revision.'
-    edited, _ = prompt_files.save_edit(name, revised)
-    assert revised in read()
-    selected = receipt()
-    assert selected['actual_version_id'] == selected['selected_version_id'] == edited.version_id
-    assert selected['component']['source']['kind'] == 'selected_edit'
-    assert revised not in read()
-
-    malformed = prompts.save_prompt(name, '<unclosed>')
-    fallback = read('fallback-resource-reader')
-    kept = receipt('fallback-resource-reader')
-    assert kept['component']['text'] == first['component']['text']
-    assert kept['component']['text'] in fallback and '<unclosed>' not in fallback
-    assert kept['actual_version_id'] == first['actual_version_id']
-    assert kept['selected_version_id'] == malformed.version_id
-    assert kept['component']['source']['kind'] == 'fallback'
-    assert advance_agent_context(mapped, named, reason='compaction') == 1
-    assert first['component']['text'] in read()
-    assert receipt(epoch=1)['actual_version_id'] == first['actual_version_id']
-
-
 def test_nothing_points_to_a_part_of_the_glossary():
     """metaform://metaform/terms is gone: no resource, prompt, code or reference document names it, so no agent is
     routed to a part of the glossary."""
@@ -1660,34 +1313,6 @@ def test_nothing_points_to_a_part_of_the_glossary():
                                     *(root.parent.parent / 'docs').rglob('*.md'))
              if 'tests' not in path.parts and 'metaform://metaform/terms' in path.read_text(encoding='utf-8')]
     assert named == []
-
-
-def test_a_trimmed_result_keeps_false_and_empty_evidence_and_lists_records_as_a_table():
-    """Triage omits null defaults, preserves negative and empty evidence, escapes tables and bounds long lists."""
-    from metaform.modules.mcp import shaping
-    rows = {'results': [{'id': 'a', 'title': 'One', 'held': False, 'note': None, 'map': {'title': 'x'}},
-                        {'id': 'b', 'title': 'Two|x', 'held': True, 'links': []}], 'next': None}
-    text, data = shaping.shaped(rows, shaping.Shape(), '<n/> more')
-    assert text == 'results:\nid|title|held|map.title|links\na|One|false|x|\nb|Two\\|x|true||[]'
-    assert data == {'results': [{'id': 'a', 'title': 'One', 'held': False, 'map': {'title': 'x'}},
-                                {'id': 'b', 'title': 'Two|x', 'held': True, 'links': []}]}
-    counted, _ = shaping.shaped(rows, shaping.Shape(view='count', fields=('held',)), '')
-    assert json.loads(counted) == {'total': 2, 'by': {'held': {'false': 1, 'true': 1}}}
-    many = {'results': [{'id': str(number)} for number in range(30)]}
-    cut, _ = shaping.shaped(many, shaping.Shape(), '<n/> more not shown.')
-    assert cut.splitlines()[-1] == '5 more not shown.' and len(cut.splitlines()) == 1 + 1 + 25 + 1
-
-
-def test_a_tools_guide_for_an_op_holds_only_that_ops_arguments(run, home, mapped):
-    """map_work's guide for op=step gives the arguments whose help is for step or for every op, never distribute's or
-    move's; a read by id with no op gives only the arguments for every op."""
-    from metaform.modules.mcp.server import listing
-    guide = listing(mapped)['map_work'].guide
-    step = guide('step').splitlines()
-    assert any(line.startswith('said: ') for line in step)
-    assert not any(line.startswith(('agents: ', 'column: ', 'glyph: ')) for line in step)
-    read = guide('read').splitlines()
-    assert any(line.startswith('id: ') for line in read) and not any(line.startswith('node: ') for line in read)
 
 
 def test_find_names_the_addresses_that_hold_the_words(run, home, mapped):
@@ -1723,16 +1348,6 @@ def usage_tool(run, mapped, user_module):
     ''')
     run('enable', 'usage', cwd=mapped)
     return mapped / 'usage-effects.txt'
-
-
-def test_usage_does_not_allow_malformed_arguments_to_execute(mapped, usage_tool):
-    from metaform.modules.mcp import server
-
-    async def exercise():
-        await server.read_resource_text(mapped, server.instruction_uri('usage_write'), session='reader')
-        error, blocks, _ = await server.answer(mapped, 'usage_write', {'value': 'bad'}, session='reader')
-        assert error and 'value' in '\n'.join(blocks) and not usage_tool.exists()
-    asyncio.run(exercise())
 
 
 def test_the_project_server_lists_one_tool_and_passes_its_arguments_as_the_command(monkeypatch):
