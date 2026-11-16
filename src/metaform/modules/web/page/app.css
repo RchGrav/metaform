@@ -2795,8 +2795,8 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 .localview{display:grid;gap:var(--s1);margin:var(--s2) 0}
 .localview .hint{margin:0;color:var(--muted);font-size:var(--t-sm);display:flex;flex-wrap:wrap;gap:var(--s1);align-items:center}
 .localview .lv-map{width:100%;max-width:360px;height:auto;display:block}
-.localview .lv-line{stroke:var(--muted);stroke-width:1.2}
-.localview .lv-head{fill:var(--muted)}
+.localview .lv-line{stroke:var(--text);stroke-width:1.2;opacity:.75}
+.localview .lv-head{fill:var(--text)}
 .localview .lv-self{fill:var(--signal);opacity:.85}
 .localview .lv-name{font:11px var(--sans);fill:var(--text);cursor:pointer}
 .localview .lv-name:hover,.localview .lv-name:focus-visible{fill:var(--signal);outline:none}

@@ -12,7 +12,7 @@ import {select} from '/page/app/selection/select.js';
  * why and how, and for a want the code that makes it. The answer lists what wants this element by address alone, so
  * each of those wants is read from the map the page holds, the same store. */
 const NS = 'http://www.w3.org/2000/svg';
-const ROW = 20, WIDE = 320, MID = 160, BOX = 22, NAME = 18;
+const ROW = 20, WIDE = 320, MID = 160, BOX = 16, REACH = 60, NAME = 18;  // REACH: from the middle to a name
 const OPEN = {wants: false, wanted: false};  // which lists the person opened, kept as they move from part to part
 function svg(tag, props, ...children) {
   const node = document.createElementNS(NS, tag);
@@ -82,7 +82,8 @@ function list(id, key, title, entries, none, theirs) {
     }}, `${title} · ${entries.length}`, h('i', {class: 'i i-chev', 'aria-hidden': 'true'}));
   return h('div', {class: 'lv-part'}, button, body);
 }
-/* The picture: what wants this element on the left, the element, what it wants on the right. A line's arrow points
+/* The picture: what wants this element on the left, the element, what it wants on the right. The element is a bar as
+ * tall as the rows, so each line runs straight across at its own row and no two arrowheads meet. A line's arrow points
  * the way information goes: toward the element that takes it, both ends for both. */
 function picture(id, wants, wantedBy) {
   const rows = Math.max(wants.length, wantedBy.length, 1);
@@ -101,19 +102,19 @@ function picture(id, wants, wantedBy) {
   };
   return svg('svg', {class: 'lv-map', viewBox: `0 0 ${WIDE} ${high}`, role: 'img',
     'aria-label': `${nameOf(id)}: wanted by ${wantedBy.length}, wants ${wants.length}`},
-  svg('defs', {}, svg('marker', {id: 'lv-arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 6, markerHeight: 6,
+  svg('defs', {}, svg('marker', {id: 'lv-arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 7, markerHeight: 7,
     orient: 'auto-start-reverse'}, svg('path', {d: 'M0,0 L8,4 L0,8 z', class: 'lv-head'}))),
   // a line runs from the element that wants to the element wanted: its end is the wanted one, its start the wanter
   wantedBy.map((entry, index) => {
     const y = at(wantedBy.length, index);
-    return [line(MID - 52, y, MID - BOX, middle, entry.way === 'receive' || entry.way === 'both',
-      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID - 56, y, 'end')];
+    return [line(MID - REACH, y, MID - BOX, y, entry.way === 'receive' || entry.way === 'both',
+      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID - REACH - 4, y, 'end')];
   }),
   wants.map((entry, index) => {
     const y = at(wants.length, index);
-    return [line(MID + BOX, middle, MID + 52, y, entry.way === 'receive' || entry.way === 'both',
-      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID + 56, y, 'start')];
+    return [line(MID + BOX, y, MID + REACH, y, entry.way === 'receive' || entry.way === 'both',
+      entry.way === 'send' || entry.way === 'both', said(entry)), label(entry, MID + REACH + 4, y, 'start')];
   }),
-  svg('rect', {class: 'lv-self', x: MID - BOX, y: middle - 9, width: BOX * 2, height: 18, rx: 4},
-    svg('title', {}, nameOf(id))));
+  svg('rect', {class: 'lv-self', x: MID - BOX, y: at(rows, 0) - 9, width: BOX * 2, height: (rows - 1) * ROW + 18,
+    rx: 4}, svg('title', {}, nameOf(id))));
 }
