@@ -37,6 +37,8 @@ class TaskSessions:
         return self._start(ctx, called, task, agent)
 
     def _intake(self, ctx: Context, called: Context, task: dict[str, Any], agent: str) -> dict[str, Any]:
+        from metaform.project.commands import stored_name
+
         from . import intake_folder, intake_map_choice, refuse_second_intake
         store = called.require_store()
         raw: Any = task['payload'].get('intake')
@@ -61,7 +63,8 @@ class TaskSessions:
             task['payload']['intake'] = metadata
             asked = str(task['payload'].get('input') or '')
             task['payload']['input'] = '## Intake request\n\n' + prompt_files.required(
-                resources.files('metaform.modules.intake'), 'selected_mode', mode=mode, request=asked)
+                resources.files('metaform.modules.intake'), 'selected_mode', mode=mode, request=asked,
+                project=stored_name(store.project_id))
             noted = {'work': task['work_id'], 'agent': agent, 'since': home.now(), **metadata}
             store.note_intake_launch(noted)
             try:

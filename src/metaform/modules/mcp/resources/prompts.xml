@@ -215,9 +215,9 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <handle_argument>The returned session handle, so instruction receipts belong to this logical context.</handle_argument>
 
 <!-- The first line of the task block, metaform://task/<name>, for the intake task, the one task whose session the
-     server opens with a block: it points the agent to the intake commands. The person's own session gets connect_use.
+     server opens with a block: it names the tool the map is recorded with. The person's own session gets connect_use.
      Every other task's text is its first turn, so no block repeats it. -->
-<task_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</task_intake>
+<task_intake>You map this project's AUE from its source, and record the map with the project tool.</task_intake>
 <!-- Purpose of the project connection, before the module discovery instructions. -->
 <connect_use>Use Metaform to work with this project's functional map, tickets and shared knowledge.</connect_use>
 

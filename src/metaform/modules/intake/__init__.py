@@ -76,7 +76,7 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = False
 REMOTE_AGENT = False  # a project wheel carries a map already built
 
-RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake
+RESOURCE = resources.files(__name__) / 'resources' / 'digital_typology.xml'  # the founder's procedure, the served intake
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
 SCHEMA_URI = 'metaform://intake/schema'
 PROCEDURE_URI = 'metaform://intake/procedure'
@@ -133,6 +133,13 @@ def _procedure(ctx: Context) -> tuple[Any, str, str]:
     return source, text, hashlib.sha256(raw).hexdigest()
 
 
+def _record_with_tool(ctx: Context) -> str:
+    """How the procedure's records are written with the project tool, for this project by its name there."""
+    from metaform.project.commands import stored_name
+    return prompt_files.required(resources.files(__name__), 'schema_pointer',
+                                 project=stored_name(ctx.require_store().project_id))
+
+
 def procedure_component(ctx: Context) -> dict[str, Any]:
     """Exact source-body instructions, independent of appended launch/focus data.
 
@@ -144,7 +151,7 @@ def procedure_component(ctx: Context) -> dict[str, Any]:
     project = ctx.require_store().project()
     body = text.replace('{prompt}', '', 1).rstrip('\n')
     if body.strip() and SCHEMA_URI not in text:
-        body += '\n\n' + prompt_files.required(resources.files(__name__), 'schema_pointer') + '\n'
+        body += '\n\n' + _record_with_tool(ctx) + '\n'
     component = prompt_files.component('prompt.intake:procedure', body,
         version_id='intake-source:' + digest,
         bindings={'project': project.project_id, 'target_type': project.target_type,
@@ -178,7 +185,9 @@ def served(ctx: Context, asked: str = '') -> str:
     if mode:
         if mode not in ('fresh', 'refine', 'resume'):
             raise Stop('Intake mode is fresh, refine or resume.', 'metaform help intake prompt')
-        asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked)
+        from metaform.project.commands import stored_name
+        asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked,
+                                      project=stored_name(ctx.require_store().project_id))
     source, text, _ = _procedure(ctx)
     # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
     # project, BASE-039. An intake with a `{prompt}` slot gets the words there, escaped only in an XML intake file.
@@ -186,7 +195,7 @@ def served(ctx: Context, asked: str = '') -> str:
     # the way a skill's input is bound, and the script itself is served as written.
     xml = source.name.lower().endswith('.xml')
     if SCHEMA_URI not in text:  # an agent handed only the procedure is told where its schema is, MCP-009
-        text = text.rstrip('\n') + '\n\n' + prompt_files.required(resources.files(__name__), 'schema_pointer') + '\n'
+        text = text.rstrip('\n') + '\n\n' + _record_with_tool(ctx) + '\n'
     if '{prompt}' in text:
         text = text.replace('{prompt}', _escape(asked) if xml else asked, 1)
     elif asked:

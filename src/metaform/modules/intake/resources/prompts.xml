@@ -43,30 +43,25 @@ request right after.
 <!-- The registration step, placed in no_intake's <register/> while the folder is not registered; the code indents it.
      Must not be deleted: the code requires it. Empty leaves a blank line in its place. -->
 <register_step>a. Register this folder: the metaform_register tool.</register_step>
-<!-- Tells an agent given only the intake procedure where its schema is.
+<!-- Tells the intake agent how the procedure's records are written with the project tool; <project/> is the
+     project's name there.
      Added to the end of the procedure wherever it is sent (intake prompt, metaform://intake/procedure, /metaform:intake,
      dispatch intake) unless the procedure already names metaform://intake/schema.
      Must not be deleted: the code requires it. Empty adds nothing. -->
-<schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake_schema tool.</schema_pointer>
+<schema_pointer>Record the map with the project tool, each element and join as soon as it is reasoned. This project's name in the tool is <project/>, and it leads every path: the element code.loop.main is written {"add": {"<project/>.code.loop.main": {...}}}. {"help": "add"} gives the fields and an example.
+In the tool's words: an element's functional_name is technical_name, and its uri is ref. A role is written by its abbreviation or in full. A join is a want held by its Receiving Element: element is the Providing Element's address, why is the purpose, how is the ef, and direction is the ifd, written send, receive or both.
+{"map": "<project/>"} reads back what is recorded.</schema_pointer>
 <!-- The selected analysis mode, bound inside the procedure's existing Prompt parameter. Dispatch persists this
      input with its recording destination. The fixed Canonical Intake remains unchanged. One shared section
      selects the route, so an existing map cannot silently turn a requested fresh survey into refinement. -->
 <selected_mode>Selected intake mode: <mode/>
-Use this mode to select the analysis and recording destination. The request below supplies focus within this mode.
-Apply only the selected mode's section. It overrides the procedure's status-based routing.
+Apply only the selected mode's line. The request below supplies focus within this mode.
 
-fresh: Examine project artifacts from the beginning. Call intake_start to open the separate map selected at launch.
-Do not load the previous map into Recorded. Run Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof.
-Existing-map status cannot override fresh mode. A finished intake elsewhere does not skip Survey or Trace.
+fresh: Examine the project's artifacts from the beginning and record the map as the procedure directs.
 
-refine: Call intake_start, then intake_show to load the existing map into Recorded. Examine current artifacts,
-run Task_Refine and Proof, then finish the verification pass on that map.
+refine: Read the recorded map first, {"map": "<project/>"}, and the elements you examine. Examine the current artifacts, then correct and complete that map.
 
-resume: Call intake_start, then intake_show to load the unfinished intake. Continue its survey and trace,
-complete Closure, Anneal and Proof, then finish that destination. Do not open another map.
-
-Preserve previous maps, work records, knowledge and memories. Map activation remains an explicit operation.
-Memories remain project scoped and reconnect at matching addresses. Memory access isolation is not required.
+resume: An intake was left unfinished. Read what it recorded, {"map": "<project/>"}, and continue it to the procedure's end.
 
 Request:
 <request/></selected_mode>

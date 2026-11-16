@@ -2282,8 +2282,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     from mcp.shared.exceptions import MCPError
     from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+    from . import project_tool, views
     from . import tasks as tasked
-    from . import views
     from .transport import RETRY, Relay
 
     relay = Relay(folder, not http and settings.value('mcp_recovery', folder) == 'relay')
@@ -2366,6 +2366,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                           annotations=types.ToolAnnotations(read_only_hint=False, destructive_hint=False,
                                                             idempotent_hint=False, open_world_hint=False))
 
+    project_listed = types.Tool(name=project_tool.TOOL, description=project_tool.DESCRIPTION,
+                                input_schema=project_tool.SCHEMA)
+
     def build(shown: bool, client: str | None = None, session: str | None = None) -> list[Any]:
         """The tools listed to a session, MCP-003: `listed_names`, each as `tool` makes it; over HTTP to a listing
         that names no session, each takes the session handle its calls name their session by."""
@@ -2377,6 +2380,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             listed = sorted([*listed, catalog_tool(unkeyed)], key=lambda one: one.name)
         if searching:
             listed = sorted([*listed, *searched_tools], key=lambda one: one.name)
+        listed = [*listed, project_listed]  # the project tool: the map is read and written through it alone
         return sorted([*listed, view_tool], key=lambda one: one.name) if shown else listed
 
     def build_prompts() -> list[Any]:
@@ -2510,6 +2514,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     async def call_tool(ctx: Any, params: Any) -> Any:
         name, arguments = params.name, dict(params.arguments or {})
         client = client_of(ctx)
+        if name == project_tool.TOOL:
+            said = await anyio.to_thread.run_sync(project_tool.commands.run, project_tool.command(arguments), None,
+                                                  os.environ.get('METAFORM_SESSION') or 'mcp')
+            return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(said))],
+                                        is_error=said.get('status') == 'error')
         if name == views.TOOL and apps(ctx):
             return await view_call(arguments, viewer(ctx))
         if searching and name in SEARCH_FETCH:
