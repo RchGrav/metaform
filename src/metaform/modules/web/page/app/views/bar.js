@@ -10,7 +10,7 @@ import {overlay} from '/page/app/core/overlays.js';
 import {S} from '/page/app/core/reads.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {endOf} from '/page/app/map3d/waves.js';
-import {G, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, wake3d, nodeSize} from '/page/app/map3d/graph3d.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {V3, cameraNow, flyTo, framed, fitTrim, fitBalls, fit3d} from '/page/app/camera/flight.js';
 import {NAME, small3d, fly3d, workShot} from '/page/app/camera/fly3d.js';
@@ -126,7 +126,15 @@ export const PHYS = {name: 'organic', decay: 0.4};
 export const signsFacing = () => VIEW.signs === 'facing'
   || Boolean(PHYSICS.find(([name]) => name === PHYS.name)?.[3].facing);
 const baseCharge = node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18;
-const baseDistance = link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34;
+/* How far apart a link holds its two ends: the approved prototype's lengths, measured between the shapes' surfaces
+ * rather than their centres, so a node made larger keeps the edge it had (`grown`). A join's edge is as long as the
+ * path it replaced, receiver to its purpose vertex to provider, two links of 34, since joins became edges alone. */
+const baseDistance = link => (link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60
+  : link.k === 'encounter' ? 68 : 34) + grown(link.source) + grown(link.target);
+// how much wider an element's ball is than in the prototype the lengths were set for (DE 18, CQU 14, others 8)
+const PROTOTYPE = {DE: 18, CQU: 14};
+const grown = node => typeof node === 'object' && node.t === 'el'
+  ? Math.max(0, Math.cbrt(nodeSize(node)) * 3 - Math.cbrt(PROTOTYPE[node.role] || 8) * 3) : 0;
 /* Each node's step along the chains of service: 0 for an element that serves no one, and each part serving it a whole
  * step on, along the join's edge from its receiver. A node off every chain has none and is not pulled. */
 function serviceSteps(data) {
