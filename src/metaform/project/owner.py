@@ -89,8 +89,15 @@ class Database:
                 reader = self._writing.reader()
                 self._readers.append(reader)
             self._local.reader = reader
-        with reader.reading():
-            return work(reader)
+        try:
+            with reader.reading():
+                return work(reader)
+        except StoreError:
+            # A read that began while a write was changing the tables, as a project's first write and a new overlay
+            # do, can fail on what it finds half made. A read changes nothing, so it is made once more, on the state
+            # that write committed.
+            with reader.reading():
+                return work(reader)
 
     def _serve(self, create: str | None, opened: threading.Event) -> None:
         try:

@@ -68,7 +68,7 @@ def node(project: str, target: str) -> NodeView | None:
     target is not an element."""
     kind, _, address = target.partition(':')
     name = commands.stored_name(project)
-    if kind != 'element' or not address or commands.drawn(name) is None:
+    if kind != 'element' or not address or not commands.holds(name):
         return None
     path = f'{name}.{address}'
     place = Node('element', address)

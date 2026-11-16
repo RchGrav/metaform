@@ -9,7 +9,7 @@ from pathlib import Path
 
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
-__all__ = ['COMMANDS', 'ROLE_WORDS', 'clear', 'drawn', 'run', 'stored_name']
+__all__ = ['COMMANDS', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'run', 'stored_name']
 
 
 def run(command: object, home: Path | None = None, caller: str = '') -> dict[str, object]:
@@ -28,6 +28,12 @@ def clear(project: str, home: Path | None = None) -> bool:
     """Remove a project's map from the store. False when it holds none."""
     from metaform.project import commands
     return commands.clear(project, home)
+
+
+def holds(project: str, home: Path | None = None) -> bool:
+    """Whether the store holds a map of this project, asked of the folder: no database is opened and no read made."""
+    from metaform import home as metaform_home
+    return ((home if home is not None else metaform_home.home()) / 'maps' / f'{project}.lbug').exists()
 
 
 def stored_name(project_id: str) -> str:
