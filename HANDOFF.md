@@ -2,6 +2,34 @@
 
 Branch `feat/project-tool`, pushed; every item below is committed there unless it says otherwise.
 
+## Why this work, and where to start
+
+**The purpose.** Metaform starts AI agents (Claude Code, Codex and others) and gives each one the part of the project
+it needs. The part of Metaform that starts and talks to them is the `dispatch` module, over the Agent Client Protocol
+(ACP). Today that code is one 5,000-line class, `runner.Session` in `dispatch/runner.py`, that mixes talking to the
+agent with ticket work, speaks only the protocol's old version (v1), and knows of only three agents, typed into the
+code. The goal is one clean place that talks to every agent, on the protocol's new version (v2) where the agent has
+it, which every part of Metaform asks to start an agent. That is what makes profiles possible next: one saved
+definition of how an agent starts (which agent, model, thinking level, prompt), so the person can set up a team of
+agents with different roles.
+
+**What you are doing now.** Step 2b: moving `runner.Session` onto the new protocol layer `dispatch/acp/`, which is
+built and tested but not yet used by the runner. When it is done, Claude Code and Codex run on v2.
+
+**Review first, in this order:**
+1. `docs/plans/dispatch-owns-acp.md`: "The connection" and step 2 under "Order of work", including the notes for the
+   move at the end of step 2.
+2. `src/metaform/modules/dispatch/acp/`: `model.py`, `connection.py`, `v1.py`, `v2.py`, and `tests/test_acp.py`.
+3. In the worktree `/home/rich/metaform-dispatch-acp`: commit `17e2c1e2` on `feat/dispatch-acp`, which adds to the
+   layer what the runner needs; check it before building on it. Then the branch `wip/runner-move-partial`, a half-done
+   edit of `runner.py` left by a stopped agent: read it for ideas, do not merge it.
+4. `runner.Session`: the methods that talk to the agent (`open_agent`, `session_update`, `request_permission`,
+   `create_elicitation`, `apply_options`, `configure`, the login and probe methods) and the ticket work around them,
+   which must keep working unchanged.
+
+**Start** with the first concern in the plan's order, opening the connection and `initialize`, in the worktree; run
+the dispatch tests that concern it, commit, and go on to the next.
+
 ## How to work (the person's rules from today)
 
 - Do the work yourself. No subagents unless the person asks or a multi-agent mode is on: they cost twice and today
