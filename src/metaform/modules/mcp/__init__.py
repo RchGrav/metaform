@@ -141,6 +141,11 @@ def serve(ctx: Context) -> None:
                bind=str(ctx.setting('mcp_bind') or '127.0.0.1'), public_url=str(ctx.setting('mcp_public_url') or ''))
 
 
+def serve_project(ctx: Context) -> None:
+    from .project_tool import serve as run_server
+    run_server(int(ctx.setting('mcp_port')))
+
+
 def a2a_send(ctx: Context) -> Any:
     from .a2a_out import send
     return send(ctx)
@@ -233,6 +238,9 @@ MODULE = Module(
     verbs=(Verb('serve', serve, 'Serve the MCP server over stdio, or with --http over Streamable HTTP.',
                 switches=('mcp_http', 'mcp_port', 'mcp_bind', 'mcp_public_url'),
                 surfaces=('cli',), transport=True),
+           Verb('project', serve_project, 'Serve the one tool, project, over Streamable HTTP at '
+                'http://127.0.0.1:<mcp_port>/mcp. It keeps no session and reads and writes any project by its name.',
+                switches=('mcp_port',), surfaces=('cli',), transport=True),
            Verb('a2a_send', a2a_send, 'Send an A2A peer the person names a message about an Address; what its task '
                                       'does comes back to that Address.',
                 nouns=(Noun('peer', 'The peer, by its name in mcp a2a_peers.'),

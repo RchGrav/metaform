@@ -24,6 +24,14 @@ Started from template 0.2.0.
 
 ## Verbs
 
+`metaform mcp project` serves the server with one tool, `project`, over Streamable HTTP at
+`http://127.0.0.1:<mcp_port>/mcp` (`project_tool.py`). The tool's arguments are one command of the project engine,
+such as `{"map": "<project>"}` or `{"<project>.<root>.<steps>": {}}`, and its result is that command's answer. The
+project's name leads every path, so the server keeps no session: it lists no resources and no prompts, sends no
+instructions at connect, and each request stands alone. It holds no database; every call goes to the home's
+single-writer service (`metaform.project.service`). `metaform mcp serve` below is the earlier server, still served
+until what its agents receive from it has moved.
+
 Tools with specific usage instructions require their delivery before execution,
 MCP-044. Discovery points to `metaform://tools/<tool>/instructions[/<op>]`;
 `metaform_instructions tool=<tool> op=<op>` is the equivalent gateway route.

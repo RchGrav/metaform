@@ -4122,3 +4122,34 @@ def test_unreadable_usage_source_is_an_ordinary_wire_error_without_effect_or_rec
     assert not Store('proj').intake_building().results
     with Store('proj', module='agents').tables(write=False) as tx:
         assert not tx.rows('receipts', {'session_id': named}, limit=0).results
+
+
+def test_the_project_server_lists_one_tool_and_passes_its_arguments_as_the_command(monkeypatch):
+    import httpx
+
+    from metaform.modules.mcp import project_tool
+
+    sent = []
+
+    def answered(command, home=None, caller=''):
+        sent.append(command)
+        return {'status': 'ok'} if 'add' in command else {**command, 'status': 'error', 'code': 'NOT_FOUND',
+                                                          'message': 'm', 'remediation': None}
+    monkeypatch.setattr(project_tool.commands, 'run', answered)
+    app = project_tool.http_app()
+    headers = {'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-06-18'}
+
+    async def go():
+        async with app.router.lifespan_context(app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:7434') as client:
+                async def ask(method, params):  # no initialize and no session id: each request stands alone
+                    return (await client.post('/mcp', json=rpc(method, params), headers=headers)).json()['result']
+                return (await ask('tools/list', {}),
+                        await ask('tools/call', {'name': 'project', 'arguments': {'add': {'p.code.a': {}}}}),
+                        await ask('tools/call', {'name': 'project', 'arguments': {'p.code.b': {}}}))
+    listed, wrote, refused = asyncio.run(go())
+    assert [tool['name'] for tool in listed['tools']] == ['project']
+    assert sent == [{'add': {'p.code.a': {}}}, {'p.code.b': {}}]
+    assert json.loads(wrote['content'][0]['text']) == {'status': 'ok'} and not wrote.get('isError')
+    assert refused['isError'] and json.loads(refused['content'][0]['text'])['code'] == 'NOT_FOUND'
