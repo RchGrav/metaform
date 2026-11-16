@@ -16,3 +16,8 @@ recorded, each becomes a ticket on the element it concerns.
    `metaform` intake recorded `upstream.code.harness.agent` as known as "Claude Code, Codex, Google Antigravity",
    because dispatch's `AGENTS` table names those three and the intake agent reads the code as what the project uses.
    Fixed by step 3 of `dispatch-owns-acp.md` (the registry replaces the table), then a re-intake that refines the map.
+7. **Two settings-screen tests fail on `feat/project-tool`.** Found 2026-11-16, failing the same with and without the
+   ACP connection work. `tests/test_tui.py::test_a_section_opens_as_a_menu_of_its_settings_and_lists_are_alphabetical`
+   still expects Claude Code's `Agent` row among its option settings, which step 0 of `dispatch-owns-acp.md` removed
+   from `OWN_OPTIONS`; `test_a_value_outside_its_choices_is_refused_with_them_and_a_staged_row_is_marked` fails with
+   `KeyError: 'code_kinds'` at `tests/test_tui.py:319`.
