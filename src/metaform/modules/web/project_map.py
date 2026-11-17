@@ -182,9 +182,12 @@ def _found(project: str, work_id: str) -> tuple[str, dict[str, Any]] | None:
 
 
 def _changed(name: str, record: dict[str, Any], fields: dict[str, object]) -> dict[str, Any]:
-    """Change one ticket in place, by its position at its element, and give it back as the page reads it. A field
+    """Change one ticket in place, by its position at its element and the record id found there, so a ticket moved
+    by another writer meanwhile is refused rather than another card changed (F02), and give it back as the page reads
+    it. The revision is not named: the person's move of a card stands over an agent's note written meanwhile. A field
     given as None is removed."""
-    _done(commands.run({'update': {str(record['element']): {'tickets': [{'position': record['position'], **fields}]}}}))
+    _done(commands.run({'update': {str(record['element']): {'tickets': [
+        {'position': record['position'], 'record': record['record'], **fields}]}}}))
     kept = {key: value for key, value in {**record, **fields}.items() if value is not None}
     return _shaped(kept, len(name) + 1)
 
@@ -218,7 +221,7 @@ def remove_ticket(project: str, work_id: str) -> dict[str, Any] | None:
     if found is None:
         return None
     name, record = found
-    _done(commands.run({'delete': {str(record['element']): {'tickets': [record['position']]}}}))
+    _done(commands.run({'delete': {str(record['element']): {'tickets': [record['record']]}}}))  # by its id (F02)
     return _shaped(record, len(name) + 1)
 
 

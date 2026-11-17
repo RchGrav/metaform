@@ -933,3 +933,20 @@ def test_an_edit_from_a_stale_read_is_refused_instead_of_landing_on_another_reco
     assert run({'update': {CS: {'project_specifications': [{'position': 1, 'title': 'C2'}]}}}) == {'status': 'ok'}
     assert run({'delete': {CS: {'project_specifications': [c['record']]}}}) == {'status': 'ok'}
     assert fields_only(stored()) == [{'title': 'B2', 'level': 1}]
+
+
+def test_the_page_moves_and_removes_a_ticket_by_its_record_id(served):
+    """Phase 3: the board's changes name the record they found, so a card moved by another writer meanwhile is
+    refused rather than another card changed (F02)."""
+    from metaform.modules.web import project_map
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [
+        {'id': 't-a', 'title': 'A', 'task': 'Do A.'}, {'id': 't-b', 'title': 'B', 'task': 'Do B.'}]}}}, served) == {
+        'status': 'ok'}
+    assert project_map.move_ticket(P, 't-b', 'doing', 'claude')['taken_by'] == 'claude'
+    assert project_map.remove_ticket(P, 't-a')['id'] == 't-a'
+    (left,) = commands.overlay_records(P, 'tickets', served)
+    assert (left['id'], left['taken_by'], left['position'], left['revision']) == ('t-b', 'claude', 0, 2)
+    stale = {**left, 'position': 0, 'record': 'r-0000000000000000'}  # a record that is no longer there
+    with pytest.raises(Exception, match='no longer there'):
+        project_map._changed(P, stale, {'note': 'lands nowhere'})
+    assert commands.overlay_records(P, 'tickets', served) == [left]
