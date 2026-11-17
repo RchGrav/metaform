@@ -45,3 +45,11 @@ recorded, each becomes a ticket on the element it concerns.
 14. **The system agent is also called "the lead" in the code.** The page and the person call it the system agent;
     `web/server.py` names it the lead (`leads`, `lead_given`, `WORKSPACE` comments). The person's choice, 2026-11-16:
     it is the system agent. New code says system agent; the old names are renamed when that code is next changed.
+15. **The clicked-line browser test fails before reaching its end.** Found 2026-11-17, failing the same on the
+    committed code at `7734bfef` in a separate worktree.
+    `test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_next_message` times out at
+    `test_web.py:6951` (a `wait_for_function`, 15 s), and where it gets past that, its setup
+    `agent.store.add_work(..., held=True)` is refused: `StoreError: An explicit hold requires a nonblank hold_reason`.
+16. **A queued-message browser test sees an extra 404.**
+    `test_a_queued_message_that_fails_puts_back_only_the_persons_words_and_keeps_the_views_context` expects one console
+    error (the 409 it causes) and gets a `404 (Not Found)` before it, on the committed code at `7734bfef` too.
