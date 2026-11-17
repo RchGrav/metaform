@@ -32,6 +32,7 @@ from typing import Any, cast
 
 from metaform import home, settings
 from metaform import module as chassis
+from metaform import project as project_store
 from metaform.data import Store, TableTx
 from metaform.module import Context
 
@@ -175,6 +176,12 @@ def file_address(store: Store, file: str) -> str | None:
         refs = [(ref.value, ref.address) for ref in store.refs() if ref.key == 'path' and ref.address]
     except Exception:  # noqa: BLE001  a project with no map yet holds no refs
         return None
+    return owner_of(path, refs)
+
+
+def owner_of(path: str, refs: list[tuple[str, str]]) -> str | None:
+    """Of (file, address) refs, the address whose file ends with the path, else the one citing a file in the deepest
+    folder the two paths share; None when no ref shares a folder with it."""
     ending = next((address for value, address in refs if value.endswith('/' + path)), None)
     if ending is not None:
         return ending
@@ -195,12 +202,58 @@ def place(ctx: Context, store: Store, example: str, file: str | None = None) -> 
     """Where a group sits: the Address that owns the file the source named or its trace names, else the project's top
     node."""
     found = file or (named[0] if (named := entries.location(example)) is not None else None)
+    name = stored(store)
+    if name is not None:
+        return stored_place(store, name, found)
     address = file_address(store, found) if found else None
     return address or top_node(store)
 
 
+def stored(store: Store) -> str | None:
+    """The project's name in the project store when its map and tickets are kept there (old-store-removal step 1),
+    else None: its old store's map is empty or stale, so where a group sits and what is at work are read there."""
+    name = project_store.stored_name(store.project_id)
+    return name if project_store.holds(name) else None
+
+
+def stored_place(store: Store, name: str, file: str | None) -> str | None:
+    """Where a group sits in a project held in the project store, as `file_address` finds it in the old one: the
+    element whose ref names the file, else a want's ref naming it, at the element that holds the want, else the same
+    ending and nearest-folder rules over those refs; else the Defining Element nearest the root, else the element
+    nearest it. The address is the element's without the project's name, as the old store's are."""
+    drawn = project_store.drawn(name)
+    if drawn is None:
+        return None
+    start = len(name) + 1
+    elements = cast(list[dict[str, Any]], drawn.get('elements') or [])
+    wants = cast(list[dict[str, Any]], drawn.get('wants') or [])
+    refs = [(str(one['ref']).removeprefix('./'), str(one['address'])[start:]) for one in elements if one.get('ref')]
+    refs += [(str(one['ref']).removeprefix('./'), str(one['holder'])[start:]) for one in wants if one.get('ref')]
+    path = file.replace('\\', '/') if file else None
+    if path is not None and os.path.isabs(path):
+        root = os.path.realpath(store.project().path)
+        real = os.path.realpath(path)
+        path = os.path.relpath(real, root).replace(os.sep, '/') if real.startswith(root + os.sep) else None
+    if path:
+        path = path.removeprefix('./')
+        found = next((address for value, address in refs if value == path), None) or owner_of(path, refs)
+        if found is not None:
+            return found
+    addresses = [(str(one['address'])[start:], one.get('role')) for one in elements]
+    top = min(addresses, key=lambda one: (one[1] != 'Defining Element', one[0].count('.'), one[0]), default=None)
+    return None if top is None else top[0]
+
+
 def active_work(store: Store) -> dict[str, Any]:
     """The agents and tickets at work now: each taken open ticket, with who took it."""
+    name = stored(store)
+    if name is not None:
+        records = project_store.overlay_records(name, 'tickets') or []
+        held = [record for record in records if record.get('taken_by') and not record.get('done')]
+        return {'agents': sorted({str(record['taken_by']) for record in held}),
+                'tickets': [{'id': record.get('id'), 'address': str(record['element'])[len(name) + 1:],
+                             'taken_by': record['taken_by'], 'title': first_line(str(record.get('title') or ''))[:120]}
+                            for record in held]}
     try:
         records = store.work(open=True, limit=0).results
     except Exception:  # noqa: BLE001  a project with no map has no tickets

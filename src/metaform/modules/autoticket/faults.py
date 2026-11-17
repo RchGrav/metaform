@@ -20,10 +20,18 @@ explicitly cancelled work stays cancelled. Error wording never imposes an approv
 Event rules, CLAUDE.md section 2: the faults that arrive while a pass for the same project runs merge into its next
 pass, so a burst costs one pass; and the map.changed subscriber that files a waiting group decides from the event
 alone whether a ticket of this module may have closed, so changes that do not concern it cost no read.
+
+A project held in the project store (docs/plans/old-store-removal.md step 1, audit F01) has its tickets there, in the
+`tickets` overlay the board reads: a group is placed at an element of that map, filed as a record there, matched to an
+open ticket by its id or by its title at the element, counted and reopened there. That overlay holds id, title, task,
+kind, held, taken_by, note, done and outcome; what it has no field for, a group's count, first and last seen and each
+recurrence, is written in the ticket's note, and a repair's landing, which has none either, is not read. Its groups
+stay in this module's own table.
 """
 from __future__ import annotations
 
 import json
+import secrets as tokens
 import threading
 import time
 from collections.abc import Iterable, Sequence
@@ -32,11 +40,12 @@ from importlib import resources
 from typing import Any, cast
 
 from metaform import events, prompt_files, settings
+from metaform import project as project_store
 from metaform.data import Node, Store, StoreError, WorkRecord
 from metaform.module import Context
 
 from . import entries, grouping, proof
-from .watch import active_work, first_line, now_text, place, secret_values, similarity
+from .watch import active_work, first_line, now_text, place, secret_values, similarity, stored
 
 HERE = resources.files(__package__ or 'metaform.modules.autoticket')
 TOPIC = 'fault.raised'
@@ -64,6 +73,39 @@ class Fault:
     last: float
     group_id: int = 0
     loaded: float | None = None  # when the code that raised it was loaded, as its source says; None when it does not
+
+
+@dataclass
+class Stored:
+    """A ticket of the project store's `tickets` overlay, as this module reads it: where it is, by its element's full
+    address, position and record id, and the fields it decides by."""
+    id: str
+    element: str
+    position: int
+    record: str
+    revision: int
+    title: str
+    note: str | None
+    held: bool
+    done: str | None
+    outcome: str | None
+
+
+def stored_tickets(name: str) -> list[Stored]:
+    """Every ticket of a project held in the project store, in one read."""
+    return [Stored(id=str(one.get('id') or ''), element=str(one['element']), position=cast(int, one['position']),
+                   record=str(one['record']), revision=cast(int, one['revision']), title=str(one.get('title') or ''),
+                   note=cast(str | None, one.get('note')), held=bool(one.get('held')),
+                   done=cast(str | None, one.get('done')), outcome=cast(str | None, one.get('outcome')))
+            for one in project_store.overlay_records(name, 'tickets') or []]
+
+
+def stored_update(found: Stored, fields: dict[str, object], exact: bool = False) -> bool:
+    """Change one stored ticket, named by its record so the change never lands on another; `exact` names the revision
+    read too, so a ticket changed since is left as it is. False when the store refused it."""
+    named: dict[str, object] = {'position': found.position, 'record': found.record,
+                                **({'revision': found.revision} if exact else {}), **fields}
+    return project_store.run({'update': {found.element: {'tickets': [named]}}}).get('status') == 'ok'
 
 
 PENDING: dict[str, dict[tuple[str, str, str, str], Fault]] = {}  # by project: faults waiting for a pass
@@ -250,6 +292,9 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
         agents = {work_id for work_id in by_agent.values()
                   if tx.rows('groups', {'work_id': work_id}, limit=1).results}  # tickets autoticket filed
     named = {str(row['work_id']) for row in rows.values() if row['work_id']} | agents
+    name = stored(store)
+    if name is not None:
+        return stored_tell(ctx, store, name, rows, by_agent, agents, latest or {})
     records = {record.id: record for record in store.work(ids=sorted(named), limit=0).results} if named else {}
     notes: dict[str, list[dict[str, Any]]] = {}
     early: dict[str, list[tuple[int, str]]] = {}  # by ticket: the groups seen before its fix was in force, and why
@@ -292,6 +337,48 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
         note = early_noted(noted(records[work_id].note or '', told), early.get(work_id, []))
         if note != (records[work_id].note or ''):
             events.announced(ctx.folder, ctx.surface, store.edit_work, work_id, {'note': note})
+    for row, occurrence in reopened:
+        notify_filed(ctx, row, str(row['work_id']), occurrence)
+    return file_waiting(ctx, store)
+
+
+def stored_tell(ctx: Context, store: Store, name: str, rows: dict[int, dict[str, Any]], by_agent: dict[int, str],
+                agents: set[str], latest: dict[int, str]) -> int:
+    """`tell` for a project held in the project store: each group counted in its open ticket's note there, or on the
+    open ticket autoticket filed that the agent who raised it works; a done ticket reopened unless it was cancelled or
+    reopening is off. A repair's landing has no field there, so no recurrence is set against one."""
+    found = {one.id: one for one in stored_tickets(name)}
+    notes: dict[str, list[dict[str, Any]]] = {}
+    reopened: list[tuple[dict[str, Any], str]] = []
+    for group_id, row in rows.items():
+        record = found.get(str(row['work_id']))
+        agent = by_agent.get(group_id)
+        if record is not None and not record.done:
+            notes.setdefault(record.id, []).append(row)
+        elif agent in agents and (on := found.get(agent)) is not None and not on.done:
+            row['work_id'] = agent
+            notes.setdefault(agent, []).append(row)
+            reopened.append((row, 'new'))
+        elif record is not None:
+            if record.outcome != 'cancelled' and settings.value('autoticket_reopen', ctx.folder):
+                evidence = latest.get(group_id, '')
+                history = (f'Done at {record.done} ({record.outcome or "no outcome"}), a fix that did not hold. Fault '
+                           f'recurred at {row["last_seen"]}{f": {evidence}" if evidence else ""}; repair and verify it '
+                           'again.')
+                if stored_update(record, {'done': None, 'outcome': None, 'taken_by': None, 'kind': 'broken',
+                                          'note': f'{record.note or ""}\n\n{history}'.strip()}, exact=True):
+                    reopened.append((row, f'{record.done}:{row["count"]}'))
+                    found = {one.id: one for one in stored_tickets(name)}
+            notes.setdefault(record.id, []).append(row)
+    with store.tables() as tx:
+        for work_id, told in notes.items():
+            for row in told:
+                tx.update('groups', {'group_id': int(row['group_id'])}, {'work_id': work_id})
+    for work_id, told in notes.items():
+        record = found.get(work_id)
+        note = noted(record.note or '', told) if record is not None else ''
+        if record is not None and note != (record.note or ''):
+            stored_update(record, {'note': note})
     for row, occurrence in reopened:
         notify_filed(ctx, row, str(row['work_id']), occurrence)
     return file_waiting(ctx, store)
@@ -349,9 +436,14 @@ def file_waiting(ctx: Context, store: Store) -> int:
     with store.tables(write=False) as tx:
         rows = [dict(row) for row in tx.rows('groups', limit=0).results]
     filed_ids = sorted({str(row['work_id']) for row in rows if row['work_id'] and not filing(row)})
-    records: Sequence[WorkRecord] = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
-    kept = resting(store, [record.id for record in records])
-    open_now = sum(not record.held and record.id not in kept for record in records)
+    name = stored(store)
+    if name is not None:  # a hold is the ticket's held field there; a landing has no field, so none rests on one
+        ids = set(filed_ids)
+        open_now = sum(one.id in ids and not one.done and not one.held for one in stored_tickets(name))
+    else:
+        records: Sequence[WorkRecord] = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
+        kept = resting(store, [record.id for record in records])
+        open_now = sum(not record.held and record.id not in kept for record in records)
     waiting = sorted((row for row in rows if row['address'] and waits(row, at)), key=lambda row: int(row['group_id']))
     filed = 0
     room = max(0, most - open_now)
@@ -368,14 +460,15 @@ def file_waiting(ctx: Context, store: Store) -> int:
                 continue
             tx.update('groups', {'group_id': group_id}, {'work_id': f'{FILING}{at}'})
         try:
-            record = events.announced(ctx.folder, ctx.surface, ticket, store, dict(now))[0]
+            work_id = stored_ticket(name, dict(now)) if name is not None else \
+                events.announced(ctx.folder, ctx.surface, ticket, store, dict(now))[0].id
         except Exception:
             with store.tables() as tx:
                 tx.update('groups', {'group_id': group_id}, {'work_id': ''})
             raise
         with store.tables() as tx:
-            tx.update('groups', {'group_id': group_id}, {'work_id': record.id})
-        notify_filed(ctx, row, record.id, 'new')
+            tx.update('groups', {'group_id': group_id}, {'work_id': work_id})
+        notify_filed(ctx, row, work_id, 'new')
         filed += 1
     return filed
 
@@ -416,6 +509,40 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
     """The ticket for a group: kind broken, at its element, its task the evidence, how to reproduce it and that the fix
     is checked. Filing adds no hold, regardless of source. Condition broken lights its
     element until delivery closes the ticket. Recurrence reopens the same ticket and restores its light."""
+    title, task = worded(row)
+    with store.atomic():
+        record = store.add_work(Node('element', str(row['address'])), 'broken', kind='broken', title=title, note=line(row),
+                                task=task)
+        store.prove_work(record.id)
+    return record
+
+
+def stored_ticket(name: str, row: dict[str, Any]) -> str:
+    """`ticket` for a project held in the project store: a record of its tickets overlay at the group's element, kind
+    broken, the group's count and times in its note; the overlay has no condition, so its kind says it is broken. An
+    open ticket of the same title at that element is the group's ticket already, its note counting the group too, so
+    the group is never filed twice. Returns the ticket's id."""
+    title, task = worded(row)
+    element = f'{name}.{row["address"]}'
+    same = next((one for one in stored_tickets(name)
+                 if one.element == element and one.title == title and not one.done and one.id), None)
+    if same is not None:
+        note = noted(same.note or '', [row])
+        if note != (same.note or '') and not stored_update(same, {'note': note}):
+            raise StoreError(f'the note of ticket {same.id} at {element} was not written',
+                             f'metaform map work id={same.id}')
+        return same.id
+    work_id = 't-' + tokens.token_hex(4)
+    answer = project_store.run({'add': {element: {'tickets': [
+        {'id': work_id, 'title': title, 'task': task, 'kind': 'broken', 'note': line(row)}]}}})
+    if answer.get('status') != 'ok':
+        raise StoreError(f'the ticket at {element} was not filed: {answer.get("message")}',
+                         str(answer.get('remediation') or ''))
+    return work_id
+
+
+def worded(row: dict[str, Any]) -> tuple[str, str]:
+    """A group's ticket title and task."""
     count = int(row['count'])
     example = str(row['example'])
     task = prompt_files.required(
@@ -424,11 +551,7 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
         source=SOURCES.get(str(row['source']), str(row['source'])),
         reproduce=str(row['reproduce'] or 'not known; the sample above is all that was seen'))
     title = f'{TITLES.get(str(row["source"]), "Error")}: {first_line(example)}'[:120]
-    with store.atomic():
-        record = store.add_work(Node('element', str(row['address'])), 'broken', kind='broken', title=title, note=line(row),
-                                task=task)
-        store.prove_work(record.id)
-    return record
+    return title, task
 
 
 def freed(payload: dict[str, Any], ctx: Context) -> None:
@@ -441,6 +564,16 @@ def freed(payload: dict[str, Any], ctx: Context) -> None:
     if store is None or payload.get('project') not in (None, store.project_id):
         return
     tables, kinds, ids = payload.get('tables'), payload.get('kinds'), payload.get('work_ids')
+    if isinstance(tables, list) and 'project.map' in tables:
+        # The project store's commit names no ticket, so it may have closed any; only while a group waits is that
+        # read, the waiting looked at in this module's own table first. A memory-only commit concerns it not.
+        if stored(store) is not None:
+            with store.tables(write=False) as tx:
+                at = time.time()
+                waiting = any(row['address'] and waits(dict(row), at) for row in tx.rows('groups', limit=0).results)
+            if waiting:
+                file_waiting(ctx, store)
+        return
     if tables is not None and (not isinstance(tables, list) or 'work' not in tables):
         return
     if isinstance(kinds, list) and 'ticket' not in kinds:

@@ -610,6 +610,84 @@ def test_a_burst_of_changes_that_do_not_close_an_autoticket_ticket_reads_nothing
 
 
 
+@pytest.fixture
+def held_in_store(project, home):
+    """`proj` held in the project store: a Defining Element and the web server, whose ref names its file. Its
+    single-writer service is stopped when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    fields = {'technical_name': 'web server', 'name': 'web server', 'role': 'Supporting Element',
+              'ref': './src/metaform/modules/web/server.py'}
+    assert command({'add': {'proj.code.server.web': fields}}) == {'status': 'ok'}
+    assert command({'add': {'proj.code.metaform': {**fields, 'technical_name': 'metaform', 'name': 'metaform',
+                                                   'role': 'Defining Element', 'ref': './src/metaform/cli.py'}}}) \
+        == {'status': 'ok'}
+    yield project
+    service.stop(home)
+    owner.close_all()
+
+
+def stored_tickets():
+    from metaform.project import overlay_records
+    return overlay_records('proj', 'tickets') or []
+
+
+def test_a_fault_on_a_project_in_the_project_store_is_filed_in_its_tickets_overlay_at_the_owning_element(
+        run, held_in_store):
+    """old-store-removal step 1, F01: the ticket is a record of the tickets overlay the board reads, at the element
+    whose ref names the failing file, its counts in its note; the old store gets none."""
+    from metaform.data import Store
+    for number in range(3):
+        web_fault(held_in_store, number)
+    [filed] = stored_tickets()
+    assert filed['element'] == 'proj.code.server.web' and filed['kind'] == 'broken'
+    assert filed['title'].startswith('Web server fault: KeyError') and 'GET /api/graph' in filed['task']
+    assert 'seen 3 times' in filed['note'] and 'last 20' in filed['note']
+    assert not Store('proj').work(limit=0).results
+
+
+def test_a_stored_fault_ticket_is_found_by_its_title_reopened_when_it_recurs_and_left_when_cancelled(
+        run, held_in_store):
+    """A group whose ticket is lost from this module's table finds its open ticket by title at the element, never a
+    second one; a recurrence after done reopens that ticket with the fix that did not hold in its note; a cancelled
+    one stays cancelled."""
+    from metaform.data import Store
+    from metaform.modules.map.project_work import project_work
+    web_fault(held_in_store)
+    with Store('proj', module='autoticket').tables() as tx:  # as if the group were never filed
+        tx.delete('groups', {'group_id': 1})
+    web_fault(held_in_store)
+    [filed] = stored_tickets()
+    project_work('proj', 'done', {'id': filed['id'], 'resolution': 'Fixed the key.'})
+    web_fault(held_in_store)
+    [again] = stored_tickets()
+    assert again['id'] == filed['id'] and 'done' not in again and 'outcome' not in again
+    assert 'a fix that did not hold' in again['note'] and 'Fixed the key.' in again['note']
+    from metaform.project import run as command
+    assert command({'update': {again['element']: {'tickets': [
+        {'position': again['position'], 'record': again['record'], 'done': '2026-11-17T00:00:00Z',
+         'outcome': 'cancelled'}]}}})['status'] == 'ok'
+    web_fault(held_in_store)
+    [left] = stored_tickets()
+    assert left['outcome'] == 'cancelled' and left['note'].count('did not hold') == 1
+
+
+def test_project_store_changes_read_no_ticket_while_no_group_waits(run, held_in_store, monkeypatch):
+    """A project store commit names no ticket; the subscriber reads the store's tickets only while a group waits,
+    and a memory commit concerns it not."""
+    from metaform.module import context
+    faults = delivered()
+    web_fault(held_in_store)
+    read = []
+    monkeypatch.setattr(faults, 'stored_tickets', lambda name: read.append(name) or [])
+    ctx = context('autoticket', held_in_store)
+    for _ in range(50):
+        for payload in ({'project': 'proj', 'tables': ['project.map'], 'kinds': ['map']},
+                        {'project': 'proj', 'tables': ['project.memory'], 'kinds': ['memory']}):
+            faults.freed(payload, ctx)
+    assert read == []
+
+
 def lights(store, address='code.server.web'):
     """The fault lights: open work records of condition broken or trouble."""
     return [record for record in tickets(store) if record.address == address and record.condition in ('broken', 'trouble')]
