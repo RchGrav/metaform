@@ -32,7 +32,7 @@ import {toast} from '/page/app/core/controls.js';
 import {figureAt, mascotTakes} from '/page/app/figures/ask.js';
 import {WATCHED} from '/page/app/figures/bubble3d.js';
 import {nodeAt3d, linkAt3d, purposeOf} from '/page/app/map3d/pick3d.js';
-import {CLICK_LEAD} from '/page/app/session/text.js';
+import {CLICK_LEAD, SHOWN_LEAD} from '/page/app/session/text.js';
 
 /* Who sees: the calling agent's own figure, by the work its runner gave it, or else the person's mascot, which is the
  * system agent's figure and the person's. A refusal says why. */
@@ -498,6 +498,16 @@ export function clickedLine() {
   const ago = Date.now() - CLICKED.at;
   if (!CLICKED.at || CLICKED.told || CLICKED.project !== S.project || ago > CLICK_FRESH) return '';
   return `${CLICK_LEAD}${Math.round(ago / 1000)} s before: ${clickedWords()}.`;
+}
+/* The one line that tells the person's system agent which project they have on screen: the system agent serves
+ * every project and works in its own folder, the workspace, so without it "here" is not what the person sees. Given
+ * with the first message to a system agent, `work` its work id, and the first after the person moves to another
+ * project, by the chat, dock/send.js, or the mascot's ask field, ask.js. `told` is the work id and project last told;
+ * a message that did not go puts back what was there before. */
+export const SHOWN = {told: null};
+export const shownKey = work => `${work || ''}\n${S.project || ''}`;
+export function shownLine(work) {
+  return S.project && SHOWN.told !== shownKey(work) ? `${SHOWN_LEAD}${S.project}.` : '';
 }
 /* How the mascot moved on this page over its last seconds, for an agent reading what the person sees, VIEW-005: each
  * frame's body on the screen, its facing and size, its own animation, the point it steers to, the camera and the

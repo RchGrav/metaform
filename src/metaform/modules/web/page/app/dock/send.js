@@ -22,7 +22,8 @@ import {messageRow} from '/page/app/session/text.js';
 import {notificationState} from '/page/app/session/tasks.js';
 import {sessionPop} from '/page/app/session/settings.js';
 import {posted} from '/page/app/intake/intake.js';
-import {sharing, startShare, shareFrame, CLICKED, clickedLine} from '/page/app/figures/eyes.js';
+import {sharing, startShare, shareFrame, CLICKED, clickedLine, SHOWN, shownKey, shownLine} from '/page/app/figures/eyes.js';
+import {CLICK_LEAD} from '/page/app/session/text.js';
 
 /* A start that answered before its session runs: a resume names its session at once, though the session is live only
  * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
@@ -135,7 +136,8 @@ export function startFailed(reason, next = null, system = false) {
   const left = DOCK.queue.filter(item => addressedHere(item) && unsent(item));
   const waiting = left.map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
   // the message never went, so the click it named is still untold: the resend carries it while it is fresh
-  if (left.some(item => item.clicked)) CLICKED.told = false;
+  if (left.some(item => item.clicked?.includes(CLICK_LEAD))) CLICKED.told = false;
+  if (left.some(item => item.clicked)) SHOWN.told = null;  // the project goes again with the resend
   DOCK.queue = DOCK.queue.filter(item => !left.includes(item));
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
@@ -202,11 +204,15 @@ async function sendMessage(event) {
       : DOCK.state?.capabilities?.image !== true ? 'This agent does not take pictures, so the frame was not sent; '
         + 'remove it to send your words alone.' : null;
   if (refused) { box.value = text; growSay(); return toast(refused); }
-  const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
+  const toAgent = !fork && toSystem();
+  const clicked = toAgent ? clickedLine() : '', shown = toAgent ? shownLine(DOCK.mine) : '';
+  const told = [shown, clicked].filter(Boolean).join('\n\n'), lead = told ? `${told}\n\n` : '';
+  const shownBefore = SHOWN.told;
+  if (shown) SHOWN.told = shownKey(DOCK.mine);
   // the click is told when its line goes to the system agent, whichever way the message goes; a message to another
   // agent tells the system agent nothing, so it leaves the click untold. Set as it is taken, so a follow-up, or a click
   // made while this one goes, is never counted as this one's, and put back if the message fails
-  if (told) CLICKED.told = true;
+  if (clicked) CLICKED.told = true;
   if (!fork && (!DOCK.live || DOCK.queue.some(item => addressedHere(item) && unsent(item)))) {
     DOCK.queue.push({id: ++QUEUE_ID, target: DOCK.target, session: DOCK.session,
       text: lead + text + attached, sent: '', clicked: told,
@@ -230,7 +236,8 @@ async function sendMessage(event) {
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else {  // the views' context and the click are kept for the resend
     contextBack(taken);
-    if (told) CLICKED.told = false;  // only a click this message told: a click made while it went stays as it is
+    if (clicked) CLICKED.told = false;  // only a click this message told: a click made while it went stays as it is
+    if (shown) SHOWN.told = shownBefore;
     if (DOCK.selection === selection) { box.value = text; growSay(); }
     else DOCK.queue.push({id: ++QUEUE_ID, target, session, text: lead + text + attached, sent: '', clicked: told,
       state: 'waiting', at: Date.now()});

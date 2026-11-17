@@ -18,11 +18,12 @@ import {notificationState} from '/page/app/session/tasks.js';
  * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. The
  * person's message that told their system agent what they clicked shows that as a chip over their words. */
 export function messageRow(text, {mine, who, first, at, pending = null}) {
-  const [told, words] = mine ? clickedOf(text) : [null, text];
+  const [told, words] = mine ? toldOf(text) : [[], text];
   const bubble = h('div', {class: `bubble ${mine ? 'mine' : 'theirs'}${pending ? ' pending' : ''}`},
     h('span', {class: 'visually-hidden'}, `${who}: `),
-    told ? h('span', {class: 'chip clickedchip', title: `Your agent was told: ${told}`},
-      told.slice(CLICK_LEAD.length).replace(/^\d+ s before: /, 'Clicked: ').replace(/\.$/, '')) : null,
+    ...told.map(line => h('span', {class: 'chip clickedchip', title: `Your agent was told: ${line}`},
+      line.startsWith(SHOWN_LEAD) ? `On screen: ${line.slice(SHOWN_LEAD.length).replace(/\.$/, '')}`
+        : line.slice(CLICK_LEAD.length).replace(/^\d+ s before: /, 'Clicked: ').replace(/\.$/, ''))),
     ...richText(words));
   const time = at
     ? h('time', {datetime: new Date(at).toISOString(), title: new Date(at).toLocaleString()}, clockOf(at)) : null;
@@ -31,12 +32,19 @@ export function messageRow(text, {mine, who, first, at, pending = null}) {
   return h('div', {class: `msg ${mine ? 'mine' : 'theirs'}${first ? ' first' : ''}`},
     first ? h('div', {class: 'who', 'aria-hidden': 'true'}, who) : null, h('div', {class: 'row'}, bubble, tools));
 }
-/* The line that tells the person's system agent what they last clicked, first in their message, dock/send.js; split
- * from the words they wrote: [the line or null, the words]. */
+/* The lines that tell the person's system agent which project they have on screen and what they last clicked, first
+ * in their message, dock/send.js; split from the words they wrote: [the lines, the words]. */
 export const CLICK_LEAD = 'The person clicked, ';
-function clickedOf(text) {
-  const said = String(text ?? ''), end = said.indexOf('\n\n');
-  return said.startsWith(CLICK_LEAD) && end > 0 ? [said.slice(0, end), said.slice(end + 2)] : [null, said];
+export const SHOWN_LEAD = 'The person has this project on screen in Metaform: ';
+function toldOf(text) {
+  const told = [];
+  let said = String(text ?? ''), end = said.indexOf('\n\n');
+  while (end > 0 && (said.startsWith(SHOWN_LEAD) || said.startsWith(CLICK_LEAD))) {
+    told.push(said.slice(0, end));
+    said = said.slice(end + 2);
+    end = said.indexOf('\n\n');
+  }
+  return [told, said];
 }
 /* A small Copy button: the text given goes to the clipboard, and the button says Copied for a moment. */
 function copyButton(text, label = 'Copy') {

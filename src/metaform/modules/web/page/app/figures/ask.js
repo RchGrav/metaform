@@ -22,7 +22,7 @@ import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {bubbleAt, bubbleText} from '/page/app/figures/bubble3d.js';
 import {spokenOf, sameWords} from '/page/app/session/apps.js';
-import {CLICKED, clickedLine} from '/page/app/figures/eyes.js';
+import {CLICKED, clickedLine, SHOWN, shownKey, shownLine} from '/page/app/figures/eyes.js';
 
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble.
  * What the person writes goes to their system agent, the one the chat dock's Call starts, and the answer comes back
@@ -81,13 +81,15 @@ async function mascotAsk(text) {
   ASKING.pending = ASKING.pending ? `${ASKING.pending}\n\n${text}` : text;
   // what "this" is, as the person asks, as the chat's send fixes it when it queues; a second ask while the first
   // waits keeps the first one's line unless a click came between
-  ASKING.told = clickedLine() || ASKING.told;
-  if (ASKING.told) CLICKED.told = true;
+  const clicked = clickedLine(), shown = shownLine(DOCK.mine);
+  ASKING.told = [shown, clicked].filter(Boolean).join('\n\n') || ASKING.told;
+  if (clicked) CLICKED.told = true;
+  if (shown) SHOWN.told = shownKey(DOCK.mine);
   if (!live && DOCK.calling) return;  // the agent is being reached already: the words go once it is, `flushAsk`
   if (!live) await callSystem();
   if (!ASKING.pending) return;  // already delivered while the agent was reached
   if (!DOCK.mine) {
-    if (ASKING.told) CLICKED.told = false;  // never told: the click is the person's to ask about again
+    if (ASKING.told) { CLICKED.told = false; SHOWN.told = null; }  // never told: both go with the next ask
     Object.assign(ASKING, {pending: null, told: ''});
     say('I could not reach your system agent.', 4);
     return;
@@ -100,7 +102,7 @@ async function mascotAsk(text) {
  * not start; another agent's failed start or a refused chat message leaves the question waiting. */
 export function askFailed() {
   if (!ASKING.pending) return;
-  if (ASKING.told) CLICKED.told = false;
+  if (ASKING.told) { CLICKED.told = false; SHOWN.told = null; }
   Object.assign(ASKING, {pending: null, told: ''});
   say('I could not reach your system agent.', 4);
 }
@@ -118,7 +120,7 @@ export async function flushAsk() {
   const sent = await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id,
     text: told ? `${told}\n\n${text}` : text});
   if (!sent) {
-    if (told) CLICKED.told = false;  // not delivered: the click goes with the next message while it is fresh
+    if (told) { CLICKED.told = false; SHOWN.told = null; }  // not delivered: both go with the next message
     say('That did not go through.', 4);
   }
 }

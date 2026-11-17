@@ -17,6 +17,10 @@ import pytest
 FAKE_AGENT = Path(__file__).parents[2] / 'dispatch' / 'tests' / 'fake_agent.py'
 
 
+# The line that tells the system agent the project on screen, first in the first message to it and the first after a
+# switch, figures/eyes.js `shownLine`.
+SHOWN = r'(?:The person has this project on screen in Metaform: [^\n]+\.\n\n)?'
+
 def own(project_id):
     """A project's folder in the home, PROJ-026."""
     from metaform import home as metaform_home
@@ -6837,8 +6841,11 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         first = eventually(lambda: next((one for one in prompts() if 'Why is this flashing red?' in one), None))
         line = (f'The person clicked, {{}} s before: join code.timer.kitchen > code.alarm.audible, flashing red '
                 f'(#{item.split("#")[-1]} trouble).')
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this flashing red\\?$', first), first
-        chip = page.wait_for_selector('#helpdesk .msg.mine .bubble:has-text("Why is this flashing red?") .clickedchip')
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this flashing red\\?$', first), first
+        assert first.startswith('The person has this project on screen in Metaform: '), first  # the project, once
+        bubble = '#helpdesk .msg.mine .bubble:has-text("Why is this flashing red?")'
+        page.wait_for_selector(f'{bubble} .clickedchip:has-text("On screen: ")')
+        chip = page.wait_for_selector(f'{bubble} .clickedchip:has-text("Clicked: ")')
         assert chip.inner_text().startswith('Clicked: join code.timer.kitchen > code.alarm.audible, flashing red')
         assert 'The person clicked' not in page.inner_text('#helpdesk .msg.mine .bubble:has-text("flashing red?")')
         page.fill('#helpdesk .say', 'And what is this one?')        # no click since the last message
@@ -6851,7 +6858,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.press('#helpdesk .say', 'Enter')
         late = eventually(lambda: next((one for one in prompts() if 'Still there?' in one), None))
         assert late == 'Still there?', late
-        assert page.locator('#helpdesk .clickedchip').count() == 1
+        assert page.locator('#helpdesk .clickedchip:has-text("Clicked: ")').count() == 1
         click_join()                                                   # the join, then the mascot to ask about it
         map_key(page, 's')                                             # the 3D map back in the large area
         clear = '''() => { const m = window.metaform.mascot(); if (m.sx === undefined) return null;
@@ -6863,7 +6870,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.fill('input.reply', 'Why is this red?')
         page.press('input.reply', 'Enter')
         asked_mascot = eventually(lambda: next((one for one in prompts() if 'Why is this red?' in one), None))
-        pattern = re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this red\\?$'
+        pattern = SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this red\\?$'
         assert re.match(pattern, asked_mascot), asked_mascot
         page.wait_for_selector('#helpdesk .msg.mine .bubble:has-text("Why is this red?") .clickedchip')
         # asked through the mascot while the system agent is not running: the line is the click as the person asked,
@@ -6897,7 +6904,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.unroute('**/api/dispatch-sessions*', not_running)
         page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")  # now it is live
         asked_waiting = eventually(lambda: next((one for one in prompts() if 'Why is that red?' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is that red\\?$', asked_waiting), \
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is that red\\?$', asked_waiting), \
             asked_waiting
         # two questions to the mascot while the person's system agent is still being called: the agent is called
         # once, and both go in one prompt, in order, under the click line once
@@ -6924,7 +6931,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         for call in calls:  # answered here: a handler in Python runs only while the test waits on the page
             call.fulfill(json={'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})
         both = eventually(lambda: next((one for one in prompts() if 'timer slow' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+')
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+')
                         + '\n\nIs the alarm late\\?\n\nOr is the timer slow\\?$', both), both
         assert len(calls) == 1 and sum('alarm late' in one for one in prompts()) == 1, (calls, prompts())
         assert 'I could not reach your system agent.' not in page.evaluate('window.__said')
@@ -6967,7 +6974,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.fill('#helpdesk .say', 'Did that reach you?')
         page.press('#helpdesk .say', 'Enter')
         reached = eventually(lambda: next((one for one in prompts() if 'Did that reach you?' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nDid that reach you\\?$', reached), reached
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nDid that reach you\\?$', reached), reached
         # another agent's start fails while the question waits on the system agent's call: the question still waits,
         # nothing says the system agent was not reached, and it goes once the call answers
         map_key(page, 's')                                             # the 2D map in the large area, for the join
@@ -7002,7 +7009,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         for call in reaching_system:  # answered here: a handler in Python runs only while the test waits on the page
             call.fulfill(json={'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})
         bell = eventually(lambda: next((one for one in prompts() if 'Is the bell broken?' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs the bell broken\\?$', bell), bell
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs the bell broken\\?$', bell), bell
         assert len(reaching_system) == 1, reaching_system
         # a message written while the system agent starts, whose send then fails: the person's words come back in the
         # box without the line, and the resend carries the line once, as the click was never told
@@ -7024,11 +7031,11 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.unroute('**/api/dispatch-sessions*', not_running)                # live now: the queued send fails
         page.evaluate("async () => (await import('/page/app/dock/helpdesk.js')).drawHelpdesk()")
         page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Is it still red?'")
-        assert refused and refused[0].startswith('The person clicked'), refused  # the queued send carried the line
+        assert refused and 'The person clicked' in refused[0], refused  # the queued send carried the line
         assert page.input_value('#helpdesk .say') == 'Is it still red?'
         page.press('#helpdesk .say', 'Enter')                          # the resend, the session live
         resent = eventually(lambda: next((one for one in prompts() if 'Is it still red?' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs it still red\\?$', resent), resent
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs it still red\\?$', resent), resent
         assert resent.count('The person clicked') == 1, resent
         page.fill('#helpdesk .say', 'And now?')
         page.press('#helpdesk .say', 'Enter')
@@ -7069,7 +7076,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.fill('#helpdesk .say', 'Back to the join.')
         page.press('#helpdesk .say', 'Enter')
         back = eventually(lambda: next((one for one in prompts() if 'Back to the join.' in one), None))
-        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nBack to the join\\.$', back), back
+        assert re.match(SHOWN + re.escape(line).replace(r'\{\}', r'\d+') + '\n\nBack to the join\\.$', back), back
         assert back.count('The person clicked') == 1, back
         assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'] * 4, \
             problems
@@ -8740,7 +8747,7 @@ def test_a_queued_message_that_fails_puts_back_only_the_persons_words_and_keeps_
         page.press('#helpdesk .say', 'Enter')                         # no agent there yet: it waits, then is refused
         page.wait_for_function('() => document.querySelector("#helpdesk .say").value', timeout=20000)
         assert page.input_value('#helpdesk .say') == 'Is that the one?'
-        told = (r'The person clicked, \d+ s before: [^\n]+\n\n'
+        told = (SHOWN + r'The person clicked, \d+ s before: [^\n]+\n\n'
                 r'\[From the Node view: The person selected code\.alarm\.audible\.\]\n\nIs that the one\?$')
         assert len(refused) == 1 and re.match(told, refused[0]), refused
         page.press('#helpdesk .say', 'Enter')                         # sent again
