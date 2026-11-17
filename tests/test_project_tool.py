@@ -1217,3 +1217,23 @@ def test_the_root_blocks_round_trip_through_the_document_between_its_heading_and
     for broken in (edited.replace('### Scope', '#### Scope'), edited.replace('Relay each', '# Relay each')):
         assert commands.perform_specification(P, broken, owned)['code'] == 'DOCUMENT_REFUSED', broken
     assert commands.perform_specification(P, None, owned)['document'] == edited
+
+
+def test_dispatch_waits_on_a_ticket_of_the_project_store(served):
+    """Phase 3, F01: `dispatch wait` found no store ticket, since it read only the old store. A done store ticket now
+    answers done at once, an open one waits out the limit as pending, and a condition a store ticket cannot meet is
+    refused by name."""
+    import asyncio
+    import contextlib
+    from types import SimpleNamespace
+
+    from metaform.module import Stop
+    from metaform.modules.dispatch import wait_in_store
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [
+        {'id': 't-done', 'title': 'Done', 'task': 'Done.', 'done': '2026-11-17T00:00:00Z', 'outcome': 'completed'},
+        {'id': 't-open', 'title': 'Open', 'task': 'Open.'}]}}}, served) == {'status': 'ok'}
+    ctx = SimpleNamespace(listen=lambda _: contextlib.nullcontext(), setting=lambda _: 0.3)
+    assert asyncio.run(wait_in_store(ctx, P, P, 'done', 't-done'))['state'] == 'done'
+    assert asyncio.run(wait_in_store(ctx, P, P, 'done', 't-open'))['state'] == 'pending'
+    with pytest.raises(Stop, match='until=stopped has no meaning yet'):
+        asyncio.run(wait_in_store(ctx, P, P, 'stopped', 't-open'))

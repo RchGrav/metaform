@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files, settings
+from metaform import project as project_store
 from metaform.data import (
     BASE_VARIABLE,
     Column,
@@ -4728,6 +4729,10 @@ async def wait(ctx: Context) -> dict[str, Any]:
         except ValueError:
             raise Stop(f'since is a UTC time as 2026-10-11T04:18:04Z, not {since}.',
                        'metaform help dispatch wait') from None
+    if work_id:  # a ticket of the project store is waited on there, where the board and map work keep it (F01)
+        stored = project_store.stored_name(store.project_id)
+        if project_store.holds(stored) and await asyncio.to_thread(store_ticket, stored, work_id) is not None:
+            return await wait_in_store(ctx, store.project_id, stored, until, work_id)
     if work_id:
         await asyncio.to_thread(ticket, store, work_id)  # an unknown ticket is refused before anything waits
     loop = asyncio.get_running_loop()
@@ -4771,6 +4776,51 @@ async def wait(ctx: Context) -> dict[str, Any]:
             await asyncio.to_thread(deaths.arm)  # a runner started since is watched too; one stat when none was
     return {'state': 'pending', 'until': until, 'work_id': work_id, 'woke': [], 'since': since, 'waited': limit,
             'next': waiting_call(until, work_id, since)}
+
+
+def store_ticket(stored: str, work_id: str) -> dict[str, Any] | None:
+    """The ticket with this id in a project's tickets overlay in the project store; None when there is none."""
+    return next((record for record in cast(list[dict[str, Any]], project_store.overlay_records(stored, 'tickets') or [])
+                 if record.get('id') == work_id), None)
+
+
+async def wait_in_store(ctx: Context, project_id: str, stored: str, until: str, work_id: str) -> dict[str, Any]:
+    """Wait until a ticket of the project store is done (kickoff 2026-11-17 Phase 3, audit F01): the board and map
+    work keep it there, so `dispatch wait` found no such ticket in the old store. It wakes on the project's map
+    changes, which the store's service announces after each commit, never on a timer, for at most
+    dispatch_wait_seconds. A store ticket's agent is assigned it as a task and keeps no runner on the ticket, so until
+    stopped or signal has no meaning for it yet and is refused by name."""
+    if until != 'done':
+        raise Stop(f'until={until} has no meaning yet for {work_id}: it is a ticket of the project store, worked by an '
+                   'agent assigned it as a task, which keeps no runner on the ticket. Wait on it with until=done.',
+                   f'metaform dispatch wait until=done id={work_id}')
+    loop = asyncio.get_running_loop()
+    heard = asyncio.Event()
+
+    def told(payload: dict[str, Any]) -> None:
+        kinds: Any = payload.get('kinds')
+        if payload.get('project') == project_id and (not isinstance(kinds, list) or 'map' in kinds):
+            loop.call_soon_threadsafe(heard.set)
+
+    limit = float(ctx.setting('dispatch_wait_seconds'))
+    deadline = loop.time() + limit
+    with ctx.listen(told):
+        while True:
+            heard.clear()  # before the read, so a change during it wakes the wait again
+            record = await asyncio.to_thread(store_ticket, stored, work_id)
+            if record is None:
+                raise Stop(f'Ticket {work_id} is no longer in the project store.', 'metaform map work op=list')
+            if record.get('done'):
+                state = 'done' if record.get('outcome') in (None, 'completed') else str(record['outcome'])
+                return {'state': state, 'until': until, 'work_id': work_id, 'since': None, 'next': None,
+                        'woke': [{'work_id': work_id, 'state': state, 'done': record['done'],
+                                  'note': record.get('note')}]}
+            try:
+                await asyncio.wait_for(heard.wait(), max(deadline - loop.time(), 0))
+            except TimeoutError:
+                break
+    return {'state': 'pending', 'until': until, 'work_id': work_id, 'woke': [], 'since': None, 'waited': limit,
+            'next': waiting_call(until, work_id, None)}
 
 
 def _purposes(store: Store, read: dict[str, Any]) -> list[str]:
