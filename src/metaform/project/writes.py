@@ -163,6 +163,23 @@ class Writer:
             start = self.store.next_position(key, address) if records and self.verb == 'add' else 0
             for offset, record in enumerate(records or []):
                 self.store.insert_record(key, address, start + offset, record)
+        if any(key == 'tickets' for _, key, _ in [*overlay_writes, *placed]):
+            self.check_ticket_ids()
+
+    def check_ticket_ids(self) -> None:
+        """A ticket's id names one ticket in the project (F09, kickoff 2026-11-17): the tickets overlay is the tool's
+        own, and the board, the command line and an agent's assignment find a ticket by its id. Checked after the
+        command's writes, in its transaction, so a command that would leave an id on two tickets is refused whole and
+        nothing changes. Other overlays may hold the same value twice."""
+        where: dict[str, list[str]] = {}
+        for address, position, row in self.store.all_records('tickets', ['id']):
+            if row['id'] is not None:
+                where.setdefault(str(row['id']), []).append(f"'{self.full(address)}' position {position}")
+        twice = next(((ident, places) for ident, places in sorted(where.items()) if len(places) > 1), None)
+        if twice is not None:
+            raise Refusal('TICKET_ID_TAKEN', f"ticket id {twice[0]!r} would name {len(twice[1])} tickets: "
+                          f"{', '.join(twice[1])}. A ticket's id names one ticket in {self.project}; give this one "
+                          'another id.')
 
     def current_records(self, definition: Definition, address: str) -> list[dict[str, object]]:
         """The overlay's records at an address, as a read gives them."""

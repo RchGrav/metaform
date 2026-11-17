@@ -60,7 +60,17 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
         if 'held' in nouns or 'hold' in nouns:
             fields['held'] = True if bool(nouns.get('held', nouns.get('hold'))) else None
     elif op == 'take':
-        fields = {'taken_by': str(nouns.get('agent') or 'agent'), 'held': None}
+        # A claim is exclusive (F09): a ticket another agent holds is refused, and the claim names the revision it
+        # read, so of two claims made at once one is taken and the other is refused with RECORD_CHANGED.
+        agent = str(nouns.get('agent') or 'agent')
+        holder = found.get('taken_by')
+        if holder and holder != agent and not found.get('done'):
+            raise Stop(f"Ticket {found['id']!r} is taken by {holder}; it is not taken again. Its holder or the person "
+                       'releases it on the board first.', f"metaform map work id={found['id']}")
+        _done(project_store.run({'update': {str(found['element']): {'tickets': [
+            {'position': found['position'], 'record': found['record'], 'revision': found['revision'],
+             'taken_by': agent, 'held': None}]}}}))
+        return _shown(project, _found(project, str(nouns['id'])))
     elif op == 'done':
         fields = {'done': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'outcome': 'completed',
                   'note': ' '.join(str(nouns[name]) for name in ('resolution', 'why') if nouns.get(name)) or None}

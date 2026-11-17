@@ -1039,3 +1039,29 @@ def test_an_upgrade_that_would_leave_the_graph_incomplete_changes_nothing_and_sa
         assert again.rows('MATCH (r:ov_notes) RETURN r.f_text', {}) == [['Held by nothing.']]
     finally:
         again.close()
+
+
+def test_a_ticket_id_names_one_ticket_and_a_claim_is_exclusive(served):
+    """F09: a command that would leave one ticket id on two tickets is refused whole; a ticket another agent holds is
+    not taken again, and of two claims made from the same read only the first is taken."""
+    from metaform.module import Stop
+    from metaform.modules.map.project_work import project_work
+    ticket = {'id': 't-1', 'title': 'Ring', 'task': 'Ring.'}
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [ticket]}}}, served) == {'status': 'ok'}
+    assert commands.run({'add': {CS: CS_FIELDS}}, served) == {'status': 'ok'}
+    before = commands.overlay_records(P, 'tickets', served)
+    for command in ({'add': {CS: {'tickets': [ticket]}}},
+                    {'add': {WIDGET: {'tickets': [{**ticket, 'title': 'Again'}]}}},
+                    {'update': {CS: {'tickets': [ticket, {**ticket, 'title': 'Twice'}]}}}):
+        answer = commands.run(command, served)
+        assert answer['code'] == 'TICKET_ID_TAKEN', command
+        assert commands.overlay_records(P, 'tickets', served) == before
+    assert project_work(P, 'take', {'id': 't-1', 'agent': 'claude'})['taken_by'] == 'claude'
+    with pytest.raises(Stop, match='taken by claude'):
+        project_work(P, 'take', {'id': 't-1', 'agent': 'codex'})
+    assert project_work(P, 'take', {'id': 't-1', 'agent': 'claude'})['taken_by'] == 'claude'  # its holder again
+    (read,) = commands.overlay_records(P, 'tickets', served)  # two claims made from this one read
+    claim = {'position': 0, 'record': read['record'], 'revision': read['revision']}
+    assert commands.run({'update': {WIDGET: {'tickets': [{**claim, 'taken_by': 'a'}]}}}, served) == {'status': 'ok'}
+    assert commands.run({'update': {WIDGET: {'tickets': [{**claim, 'taken_by': 'b'}]}}}, served)['code'] == (
+        'RECORD_CHANGED')
