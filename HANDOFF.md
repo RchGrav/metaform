@@ -1,46 +1,83 @@
-# Handoff, 2026-11-16 (end of day)
+# Handoff, 2026-11-16 (evening)
 
 Branch `feat/project-tool`, pushed; every item below is committed there unless it says otherwise.
 
 ## Why this work, and where to start
 
-**The purpose.** Metaform starts AI agents (Claude Code, Codex and others) and gives each one the part of the project
-it needs. The part of Metaform that starts and talks to them is the `dispatch` module, over the Agent Client Protocol
-(ACP). Today that code is one 5,000-line class, `runner.Session` in `dispatch/runner.py`, that mixes talking to the
-agent with ticket work, speaks only the protocol's old version (v1), and knows of only three agents, typed into the
-code. The goal is one clean place that talks to every agent, on the protocol's new version (v2) where the agent has
-it, which every part of Metaform asks to start an agent. That is what makes profiles possible next: one saved
-definition of how an agent starts (which agent, model, thinking level, prompt), so the person can set up a team of
-agents with different roles.
+**The purpose.** Metaform starts AI agents and gives each one the part of the project it needs. The `dispatch`
+module starts and talks to them over the Agent Client Protocol (ACP). The person's aim, restated this evening: **no
+harness is named in Metaform's code.** ACP exists so a client drives any harness one standard way, and ACP's
+registry lists them (46 today: Claude Code, Codex, Gemini CLI, Cursor, Goose, Factory Droid and the rest). Today
+three are typed into the code (`AGENTS`), the rest can only be pinned from a shell, and an intake named the map's
+harness element after those three. After that come profiles: one saved definition of how an agent starts (harness,
+model, reasoning level, Claude Code's `agent`, startup prompt), so the person can set up a team with roles.
 
-**What you are doing now.** Step 2b: moving `runner.Session` onto the new protocol layer `dispatch/acp/`, which is
-built and tested but not yet used by the runner. When it is done, Claude Code and Codex run on v2.
+**Next: step 3a of `docs/plans/dispatch-owns-acp.md`, the registry as the list** (written there in full, commit
+`57405a8a`): a checklist of every registry harness that can start here, found ones first; checking installs it into
+the home and asks it over ACP (ready, needs login, cannot start); launch by registry id; `AGENTS`, `BUILTIN`,
+`PROFILE_ONLY` and the runner's `== 'claude'` removed; registry icons beside every harness name, and a badge at the
+upper left of each agent's character showing its harness, with model, reasoning level and context window on hover.
+The badge matters for safety: the person twice had Codex running when they thought it was Claude and the reverse.
 
-**Review first, in this order:**
-1. `docs/plans/dispatch-owns-acp.md`: "The connection" and step 2 under "Order of work", including the notes for the
-   move at the end of step 2.
-2. `src/metaform/modules/dispatch/acp/`: `model.py`, `connection.py`, `v1.py`, `v2.py`, and `tests/test_acp.py`.
-3. In the worktree `/home/rich/metaform-dispatch-acp`: commit `17e2c1e2` on `feat/dispatch-acp`, which adds to the
-   layer what the runner needs; check it before building on it. Then the branch `wip/runner-move-partial`, a half-done
-   edit of `runner.py` left by a stopped agent: read it for ideas, do not merge it.
-4. `runner.Session`: the methods that talk to the agent (`open_agent`, `session_update`, `request_permission`,
-   `create_elicitation`, `apply_options`, `configure`, the login and probe methods) and the ticket work around them,
-   which must keep working unchanged.
+**Then step 2b**, moving `runner.Session` onto `dispatch/acp/`. Reviewed this evening; see "Open decisions".
 
-**Start** with the first concern in the plan's order, opening the connection and `initialize`, in the worktree; run
-the dispatch tests that concern it, commit, and go on to the next.
+## What happened this evening
 
-## How to work (the person's rules from today)
+- **Reviewed for 2b:** the plan, the `acp/` layer, commit `17e2c1e2` in the worktree `/home/rich/metaform-dispatch-acp`
+  (sound: the SDK tells observers after the bytes are written, so `Client.written` holds; build on it), and branch
+  `wip/runner-move-partial` (one untested 1,000-line pass; a lookup only).
+- **The system agent's chat was stuck on "Please stand by".** Cause: `leads()` in `web/server.py` cached "not the
+  workspace's" for the system agent's work id, asked while it started, so every read went to the project on screen.
+  Fixed in `d71dc909`, test in `71df1887`; the web server runs that code (fingerprint `bc1d142b9536`, restarted
+  00:44 UTC) and a headless Call attached ("With your system agent · Ready"). Its earlier turn had failed on a DNS error reaching Anthropic's API (bug 9).
+- **Bugs recorded** in `docs/plans/bugs-to-fix.md` (`e3fc6466`), 9 to 14: a system agent stuck after a network error;
+  the SDK dropping Claude Code's `subagent_update` and `session_message`; `user_agent` answering `session_id: null`;
+  no handler for `auth/status_update`; harnesses still named in code; "lead" versus "system agent".
+- **Names.** The person's choice: it is the **system agent**, never "the lead". New code says system agent.
+- **Icons.** An earlier session told the person they could not show which harness an agent runs; that was wrong.
+  Showing a harness's registry icon beside its name to identify it is fine. The agent characters stay as each
+  agent's own identity; the harness badge is added beside them.
+- **`AGENTS.md`, "Landing work"** (`bf3dd117`): every agent task ends with a commit labelled with what it did and a
+  push, and the agent does not stop before that step.
 
-- Do the work yourself. No subagents unless the person asks or a multi-agent mode is on: they cost twice and today
-  they spent most of the day's usage.
-- Every feature lands as its own commit and is pushed; an assignment is not done until then.
-- Change only what the assignment is about (`AGENTS.md`, "Scope is the assignment"). A bug found on the way goes in
-  `docs/plans/bugs-to-fix.md`, not into the code.
+## Open decisions (the person's)
+
+1. **Order:** 3a before 2b was proposed, so the runner's options code is rewritten once (3b, options by id, after
+   2b). The person went on to shape 3a without saying otherwise; confirm before starting.
+2. **How 2b lands:** every SDK call and callback shares one stdio stream, so the plan's "tests pass after each
+   concern" cannot hold past the first. Proposed: one switch commit with every dispatch test green, built concern by
+   concern in the worktree; or a temporary bridge so each concern lands alone.
+3. **Claude Code handing work to Codex** through the `codex-rescue` plugin is invisible to dispatch (plan issue 18):
+   flag it on the agent when it happens, keep the plugin out of Metaform's sessions, or leave it.
+4. **Fresh start check:** the restart alone cleared the bad cache, so the fix itself is proven by its test, not yet
+   by a system agent started from scratch (that spends a Claude turn; ask first).
+
+## What remains, in order
+
+1. **Step 3a**, the registry as the list (above).
+2. **Step 2b**, `runner.Session` onto `dispatch/acp/` (plan, step 2, with the notes for the move). Then one live
+   Claude Code and one live Codex session from the page, after asking the person.
+3. **Step 3b**, options by id; the settings per harness name go.
+4. **Step 4: profiles and assignments**, each profile naming harness, model, reasoning level, `agent` and prompt.
+   Designed only; nothing built.
+5. **Steps 5 to 7:** the launch service, roundtables on dispatch, dispatch required.
+6. **Specifications on the map** (`docs/plans/specifications-overlay.md`).
+7. **Bugs** in `docs/plans/bugs-to-fix.md`.
+
+## How to work (the person's rules)
+
+- Do the work yourself. No subagents unless the person asks or a multi-agent mode is on.
+- Every task ends with its work committed, labelled with what it did, and pushed; no asking first and no waiting for
+  a test. Leave nothing uncommitted or half working.
+- A task ends committed, pushed and running: restart what serves it after the last commit, check the running code
+  is the committed code (the "code" fingerprint in `~/.metaform/run/web.log` against `code_print()`; it hashes every
+  `.py`, tests included), check the behaviour, and tell the person exactly what to do so they can test it. Never
+  report a change as not running or not committed.
+- Change only what the assignment is about. A bug found on the way goes in `docs/plans/bugs-to-fix.md`.
 - Read the code, its history and its specs before changing or removing anything.
 - Speak plainly. Check with short text, not screenshots or long printouts.
 
-## Accomplished today
+## Accomplished earlier on 2026-11-16
 
 **Dispatch and the agent protocol** (plan: `docs/plans/dispatch-owns-acp.md`)
 - Step 0: Fast mode is keyed to ACP's `speed` option, so it no longer switches Claude Code's Ultracode; the call window
@@ -67,23 +104,6 @@ the dispatch tests that concern it, commit, and go on to the next.
 - `AGENTS.md`: "Scope is the assignment" and "Landing work".
 - Plan for specifications on the map: `docs/plans/specifications-overlay.md`, porting the Rust branch's tested design
   (archive `/mnt/c/spec_roundtrip.zip`).
-
-## What remains, in order
-
-1. **Step 2b: move `runner.Session` onto `dispatch/acp/`**, one concern at a time in the plan's order (open and
-   initialize; session new, resume, close; the prompt turn; updates; permissions and elicitation; config options;
-   logins; the probes), dispatch tests passing after each, one commit each. The notes for the move are in the plan
-   under step 2. Started work to read first, in the worktree `/home/rich/metaform-dispatch-acp`: commit `17e2c1e2` on
-   `feat/dispatch-acp` (additions to the layer, not reviewed) and branch `wip/runner-move-partial` (a half-done,
-   untested edit of `runner.py`; read it, do not merge it). Then one live Claude Code and one live Codex session from
-   the page on v2, after asking the person, since they spend tokens.
-2. **Step 3: the registry.** The three hard-coded harnesses replaced by the ACP Registry; this also fixes the map
-   naming its harness element "Claude Code, Codex, Google Antigravity".
-3. **Step 4: profiles and assignments.**
-4. **Steps 5 to 7:** the launch service, roundtables on dispatch, dispatch required.
-5. **Specifications on the map** (`docs/plans/specifications-overlay.md`).
-6. **Bugs** in `docs/plans/bugs-to-fix.md`: `dispatch wait` cannot follow an intake; one dispatch test, two
-   settings-screen tests and one recovery test fail, each before today's changes; the harness element's name.
 
 ## How to check a change here
 
