@@ -4646,6 +4646,45 @@ def test_a_question_answered_by_mistake_is_reopened_from_the_page(run, web, mapp
     assert Store('proj').messages(None, 'message', False).results[0].closed
 
 
+@pytest.mark.req('MAP-050')
+def test_the_messages_pane_reads_and_answers_a_store_projects_questions_from_its_questions_overlay(
+        run, web, home, tmp_path):
+    """Decision t-legacy-keep: for a project held in the project store, the page reads its questions and messages from
+    its questions overlay, answers and reopens a question and reads a message there; the old store is not used."""
+    from metaform.data import Store
+    from metaform.modules.map import project_messages
+    from metaform.project import overlay_records, owner, service
+    from metaform.project import run as command
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    try:
+        assert command({'add': {'proj.code.timer.kitchen': {'technical_name': 'kitchen timer', 'name': 'timer',
+                                                            'role': 'Supporting Element'}}}) == {'status': 'ok'}
+        asked = json.loads(run('map', 'ask', 'code.timer.kitchen', 'Is the 1 Hz tick still wanted?',
+                               'suggestions=["Yes, keep it.", "No, drop it."]', 'title=Tick', 'why=It is loud.',
+                               '--json', cwd=folder).stdout)
+        told = project_messages.tell('proj', 'code.timer.kitchen', 'The driver is written.')
+        started(run)
+        status, body = api(web, '/api/messages?project=proj&open=true&limit=0')
+        assert status == 200 and [one['id'] for one in body['results']] == [asked['id'], told['id']], body
+        assert reopened(web, asked['id'])[0] == 400  # an open question has nothing to reopen
+        status, body = answered(web, asked['id'], 'No, drop it.')
+        assert status == 200 and (body['answer'], bool(body['closed'])) == ('No, drop it.', True)
+        assert answered(web, asked['id'], 'Again')[0] == 400  # no longer an open question
+        status, body = reopened(web, asked['id'])
+        assert status == 200 and (body['closed'], body['answer']) == (None, None)
+        status, body = api(web, '/api/read', method='POST', body=json.dumps({'project': 'proj', 'id': told['id']}),
+                           headers=own_write(web))
+        assert status == 200 and body['closed']
+        assert {one['id']: bool(one.get('closed')) for one in overlay_records('proj', 'questions') or []} == {
+            asked['id']: False, told['id']: True}
+        assert not Store('proj').messages(limit=0).results
+    finally:
+        service.stop(home)
+        owner.close_all()
+
+
 @pytest.mark.req('VIEW-021')
 @pytest.mark.req('MAP-050')
 @pytest.mark.parametrize('width', [1280, 1024, 820, 600])

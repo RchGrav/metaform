@@ -1010,6 +1010,20 @@ class Handler(BaseHTTPRequestHandler):
             held_work = stored_tickets(given.get('project', ''), given)
             if held_work is not None:
                 return self.send(200, {'results': held_work, 'next': None})
+        if name == 'messages':  # a project in the project store: the records of its questions overlay, by map's verb
+            # the query's text as the verb's arguments take it: open a boolean and limit a number
+            typed = {'true': True, 'false': False}
+            asked: dict[str, Any] = {key: given[key] for key in ('node', 'kind', 'after') if key in given}
+            if 'open' in given:
+                asked['open'] = typed.get(given['open'], given['open'])
+            if 'limit' in given:
+                asked['limit'] = int(given['limit']) if given['limit'].isdigit() else given['limit']
+            try:
+                held_messages = stored_messages(given, asked)
+            except (Stop, StoreError) as error:
+                return self.refuse(error, 400)
+            if held_messages is not None:
+                return self.send(200, plain(held_messages))
         if name == 'layer-items':
             # Nothing is read ahead for a project in the project store: an overlay's records are read with the
             # element they are at, when the person opens it, and never the whole project's at a load.
@@ -1479,6 +1493,12 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(answer, str) or not answer.strip():
             return self.send(400, {'error': 'An answer says something.'})
         try:
+            held = stored_messages(given, {'kind': 'question', 'open': True, 'limit': 0})
+            if held is not None:  # a project in the project store: its questions overlay, by map's verb
+                if not any(found['id'] == record for found in held['results']):
+                    return self.send(400, {'error': 'This is not an open question.'})
+                return self.send(200, plain(module_verb(given, 'map', 'reply', {'id': record,
+                                                                                'answer': answer.strip()})))
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 asked = [found for found in store.messages(None, 'question', True, limit=0).results
@@ -1495,6 +1515,11 @@ class Handler(BaseHTTPRequestHandler):
         VIEW-021. Only an answered question is reopened from the page."""
         record = str(given.get('id', ''))
         try:
+            held = stored_messages(given, {'kind': 'question', 'open': False, 'limit': 0})
+            if held is not None:  # a project in the project store: its questions overlay, by map's verb
+                if not any(found['id'] == record for found in held['results']):
+                    return self.send(400, {'error': 'This is not an answered question.'})
+                return self.send(200, plain(module_verb(given, 'map', 'reopen', {'id': record})))
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 answered = [found for found in store.messages(None, 'question', False, limit=0).results
@@ -1510,6 +1535,11 @@ class Handler(BaseHTTPRequestHandler):
         """Mark a note read, which ends its record, VIEW-030. Only an unread note is read from the page."""
         record = str(given.get('id', ''))
         try:
+            held = stored_messages(given, {'kind': 'message', 'open': True, 'limit': 0})
+            if held is not None:  # a project in the project store: its questions overlay, by map's verb
+                if not any(found['id'] == record for found in held['results']):
+                    return self.send(400, {'error': 'This is not an unread message.'})
+                return self.send(200, plain(module_verb(given, 'map', 'reply', {'id': record})))
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
             with store.atomic():
                 unread = [found for found in store.messages(None, 'message', True, limit=0).results
@@ -3905,6 +3935,16 @@ def switch_of(folder: Path, key: Any) -> tuple[str, str, str] | None:
     except ValueError:
         row = None
     return None if row is None else (str(row['switch']), f'--no-{str(row["switch"])[2:]}', str(row['kind']))
+
+
+def stored_messages(given: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The questions and messages of a project held in the project store, a page of them as `metaform map messages`
+    lists them with these arguments, read through that verb so the page and the command line read one record; None
+    for a project whose questions are in the old store."""
+    from metaform import project as project_store
+    if not project_store.holds(project_store.stored_name(str(given.get('project', '')))):
+        return None
+    return cast(dict[str, Any], plain(module_verb(given, 'map', 'messages', arguments)))
 
 
 def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dict[str, Any], *,

@@ -1463,6 +1463,78 @@ def test_a_question_answered_by_mistake_is_reopened_and_waits_again_with_its_sug
     assert j(run, 'messages', 'kind=message', 'open=false', cwd=mapped)['results'][0]['id'] == told.id
 
 
+@pytest.fixture
+def stored(run, tmp_path, home):
+    """`proj` held in the project store: the alarm and the timer there, none in the old store's map. Its
+    single-writer service is stopped when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    for address, name in (('code.alarm.audible', 'audible alarm'), ('code.timer.kitchen', 'kitchen timer')):
+        assert command({'add': {f'proj.{address}': {'technical_name': name, 'name': name,
+                                                     'role': 'Supporting Element'}}}) == {'status': 'ok'}
+    yield folder
+    service.stop(home)
+    owner.close_all()
+
+
+@pytest.mark.req('MAP-050')
+def test_questions_and_messages_of_a_project_in_the_project_store_are_its_questions_overlay_records(run, stored):
+    """Decision t-legacy-keep: for a project held in the project store, ask, reply, reopen and messages read and write
+    the records of its questions overlay at the element asked about, where the page reads them; the old store gets
+    none. What has no place there, a join's purpose, is refused by name, and a change names the revision it found."""
+    from metaform.module import Stop
+    from metaform.modules.map import project_messages
+    from metaform.project import overlay_records
+    from metaform.project import run as command
+    asked = j(run, 'ask', 'code.alarm.audible', 'Is the quiet tone still wanted?',
+              'suggestions=["Yes, keep it", "No, make it louder"]', *FORM, cwd=stored)
+    assert (asked['kind'], asked['address'], asked['suggestions'], asked['by'], asked['title'], asked['closed']) == (
+        'question', 'code.alarm.audible', ['Yes, keep it', 'No, make it louder'], 'builder', 'A question', None)
+    [record] = overlay_records('proj', 'questions')
+    assert (record['element'], record['id'], record['revision']) == ('proj.code.alarm.audible', asked['id'], 1)
+    assert not Store('proj').messages(limit=0).results  # the old store holds none
+    told = project_messages.tell('proj', 'code.timer.kitchen', 'The driver is written.', by='builder')
+    assert [one['id'] for one in j(run, 'messages', 'open=true', cwd=stored)['results']] == [asked['id'], told['id']]
+    assert [one['id'] for one in j(run, 'messages', 'node=element:code.timer.kitchen', cwd=stored)['results']] == [
+        told['id']]
+    assert j(run, 'messages', 'node=join:1', cwd=stored)['results'] == []  # a join holds none there
+    first = j(run, 'messages', 'limit=1', cwd=stored)
+    assert [one['id'] for one in first['results']] == [asked['id']] and first['next'] == asked['id']
+    assert [one['id'] for one in j(run, 'messages', 'after=' + first['next'], cwd=stored)['results']] == [told['id']]
+
+    replied = j(run, 'reply', asked['id'], 'answer=No, make it louder', cwd=stored)
+    assert (replied['answer'], bool(replied['closed']), replied['revision']) == ('No, make it louder', True, 2)
+    again = j(run, 'reply', asked['id'], 'answer=Yes, keep it', cwd=stored)  # the first answer is kept
+    assert again['answer'] == 'No, make it louder' and [where for where, _ in said(again)] == ['id']
+    reopened = j(run, 'reopen', asked['id'], cwd=stored)
+    assert (reopened['closed'], reopened['answer'], reopened['suggestions']) == (
+        None, None, ['Yes, keep it', 'No, make it louder'])
+    assert bool(j(run, 'reply', told['id'], cwd=stored)['closed'])  # a message is read
+    refused = run('map', 'reopen', told['id'], cwd=stored, ok=False)
+    assert refused.returncode != 0 and 'Only a question is reopened' in refused.stderr + refused.stdout
+
+    moved = j(run, 'messages', 'op=move', f'id={asked["id"]}', 'node=code.timer.kitchen', cwd=stored)
+    assert (moved['id'], moved['address'], moved['suggestions']) == (
+        asked['id'], 'code.timer.kitchen', asked['suggestions'])
+    assert [one['element'] for one in overlay_records('proj', 'questions')] == ['proj.code.timer.kitchen'] * 2
+
+    for args, named in ((('ask', 'code.alarm.audible', 'Which?', YES_NO, 'provider=code.timer.kitchen', *FORM),
+                         'provider names a join'),
+                        (('ask', 'code.alarm.audible', 'Which?', YES_NO, 'work=t-none', *FORM), "No ticket 't-none'")):
+        refused = run('map', *args, cwd=stored, ok=False)
+        assert refused.returncode != 0 and named in refused.stderr + refused.stdout, args
+    # a change names the record and revision it found: one changed meanwhile is refused, never overwritten
+    found = next(one for one in overlay_records('proj', 'questions') if one['id'] == asked['id'])
+    assert command({'update': {str(found['element']): {'questions': [
+        {'position': found['position'], 'record': found['record'], 'title': 'Retitled'}]}}}) == {'status': 'ok'}
+    with pytest.raises(Stop):
+        project_messages._changed('proj', found, {'answer': 'Lands nowhere'})
+    assert 'answer' not in next(one for one in overlay_records('proj', 'questions') if one['id'] == asked['id'])
+
+
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-005')
 def test_where_shows_the_properties_that_apply_at_the_address_and_those_visible_there(run, mapped):

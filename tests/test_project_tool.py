@@ -1106,7 +1106,7 @@ def test_a_map_verb_refuses_on_a_project_whose_map_is_in_the_project_store(serve
     in_store, elsewhere = SimpleNamespace(store=SimpleNamespace(project_id=P)), SimpleNamespace(store=None)
     with pytest.raises(Stop, match=f"{P}'s map is in the project store, so `map where`"):
         verbs['where'].run(in_store)
-    for name in ('work', 'boards', 'guide'):
+    for name in ('work', 'boards', 'guide', 'ask', 'reply', 'reopen', 'messages'):
         assert verbs[name].run.__name__ != 'refused_in_the_store', name
     assert verbs['where'].run.__name__ == 'refused_in_the_store'
     with pytest.raises(Exception) as raised:  # no store: the verb's own code runs, as before

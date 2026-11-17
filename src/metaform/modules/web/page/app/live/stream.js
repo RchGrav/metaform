@@ -250,8 +250,10 @@ function namesTable(named, test) {
   for (let at = 0; at < named.length; at++) if (test(String(named[at]))) return true;
   return false;
 }
-/* The workspace's panes read again only for a change to their own tables. */
-const PANE_TABLES = [['messages', table => table === 'messages' || table === 'map.question_work']];
+/* The workspace's panes read again only for a change to their own tables. A project store's commit, `project.map`,
+ * names no overlay, so it may have changed a question of its questions overlay. */
+const PANE_TABLES = [['messages', table => table === 'messages' || table === 'map.question_work'
+  || table === 'project.map']];
 /* Whether a change named tables, every one of them passing the test. */
 const allTables = (named, test) => Array.isArray(named) && named.length && named.every(table => test(String(table)));
 /* Whether a change to this metaform's ops says nothing past what is drawn: the sequence it reached is one the page

@@ -62,7 +62,7 @@ from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
-from . import ticket_history
+from . import project_messages, ticket_history
 from .around import told
 from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
@@ -1340,11 +1340,29 @@ def ask(ctx: Context) -> Any:
     titled(ctx, 'The question', ctx.nouns.get('title'), ctx.nouns.get('why'), why_needed=True,
            why_step='add why: one line saying why it is asked')
     store, notices = _store(ctx), list[Notice]()
+    stored = _in_project_store(store, ctx.nouns, 'ask')
+    if stored is not None:
+        return _with_notices(project_messages.ask(stored, ctx.nouns, notices), notices)
     _numbering(store)
     asked = store.ask(_held(store, ctx.nouns, notices), ctx.nouns['question'], suggestions=ctx.nouns.get('suggestions'),
                       by=ctx.nouns.get('by'), work=ctx.nouns.get('work'), title=ctx.nouns.get('title'),
                       why=ctx.nouns.get('why'))
     return _with_notices(_numbered_messages(store, asked), notices)
+
+
+def _in_project_store(store: Store, nouns: dict[str, Any], verb: str) -> str | None:
+    """The project's name in the project store when its map is held there, where its questions and messages are the
+    records of its questions overlay; None otherwise, and the old store answers as before. A join's purpose, named
+    with provider= and address=, has no place there and is refused by name."""
+    stored = project_store.stored_name(store.project_id)
+    if not project_store.holds(stored):
+        return None
+    named = [name for name in ('provider', 'address') if nouns.get(name) not in (None, '')]
+    if named:
+        raise Stop(f"{' and '.join(named)} name{'s' if len(named) == 1 else ''} a join's purpose, which has no place in "
+                   f"the project store, where {stored}'s questions and messages are kept: there each is at one "
+                   "element. Name the join's receiver with node= alone.", f'metaform help map {verb}')
+    return stored
 
 
 def _numbering(store: Store) -> None:
@@ -1374,12 +1392,21 @@ def _numbered_messages(store: Store, result: Any) -> Any:
 
 def reply(ctx: Context) -> Any:
     """Answer a question, or mark a message read, MAP-050, whoever calls and on any surface."""
-    return _store(ctx).reply(ctx.nouns['id'], ctx.nouns.get('answer'))
+    store, notices = _store(ctx), list[Notice]()
+    stored = _in_project_store(store, ctx.nouns, 'reply')
+    if stored is not None:
+        return _with_notices(project_messages.reply(stored, str(ctx.nouns['id']), ctx.nouns.get('answer'), notices),
+                             notices)
+    return store.reply(ctx.nouns['id'], ctx.nouns.get('answer'))
 
 
 def reopen(ctx: Context) -> Any:
     """Reopen a question answered by mistake, so it waits again with its suggestions, MAP-050."""
-    return _store(ctx).reopen(ctx.nouns['id'])
+    store, notices = _store(ctx), list[Notice]()
+    stored = _in_project_store(store, ctx.nouns, 'reopen')
+    if stored is not None:
+        return _with_notices(project_messages.reopen(stored, str(ctx.nouns['id']), notices), notices)
+    return store.reopen(ctx.nouns['id'])
 
 
 def messages(ctx: Context) -> Any:
@@ -1394,6 +1421,13 @@ def messages(ctx: Context) -> Any:
     for name in sorted(nouns):
         if name != 'op' and name not in reads:
             notices.append(Notice(name, f'op={op} does not read {name}; it was ignored.'))
+    stored = _in_project_store(store, {name: nouns[name] for name in nouns if name in reads}, 'messages')
+    if stored is not None:
+        if op == 'move':
+            _need(ctx, 'id', 'node', verb='messages')
+            return _with_notices(project_messages.move(stored, str(nouns['id']), str(nouns['node'])), notices)
+        return _with_notices(project_messages.listed(stored, {name: nouns[name] for name in nouns if name in reads}),
+                             notices)
     _numbering(store)
     if op == 'move':
         _need(ctx, 'id', 'node', verb='messages')
@@ -2554,9 +2588,11 @@ _DECLARED = Module(
 # ticket the page never showed, 2026-11-16). Such a verb refuses there, naming the project tool, as
 # docs/plans/old-store-removal.md step 1 sets out (kickoff 2026-11-17, Phase 3, audit F01). `work` answers from the
 # project store itself, `boards` names the board's boards, which have no counterpart there yet and the page reads,
-# `guide` reads no map, and `glossary` and `term` read the map and write the glossary overlay there
-# (project_glossary.py, decision t-legacy-keep).
-ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards', 'glossary', 'term'})
+# `guide` reads no map, `glossary` and `term` read the map and write the glossary overlay there (project_glossary.py),
+# and `ask`, `reply`, `reopen` and `messages` answer from the project store's questions overlay (decision
+# t-legacy-keep, kickoff 2026-11-17 Phase 3).
+ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards', 'glossary', 'term', 'ask', 'reply', 'reopen',
+                                       'messages'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:
