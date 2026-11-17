@@ -74,6 +74,9 @@ overlay.
   URI to perform ... properly", from Markdown prompts beside the tool (`src/metaform/project/prompts/`), so no code
   names a section. Kept by the founder's decisions, not the Rust form: no `goto`, no `raw dump`, one `ref`, and a field
   an element does not define refused.
+- Names follow the Rust round-trip rule (an underscore only before a letter; `queue_2` is refused with `queue2`),
+  answered `NAME_ROUND_TRIP_FAILURE`. The Rust form's refusal table (`contract.rs`) is kept as a test of the project
+  tool, every row asserted, the rows the founder's decisions changed marked with the decision.
 
 **Still to do:** the other modules' prompts from `prompts.xml` to Markdown (decision 33); a fresh intake of `metaform`
 on the new delivery, after the person deletes the failed one and says to start (it spends tokens).

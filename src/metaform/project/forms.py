@@ -33,14 +33,17 @@ LEGACY_STATUS = ('missing', 'MISSING', 'BKN', 'broken', 'todo', 'TODO')
 WANT_WORDS = ('element', 'why', 'how', 'direction')
 PROCEDURE_WORDS = {'pe': 'element', 'provider': 'element', 'op': 'why', 'purpose': 'why', 'ef': 'how',
                    'ifd': 'direction'}
-STEP = re.compile(r'[a-z0-9]+(?:_[a-z0-9]+)*\Z')
+# A step survives storage as camelCase and back only when each underscore comes before a letter (R-4.11 of the Rust
+# form, `metaform-core/src/names.rs`): `queue_2` would come back `queue2`.
+STEP = re.compile(r'[a-z0-9]+(?:_[a-z][a-z0-9]*)*\Z')
 ONE_ENTRY = ('a command has one entry: add, update, delete, orphaned, map, help, or a path to read, such as '
              '{"mashtrac.code.masher.widget": {}}')
 REF_FORM = 'the entry point of this functionality, or a discrete reference to it'
 DELETE_FORM = ('delete takes {} to delete the element, or {"wants": ["<path>"]} to remove wants; '
                '{"wants": [{"element": "<path>", "ref": "<ref>"}]} removes the one want about that artifact; '
                '{"<overlay>": [0, 2]} removes the records at those positions of another overlay\'s list')
-STEP_FORM = 'a step is lowercase letters and digits, with single underscores between words'
+STEP_FORM = ('a step is lowercase letters and digits, with single underscores between words, each before a letter, '
+             'so that it survives storage')
 
 
 class Refusal(Exception):
@@ -75,8 +78,11 @@ def is_name(value: object) -> bool:
 
 
 def fixed_name(text: str) -> str | None:
-    """The name lowercased with single underscores between words, if that makes it a name."""
-    fixed = re.sub('_+', '_', text.lower()).strip('_')
+    """The nearest name that survives storage, as the Rust form suggests it (`suggest_segment`): lowercased, single
+    underscores, a word that starts with a digit joined to the word before it; None when that is no name."""
+    fixed = ''
+    for word in (part for part in text.lower().split('_') if part):
+        fixed += ('_' if fixed and word[0].isalpha() else '') + word
     return fixed if fixed != text and STEP.match(fixed) else None
 
 
@@ -113,9 +119,11 @@ def parse(text: object, rename: Callable[[str], object] | None = None) -> Addres
     if not all(is_name(step) for step in steps) or len(steps) == 0:
         fixed = [fixed_name(step) or step for step in steps]
         suggestion = '.'.join(fixed) if steps and all(is_name(step) for step in fixed) else None
-        raise refuse(f"'{text}' is not a path: a path is the project's name and then steps, joined by periods, such "
-                     f"as mashtrac.code.masher.widget; {STEP_FORM}",
-                     rename(suggestion) if rename and suggestion else None)
+        corrected = rename(suggestion) if rename and suggestion else None
+        # a name the store would not give back exactly, with the name it would, is the Rust form's round-trip refusal
+        raise Refusal('NAME_ROUND_TRIP_FAILURE' if corrected is not None else 'FIELD_MISMATCH',
+                      f"'{text}' is not a path: a path is the project's name and then steps, joined by periods, such "
+                      f"as mashtrac.code.masher.widget; {STEP_FORM}", corrected)
     if len(steps) == 1:
         raise Refusal('ROOT_SCOPE_NOT_ALLOWED', f"'{text}' names a project and no root: after the project's name a "
                       f"path takes one of: {', '.join(ROOTS)}")
@@ -320,8 +328,9 @@ class Form:
     def name(self, key: str, address: Address, keys: list[Key]) -> None:
         if not is_name(key):
             fixed = fixed_name(key)
-            raise refuse(f"'{key}' at '{address.full}' is not a field name: {STEP_FORM}",
-                         renamed(self.command, keys, fixed) if fixed else None)
+            raise Refusal('NAME_ROUND_TRIP_FAILURE' if fixed else 'FIELD_MISMATCH',
+                          f"'{key}' at '{address.full}' is not a field name: {STEP_FORM}",
+                          renamed(self.command, keys, fixed) if fixed else None)
 
     def fields(self, fields: dict[str, object], address: Address, keys: list[Key], update: bool) -> None:
         """The fields of one element, in the command's order; an object is a step beneath."""

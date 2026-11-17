@@ -227,7 +227,7 @@ def test_update_merges_into_a_want(mapped):
     ({'goto': WIDGET}, 'FIELD_MISMATCH', {WIDGET: {}}),
     ({'fetch': {}}, 'NOT_FOUND', {'map': {}}),  # one word: not a command, and not a project of this home
     ({'add': {'mashtrac.lib.x': {'name': 'x'}}}, 'ROOT_SCOPE_NOT_ALLOWED', None),
-    ({'add': {'Mashtrac.Code.x': {'name': 'x'}}}, 'FIELD_MISMATCH', {'add': {'mashtrac.code.x': {'name': 'x'}}}),
+    ({'add': {'Mashtrac.Code.x': {'name': 'x'}}}, 'NAME_ROUND_TRIP_FAILURE', {'add': {'mashtrac.code.x': {'name': 'x'}}}),
     ({'add': {WIDGET: {'refs': ['a.c']}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'ref': 'a.c'}}}),
     ({'add': {WIDGET: {'ref': ['a.c', 'b.c']}}}, 'FIELD_MISMATCH', None),
     ({'add': {WIDGET: {'uri': 'a.c'}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'ref': 'a.c'}}}),
@@ -288,7 +288,7 @@ def test_writes_from_many_threads_are_all_stored(home):
 
     def writing(caller):
         for index in range(15):
-            answers.append(run({'add': {f'{P}.code.part_{caller}.unit_{index}': {'name': f'{caller} {index}'}}},
+            answers.append(run({'add': {f'{P}.code.part_{caller}.unit{index}': {'name': f'{caller} {index}'}}},
                                caller=caller))
 
     threads = [threading.Thread(target=writing, args=(f'c{number}',)) for number in range(8)]
@@ -347,7 +347,7 @@ def test_processes_writing_at_once_are_all_stored_through_the_one_service(served
         'from pathlib import Path\n'
         'from metaform.project.commands import run\n'
         'for n in range(30):\n'
-        "    answer = run({'add': {f'mashtrac.code.from_{sys.argv[2]}.unit_{n}': {'name': str(n)}}}, "
+        "    answer = run({'add': {f'mashtrac.code.from{sys.argv[2]}.unit{n}': {'name': str(n)}}}, "
         'home=Path(sys.argv[1]))\n'
         "    assert answer == {'status': 'ok'}, answer\n")
     writers = [subprocess.Popen([sys.executable, str(script), str(served), str(number)]) for number in range(4)]
@@ -367,7 +367,7 @@ def test_acknowledged_writes_survive_the_service_being_killed(served):
     import os
     import signal
     for number in range(20):
-        assert commands.run({'add': {f'{P}.code.kept_{number}': {'name': str(number)}}}, home=served) == {
+        assert commands.run({'add': {f'{P}.code.kept{number}': {'name': str(number)}}}, home=served) == {
             'status': 'ok'}
     pid = json.loads((served / 'maps' / 'service.json').read_text())['pid']
     os.kill(pid, signal.SIGKILL if hasattr(signal, 'SIGKILL') else signal.SIGTERM)
@@ -437,7 +437,7 @@ def test_many_callers_in_one_process_reach_the_service_at_once(served):
 
     def writing(number):
         for index in range(40):
-            answer = commands.run({'add': {f'{P}.code.thread_{number}.unit_{index}': {'name': str(index)}}},
+            answer = commands.run({'add': {f'{P}.code.thread{number}.unit{index}': {'name': str(index)}}},
                                   home=served, caller=f'thread {number}')
             if answer != {'status': 'ok'}:
                 failures.append(answer)
@@ -692,3 +692,54 @@ def test_the_root_has_no_technical_name_and_overlay_records_are_a_list(mapped):
     assert run(corrected) == {'status': 'ok'}
     other = run({'update': {WIDGET: {'cpp': {'note': 'not an overlay'}}}})
     assert other['code'] == 'FIELD_MISMATCH' and other['remediation'] is None
+
+
+def test_the_rust_forms_refusal_table(mapped):
+    """The table of `refusals_name_the_rule_and_change_nothing` in the Rust form's `metaform-core/tests/contract.rs`,
+    each command in this tool's paths, led by the project's name. A row answers as the Rust form does, unless a later
+    decision of the founder's changed it; each such row says which, and asserts this tool's answer."""
+    def at(text):
+        return f'{P}.{text}'
+    def want(direction):
+        return {'why': 'Relay it.', 'how': 'Supplies data.', 'direction': direction}
+    roles = ('<Artifact Type, Defining Element, Supporting Element, Coupled Element, Notable Element, Vested '
+             'Beneficiary, Upstream Dependency or Downstream Dependant>')
+    table = [
+        ({'add': {at('Code.relay'): {'role': 'Supporting Element'}}}, 'NAME_ROUND_TRIP_FAILURE',
+         {'add': {at('code.relay'): {'role': 'Supporting Element'}}}),
+        ({'update': {at('code.queue_2'): {'name': 'q'}}}, 'NAME_ROUND_TRIP_FAILURE',
+         {'update': {at('code.queue2'): {'name': 'q'}}}),
+        ({'add': {at('widgets.relay'): {'name': 'r'}}}, 'ROOT_SCOPE_NOT_ALLOWED', None),
+        # a want's direction outside send, receive or both: the corrected command holds the field to fill, `<direction>`,
+        # never an example value (the founder, 2026-11-16 03:09); the Rust form gave none
+        ({'add': {at('code.relay'): {'wants': [{'element': WIDGET, **want('push')}]}}}, 'FIELD_MISMATCH',
+         {'add': {at('code.relay'): {'wants': [{'element': WIDGET, **want('<direction>')}]}}}),
+        # the procedure's "missing" is written un_built, as the intake's recording lines tell the agent
+        ({'update': {WIDGET: {'status': 'missing'}}}, 'FIELD_MISMATCH', {'update': {WIDGET: {'status': 'un_built'}}}),
+        ({'add': {}}, 'FIELD_MISMATCH', None),
+        # no corrected command: the Rust form's removed the element's own field, which Fable's decision 18 found a fault
+        ({'add': {f'{WIDGET}.name': {'name': 'n'}}}, 'FIELD_ELEMENT_COLLISION', None),
+        ({'update': {at('code.relay'): {'wants': [{'element': at('code.other'), 'direction': 'send'}]}}},
+         'WANT_INCOMPLETE',
+         {'update': {at('code.relay'): {'wants': [{'element': at('code.other'), 'direction': 'send', 'why': '<why>',
+                                                   'how': '<how>'}]}}}),
+        ({'add': {at('code.relay'): {'name': 'r', 'technical_name': 'relay code extra'}}},
+         'TECHNICAL_NAME_ALIGNMENT_FAILURE', {'add': {at('code.relay'): {'name': 'r', 'technical_name': 'relay'}}}),
+        ({'add': {at('code.cache.response'): {'name': 'c', 'technical_name': 'cache response'}}},
+         'TECHNICAL_NAME_ALIGNMENT_FAILURE',
+         {'add': {at('code.cache.response'): {'name': 'c', 'technical_name': 'response cache'}}}),
+        ({'update': {WIDGET: {'technical_name': 'masher widget'}}}, 'TECHNICAL_NAME_ALIGNMENT_FAILURE',
+         {'update': {WIDGET: {'technical_name': 'widget masher'}}}),
+        # layers are overlays (the founder, 2026-11-15 22:18), and a map is read by the project's name
+        ({'update': {WIDGET: {'references': [{'path': './src/widgets/mashbox.c'}]}}}, 'OVERLAY_NOT_DEFINED',
+         {'map': P}),
+        ({'add': {at('code.relay'): {'role': 'Definitive'}}}, 'ROLE_TAXONOMY_FAILURE',
+         {'add': {at('code.relay'): {'role': roles}}}),
+        ({'delete': {at('code.protocol'): {}}}, 'ELEMENTS_BENEATH', {'delete': {CS: {}}}),
+        ({at('code.nowhere'): {}}, 'NOT_FOUND', {'map': P}),
+    ]
+    before = snapshot()
+    for command, code, remediation in table:
+        answer = run(command)
+        assert (answer.get('code'), answer.get('remediation')) == (code, remediation), command
+    assert snapshot() == before  # a refused command changes nothing
