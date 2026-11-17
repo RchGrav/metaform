@@ -11,7 +11,7 @@
      Printed under the opening line of the command-line guide (metaform help agents, metaform instructions) while the
      setting connect_instructions is compact and the project has a finished intake. MCP agents do not receive it.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
-<orient>1. Orient: find the functionality you work on in the map, map where &lt;address&gt;, or from a file, map citing key=path value=&lt;file&gt;. Hand an agent you start that map where.</orient>
+<orient>1. Orient: find the functionality you work on in the map with the project tool, {"&lt;project&gt;.&lt;address&gt;": {}}, or for a project not yet in the project store, map where &lt;address&gt;, or from a file, map citing key=path value=&lt;file&gt;. Hand an agent you start that address.</orient>
 <!-- map's line in the connect message: what an agent uses map for, one short phrase after its name, in the
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
