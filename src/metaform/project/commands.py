@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from importlib import resources
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from metaform import home as metaform_home
 from metaform import prompt_files
-from metaform.project import forms, intake, texts
+from metaform.project import forms, intake, specification, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
@@ -402,3 +402,56 @@ def _map(opened: Store, project: str) -> dict[str, object]:
         'defining': [full(project, address) for address, values in elements
                      if values['role'] == 'Defining Element' and address.split('.')[0] not in ('upstream', 'downstream')],
     }
+
+
+def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[str, Any]],
+                                                                 dict[str, list[dict[str, Any]]],
+                                                                 dict[str, list[specification.Block]]]:
+    """The map as the specification document reads it, every address full: each element's fields, each holder's
+    wants, and each element's blocks."""
+    drawn = _drawn(opened, project)
+    elements = {str(row['address']): row for row in cast(list[dict[str, Any]], drawn['elements'])}
+    wants: dict[str, list[dict[str, Any]]] = {}
+    for want in cast(list[dict[str, Any]], drawn['wants']):
+        wants.setdefault(str(want['holder']), []).append(want)
+    held: dict[str, list[specification.Block]] = {}
+    found = definitions(opened.parts()).get(specification.KEY)
+    if found is not None and specification.KEY in opened.overlay_keys():
+        names = [name for name in found.order if name != 'ref' and name in found.fields]
+        rows: dict[str, list[dict[str, Any]]] = {}
+        for address, _, row in opened.all_records(specification.KEY, names):
+            rows.setdefault(full(project, address), []).append(
+                {name: decode(found.fields[name].kind, row[name]) for name in names if row[name] is not None})
+        held = {address: specification.blocks(address, records) for address, records in rows.items()}
+    return elements, wants, held
+
+
+def perform_specification(project: str, document: str | None, owned: Owner, caller: str = '') -> dict[str, object]:
+    """The specification document of a project (kickoff 2026-11-17 Phase 4, F06). With no document, its export: the
+    map and its blocks as one Markdown document. With a document, its import: the document is read against the map
+    as it is now and every changed element's blocks are written, all in one transaction, so a stale or broken document
+    changes nothing. Export, edit, import and export again gives the edited document."""
+    try:
+        if document is None:
+            return {'document': owned.read(project, lambda opened: specification.render(
+                project, *_specification_inputs(opened, project)))}
+
+        def work(opened: Store) -> list[str]:
+            elements, wants, held = _specification_inputs(opened, project)
+            read = specification.parse(document, project, elements, wants, held)
+            changed = [address for address, found in read.items() if found != held.get(address, [])]
+            for address in changed:
+                path = address
+                value: dict[str, object] = {specification.KEY: [block.stored() for block in read[address]]}
+                Writer(opened, parse(path), {'update': {path: value}}, 'update').write(path, value)
+            return changed
+
+        return {'status': 'ok', 'changed': owned.write(project, caller, work)}
+    except specification.ParseError as error:
+        return refused({'specification': project}, Refusal('DOCUMENT_REFUSED', str(error)))
+    except Refusal as refusal:
+        return refused({'specification': project}, refusal)
+    except Missing:
+        return refused({'specification': project}, _missing(project))
+    except StoreError as error:
+        return refused({'specification': project}, Refusal('INTERNAL_ERROR', f'the store failed: {error}'))

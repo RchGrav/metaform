@@ -96,7 +96,7 @@ def test_map_of_a_project_and_of_the_home(mapped):
     assert found['wants'] == [[CS, WIDGET]]
     assert found['defining'] == [CS]
     assert found['addresses'] == sorted([WIDGET, CS])  # the bare branches above them are left out
-    assert not [one for one in found['addresses'] if '.overlay' in one] and found['overlays'] == ['memories', 'tickets', 'wants']  # the overlays every project is given
+    assert not [one for one in found['addresses'] if '.overlay' in one] and found['overlays'] == ['memories', 'specification', 'tickets', 'wants']  # the overlays every project is given
     assert run({'map': {}}) == {'projects': [P]}
 
 
@@ -1109,3 +1109,48 @@ def test_a_map_verb_refuses_on_a_project_whose_map_is_in_the_project_store(serve
     with pytest.raises(Exception) as raised:  # no store: the verb's own code runs, as before
         verbs['where'].run(elsewhere)
     assert "map is in the project store" not in str(raised.value)
+
+
+def test_the_specification_round_trips_through_its_document_and_refuses_what_would_break_it(served):
+    """Phase 4, F06: every project is given the specification overlay; blocks that would break the round trip are
+    refused whole; export, edit, import and export again give the edited document byte for byte; a stale or broken
+    document changes nothing."""
+    from metaform import project as project_store
+    for path, fields in ((WIDGET, WIDGET_FIELDS), (CS, {**CS_FIELDS, 'wants': [WANT]})):
+        assert commands.run({'add': {path: fields}}, served) == {'status': 'ok'}
+    assert commands.run({f'{P}.overlay.specification': {}}, served)[f'{P}.overlay.specification']['key'] == (
+        'specification')
+    blocks = [{'text': 'The mash box relays packets.'},
+              {'level': 1, 'title': 'Purpose', 'code': 'R-1', 'text': 'Relay each packet as it arrives.'},
+              {'level': 2, 'title': 'Limits', 'text': 'One packet at a time.'}]
+    assert commands.run({'add': {WIDGET: {'specification': blocks}}}, served) == {'status': 'ok'}
+
+    def stored():
+        return fields_only(commands.run({WIDGET: {'specification': {}}}, served)[WIDGET]['specification'])
+    for wrong, code in (([{'level': 2, 'title': 'Skips'}], 'HEADING_LEVEL_INVALID'),
+                        ([{'level': 1, 'title': 'T', 'text': 'line\n## a heading'}], 'HEADING_IN_TEXT'),
+                        ([{'level': 1, 'title': 'T'}, {'text': 'late intro'}], 'FIELD_MISMATCH'),
+                        ([{'level': 1, 'title': 'T', 'code': 'r-1'}], 'CODE_TAKEN')):
+        answer = commands.run({'add': {CS: {'specification': wrong}}}, served)
+        assert answer.get('code') == code, (wrong, answer)
+    assert stored() == blocks
+
+    exported = project_store.specification_document(P, home=served)['document']
+    assert exported.startswith(f'# {P}\n\n## mashbox (`{WIDGET}`)\n\nRole: Coupled Element.')
+    assert '### `R-1` Purpose\n\nRelay each packet as it arrives.\n\n#### Limits' in exported
+    assert f'- `{CS}` (mashtrac) requires `{WIDGET}` (mashbox) in order to receive the mash data to relay it, ' in (
+        exported)
+    assert project_store.specification_document(P, exported, served) == {'status': 'ok', 'changed': []}
+
+    edited = exported.replace('One packet at a time.', 'One packet at a time, oldest first.\n\n### Errors\n\n'
+                                                        'A packet that fails is dropped.')
+    assert project_store.specification_document(P, edited, served) == {'status': 'ok', 'changed': [WIDGET]}
+    assert project_store.specification_document(P, home=served)['document'] == edited
+    assert stored()[-1] == {'level': 1, 'title': 'Errors', 'text': 'A packet that fails is dropped.'}
+
+    before = project_store.specification_document(P, home=served)['document']
+    stale = before.replace('Role: Coupled Element.', 'Role: Defining Element.')
+    for broken in (stale, before + '\n```\nunclosed\n', before.replace(f'# {P}', '# other', 1)):
+        answer = project_store.specification_document(P, broken.replace('dropped.', 'kept.'), served)
+        assert answer['code'] == 'DOCUMENT_REFUSED', answer
+    assert project_store.specification_document(P, home=served)['document'] == before

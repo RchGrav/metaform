@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import cast
 
+from metaform.project import specification
 from metaform.project.forms import (
     Address,
     Key,
@@ -180,6 +181,23 @@ class Writer:
                     self.store.insert_record(key, address, start + offset, record)
         if any(key == 'tickets' for _, key, _ in [*overlay_writes, *placed]):
             self.check_ticket_ids()
+        touched = sorted({change.address.address for change, key, _ in [*overlay_writes, *placed]
+                          if key == specification.KEY})
+        if touched:
+            self.check_specification(touched, defs[specification.KEY])
+
+    def check_specification(self, touched: list[str], definition: Definition) -> None:
+        """The specification's blocks at each element written keep the round trip whole (kickoff 2026-11-17 Phase 4,
+        F06): an introduction only first, levels from 1 with no skipped level, one-line titles, no heading line in
+        text; and no code is held twice in the project. Checked after the command's writes, in its transaction, so a
+        command that would break them is refused whole."""
+        for address in touched:
+            specification.blocks(self.full(address), self.current_records(definition, address))
+        names = [name for name in definition.order if name != 'ref' and name in definition.fields]
+        every: dict[str, list[dict[str, object]]] = {}
+        for address, _, row in self.store.all_records(specification.KEY, names):
+            every.setdefault(self.full(address), []).append({name: row[name] for name in names})
+        specification.check_codes(every)
 
     def check_ticket_ids(self) -> None:
         """A ticket's id names one ticket in the project (F09, kickoff 2026-11-17): the tickets overlay is the tool's

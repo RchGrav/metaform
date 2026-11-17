@@ -54,7 +54,9 @@ def standing_overlays() -> dict[str, dict[str, object]]:
     """The overlays every project is given beside its wants, each by its address beneath the project's name with
     its definition as `add` takes it. They are ordinary overlays: read, written and shown as any other. Their fields
     are the ones tickets and memories already had: a ticket's id, task, note, kind, held, taken_by, done and outcome,
-    and a memory as the reference memory server keeps it, an entity of a type holding observations of one fact each."""
+    and a memory as the reference memory server keeps it, an entity of a type holding observations of one fact each,
+    and the specification's blocks (`specification`)."""
+    from metaform.project import specification
     return {
         'overlay.tickets': {
             'description': 'Work assigned at this element: each record is one ticket, from asked to done.',
@@ -90,6 +92,8 @@ def standing_overlays() -> dict[str, dict[str, object]]:
             'observation': {'type': 'text', 'rule': 'One fact, in one sentence.',
                             'example': 'watch loads the timers when it starts, so one started later is not rung by it.'},
         },
+        # the specification's prose at the elements it describes (kickoff 2026-11-17 Phase 4, F06)
+        specification.DEFINITION_PATH: specification.DEFINITION,
     }
 
 

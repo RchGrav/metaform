@@ -2575,4 +2575,43 @@ def _beside_the_store(verb: Verb) -> Verb:
     return dataclasses.replace(verb, run=refused_in_the_store)
 
 
-MODULE = dataclasses.replace(_DECLARED, verbs=tuple(_beside_the_store(verb) for verb in _DECLARED.verbs))
+def specification(ctx: Context) -> Any:
+    """The specification document of a project held in the project store (kickoff 2026-11-17 Phase 4, F06,
+    docs/plans/specifications-overlay.md): op=export, the default, prints the map and its blocks as one Markdown
+    document, or writes it to file=; op=import reads an edited copy from file= and writes the changed blocks, all or
+    nothing. A stale document, one whose headings or facts differ from the map, is refused and changes nothing."""
+    store = ctx.require_store()
+    name = project_store.stored_name(store.project_id)
+    if not project_store.holds(name):
+        raise Stop(f"{name}'s map is not in the project store, so it has no specification document yet.",
+                   'metaform help map specification')
+    op, given = str(ctx.nouns.get('op') or 'export'), ctx.nouns.get('file')
+    if op not in ('export', 'import'):
+        raise Stop(f'op={op} is not a specification operation: op=export, the default, or op=import file=<path>.',
+                   'metaform help map specification')
+    if op == 'import':
+        if not given:
+            raise Stop('op=import reads the edited document from file=<path>.', 'metaform help map specification')
+        answer = project_store.specification_document(name, Path(str(given)).read_text(encoding='utf-8'))
+        if answer.get('status') == 'error':
+            raise Stop(str(answer.get('message')), f'metaform map specification file={given}')
+        return answer
+    answer = project_store.specification_document(name)
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message')), 'metaform help map specification')
+    document = str(answer['document'])
+    if given:
+        Path(str(given)).write_text(document, encoding='utf-8')
+        return {'file': str(given), 'bytes': len(document.encode('utf-8'))}
+    return document
+
+
+SPECIFICATION_VERB = Verb('specification', specification,
+                          "Print a project's specification as one Markdown document, or read an edited copy back.",
+                          nouns=(Noun('op', 'export, the default, or import.', required=False),
+                                 Noun('file', 'The document to write the export to, or to import from.',
+                                      required=False)),
+                          effect='write')
+
+MODULE = dataclasses.replace(_DECLARED, verbs=(*(_beside_the_store(verb) for verb in _DECLARED.verbs),
+                                               SPECIFICATION_VERB))
