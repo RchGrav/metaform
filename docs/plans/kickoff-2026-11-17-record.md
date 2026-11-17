@@ -98,6 +98,8 @@ live data was migrated where it had to be.
 | `map work` on the project store | dff2e98d, 64cc8690, ea275fa4 | yes | yes | yes | yes | yes: live list, competing take refused | not needed |
 | F07 root holds the project's description | b6749507 | yes | yes | yes | yes | yes: live export unchanged after the upgrade | yes: root pairs added on open, checked by integrity() |
 | Autoticket files to the store's tickets | 1014e158 | yes | yes | yes | yes | web restarted; no live fault observed yet | not needed |
+| `dispatch wait` on a store ticket | 714421ed | yes | yes | yes | yes | yes: `wait done id=t-f04-lookup` answers done | not needed |
+| Specification command protects edits | 1fcea5d2 | yes | yes | yes | yes | yes: export refused over an existing file | not needed |
 | F05 memory from the memory layer | 40b125d9 | yes | yes | yes | yes | page restarted; the live graph is empty | old overlay records listed apart (none live) |
 | F14 full-depth walk | 8f92f721 | yes | yes | yes | yes | not exercised (live depth < 30) | not needed |
 | F15 upgrade integrity | 262ef8bf | yes | yes | yes | yes | live copy reports no problems | not needed |
@@ -108,6 +110,21 @@ live data was migrated where it had to be.
 | Element read carries its blocks | 1f8ca27e | yes | yes | yes | yes | no blocks are live yet | not needed |
 | 3D map region proposal | 1bb6d833 | document | round-trip checked | yes | yes | not imported: awaits the person | not imported |
 | Verifications overlay and records | live map only | definition on the map | n/a | n/a | yes | yes | 12 verdicts recorded |
+
+## An incident on the live map, and how it was undone
+
+While checking the import's refusal, a test document holding only `stray text` under the project's heading was
+imported into the **live** `metaform` map. It was expected to be refused, but root support (`b6749507`) correctly
+accepts such text as the project's own description, so it was written. It was undone at once by importing the export
+taken just before. Afterwards the live export was byte-identical to the earlier one, and the root held no
+specification. **Lesson:** check a refusal on a copy or a scratch home, never on the live map.
+
+## Harness identity in dispatch (Phase 5)
+
+Dispatch checks a harness by name in three places: `registry.builtin_command` (Antigravity's adapter launcher),
+`list_agents` (its registry command), and `runner.native_child_message` (Claude's child-session id suffix). These are
+packaging and id formats, which ACP does not advertise, not capability decisions. Capability choices, such as whether
+a session can be loaded or resumed, already read what the agent advertises (`resumable`). No change was made.
 
 ## Baseline facts carried, not caused here
 
@@ -124,6 +141,9 @@ live data was migrated where it had to be.
 2. Every decision in the table above, to keep or reverse.
 3. GitHub billing, so that CI runs.
 4. The numeric targets for widening the experiment from one pair to five (VALIDATION_PLAN section 4).
-5. Which features with no counterpart in the store to keep (`old-store-removal.md` step 3): questions and messages,
-   layers and knowledge, bases, Cypher, the critic, the glossary. The worker protocol's pairs and rounds are built on
-   old-store tickets and need their own migration.
+5. Which features with no counterpart in the store to keep (`old-store-removal.md` step 3; the kickoff's Phase 3
+   "decide retention of bases, critic, glossary, questions and other legacy features"): questions and messages, layers
+   and knowledge, bases, Cypher, the critic, the glossary. Unlike F02 and F03, the kickoff offers no proposal to
+   adopt here, and these keep or drop whole features. Then each kept module moves one per commit: the worker
+   protocol's pairs, rounds and worksheets (they need step-progress fields the tickets overlay does not have),
+   Paperclip's two-way issue bridge, roundtables, A2A, fork, and the hello and template examples.
