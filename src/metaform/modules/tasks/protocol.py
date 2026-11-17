@@ -13,7 +13,7 @@ from metaform import prompt_files
 from metaform.data import Node, StoreError
 from metaform.module import Context, Stop, context
 
-from . import worktrees
+from . import project_tickets, worktrees
 from .board import CATEGORIES, Board
 
 
@@ -53,16 +53,22 @@ def view(ctx: Context) -> dict[str, Any]:
 
 def open_worktrees(ctx: Context) -> list[dict[str, Any]]:
     """Every worktree with an open ticket: its tickets, and when claimed its holder, partner and progress."""
-    store = ctx.require_store()
-    records = [record for record in store.work(open=True, limit=0).results if record.task]
-    ids = [record.id for record in records]
+    stored = project_tickets.held(ctx)
+    rows: list[tuple[str, str, bool, bool]]  # each open ticket's id, title, whether taken and whether held
+    if stored is not None:
+        rows = [(ident, str(one.get('title') or ''), bool(one.get('taken_by')), bool(one.get('held')))
+                for ident, one in project_tickets.records(stored).items() if not one.get('done') and one.get('task')]
+    else:
+        store = ctx.require_store()
+        records = [record for record in store.work(open=True, limit=0).results if record.task]
+        titles: dict[str, Any] = store.numbers_of('work', [record.id for record in records]) if records else {}
+        rows = [(record.id, titles.get(record.id, ('', None, None))[1] or '', record.taken is not None,
+                 bool(record.held)) for record in records]
+    ids = [row[0] for row in rows]
     names = worktrees.of(ctx, ids)
-    titles: dict[str, Any] = store.numbers_of('work', ids) if ids else {}
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for record in records:
-        grouped.setdefault(names[record.id], []).append({
-            'ticket': record.id, 'title': titles.get(record.id, ('', None, None))[1] or '',
-            'taken': record.taken is not None, 'held': bool(record.held)})
+    for ident, title, taken, held in rows:
+        grouped.setdefault(names[ident], []).append({'ticket': ident, 'title': title, 'taken': taken, 'held': held})
     rounds = {round_['worktree']: round_ for round_ in board(ctx).rounds() if not round_['completed']}
     named = worktrees.agents_of(ctx, ids)
     listed: list[dict[str, Any]] = []
@@ -94,26 +100,35 @@ def status(ctx: Context) -> dict[str, Any]:
 
 def ticket(ctx: Context) -> dict[str, Any]:
     """A ticket for a pair, on its node, in the worktree the composer names or one of its own. The ticket may name
-    the agents who work it, the first named claiming it and the next its partner; each one online is told."""
-    store = ctx.require_store()
+    the agents who work it, the first named claiming it and the next its partner; each one online is told. For a
+    project held in the project store the ticket is a record of its tickets overlay at the element."""
+    stored = project_tickets.held(ctx)
     name = str(ctx.nouns['node'])
-    target = Node('join', name[5:]) if name.startswith('join:') else Node('element', name)
     worktree = worktrees.named(str(ctx.nouns['worktree'])) if ctx.nouns.get('worktree') else None
     given: Any = ctx.nouns.get('agents') or []
     if not isinstance(given, list) or any(not isinstance(one, str) or not one.strip() for one in cast(list[Any], given)):
         raise Stop('agents is a list of agent names.', 'metaform tasks board')
     agents = list(dict.fromkeys(one.strip() for one in cast(list[str], given)))
-    result = store.add_work(target, None, task=str(ctx.nouns['text']), title=str(ctx.nouns['summary']))
+    if stored is not None:
+        ident = project_tickets.add(stored, name, str(ctx.nouns['summary']), str(ctx.nouns['text']))
+    else:
+        target = Node('join', name[5:]) if name.startswith('join:') else Node('element', name)
+        ident = ctx.require_store().add_work(target, None, task=str(ctx.nouns['text']),
+                                             title=str(ctx.nouns['summary'])).id
     if worktree is not None or agents:
-        worktrees.assign(ctx, result.id, worktree, agents)
+        worktrees.assign(ctx, ident, worktree, agents)
     if worktree is not None:
-        round_ = board(ctx).add_ticket(worktree, result.id)
+        round_ = board(ctx).add_ticket(worktree, ident)
         if round_ is not None:  # written into a claimed worktree: the pair's, taken and counted with the rest
-            store.take_work(result.id, by=str(round_['holder']))
+            if stored is not None:
+                project_tickets.take(project_tickets.found(stored, project_tickets.records(stored), ident),
+                                     str(round_['holder']))
+            else:
+                ctx.require_store().take_work(ident, by=str(round_['holder']))
             _sync_progress(ctx, round_)
             changed(ctx, [str(round_['holder']), str(round_.get('partner') or '')], worktree, round_['tickets'])
-    told = _tell_named(ctx, result.id, str(ctx.nouns['summary']), agents)
-    return {'ticket': result.id, 'summary': ctx.nouns['summary'], 'node': name, 'worktree': worktree or result.id,
+    told = _tell_named(ctx, ident, str(ctx.nouns['summary']), agents)
+    return {'ticket': ident, 'summary': ctx.nouns['summary'], 'node': name, 'worktree': worktree or ident,
             'agents': agents, 'told': told}
 
 
@@ -136,10 +151,16 @@ def _tell_named(ctx: Context, ticket_id: str, summary: str, agents: list[str]) -
 
 def tickets_of(ctx: Context, name: str) -> list[dict[str, Any]]:
     """The open tickets in a worktree: those the composer put there, and the ticket named for itself."""
-    store = ctx.require_store()
     listed: list[dict[str, Any]] = []
     own = worktrees.of(ctx, [name])[name] == name  # a ticket put in another worktree is not claimable by its own id
-    for ident in dict.fromkeys([*worktrees.tickets(ctx, name), *([name] if own else [])]):
+    idents: list[str] = list(dict.fromkeys([*worktrees.tickets(ctx, name), *([name] if own else [])]))
+    stored = project_tickets.held(ctx)
+    if stored is not None:
+        found = project_tickets.records(stored)
+        return [{'ticket': ident, 'taken': bool(one.get('taken_by')), 'title': str(one.get('title') or '')}
+                for ident in idents if (one := found.get(ident)) is not None and not one.get('done') and one.get('task')]
+    store = ctx.require_store()
+    for ident in idents:
         try:
             record = store.ticket(ident).work
         except StoreError:
@@ -187,10 +208,14 @@ def worksheet(ctx: Context) -> dict[str, Any]:
                                 [one['ticket'] for one in tickets])
     except ValueError as error:
         raise Stop(str(error), 'metaform tasks worksheet') from None
-    store = ctx.require_store()
+    stored = project_tickets.held(ctx)
+    found = project_tickets.records(stored) if stored is not None else {}
     for one in tickets:
         if not one['taken']:
-            store.take_work(one['ticket'], by=actor(ctx) or holder)
+            if stored is not None:
+                project_tickets.take(project_tickets.found(stored, found, one['ticket']), actor(ctx) or holder)
+            else:
+                ctx.require_store().take_work(one['ticket'], by=actor(ctx) or holder)
     _sync_progress(ctx, result)
     changed(ctx, [holder], name, result['tickets'])
     if made is None:
@@ -253,9 +278,21 @@ def rate(ctx: Context) -> dict[str, Any]:
 
 
 def _sync_progress(ctx: Context, round_: dict[str, Any]) -> None:
-    """Each ticket's steps follow its items, its own and the shared; at N/N the worksheet is appended to each."""
-    store = ctx.require_store()
+    """Each ticket's steps follow its items, its own and the shared; at N/N the worksheet is appended to each. In the
+    project store they are the ticket's steps and steps_done, each changed only when its count moved."""
     items = cast(list[dict[str, Any]], round_['items'])
+    stored = project_tickets.held(ctx)
+    if stored is not None:
+        found = project_tickets.records(stored)
+        for ticket_id in cast(list[str], round_['tickets']):
+            progress = Board.progress(round_, ticket=ticket_id)
+            one = project_tickets.found(stored, found, ticket_id)
+            if (one.get('steps'), one.get('steps_done')) != (progress['total'], progress['checked']):
+                project_tickets.change(one, {'steps': progress['total'], 'steps_done': progress['checked']})
+        if items and all(item.get('done') for item in items):
+            _append(ctx, round_)
+        return
+    store = ctx.require_store()
     with store.atomic():
         for ticket_id in cast(list[str], round_['tickets']):
             progress = Board.progress(round_, ticket=ticket_id)
@@ -268,11 +305,13 @@ def _append(ctx: Context, round_: dict[str, Any]) -> None:
     """The completed items appended to each ticket, its own and the shared, once; a note written by others stays."""
     name = str(round_['worktree'])
     marker = f'Completed worksheet ({name})'
-    store = ctx.require_store()
+    stored = project_tickets.held(ctx)
+    found = project_tickets.records(stored) if stored is not None else {}
     items = cast(list[dict[str, Any]], round_['items'])
     for ticket_id in cast(list[str], round_['tickets']):
-        record = store.ticket(ticket_id).work
-        note = str(record.note or '')
+        one = project_tickets.found(stored, found, ticket_id) if stored is not None else None
+        before_note = one.get('note') if one is not None else ctx.require_store().ticket(ticket_id).work.note
+        note = str(before_note or '')
         text = marker + '\n' + '\n'.join('[x] ' + str(item['text']) for item in items
                                          if item.get('ticket') in (None, ticket_id))
         if marker in note:
@@ -281,7 +320,11 @@ def _append(ctx: Context, round_: dict[str, Any]) -> None:
             note = before + text + (separator + after if separator else '')
         else:
             note = '\n\n'.join(part for part in (note, text) if part)
-        store.edit_work(ticket_id, {'note': note})
+        if one is not None:
+            if note != str(before_note or ''):
+                project_tickets.change(one, {'note': note})
+        else:
+            ctx.require_store().edit_work(ticket_id, {'note': note})
 
 
 def _close(ctx: Context, name: str) -> bool:
@@ -302,18 +345,33 @@ def _close(ctx: Context, name: str) -> bool:
     if not participants <= {str(rating['reviewer']) for rating in data.ratings(name)}:
         return False
     tickets = cast(list[str], round_['tickets'])
-    store = ctx.require_store()
-    with store.atomic():
+    resolution, why = 'Completed the registered worksheet.', f'Every participant rated at the close of worktree {name}.'
+    stored = project_tickets.held(ctx)
+    if stored is not None:  # one command per ticket: the project store has no transaction across elements
         _append(ctx, round_)
+        found = project_tickets.records(stored)
         for ticket_id in tickets:
-            if not store.ticket(ticket_id).work.done:
-                store.finish_work(ticket_id, 'Completed the registered worksheet.',
-                                  f'Every participant rated at the close of worktree {name}.')
+            one = project_tickets.found(stored, found, ticket_id)
+            if not one.get('done'):
+                project_tickets.change(one, project_tickets.finished(one, resolution, why))
+    else:
+        store = ctx.require_store()
+        with store.atomic():
+            _append(ctx, round_)
+            for ticket_id in tickets:
+                if not store.ticket(ticket_id).work.done:
+                    store.finish_work(ticket_id, resolution, why)
     data.complete_round(name)
     if ctx.setting('tasks_full_auto') and worktrees.assigned(ctx, name):
         landed = worktrees.land(ctx.folder, name, f'{round_["phrase"]}\n\nWorktree {name}: {", ".join(tickets)}.')
         if not landed['merged']:
+            found = project_tickets.records(stored) if stored is not None else {}
             for ticket_id in tickets:
+                if stored is not None:
+                    one = project_tickets.found(stored, found, ticket_id)
+                    project_tickets.change(one, {'note': f'{one.get("note") or ""}\n\nNot merged: {landed["why"]}'})
+                    continue
+                store = ctx.require_store()
                 note = str(store.ticket(ticket_id).work.note or '')
                 store.edit_work(ticket_id, {'note': note + f'\n\nNot merged: {landed["why"]}'})
     wake_ids: list[str] = []

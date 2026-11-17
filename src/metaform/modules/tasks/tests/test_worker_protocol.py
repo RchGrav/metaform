@@ -456,3 +456,66 @@ def test_a_board_name_stands_for_its_agent_id_wherever_an_id_is_taken(working):
     assert working.call('pair', worktree=ticket, partner='Carol')['partner'] == 'carol'
     rated = working.call('rate', worktree=ticket, reviewer='alice', target='Carol', scores=FULL)
     assert rated['target'] == 'carol'
+
+
+@pytest.fixture
+def stored(working, home):
+    """`proj` held in the project store, its kitchen timer an element there, so its tickets are the tickets overlay's
+    records (kickoff 2026-11-17, t-legacy-keep). Its single-writer service is stopped when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    assert command({'add': {f'proj.{NODE}': {'technical_name': 'kitchen timer', 'name': 'kitchen timer',
+                                             'role': 'Defining Element'}}}) == {'status': 'ok'}
+    yield working
+    service.stop(home)
+    owner.close_all()
+
+
+def overlay_tickets():
+    from metaform.project import overlay_records
+    return {one['id']: one for one in overlay_records('proj', 'tickets') or []}
+
+
+def test_a_pairs_worksheet_on_a_project_in_the_project_store_runs_on_its_tickets_overlay(stored):
+    """The ticket is a record at the element the board reads, taken by the holder, its steps following the items, the
+    completed worksheet in its note, and done with the resolution at the close; the old store gets no ticket."""
+    ticket, round_ = registered(stored)
+    one = overlay_tickets()[ticket]
+    assert one['element'] == f'proj.{NODE}' and one['title'] == 'Fix the kitchen timer'
+    assert one['task'] == 'Repair and verify the timer behavior.'
+    assert one['taken_by'] == 'alice' and (one['steps'], one['steps_done']) == (2, 0)
+    assert [worktree['worktree'] for worktree in stored.call('view')['worktrees']] == [ticket]
+    checked(stored, ticket, round_)
+    one = overlay_tickets()[ticket]
+    assert one['steps_done'] == 2 and 'done' not in one
+    assert one['note'].count(f'Completed worksheet ({ticket})') == 1 and '[x] Inspect the timer' in one['note']
+    ratings(stored, ticket)
+    one = overlay_tickets()[ticket]
+    assert one['outcome'] == 'completed' and one['done']
+    assert one['note'].endswith('Resolution: Completed the registered worksheet. Why: Every participant rated at the '
+                                f'close of worktree {ticket}.')
+    assert stored.call('view')['worktrees'] == []
+    assert not stored.store.work(limit=0).results
+
+
+def test_a_ticket_on_a_join_is_refused_by_name_on_a_project_in_the_project_store(stored):
+    with pytest.raises(Stop, match='a join has no tickets there yet'):
+        stored.call('ticket', node='join:code.timer.kitchen->code.timer.bell', summary='Ring', text='Ring the bell.')
+    assert overlay_tickets() == {}
+
+
+def test_a_project_given_tickets_before_steps_existed_gains_them_on_open_and_keeps_its_records(stored, home):
+    """give_standing_overlays brings an existing project's tickets definition up to the standing one with its new
+    optional fields only (F03): the records stay as they were."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    for name in ('steps', 'steps_done'):
+        assert command({'delete': {f'proj.overlay.tickets.{name}': {}}}) == {'status': 'ok'}
+    assert 'steps' not in command({'proj.overlay.tickets': {}})['proj.overlay.tickets']
+    ticket = stored.call('ticket', node=NODE, summary='Fix it', text='Fix the timer.')['ticket']
+    before = overlay_tickets()[ticket]
+    service.stop(home)
+    owner.close_all()
+    definition = command({'proj.overlay.tickets': {}})['proj.overlay.tickets']
+    assert definition['steps']['optional'] is True and definition['steps_done']['type'] == 'number'
+    assert overlay_tickets()[ticket] == before

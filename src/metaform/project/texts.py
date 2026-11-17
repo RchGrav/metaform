@@ -53,7 +53,8 @@ def wants_definition(project: str) -> dict[str, dict[str, str | bool]]:
 def standing_overlays() -> dict[str, dict[str, object]]:
     """The overlays every project is given beside its wants, each by its address beneath the project's name with
     its definition as `add` takes it. They are ordinary overlays: read, written and shown as any other. Their fields
-    are the ones tickets and memories already had: a ticket's id, task, note, kind, held, taken_by, done and outcome,
+    are the ones tickets and memories already had: a ticket's id, task, note, kind, held, taken_by, done, outcome and
+    its count of steps and steps done,
     and a memory as the reference memory server keeps it, an entity of a type holding observations of one fact each,
     and the specification's blocks (`specification`)."""
     from metaform.project import specification
@@ -81,6 +82,12 @@ def standing_overlays() -> dict[str, dict[str, object]]:
                      'example': '2026-11-16T09:30:00Z', 'optional': True},
             'outcome': {'type': 'completed | cancelled | failed', 'rule': 'How it ended.', 'example': 'completed',
                         'optional': True},
+            # a worksheet's progress on the ticket, as the old store's work record kept it (kickoff 2026-11-17,
+            # t-legacy-keep): added optional, so a project given tickets before keeps every record valid (F03)
+            'steps': {'type': 'number', 'rule': 'How many steps the work has, once they are counted.', 'example': 2,
+                      'optional': True},
+            'steps_done': {'type': 'number', 'rule': 'How many of its steps are done.', 'example': 1,
+                           'optional': True},
         },
         'overlay.memories': {
             'description': ('What is worth keeping about this element: each record is one observation of a named '

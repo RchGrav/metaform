@@ -97,6 +97,12 @@ is an assignment of its own, named by its id. A ticket may also name the agents 
 first named claims it, the next is its partner, and each one online is told. The tasks module keeps both in its
 `tickets` table.
 
+For a project whose map is in the project store, its tickets are the records of the `tickets` overlay there, the ones
+the page's board shows. A ticket is written at its element, a claim sets `taken_by` with the revision it read, a
+worksheet's progress is the ticket's `steps` and `steps_done`, the completed worksheet goes into its `note`, and the
+close sets `done` and `outcome` with the resolution as a paragraph of the note. A ticket on a join is refused there,
+since the overlay holds tickets at elements only. Other projects keep their tickets in the old store, unchanged.
+
 The board is kept in `<temporary directory>/.metadata/<project-id>/board.sqlite`, using `TMPDIR` when set.
 Server restarts and page refreshes reopen these records. The browser reads the server's board through the existing
 page event path.
