@@ -25,7 +25,7 @@ TAKES: dict[str, frozenset[str]] = {
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'title', 'task', 'note', 'kind', 'held', 'hold'}),
     'edit': frozenset({'id', 'title', 'task', 'note', 'kind', 'held', 'hold'}),
-    'take': frozenset({'id', 'agent', 'steps', 'model', 'effort', 'fast'}),
+    'take': frozenset({'id', 'by', 'agent', 'steps', 'model', 'effort', 'fast'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'remove': frozenset({'id'}),
 }
@@ -62,7 +62,9 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
     elif op == 'take':
         # A claim is exclusive (F09): a ticket another agent holds is refused, and the claim names the revision it
         # read, so of two claims made at once one is taken and the other is refused with RECORD_CHANGED.
-        agent = str(nouns.get('agent') or 'agent')
+        agent = str(nouns.get('by') or nouns.get('agent') or '').strip()
+        if not agent:  # an exclusive claim names who claims it; the command line names it with by=
+            raise Stop('op=take names who takes the ticket: by=<agent>, such as by=claude.', HELP)
         holder = found.get('taken_by')
         if holder and holder != agent and not found.get('done'):
             raise Stop(f"Ticket {found['id']!r} is taken by {holder}; it is not taken again. Its holder or the person "
@@ -72,8 +74,12 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
              'taken_by': agent, 'held': None}]}}}))
         return _shown(project, _found(project, str(nouns['id'])))
     elif op == 'done':
+        # the tickets overlay has no resolution field: it is added to the note, after what the note already says
+        said = ' '.join(f'{label}: {nouns[name]}' for name, label in (('resolution', 'Resolution'), ('why', 'Why'))
+                        if nouns.get(name))
+        kept = str(found.get('note') or '').strip()
         fields = {'done': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'outcome': 'completed',
-                  'note': ' '.join(str(nouns[name]) for name in ('resolution', 'why') if nouns.get(name)) or None}
+                  'note': ' '.join(part for part in (kept, said) if part) or None}
     if not fields:
         raise Stop(f'op={op} was given no field to change.', HELP)
     _done(project_store.run({'update': {str(found['element']): {'tickets': [

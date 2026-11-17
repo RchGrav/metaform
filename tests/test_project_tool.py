@@ -969,13 +969,16 @@ def test_map_work_reads_and_writes_the_tickets_of_a_project_in_the_project_store
     other = project_work(P, 'add', {'node': node, 'title': 'Snooze', 'task': 'Let a ring be snoozed.'})
     assert (made['title'], made['address'], made['status'], made['revision']) == ('Ring', 'code.masher.widget', 'open', 1)
     project_work(P, 'remove', {'id': made['id']})  # the second ticket moves to position 0
-    taken = project_work(P, 'take', {'id': other['id'], 'agent': 'claude'})
+    taken = project_work(P, 'take', {'id': other['id'], 'by': 'claude'})  # by=, as the command line names it
     assert (taken['id'], taken['taken_by'], taken['position']) == (other['id'], 'claude', 0)
+    project_work(P, 'edit', {'id': other['id'], 'note': 'Snooze added.'})
     done = project_work(P, 'done', {'id': other['id'], 'resolution': 'Snooze works.', 'why': 'Tested.'})
-    assert (done['status'], done['outcome'], done['note']) == ('done', 'completed', 'Snooze works. Tested.')
+    assert (done['status'], done['outcome'], done['note']) == (
+        'done', 'completed', 'Snooze added. Resolution: Snooze works. Why: Tested.')  # the note is kept
     assert project_work(P, 'list', {})['results'] == []
     assert [row['id'] for row in project_work(P, 'list', {'open': False})['results']] == [other['id']]
     for op, nouns, said in (('plan', {'id': other['id']}, 'op=plan has no place'),
+                            ('take', {'id': other['id']}, 'names who takes'),
                             ('add', {'node': node, 'title': 't', 'task': 't', 'condition': 'broken'}, 'condition'),
                             ('add', {'receiver': 'code.masher.widget', 'title': 't', 'task': 't'}, 'receiver'),
                             ('read', {'id': 't-none'}, 'No ticket')):
@@ -1064,7 +1067,7 @@ def test_a_ticket_id_names_one_ticket_and_a_claim_is_exclusive(served):
         assert commands.overlay_records(P, 'tickets', served) == before
     assert project_work(P, 'take', {'id': 't-1', 'agent': 'claude'})['taken_by'] == 'claude'
     with pytest.raises(Stop, match='taken by claude'):
-        project_work(P, 'take', {'id': 't-1', 'agent': 'codex'})
+        project_work(P, 'take', {'id': 't-1', 'by': 'codex'})  # as the command line sends it
     assert project_work(P, 'take', {'id': 't-1', 'agent': 'claude'})['taken_by'] == 'claude'  # its holder again
     (read,) = commands.overlay_records(P, 'tickets', served)  # two claims made from this one read
     claim = {'position': 0, 'record': read['record'], 'revision': read['revision']}
