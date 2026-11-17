@@ -114,15 +114,26 @@
   --mark:#173f35; --string:#00fd78; --add:#83d494; --add-bg:#103219; --del:#ff9f9f; --del-bg:#4a1519; --shadow:#000000;
 }
 :root[data-theme="paper"]{
-  color-scheme:dark; --pill-lift:45%;
-  --ground:#352d1c; --panel:#403827; --panel-2:#4d4433; --control:#9b9281; --line:#5f5644; --line-2:#706755;
-  --text:#fef6e7; --muted:#c7bfb0; --faint:#bbb4a5;
-  --signal:#00fdea; --de:#ffffff; --dim-keep:0.72; --tree:#8d8678; --link-opacity:0.85;
-  --intake:#53a0ff; --memory:#b17eff; --danger:#fe9d57;
-  --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
-  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
-  --node:#4d4433; --node-sub:#49402f; --node-sel:#3c6d5b; --node-broken:#864540; --group:#433a29; --node-line:#989284; --edge:#989284;
-  --mark:#326352; --string:#00fd78; --add:#87d999; --add-bg:#3e6145; --del:#ffacab; --del-bg:#7e4445; --shadow:#110d04;
+  /* Paper, the person's (2026-11-17): a warm off-white page, as light as Glass's and no brighter, so it does not glare,
+   * with ink for text and lines and colours deep enough to read on it, and its own material, "The paper material" at
+   * the end of this file. It was a dim warm brown from 2026-09-28, when agents took the light themes down. */
+  color-scheme:light; --pill-lift:45%;
+  --ground:#e9e3d6; --panel:#f6f2e8; --panel-2:#ebe5d8; --control:#857c6c; --line:#dcd4c3; --line-2:#c5bcab;
+  --text:#1d1810; --muted:#544d40; --faint:#665f52;
+  --signal:#007269; --de:#1a1610; --dim-keep:0.75; --tree:#6b6355; --link-opacity:0.9;
+  --intake:#1060b8; --memory:#7d47c4; --danger:#af4701;
+  --k1:#c2410c; --k2:#077820; --k3:#c6156a; --k4:#006e8c; --k5:#9c36b5; --k6:#5956c0;
+  --missing:#8a6a00; --broken:#c5292f; --exclude:#4d6d05; --question:#aa3c8a;
+  --node:#faf7ef; --node-sub:#efe9dc; --node-sel:#d4e5df; --node-broken:#f2dbd6; --group:#eee8db; --node-line:#6b6355;
+  --edge:#6b6355;
+  --mark:#cfe0d9; --string:#017634; --add:#1d7238; --add-bg:#dce7da; --del:#a04a4d; --del-bg:#eedfda; --shadow:#3b3122;
+  /* on a light page these are the ink, as in Glass */
+  --in-use:var(--de); --spark:var(--de); --record:var(--k1); --pointer:var(--k1);
+  /* the paper material: a hairline of ink round a sheet, the soft shadow a sheet lifted off the page casts, a field's
+   * fresher face and the faint grain of the page */
+  --paper-edge:rgb(59 49 34 / 16%); --paper-edge-strong:rgb(59 49 34 / 26%);
+  --paper-contact:rgb(59 49 34 / 10%); --paper-shade:rgb(59 49 34 / 16%);
+  --paper-sheet:#f8f5ec; --paper-card:#fbf9f3; --paper-field:#fffdf8; --paper-state:rgb(59 49 34 / 7%);
 }
 :root[data-theme="mist"]{
   color-scheme:dark; --pill-lift:45%;
@@ -2785,6 +2796,60 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 @media (prefers-reduced-transparency: reduce){
   :root[data-theme$="glass"]{--glass-blur:none}
 }
+
+/* The paper material, VIEW-023, for Paper alone (the person, 2026-11-17): matte sheets on a page of paper. A sheet is a
+ * flat fill with a hairline of ink round it, and one lifted off the page, a menu, a window, a card, casts a soft warm
+ * shadow by how far it is lifted; there is no line of light, no blur and no gradient, since paper has none. The page
+ * itself has a faint grain. It covers the parts the glass material covers, so no part of the page keeps another
+ * theme's look. */
+:root[data-theme="paper"]{
+  --lift-1:0 0 0 1px var(--paper-edge),0 1px 2px var(--paper-contact);
+  --lift-2:0 0 0 1px var(--paper-edge),0 10px 28px -12px var(--paper-shade),0 2px 6px -2px var(--paper-contact);
+  --lift-3:0 0 0 1px var(--paper-edge-strong),0 18px 44px -16px var(--paper-shade),0 4px 10px -4px var(--paper-contact)}
+:root[data-theme="paper"] body{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .23 0 0 0 0 .19 0 0 0 0 .13 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E")}
+/* The layout panes lie on the page as its sheets. */
+:root[data-theme="paper"] :is(header,aside,.toolbar-row,.wstabs,.wsarea:not([data-area="main"])){background:var(--panel)}
+/* What the page lifts over the rest is a sheet laid on it, its hairline and its shadow; it gives up its border, which
+ * beside the hairline showed as a second ring, but a coloured edge that says something, a toast's, stays. */
+:root[data-theme="paper"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,
+  .mascot-bubble,.wsghost,.voice-ask,.voice-note,.voice-wake,.hovercard,.tip3d,#helpdesk .latest,
+  .window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
+  background:var(--paper-sheet);box-shadow:var(--lift-2)}
+:root[data-theme="paper"] :is(.window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
+  box-shadow:var(--lift-3)}
+:root[data-theme="paper"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble,.wsghost,.voice-ask,.voice-note,
+  .voice-wake,.hovercard,.tip3d,.window,#board,#helpdesk,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
+  border-color:transparent}
+:root[data-theme="paper"] :is(.wsbody > .window.docked,.wsbody > #helpdesk){background:transparent;box-shadow:none}
+:root[data-theme="paper"] :is(#helpdesk .calls,#helpdesk .sessionbar,#helpdesk .planbox,#helpdesk .log){background:transparent}
+/* A card on the board is an index card lying on the board's sheet. */
+:root[data-theme="paper"] #board .column{background:var(--paper-state);border-color:var(--paper-edge)}
+:root[data-theme="paper"] #board .card{background:var(--paper-card);border-color:transparent;
+  box-shadow:0 0 0 1px var(--paper-edge),0 1px 2px var(--paper-contact)}
+:root[data-theme="paper"] #board .card:hover{box-shadow:var(--lift-2)}
+/* Small things are printed on the sheet: a button, a key, a chip keep their edge in --control and a fresher face. */
+:root[data-theme="paper"] :is(.btn:not(.quiet):not(.primary):not(.danger),kbd,.chip,.badge,.pill,.nodechip,button.chat){
+  background:var(--paper-card);box-shadow:0 1px 1px var(--paper-contact)}
+:root[data-theme="paper"] .btn:disabled{background:transparent;box-shadow:none}
+:root[data-theme="paper"] #helpdesk .bubble.theirs{background:var(--paper-card);border-color:transparent;
+  box-shadow:0 0 0 1px var(--paper-edge)}
+/* A field is a fresher patch of paper to write on, a little sunk; being typed into, it keeps the page's focus ring. */
+:root[data-theme="paper"] :where(input:not([type]),input[type=text],input[type=search],input[type=number],input[type=url],
+  input[type=email],textarea,select):not(.CodeMirror *):not(:focus-visible){background-color:var(--paper-field);
+  box-shadow:inset 0 1px 2px var(--paper-contact)}
+:root[data-theme="paper"] #helpdesk .compose{background:var(--paper-field);box-shadow:inset 0 1px 2px var(--paper-contact)}
+:root[data-theme="paper"] :is(.segmented,.switch input:not(:checked)){background:var(--paper-state)}
+/* The one state: under the pointer, chosen or held open, a faint wash of ink and its hairline, as in the glass. */
+:root[data-theme="paper"] :is(
+  .menu > button:hover:not(:disabled),.menu > button:focus-visible,.menu .menu-item:hover,
+  .listbox [role="option"]:hover,.listbox [role="option"][aria-selected="true"],.listbox [role="option"].active,
+  .slash [role="option"][aria-selected="true"],#search [role="option"][aria-selected="true"],
+  .btn:hover:not(:disabled):not([aria-disabled="true"]):not(.primary):not(.danger),.btn[aria-expanded="true"]:not(.primary),
+  .btn[aria-pressed="true"]:not(.primary),.segmented button[aria-checked="true"],.wsslot[aria-pressed="true"],
+  .layerrow:hover,.modrow:hover,#task .rows [data-address]:hover,#task .rows [data-address].chosen,
+  .agents .agent:hover,#board .kindtoggle[aria-pressed="true"]){
+  background:var(--paper-state);box-shadow:0 0 0 1px var(--paper-edge)}
+:root[data-theme="paper"] .wsslot[aria-pressed="true"]{box-shadow:inset 0 -2px 0 var(--signal)}
 
 /* Live worker coordination stays compact and retains canonical node labels. */
 .worker-board{display:grid;gap:var(--s2)}
