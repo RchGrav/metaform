@@ -1,0 +1,1285 @@
+{
+  "status": "completed",
+  "signature": "ShaggyEthane",
+  "metaform": {
+    "id": "metaform",
+    "name": "Metaform",
+    "project": "/home/rich/metaform",
+    "core": {
+      "namespace_address": "metaform.code.system.management.context",
+      "technical_name": "context management system",
+      "name": "Metaform",
+      "role": "Defining Element",
+      "ref": "src/metaform/cli.py",
+      "concerns": [],
+      "survey": [
+        {
+          "scope": "Observed 24,584 filesystem members: 3,152 repository artifacts and 21,432 additional local archive, test, build and reference members. Excluded rich/, version-control metadata, live caches, dependency installations and run state. Historical and independent reference artifacts were examined as such.",
+          "members": 24584,
+          "status": "completed",
+          "ref": "evidence/digital-typology/metaform.json"
+        }
+      ],
+      "wants": [
+        {
+          "element": "metaform.code.framework.plugin",
+          "why": "extend project capabilities through a common operational contract",
+          "how": "derives commands, help, configuration and lifecycle hooks from module declarations and routes shared events",
+          "direction": "receive",
+          "ref": "src/metaform/module.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "declare a capability once for all operational surfaces",
+              "how": "defines module, verb and noun records that generate commands, help and interface contributions",
+              "direction": "receive",
+              "ref": "src/metaform/module.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "activate compatible extensions and withdraw disabled contributions",
+              "how": "discovers modules, checks their contracts and owns lifecycle resources and provider hooks",
+              "direction": "receive",
+              "ref": "src/metaform/loader.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "apply explicit operational choices consistently across surfaces",
+              "how": "declares, validates, inherits and persists settings through one schema",
+              "direction": "both",
+              "ref": "src/metaform/settings.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "react only to relevant changes from other components",
+              "how": "publishes scoped events, owns subscriptions and relays committed changes across processes",
+              "direction": "receive",
+              "ref": "src/metaform/events.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "locate projects and their persistent operational state",
+              "how": "registers project sources and folders and supplies shared state access to modules",
+              "direction": "both",
+              "ref": "src/metaform/home.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "serve the exact project and module instructions selected for an operation",
+              "how": "loads versioned prompts, renders bound values and exposes instruction resources",
+              "direction": "receive",
+              "ref": "src/metaform/prompt_files.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.framework.plugin",
+              "why": "obtain optional semantic judgments for work control",
+              "how": "returns typed judgments with retained decision evidence and fallback behavior",
+              "direction": "receive",
+              "ref": "src/metaform/jev.py"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.gateway.protocol",
+          "why": "exchange addressed project context and assignments with authorized external agents",
+          "how": "exposes project commands and peer tasks through protocol endpoints with caller identity and capability checks",
+          "direction": "both",
+          "ref": "src/metaform/modules/mcp/project_tool.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.gateway.protocol",
+              "why": "expose functional map operations to an external agent",
+              "how": "serves the project command tool and the rules and task resources required for the assignment",
+              "direction": "both",
+              "ref": "src/metaform/modules/mcp/project_tool.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.gateway.protocol",
+              "why": "exchange project assignments and outcomes with permitted peers",
+              "how": "represents A2A requests as retained work and returns their state and results",
+              "direction": "both",
+              "ref": "src/metaform/modules/mcp/a2a.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.gateway.protocol",
+              "why": "make local project capabilities available across network boundaries",
+              "how": "carries authorized requests through an outbound tunnel or a self-hosted node",
+              "direction": "both",
+              "ref": "src/metaform/modules/cloud/tunnel.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.gateway.protocol",
+              "why": "establish caller identity and permitted project capabilities",
+              "how": "authenticates passkeys, obtains consent and issues, introspects and revokes access credentials",
+              "direction": "receive",
+              "ref": "src/metaform/modules/node/authserver.py"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.graph.knowledge",
+          "why": "preserve and retrieve reusable project knowledge at the functions and purposes it concerns",
+          "how": "stores functional addresses, receiver purposes, provider encounters and contextual records in a persistent graph",
+          "direction": "both",
+          "ref": "src/metaform/project/__init__.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "derive a functional model from the examined artifacts",
+              "how": "serves the canonical intake procedure and records each inferred element and receiver purpose",
+              "direction": "receive",
+              "ref": "src/metaform/modules/intake/__init__.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "navigate the reasons each project function depends on another",
+              "how": "stores reversible namespace ancestry and receiver-owned wants as graph edges",
+              "direction": "receive",
+              "ref": "src/metaform/project/store.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "attach structured knowledge under stable functional identities",
+              "how": "validates defined overlays and holds their typed records at the relevant element",
+              "direction": "both",
+              "ref": "src/metaform/project/overlays.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "retain contextual observations and their evidence across assignments",
+              "how": "indexes memory entities, relations, notes and citations at functional receivers",
+              "direction": "both",
+              "ref": "src/metaform/modules/memory/__init__.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "preserve alternative context and the history of project changes",
+              "how": "retains legacy bases, knowledge layers, selection rules and source variants for scoped reads",
+              "direction": "both",
+              "ref": "src/metaform/data/layering.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.graph.knowledge",
+              "why": "maintain specification blocks at their functions through an editable document round trip",
+              "how": "exports and imports addressed specification blocks atomically and supplies their localized intent before work",
+              "direction": "both",
+              "status": "unbuilt",
+              "ref": "docs/plans/specifications-overlay.md"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.interface.conversational",
+          "why": "exchange project instructions and results through text, speech and telephone conversations",
+          "how": "carries utterances and agent replies across page, local audio and telephone channels",
+          "direction": "both",
+          "ref": "src/metaform/modules/voice/__init__.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.conversational",
+              "why": "continue a project conversation across agent turns",
+              "how": "carries attributed messages and replies through retained system-agent sessions",
+              "direction": "both",
+              "ref": "src/metaform/modules/twilio/agent.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.conversational",
+              "why": "exchange project instructions and replies through speech",
+              "how": "transcribes utterances and synthesizes replies through selected local or external speech engines",
+              "direction": "both",
+              "ref": "src/metaform/modules/voice/__init__.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.conversational",
+              "why": "continue project conversations and receive notices over a telephone",
+              "how": "admits configured callers and carries calls, texts and selected notifications through the system agent",
+              "direction": "both",
+              "ref": "src/metaform/modules/twilio/server.py"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.interface.graphical",
+          "why": "inspect project functions and direct work at the element it concerns",
+          "how": "presents the functional graph, contextual records and active work with controls for their source operations",
+          "direction": "both",
+          "ref": "src/metaform/modules/web/server.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.graphical",
+              "why": "inspect functional relationships and context at a selected element",
+              "how": "renders coordinated graph views and exposes the element's purposes, providers and overlay records",
+              "direction": "receive",
+              "ref": "src/metaform/modules/web/project_map.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.graphical",
+              "why": "maintain project knowledge and control open work",
+              "how": "submits addressed element, ticket, note and memory edits and presents their retained state",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/page/app/board/board.js"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.graphical",
+              "why": "exchange agent instructions, results and intervention decisions",
+              "how": "presents session threads, tool details, permission requests and discussion controls",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/page/app/session/tools.js"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.graphical",
+              "why": "arrange the operational workspace and its explicit choices",
+              "how": "assembles module panes and exposes saved settings and distribution controls",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/workspace.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.interface.graphical",
+              "why": "reflect relevant committed changes in the displayed project",
+              "how": "applies scoped event-stream updates and coalesces bursts before redraw",
+              "direction": "receive",
+              "ref": "src/metaform/modules/web/page/app/live/stream.js"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.manager.package",
+          "why": "carry selected capabilities and project context into another work environment",
+          "how": "constructs installable distributions and project packets with origins, variants and integrity checks",
+          "direction": "both",
+          "ref": "src/metaform/build.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.manager.package",
+              "why": "construct a usable distribution with its selected capabilities",
+              "how": "assembles modules, resources and declared dependencies into a wheel or node package",
+              "direction": "receive",
+              "ref": "src/metaform/build.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.manager.package",
+              "why": "install and update capabilities in the target environment",
+              "how": "installs distributions and agent integration settings and retains reversible setup evidence",
+              "direction": "both",
+              "ref": "src/metaform/install.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.manager.package",
+              "why": "preserve project context and reconcile returned work",
+              "how": "exports project origins and context and imports retained history and source variants for review",
+              "direction": "both",
+              "ref": "src/metaform/archive.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.manager.package",
+              "why": "verify transferred project work against its declared contents",
+              "how": "seals packet manifests and checks integrity before returned work is accepted",
+              "direction": "receive",
+              "ref": "src/metaform/modules/packet/seal.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.manager.package",
+              "why": "maintain independent extensions against the common module contract",
+              "how": "scaffolds module repositories and prepares reviewed compatibility and template updates",
+              "direction": "both",
+              "ref": "src/metaform/modules/fork/__init__.py"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.orchestrator.agent",
+          "why": "obtain accountable outcomes from individual and concurrent agent assignments",
+          "how": "coordinates work records, agent sessions, group discussions and retained results",
+          "direction": "both",
+          "ref": "src/metaform/modules/dispatch/__init__.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "retain an assignment from its original request through its terminal result",
+              "how": "stores task instructions, selected skills, work records and execution state",
+              "direction": "both",
+              "ref": "src/metaform/modules/tasks/runtime.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "obtain results from interruptible and resumable agent work",
+              "how": "starts native agent sessions, serializes turns and retains transcripts, permissions and handoffs",
+              "direction": "both",
+              "ref": "src/metaform/modules/dispatch/runner.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "supply the exact applicable context to each agent turn",
+              "how": "selects prompt and knowledge components and records accepted body revisions within context epochs",
+              "direction": "receive",
+              "ref": "src/metaform/modules/agents/context.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "coordinate concurrent responsibility and peer communication",
+              "how": "claims worksheets, exposes presence and exchanges attributed messages and progress",
+              "direction": "both",
+              "ref": "src/metaform/modules/tasks/protocol.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "keep concurrent file changes isolated until their integration",
+              "how": "assigns worktrees, checks coupled work and retains merge and commit evidence",
+              "direction": "both",
+              "ref": "src/metaform/modules/dispatch/merge.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "develop project answers and artifacts through several agents",
+              "how": "chairs discussions with contribution checks, shared files, topic selection, synthesis and saved outcomes",
+              "direction": "both",
+              "ref": "src/metaform/modules/roundtables/__init__.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "retain repair work when project faults occur or recur",
+              "how": "coalesces fault events and log evidence into tickets at the responsible function",
+              "direction": "receive",
+              "ref": "src/metaform/modules/autoticket/faults.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "keep external issues and local project work coherent",
+              "how": "crosses assignments, comments, questions and outcomes through the linked issue tracker",
+              "direction": "both",
+              "ref": "src/metaform/modules/paperclip/__init__.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "select each installed agent through the protocol registry",
+              "how": "discovers compatible harnesses and launches them through their registry identities",
+              "direction": "both",
+              "status": "unbuilt",
+              "ref": "docs/plans/dispatch-owns-acp.md"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.orchestrator.agent",
+              "why": "reuse saved agent launch profiles and resolve assignments by purpose",
+              "how": "stores launch profiles and resolves each assignment's harness, model, options and prompt",
+              "direction": "both",
+              "status": "unbuilt",
+              "ref": "docs/plans/dispatch-owns-acp.md#profiles"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.code.suite.test",
+          "why": "assess project behavior and change claims against repeatable evidence",
+          "how": "checks requirements, isolates test environments and retains evaluation and integration results",
+          "direction": "receive",
+          "ref": "conftest.py",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.code.suite.test",
+              "why": "check project requirements without changes to personal project data",
+              "how": "isolates homes, process state and adapters for unit, integration and browser checks",
+              "direction": "receive",
+              "ref": "conftest.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.suite.test",
+              "why": "detect incompatible changes across supported execution environments",
+              "how": "runs type, lint, runtime and browser checks in the integration pipeline",
+              "direction": "receive",
+              "ref": ".github/workflows/checks.yml"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.suite.test",
+              "why": "assess whether prepared context improves agent work",
+              "how": "compares experimental arms and retains cost, correctness and delivery evidence",
+              "direction": "receive",
+              "ref": "scripts/orientation_eval.py"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.code.suite.test",
+              "why": "review observed behavior against retained evidence",
+              "how": "preserves source revisions, traces and interpreted evaluation results for later examination",
+              "direction": "receive",
+              "ref": "evidence/gc-orchestration-review/README.md"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.document.manual",
+          "why": "operate and extend the project with its functional concepts and procedures",
+          "how": "explains project concepts, commands, workflows and extension contracts through guidance and examples",
+          "direction": "receive",
+          "ref": "docs/README.md",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.document.manual",
+              "why": "operate project capabilities through their supported interfaces",
+              "how": "explains setup, commands and project workflows with executable entry points",
+              "direction": "receive",
+              "ref": "docs/README.md"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.document.manual",
+              "why": "carry project semantics and work constraints into later assignments",
+              "how": "states project instructions and links specialized skills and procedural evidence",
+              "direction": "receive",
+              "ref": "AGENTS.md"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.document.manual",
+              "why": "learn interfaces from examples with their implementation and historical scope intact",
+              "how": "presents demonstration artifacts, historical map examples and reference material in their documented scope",
+              "direction": "receive",
+              "ref": "examples/README.md"
+            }
+          ],
+          "type": "purpose"
+        },
+        {
+          "element": "metaform.document.specification",
+          "why": "preserve the intended outcomes and acceptance conditions that guide project changes",
+          "how": "states functional requirements, their reasons, observable effects and acceptance evidence with links to later decisions",
+          "direction": "receive",
+          "ref": "specifications/00-index.md",
+          "subtypes": [
+            {
+              "type": "purpose",
+              "element": "metaform.document.specification",
+              "why": "judge project changes against intended functional outcomes",
+              "how": "states each requirement with its reason, observable behavior and acceptance conditions",
+              "direction": "receive",
+              "ref": "specifications/00-index.md"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.document.specification",
+              "why": "preserve the current design and the provenance of later corrections",
+              "how": "retains decisions, reference implementations and supersession records linked to their sources",
+              "direction": "receive",
+              "ref": "HANDOFF.md"
+            },
+            {
+              "type": "purpose",
+              "element": "metaform.document.specification",
+              "why": "keep functional intake semantics faithful across implementations",
+              "how": "defines the canonical concepts, namespace constraints, trace procedure and completion conditions",
+              "direction": "receive",
+              "ref": "src/metaform/project/procedure/sections.md"
+            }
+          ],
+          "type": "purpose"
+        }
+      ],
+      "elements": [
+        {
+          "namespace_address": "metaform.code.framework.plugin",
+          "technical_name": "plugin framework",
+          "name": "Metaform chassis",
+          "role": "Supporting Element",
+          "ref": "src/metaform/module.py",
+          "concerns": [
+            {
+              "mark": "missing",
+              "finding": "Automatic prompt review catalogs XML prompt stores but omits module prompts served from Markdown unless they are manually registered.",
+              "evidence": "src/metaform/prompt_review.py:90; src/metaform/prompt_files.py:371",
+              "ref": "src/metaform/prompt_review.py"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.upstream.code.database.relational",
+              "why": "persist and retrieve settings, registration and current module state",
+              "how": "stores and retrieves transactional records in the local operational databases",
+              "direction": "both",
+              "ref": "src/metaform/sqlite.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.gateway.protocol",
+          "technical_name": "protocol gateway",
+          "name": "Metaform external access",
+          "role": "Supporting Element",
+          "ref": "src/metaform/modules/mcp/project_tool.py",
+          "concerns": [
+            {
+              "mark": "broken",
+              "finding": "A second cloud connection can continue after lock acquisition fails because home.Held is suppressed before the tunnel is started.",
+              "evidence": "src/metaform/modules/cloud/__init__.py:166; src/metaform/sqlite.py:69",
+              "ref": "src/metaform/modules/cloud/__init__.py"
+            },
+            {
+              "mark": "exclude",
+              "finding": "The embedded-app discovery and frame assets still refer to the former UI-resource contract, while the active MCP server exposes the project tool and opening resources.",
+              "evidence": "src/metaform/modules/web/apps.py:196; src/metaform/modules/web/page/frame.js:1; src/metaform/modules/mcp/project_tool.py:78",
+              "ref": "src/metaform/modules/web/apps.py"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.graph.knowledge",
+              "why": "carry external project reads and writes through the authoritative command engine",
+              "how": "validates and executes addressed commands and returns committed functional records",
+              "direction": "both",
+              "ref": "src/metaform/modules/mcp/project_tool.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.orchestrator.agent",
+              "why": "exchange external assignments and their retained results",
+              "how": "starts permitted peer work and exposes its progress and terminal outcome",
+              "direction": "both",
+              "ref": "src/metaform/modules/mcp/a2a.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.service.tunnel",
+              "why": "carry authorized remote requests to a local project without an inbound public listener",
+              "how": "relays broker-authenticated traffic through the outbound tunnel and returns local results",
+              "direction": "both",
+              "ref": "src/metaform/modules/cloud/tunnel.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.graph.knowledge",
+          "technical_name": "knowledge graph",
+          "name": "Metaform functional map",
+          "role": "Supporting Element",
+          "ref": "src/metaform/project/__init__.py",
+          "concerns": [
+            {
+              "mark": "broken",
+              "finding": "The project tool and page use the project graph store, while legacy CLI, memory and dispatch paths still use a separate SQLite map, so reads and tickets can disagree across surfaces.",
+              "evidence": "docs/plans/old-store-removal.md:8; src/metaform/modules/map/__init__.py:147; src/metaform/modules/memory/__init__.py:176; src/metaform/project/commands.py:37",
+              "ref": "docs/plans/old-store-removal.md"
+            },
+            {
+              "mark": "missing",
+              "finding": "The intended specification-block overlay, atomic document round trip and localized specification delivery are absent from the current Python project engine.",
+              "evidence": "docs/plans/specifications-overlay.md:3; src/metaform/project/overlays.py:1; src/metaform/project/texts.py:53",
+              "ref": "docs/plans/specifications-overlay.md"
+            },
+            {
+              "mark": "broken",
+              "finding": "The store refused a five-record subtype edit and subsequent map read with buffer-pool exhaustion. Restart restored access, and individual edits then succeeded.",
+              "evidence": "Project tool response: INTERNAL_ERROR, Buffer manager exception: Unable to allocate memory! The buffer pool is full and no memory could be freed!; src/metaform/project/store.py:80",
+              "ref": "src/metaform/project/store.py"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.framework.plugin",
+              "why": "locate project state and announce committed functional changes",
+              "how": "locates registered project state and relays committed functional changes",
+              "direction": "both",
+              "ref": "src/metaform/project/service.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.database.graph",
+              "why": "persist and retrieve namespace ancestry, receiver purposes and overlay records as a graph",
+              "how": "commits graph transactions and traverses namespace, want and record edges",
+              "direction": "both",
+              "ref": "src/metaform/project/store.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.interface.conversational",
+          "technical_name": "conversational interface",
+          "name": "Metaform project conversations",
+          "role": "Supporting Element",
+          "ref": "src/metaform/modules/voice/__init__.py",
+          "concerns": [
+            {
+              "mark": "exclude",
+              "finding": "Telephone documentation describes dispatch polling, while the current conversation adapter uses filtered change events.",
+              "evidence": "src/metaform/modules/twilio/README.md; src/metaform/modules/twilio/agent.py:108",
+              "ref": "src/metaform/modules/twilio/README.md"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.orchestrator.agent",
+              "why": "deliver project messages and receive contextual agent replies",
+              "how": "conducts system-agent sessions and retains attributed conversation turns",
+              "direction": "both",
+              "ref": "src/metaform/modules/twilio/agent.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.service.inference",
+              "why": "recognize utterances and synthesize replies through selected external speech engines",
+              "how": "returns transcripts and generated speech for the configured audio interface",
+              "direction": "receive",
+              "ref": "src/metaform/modules/elevenlabs/__init__.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.service.telephony",
+              "why": "exchange admitted telephone calls, text messages and project notifications",
+              "how": "transports calls, audio streams and messages between configured numbers and local agent conversations",
+              "direction": "both",
+              "ref": "src/metaform/modules/twilio/server.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.interface.graphical",
+          "technical_name": "graphical interface",
+          "name": "Metaform Web GUI",
+          "role": "Supporting Element",
+          "ref": "src/metaform/modules/web/server.py",
+          "concerns": [
+            {
+              "mark": "exclude",
+              "finding": "The watchdog documentation describes periodic health requests, while the current implementation waits on process and pipe events.",
+              "evidence": "src/metaform/modules/web/README.md:109; src/metaform/modules/web/watchdog.py:111",
+              "ref": "src/metaform/modules/web/README.md"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.framework.plugin",
+              "why": "present the capabilities and choices declared by installed modules",
+              "how": "supplies pane, toolbar, command and settings declarations",
+              "direction": "receive",
+              "ref": "src/metaform/modules/web/workspace.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.graph.knowledge",
+              "why": "inspect and maintain the displayed functional records",
+              "how": "returns the project graph and applies addressed map, ticket and memory edits",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/project_map.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.manager.package",
+              "why": "obtain a distribution with the selected capabilities",
+              "how": "constructs the requested build and reports its progress and result",
+              "direction": "receive",
+              "ref": "src/metaform/modules/web/builds.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.orchestrator.agent",
+              "why": "direct agent work and inspect its progress and outcomes",
+              "how": "exposes agent lifecycle operations, session state and retained task and discussion results",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/server.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.browser.web",
+              "why": "present interactive project controls and reflect their live state",
+              "how": "executes the page, renders its graphics and carries user actions and event-stream updates",
+              "direction": "both",
+              "ref": "src/metaform/modules/web/server.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.manager.package",
+          "technical_name": "package manager",
+          "name": "Metaform builds and packets",
+          "role": "Supporting Element",
+          "ref": "src/metaform/build.py",
+          "concerns": [
+            {
+              "mark": "exclude",
+              "finding": "The local Tempo project, archived source trees and historical map exports provide packet lineage or retained evidence, and do not establish active Metaform runtime functions.",
+              "evidence": ".gitignore:7; tempo/README.md:1; src/metaform/modules/packet/seal.py:1; core/README.md:1",
+              "ref": "reference/tempo/packet/tempo_data_container.md"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.framework.plugin",
+              "why": "select compatible modules and their resources for a distribution",
+              "how": "supplies module declarations, dependencies and the supported extension contract",
+              "direction": "receive",
+              "ref": "src/metaform/build.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.graph.knowledge",
+              "why": "carry retained project context and review returned changes",
+              "how": "exports project context and preserves imported history and variants",
+              "direction": "both",
+              "ref": "src/metaform/archive.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.system.control.version",
+              "why": "preserve source origins and prepare reviewed extension updates",
+              "how": "retains repository history and publishes the selected branches and commits",
+              "direction": "both",
+              "ref": "src/metaform/modules/fork/__init__.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.orchestrator.agent",
+          "technical_name": "agent orchestrator",
+          "name": "Metaform agent work",
+          "role": "Supporting Element",
+          "ref": "src/metaform/modules/dispatch/__init__.py",
+          "concerns": [
+            {
+              "mark": "missing",
+              "finding": "Registry installation exists, but launch choices still include built-in harness names instead of using the registry as their sole source.",
+              "evidence": "docs/plans/dispatch-owns-acp.md:416; src/metaform/modules/dispatch/__init__.py:235; src/metaform/modules/dispatch/registry.py:49",
+              "ref": "docs/plans/dispatch-owns-acp.md"
+            },
+            {
+              "mark": "missing",
+              "finding": "Saved launch profiles and purpose-based assignment resolution are specified but have no current profile storage or command implementation.",
+              "evidence": "docs/plans/dispatch-owns-acp.md:139; docs/plans/dispatch-owns-acp.md:468; src/metaform/modules/dispatch/__init__.py:655",
+              "ref": "docs/plans/dispatch-owns-acp.md#profiles"
+            },
+            {
+              "mark": "exclude",
+              "finding": "Task documentation describes an initial rating and cap that differ from the current initially unscored additive implementation.",
+              "evidence": "src/metaform/modules/tasks/README.md:129; src/metaform/modules/tasks/board.py:25; src/metaform/modules/tasks/board.py:364",
+              "ref": "src/metaform/modules/tasks/README.md"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.framework.plugin",
+              "why": "apply module configuration and react to relevant work changes",
+              "how": "supplies runtime context, settings, resource ownership and scoped notifications",
+              "direction": "receive",
+              "ref": "src/metaform/modules/tasks/runtime.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.code.graph.knowledge",
+              "why": "obtain assignment context and retain work outcomes at their functions",
+              "how": "supplies addressed project knowledge and records attributed work, progress and results",
+              "direction": "both",
+              "ref": "src/metaform/modules/dispatch/runner.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.harness.agent",
+              "why": "conduct native agent work as a stateful protocol conversation",
+              "how": "accepts session prompts and returns messages, tool activity, permission requests and terminal state",
+              "direction": "both",
+              "ref": "src/metaform/modules/dispatch/acp/__init__.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.service.inference",
+              "why": "obtain optional semantic judgments and model contributions for work control",
+              "how": "returns typed decisions and generated contributions through the configured model interfaces",
+              "direction": "receive",
+              "ref": "src/metaform/jev.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.system.control.version",
+              "why": "isolate concurrent source changes and retain their integration history",
+              "how": "creates worktrees and records commits, branches, merges and their provenance",
+              "direction": "both",
+              "ref": "src/metaform/modules/dispatch/merge.py",
+              "type": "purpose"
+            },
+            {
+              "element": "metaform.upstream.code.system.tracking.issue",
+              "why": "reconcile external assignments and discussion with addressed project work",
+              "how": "supplies issues and event changes and accepts linked comments, questions and outcomes",
+              "direction": "both",
+              "ref": "src/metaform/modules/paperclip/__init__.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.code.suite.test",
+          "technical_name": "test suite",
+          "name": "Metaform verification",
+          "role": "Supporting Element",
+          "ref": "conftest.py",
+          "concerns": [
+            {
+              "mark": "broken",
+              "finding": "The integration pipeline invokes a removed map-view build script, so the checked-in executable step has no target.",
+              "evidence": ".github/workflows/checks.yml:61; scripts/build_map_view.mjs (absent)",
+              "ref": ".github/workflows/checks.yml"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.document.specification",
+              "why": "derive checks from the intended project outcomes",
+              "how": "states requirements and observable acceptance conditions with stable record references",
+              "direction": "receive",
+              "ref": "conftest.py",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.document.manual",
+          "technical_name": "manual",
+          "name": "Metaform documentation",
+          "role": "Supporting Element",
+          "ref": "docs/README.md",
+          "concerns": [
+            {
+              "mark": "missing",
+              "finding": "The examples guide links to workflow assets that are absent from the current project.",
+              "evidence": "examples/README.md:20; examples/workflows (absent)",
+              "ref": "examples/README.md"
+            },
+            {
+              "mark": "exclude",
+              "finding": "The intake reference documents separate intake MCP tools that conflict with the current single-project-tool contract.",
+              "evidence": "docs/reference/intake-calls.md:27; src/metaform/modules/mcp/project_tool.py:78",
+              "ref": "docs/reference/intake-calls.md"
+            },
+            {
+              "mark": "exclude",
+              "finding": "The standalone image-generation adapter in imagegen.zip has no established Metaform integration and remains local reference material pending scope examination.",
+              "evidence": "imagegen.zip!README.md; imagegen.zip!imagegen.py",
+              "ref": "imagegen.zip"
+            }
+          ],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.document.specification",
+              "why": "explain supported behavior under the project's intended semantics",
+              "how": "supplies the project's functional requirements and current design corrections",
+              "direction": "receive",
+              "ref": "docs/README.md",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.document.specification",
+          "technical_name": "specification",
+          "name": "Metaform requirements",
+          "role": "Supporting Element",
+          "ref": "specifications/00-index.md",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.downstream.developer.software",
+          "technical_name": "software developer",
+          "name": "Software author using Metaform",
+          "role": "Vested Beneficiary",
+          "ref": "README.md",
+          "concerns": [],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.system.management.context",
+              "why": "reuse project knowledge across agent assignments and preserve the reasons for each part of the work",
+              "how": "records functional types and receiver purposes, retains project knowledge, and supplies relevant context to each assignment",
+              "direction": "receive",
+              "ref": "README.md",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.downstream.manager.development.software",
+          "technical_name": "software development manager",
+          "name": "Agent team sponsor",
+          "role": "Vested Beneficiary",
+          "ref": "README.md",
+          "concerns": [],
+          "survey": [],
+          "wants": [
+            {
+              "element": "metaform.code.system.management.context",
+              "why": "coordinate agent work through shared project context and accountable outcomes",
+              "how": "connects addressed work, retained knowledge and visible agent execution so project progress remains traceable",
+              "direction": "both",
+              "ref": "README.md",
+              "type": "purpose"
+            }
+          ]
+        },
+        {
+          "namespace_address": "metaform.upstream.code.browser.web",
+          "technical_name": "web browser",
+          "name": "Metaform browser host",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/web/server.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.database.graph",
+          "technical_name": "graph database",
+          "name": "LadybugDB",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/project/store.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.database.relational",
+          "technical_name": "relational database",
+          "name": "SQLite",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/sqlite.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.harness.agent",
+          "technical_name": "agent harness",
+          "name": "ACP-compatible harness",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/dispatch/acp/__init__.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.service.inference",
+          "technical_name": "inference service",
+          "name": "Configured model services",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/jev.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.service.telephony",
+          "technical_name": "telephony service",
+          "name": "Twilio",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/twilio/server.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.service.tunnel",
+          "technical_name": "tunnel service",
+          "name": "Metaform cloud broker",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/cloud/tunnel.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.system.control.version",
+          "technical_name": "version control system",
+          "name": "Git",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/dispatch/merge.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        },
+        {
+          "namespace_address": "metaform.upstream.code.system.tracking.issue",
+          "technical_name": "issue tracking system",
+          "name": "Paperclip",
+          "role": "Upstream Dependency",
+          "ref": "src/metaform/modules/paperclip/__init__.py",
+          "concerns": [],
+          "survey": [],
+          "wants": []
+        }
+      ]
+    },
+    "overlay_definitions": {
+      "concerns": {
+        "description": "Functional drift and apparent faults encountered during Digital Typology intake.",
+        "instruction": "Record an evidenced concern at its functional owner. Identify missing functionality, a broken behavior, or material excluded pending examination. Do not repair it as part of intake.",
+        "key": "concerns",
+        "mark": {
+          "type": "missing | broken | exclude",
+          "rule": "The observed concern category.",
+          "example": "broken"
+        },
+        "finding": {
+          "type": "text",
+          "rule": "A concise statement of the function affected and the observed discrepancy.",
+          "example": "Command surfaces read a different map from the project tool."
+        },
+        "evidence": {
+          "type": "text",
+          "rule": "The source URI and exact location supporting the observation.",
+          "example": "src/metaform/project/store.py:112"
+        }
+      },
+      "memories": {
+        "description": "What is worth keeping about this element: each record is one observation of a named entity.",
+        "instruction": "Add one record for each fact, one fact in one sentence. Records that share an entity are that entity's observations.",
+        "key": "memories",
+        "entity": {
+          "type": "text",
+          "rule": "The name of what the fact is about.",
+          "example": "watch command"
+        },
+        "entity_type": {
+          "type": "text",
+          "rule": "What kind of thing the entity is.",
+          "example": "behaviour"
+        },
+        "observation": {
+          "type": "text",
+          "rule": "One fact, in one sentence.",
+          "example": "watch loads the timers when it starts, so one started later is not rung by it."
+        }
+      },
+      "subtypes": {
+        "description": "Purpose refinements within a native wants join. Each record belongs to the holder's want identified by element and parent_ref. Absorbed functions retain the parent provider's namespace identity.",
+        "instruction": "Record one absorbed function at a time. Match element and parent_ref to an existing want held here. Keep its own purpose, encounter, flow and evidence. Do not create a separate namespace element for an absorbed function.",
+        "key": "subtypes",
+        "type": {
+          "type": "text",
+          "rule": "The dependency type is purpose.",
+          "example": "purpose"
+        },
+        "element": {
+          "type": "address",
+          "rule": "The namespace address of the provider in the parent purpose join.",
+          "example": "metaform.code.graph.knowledge"
+        },
+        "parent_ref": {
+          "type": "text",
+          "rule": "The ref of the matching native wants join held by this receiver.",
+          "example": "src/metaform/project/__init__.py"
+        },
+        "why": {
+          "type": "text",
+          "rule": "The receiver's active purpose as a bare infinitive phrase.",
+          "example": "preserve each element's functional identity"
+        },
+        "how": {
+          "type": "text",
+          "rule": "The provider's encounter as a third-person present verb phrase.",
+          "example": "stores each element at its functional namespace address"
+        },
+        "direction": {
+          "type": "send | receive | both",
+          "rule": "The substantial flow that satisfies the receiver's purpose.",
+          "example": "receive"
+        },
+        "status": {
+          "type": "text",
+          "rule": "Use unbuilt only for an intended absorbed function absent from the current implementation.",
+          "example": "unbuilt",
+          "optional": true
+        }
+      },
+      "survey": {
+        "description": "The bounded artifact survey and final proof of this functional map.",
+        "instruction": "Keep observed scope and proof concise. A count describes this intake, and the evidence URI preserves its observation record.",
+        "key": "survey",
+        "scope": {
+          "type": "text",
+          "rule": "What was observed and how it bounds the map.",
+          "example": "Observed all repository members outside the excluded paths."
+        },
+        "members": {
+          "type": "number",
+          "rule": "The number of observed repository members.",
+          "example": 3152
+        },
+        "status": {
+          "type": "pending | active | completed",
+          "rule": "Whether the survey and closure proof are complete.",
+          "example": "active"
+        }
+      },
+      "tickets": {
+        "description": "Work assigned at this element: each record is one ticket, from asked to done.",
+        "instruction": "Add one record for each piece of work. Change one by its position with update: taken_by when an agent takes it, note to say where it stands, done and outcome when it ends. On the board a ticket is done once done is set, doing once taken, in the backlog while held, and to do otherwise.",
+        "key": "tickets",
+        "id": {
+          "type": "text",
+          "rule": "A short id that stays the same for the ticket's life.",
+          "example": "t-3f9a"
+        },
+        "title": {
+          "type": "text",
+          "rule": "One line that names the work.",
+          "example": "Ring when a timer ends"
+        },
+        "task": {
+          "type": "text",
+          "rule": "What to do, in full, for an agent that knows nothing else of it.",
+          "example": "Make watch ring each timer as it ends, also one started while watch runs."
+        },
+        "kind": {
+          "type": "broken | flawed | enhancement",
+          "rule": "What kind of work it is; left out for a plain task.",
+          "example": "broken",
+          "optional": true
+        },
+        "held": {
+          "type": "boolean",
+          "rule": "True while it waits in the backlog and is not to be started.",
+          "example": false,
+          "optional": true
+        },
+        "taken_by": {
+          "type": "text",
+          "rule": "Who took it, once someone has.",
+          "example": "claude",
+          "optional": true
+        },
+        "note": {
+          "type": "text",
+          "rule": "Where it stands now, by whoever last worked on it.",
+          "example": "watch now reads the timers again before each sleep.",
+          "optional": true
+        },
+        "done": {
+          "type": "text",
+          "rule": "When it ended, as a date and time; left out while it is open.",
+          "example": "2026-11-16T09:30:00Z",
+          "optional": true
+        },
+        "outcome": {
+          "type": "completed | cancelled | failed",
+          "rule": "How it ended.",
+          "example": "completed",
+          "optional": true
+        }
+      },
+      "wants": {
+        "description": "A list of want records. A record holds element (the wanted element's address), why, how, direction (send, receive or both) and ref (the uri of the one artifact the want is about). An element may hold several wants on the same element, one for each artifact or purpose. The wanted element is created at its own address if it is not there.",
+        "instruction": "why and how are sentence fragments that complete the sentence below.\n{this.address} ({this.name}) requires {other.address} ({other.name}) in order to {why}, which {how}.",
+        "key": "wants",
+        "element": {
+          "type": "address",
+          "rule": "The wanted element's address.",
+          "example": "metaform.code.masher.widget"
+        },
+        "why": {
+          "type": "text",
+          "rule": "Bare infinitive verb phrase. State the active goal as a sentence fragment beginning with a base action verb. Do not include a leading 'to', subject nouns, or any words ending in -ing.",
+          "example": "drain raw frames from the network interface card"
+        },
+        "how": {
+          "type": "text",
+          "rule": "Third-person singular present indicative verb phrase. State how the provider satisfies the goal beginning with a present-tense verb ending in -s or -es that agrees with 'which'. Do not include subject nouns, 'by', or any words ending in -ing.",
+          "example": "holds descriptor pointers across contiguous memory segments"
+        },
+        "direction": {
+          "type": "send | receive | both",
+          "rule": "send, receive or both",
+          "example": "receive"
+        },
+        "ref": {
+          "type": "text",
+          "rule": "The uri of the one artifact the want is about.",
+          "example": "./src/widgets/mashbox.c",
+          "optional": true
+        }
+      }
+    },
+    "proof": {
+      "survey_members": 24584,
+      "repository_members": 3152,
+      "additional_local_members": 21432,
+      "elements": 22,
+      "native_purpose_joins": 37,
+      "subtype_purpose_joins": 50,
+      "vested_beneficiaries": 2,
+      "unbuilt_subfunctions": 3,
+      "findings": 16,
+      "passes": 2,
+      "checks": [
+        "All recorded elements and purpose records read back from the project tool.",
+        "All providers resolve to recorded namespace addresses.",
+        "All subtype purposes nest beneath the matching receiver-owned want.",
+        "All local entry points and evidence refs resolve.",
+        "All functionality is reachable from the vested beneficiaries through one defining element.",
+        "No absorbed subfunction remains as an independent namespace element."
+      ],
+      "limits": "Source and artifact inspection establishes functional relationships. This intake did not run product tests or repair recorded concerns."
+    }
+  }
+}
