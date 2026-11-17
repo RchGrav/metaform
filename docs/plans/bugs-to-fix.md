@@ -24,3 +24,24 @@ recorded, each becomes a ticket on the element it concerns.
 8. **A recovery test fails.** Found 2026-11-16 while removing client files and terminals; it fails the same way at
    `68c1783d`, before that change. `test_liveness.py::test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_progress`
    finds an orchestration "runner died" notification line in the transcript that the test does not expect.
+9. **A system agent whose turn fails on a network error stays alive and stuck.** Found 2026-11-16. Session
+   `b725fba9…` in `workspace`: its first turn ended with Claude Code's `API Error: Can't reach the API server — check
+   your internet or DNS (ENOTFOUND)`. The runner stayed up, idle, for hours, and every Call reused it. Nothing tries
+   the turn again, and the person is not told the agent is waiting on them to resend.
+10. **Subagent updates are dropped by the SDK's schema.** Found 2026-11-16 in session `474eaaae…`: Claude Code's
+    adapter 0.107.x sends `subagent_update` and `session_message`, because the runner offers the `subagents`
+    capability, and the Python SDK's `SessionNotification` refuses both kinds, so the whole update is lost (15 times
+    in that session). A subagent's work never reaches its thread. Fixed by step 2b of `dispatch-owns-acp.md`: the new
+    layer keeps update kinds it does not model as `other` events.
+11. **`user_agent` answers a reused system agent with `session_id: null`.** `tasks/runtime.py:189` hard-codes `None`
+    when the running system agent is reused. The page copes by finding the running session itself, so it did not
+    cause the "Please stand by" fault (fixed in `d71dc909`), but the answer is wrong.
+12. **The SDK has no handler for `auth/status_update`.** The web log shows `Unhandled error while handling notification
+    method=auth/status_update` with `Method not found`, from a probe on the v1 client. Noise today; step 2b's layer
+    handles the login status push.
+13. **Harnesses are named in the code outside `AGENTS`.** `PROFILE_ONLY = {'claude': ('agent',)}`
+    (`dispatch/__init__.py:655`) and `self.agent == 'claude'` (`runner.py:2464`, a subagent's child id). Both go with
+    step 3 of `dispatch-owns-acp.md`: behaviour follows what a harness advertises, never its name.
+14. **The system agent is also called "the lead" in the code.** The page and the person call it the system agent;
+    `web/server.py` names it the lead (`leads`, `lead_given`, `WORKSPACE` comments). The person's choice, 2026-11-16:
+    it is the system agent. New code says system agent; the old names are renamed when that code is next changed.
