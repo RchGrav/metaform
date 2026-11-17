@@ -71,6 +71,7 @@ from .glossary import items_at as terms_at
 from .guidance import guide
 from .guidance import instructions as tool_instructions
 from .holds import held_work_project
+from .project_work import project_work
 from .scoped import is_scoped
 from .scoped import resolve as resolve_scoped
 from .storage import DATA, TABLES, runtime_values, validate_hold_reason
@@ -1421,6 +1422,9 @@ def work(ctx: Context) -> Any:
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
+    stored = project_store.stored_name(store.project_id)
+    if project_store.holds(stored):  # the project's tickets are the project store's, where the page reads them
+        return _with_notices(project_work(stored, op, nouns), notices)
     if isinstance(nouns.get('after_work'), list):  # each as `map work` takes it: its id, or its `<address>#<n>`
         nouns['after_work'] = [_work_id(store, one) if isinstance(one, str) else one
                                for one in cast(list[Any], nouns['after_work'])]

@@ -950,3 +950,28 @@ def test_the_page_moves_and_removes_a_ticket_by_its_record_id(served):
     with pytest.raises(Exception, match='no longer there'):
         project_map._changed(P, stale, {'note': 'lands nowhere'})
     assert commands.overlay_records(P, 'tickets', served) == [left]
+
+
+def test_map_work_reads_and_writes_the_tickets_of_a_project_in_the_project_store(served):
+    """Phase 3: `map work` for a project held in the project store works on its tickets overlay, where the page's
+    board reads them; what has no field there yet is refused by name, never dropped."""
+    from metaform.module import Stop
+    from metaform.modules.map.project_work import project_work
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+    node = 'element:code.masher.widget'
+    made = project_work(P, 'add', {'node': node, 'title': 'Ring', 'task': 'Ring each timer as it ends.'})
+    other = project_work(P, 'add', {'node': node, 'title': 'Snooze', 'task': 'Let a ring be snoozed.'})
+    assert (made['title'], made['address'], made['status'], made['revision']) == ('Ring', 'code.masher.widget', 'open', 1)
+    project_work(P, 'remove', {'id': made['id']})  # the second ticket moves to position 0
+    taken = project_work(P, 'take', {'id': other['id'], 'agent': 'claude'})
+    assert (taken['id'], taken['taken_by'], taken['position']) == (other['id'], 'claude', 0)
+    done = project_work(P, 'done', {'id': other['id'], 'resolution': 'Snooze works.', 'why': 'Tested.'})
+    assert (done['status'], done['outcome'], done['note']) == ('done', 'completed', 'Snooze works. Tested.')
+    assert project_work(P, 'list', {})['results'] == []
+    assert [row['id'] for row in project_work(P, 'list', {'open': False})['results']] == [other['id']]
+    for op, nouns, said in (('plan', {'id': other['id']}, 'op=plan has no place'),
+                            ('add', {'node': node, 'title': 't', 'task': 't', 'condition': 'broken'}, 'condition'),
+                            ('add', {'receiver': 'code.masher.widget', 'title': 't', 'task': 't'}, 'receiver'),
+                            ('read', {'id': 't-none'}, 'No ticket')):
+        with pytest.raises(Stop, match=said):
+            project_work(P, op, nouns)
