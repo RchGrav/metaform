@@ -856,6 +856,6 @@ def test_the_pages_layers_find_each_definition_by_its_key_with_underscores_insid
                 'team_design_notes': 'Notes the team keeps on a design.',
                 'project_specifications': SPEC_DEFINITION['description']}
     assert {name: found.get(name) for name in expected} == expected  # the store's own overlays are listed beside them
-    for address in defined:  # each definition is still read at the address it was written at
-        assert commands.run({address: {}}, home=served)[address]['description'] == defined[address]
+    for address, description in defined.items():  # each definition is still read at the address it was written at
+        assert commands.run({address: {}}, home=served)[address]['description'] == description
     assert commands.run({WIDGET: {'review_findings': {}}}, home=served) == before
