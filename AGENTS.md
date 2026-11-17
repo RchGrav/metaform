@@ -75,6 +75,8 @@ Change only what your assignment is about. Everything else in this project was b
 
 An assignment is complete when each feature it built has landed as its own feature commit and that commit is pushed to the remote. Commit each feature as it is finished, staging only its own files, with a one-line subject that names the change; then push the working branch and confirm it matches the remote. Work left uncommitted in the shared checkout is not done: it cannot be reviewed on GitHub, and it tangles with the next feature's edits.
 
+Every agent task ends with that push, and the agent does not stop until it has taken that last step. Each commit is labelled with what it did: the subject names the change, and the body says what changed, why, and what it touches, so the work can be tracked. Fixes, plans, docs and findings land the same way, and a commit is not held back to wait for a test: if it proves broken, the next commit fixes it.
+
 ** Database Schema
 
 - Update the compatibility level when the schema change instroduces an incompatability.
