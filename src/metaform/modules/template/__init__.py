@@ -31,6 +31,17 @@ and writes them in `with ctx.require_store().tables() as tx:`, STORE-045.
 `note` and `notes` show it.
 
 
+A module reads and writes a project whose map is in the project store through
+`metaform.project`, never through the old store's map (decision t-legacy-keep,
+2026-11-17): test `holds(stored_name(ctx.store.project_id))`, then send the
+`project` tool's commands with `run` and list one overlay's records, each with
+its element, position, record id and revision, with `overlay_records`. What
+was a layer is an overlay, keyed with the module's id first and defined the
+first time a write answers `OVERLAY_NOT_DEFINED`; a record is changed by the
+position, record id and revision it was read at, so a change never lands on
+another record. A project not held there keeps the `metaform.data` path.
+hello's greetings, `todo` and `done` show both.
+
 A module owns composite DAO operations with `data=Data(operations={...})`,
 importing `Data`, `DataTx` and `Operation` from `metaform.data`. Its handler
 receives the current transaction, and `Operation(handler, write=True)` joins

@@ -440,3 +440,54 @@ def test_work_read_shows_hellos_own_field_on_its_work_record_and_the_store_layou
         'row', 'work_id', 'target_kind', 'target_id', 'condition', 'note', 'task', 'held', 'reviewed', 'created',
         'done', 'resolution', 'steps', 'steps_done', 'taken', 'taken_by', 'position', 'kind', 'outcome'], \
         'the work record layout is the map\'s own, a ticket\'s kind included, MAP-046; hello adds no column'
+
+
+@pytest.fixture
+def stored(run, hello, home):
+    """hello in `proj` with its map in the project store, one element there and none of hello's; the store's
+    single-writer service is stopped when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    assert command({'add': {'proj.code.alarm.audible': {'technical_name': 'audible alarm', 'name': 'alarm',
+                                                        'role': 'Supporting Element'}}}) == {'status': 'ok'}
+    yield hello
+    service.stop(home)
+    owner.close_all()
+
+
+@pytest.mark.req('BASE-019')
+def test_a_project_in_the_project_store_keeps_hellos_greetings_and_todos_there_and_none_in_the_old_store(run, stored):
+    """Decision t-legacy-keep: hello shows module developers the project-store way. Its greetings are records of its
+    overlay at its own element, which its first record adds to the map; todo writes a ticket of the tickets overlay,
+    which done closes by the revision it found; the old store's map gets nothing."""
+    from metaform.data import Node, Store
+    from metaform.project import overlay_records
+    from metaform.project import run as command
+    run('hello', 'greet', 'ada', cwd=stored)
+    run('hello', 'greet', 'bob', cwd=stored)
+    assert run('hello', 'history', cwd=stored).stdout.split() == ['ada', 'bob']
+    assert [(one['element'], one['name']) for one in overlay_records('proj', 'hello_greetings') or []] == [
+        ('proj.code.module.hello', 'ada'), ('proj.code.module.hello', 'bob')]
+    assert command({'proj.code.module.hello': {}})['proj.code.module.hello']['role'] == 'Supporting Element'
+    assert not any(layer.name == 'hello.greetings' for layer in Store('proj').layers(limit=0).results)
+
+    said = run('hello', 'todo', 'greet in every language', cwd=stored).stdout.strip()
+    [ticket] = overlay_records('proj', 'tickets') or []
+    assert (ticket['element'], ticket['task'], said) == (
+        'proj.code.module.hello', 'greet in every language', f'To do: greet in every language ({ticket["id"]})')
+    assert not Store('proj').work(node=Node('element', 'code.module.hello')).results
+    assert 'Hello: 2 greeted, 1 to do' in run(cwd=stored).stdout.splitlines()
+    run('hello', 'done', str(ticket['id']), 'greets in Latin now', cwd=stored)
+    [closed] = overlay_records('proj', 'tickets') or []
+    assert (closed['outcome'], bool(closed.get('done')), closed['revision']) == ('completed', True, 2)
+    assert str(closed['note']).endswith('Resolution: greets in Latin now')
+    assert 'Hello: 2 greeted' in run(cwd=stored).stdout.splitlines()
+
+    demo = json.loads(run('hello', 'basedemo', '--json', cwd=stored).stdout)
+    assert 'roots' not in demo and 'proj.code.module.hello' in demo['map']['addresses']
+    assert run('hello', 'report', 'Greets in English only.', cwd=stored).stdout.strip() == 'hello-report.md'
+    assert (own('proj') / 'reports' / 'hello-report.md').read_text(encoding='utf-8') == 'Greets in English only.'
+
+    run('hello', 'forget', '--confirm', cwd=stored)
+    assert overlay_records('proj', 'hello_greetings') == []
+    assert run('hello', 'history', cwd=stored).stdout.startswith('No greetings yet.')

@@ -78,6 +78,17 @@ A module keeps the condition of an object as a work record, apart from the map, 
 
 `hello.greetings`, a knowledge layer, mutable and hideable, with provenance module `hello`, workflow `greet`, role `module`. Its items attach to the element `code.module.hello` the layer creates for them.
 
+## The project store
+
+A project whose map is in the project store (kickoff 2026-11-17 Phase 3, decision t-legacy-keep) keeps hello's data there, and every verb works the same. hello asks `metaform.project.holds(stored_name(project_id))` first; when it holds the project, hello reads and writes through `metaform.project.run`, the `project` tool's commands, and `overlay_records`, and never through the old store's map. Other projects take the old path above.
+
+- The greetings are records `{"name": ...}` of the overlay `hello_greetings` at `<project>.code.module.hello`. An overlay's key belongs to the project, so a module's overlay starts with the module's id. The first write answers `OVERLAY_NOT_DEFINED`: hello adds the definition at `<project>.overlay.hello_greetings` and writes the record again. A layer's own element has no place in the store and the project's root holds only its specification, so when the map has no `code.module.hello` the write answers `ELEMENT_NOT_IN_SKELETON` and hello adds the element (`hello module`, `hello`, `Supporting Element`) with the record, as a layer of the old store added its own element, LAYER-003.
+- `todo` adds a record of the standing `tickets` overlay at that element, the ticket the board shows, and keeps its count in `todos` keyed by the ticket id. `done` changes that ticket by the position, record id and revision it read (F02): `done`, `outcome` `completed`, and the resolution as a paragraph of its note, the overlay having no resolution field.
+- `forget` deletes the greeting records by their record ids; the element and its tickets stay.
+- `basedemo` returns the project tool's read of the whole map, `{"map": "<project>"}`, as `map` in place of `roots`.
+- `report` saves its file under run id `hello`, since the store keeps no layer to carry its provenance.
+- hello's tables, its report files and its feedback are not the map and stay where they are.
+
 ## Lifecycle and cleanup
 
 `start` runs once when hello loads, before its first verb, subscriber or tool call, and records when it ran; `uptime` reads that. `stop` runs once when hello unloads or the process ends, after the chassis has cancelled the tasks `later` spawned, and clears it. Unloading leaves the layer and the report files in place.

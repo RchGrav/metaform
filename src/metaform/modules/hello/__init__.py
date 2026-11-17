@@ -37,10 +37,22 @@ Each public import a module can use, shown once:
 
 The greeting history is items in a layer this module declares, attached to an
 element the layer creates for them, STORE-022 and D22.
+
+A project whose map is in the project store (`metaform.project`, kickoff 2026-11-17 Phase 3, decision t-legacy-keep)
+keeps hello's data there instead, and every verb above works the same: hello tests `holds(stored_name(id))`, then
+reads and writes through `run`, the project tool's commands, and `overlay_records`, never through the old store's map.
+There a layer is an overlay: the greetings are records of the overlay `hello_greetings`, defined in the project the
+first time hello writes one (the add answers OVERLAY_NOT_DEFINED, the definition is added, the record added again).
+They sit at hello's own element, `<project>.code.module.hello`, which hello adds to the map with its first record
+when the map has none (the add answers ELEMENT_NOT_IN_SKELETON), as a layer of the old store added its own element,
+LAYER-003; the root of a project holds only its specification. todo's work record is a record of the standing
+`tickets` overlay at that element, the ticket the board shows, and done changes it by the position, record id and
+revision it found (F02). hello's own tables, report files and feedback are not the map and stay where they are.
 """
 from __future__ import annotations
 
 import asyncio
+import secrets
 import time
 import uuid
 from datetime import UTC, datetime
@@ -48,6 +60,7 @@ from typing import Any
 
 from metaform import home, settings
 from metaform import module as chassis
+from metaform import project as project_store
 from metaform.data import (
     Column,
     Data,
@@ -88,9 +101,56 @@ LAYER = 'hello.greetings'
 HOLDER = 'code.module.hello'
 PROVENANCE = {'module': 'hello', 'workflow': 'greet', 'role': 'module'}
 
+# A project in the project store: the overlay that holds the greetings, its definition, and hello's own element. An
+# overlay's key is the project's, so a module names its own with its id first.
+OVERLAY = 'hello_greetings'
+DEFINITION: dict[str, object] = {
+    'description': 'Who hello, the demonstration module, has greeted: each record is one greeting.',
+    'instruction': 'hello adds one record for each name it greets. forget removes them all.',
+    'name': {'type': 'text', 'rule': 'The name greeted.', 'example': 'world'},
+}
+ELEMENT: dict[str, object] = {'technical_name': 'hello module', 'name': 'hello', 'role': 'Supporting Element'}
 
-def _names(store: Store) -> list[str]:
+
+def _stored(ctx: Context) -> str | None:
+    """The project's name in the project store when its map is held there; None, and the old store's path, when not."""
+    if ctx.store is None:
+        return None
+    name = project_store.stored_name(ctx.store.project_id)
+    return name if project_store.holds(name) else None
+
+
+def _held(project: str, key: str) -> list[dict[str, Any]]:
+    """The records of one overlay at hello's own element of a project in the project store."""
+    at = f'{project}.{HOLDER}'
+    return [record for record in project_store.overlay_records(project, key) or [] if record['element'] == at]
+
+
+def _add(project: str, key: str, record: dict[str, object]) -> None:
+    """Add one record at hello's own element: the overlay is defined the first time, and the element added with the
+    record when the map has none; any other refusal stops the verb with the store's own words."""
+    command: dict[str, object] = {'add': {f'{project}.{HOLDER}': {key: [record]}}}
+    answer = project_store.run(command)
+    if answer.get('code') == 'OVERLAY_NOT_DEFINED' and key == OVERLAY:
+        _done(project_store.run({'add': {f'{project}.overlay.{OVERLAY}': DEFINITION}}))
+        answer = project_store.run(command)
+    if answer.get('code') == 'ELEMENT_NOT_IN_SKELETON':
+        answer = project_store.run({'add': {f'{project}.{HOLDER}': {**ELEMENT, key: [record]}}})
+    _done(answer)
+
+
+def _done(answer: dict[str, object]) -> None:
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message') or 'The project store refused the write.'),
+                   str(answer.get('remediation') or 'metaform help hello'))
+
+
+def _names(ctx: Context) -> list[str]:
     """The names greeted so far. No layer yet means no names yet; any other failure is real and raises."""
+    stored = _stored(ctx)
+    if stored is not None:
+        return [str(record['name']) for record in _held(stored, OVERLAY)]
+    store = ctx.require_store()
     if not any(layer.name == LAYER for layer in store.layers(limit=0).results):
         return []
     items = store.layer_items(LAYER, limit=0).results
@@ -98,7 +158,7 @@ def _names(store: Store) -> list[str]:
 
 
 def _favorite_choices(ctx: Context) -> list[str]:
-    return sorted(set(_names(ctx.store))) if ctx.store is not None else []
+    return sorted(set(_names(ctx))) if ctx.store is not None else []
 
 
 settings.text('greeting', 'hello', help='The word hello greets with.')
@@ -142,7 +202,10 @@ def basedemo(ctx: Context) -> dict[str, Any]:
         answer.update(backups=[one.to_dict() for one in home.backups(ctx.project)],
                       held=home.not_empty(ctx.project),
                       caution=home.removal_caution(ctx.project))
-    if ctx.store is not None:
+    stored = _stored(ctx)
+    if stored is not None:  # the project tool's read of the whole map: its addresses, overlays and wants
+        answer['map'] = project_store.run({'map': stored})
+    elif ctx.store is not None:
         answer['roots'] = plain(query_read(ctx.store, 'roots', {'limit': '0'}))
     return answer
 
@@ -161,12 +224,18 @@ def base_remove(ctx: Context) -> dict[str, str]:
 
 
 def history(ctx: Context) -> list[str] | str:
-    names = _names(ctx.require_store())
+    names = _names(ctx)
     return '\n'.join(names) + '\n' if names else 'No greetings yet. Try: metaform hello greet <name>\n'
 
 
 def forget(ctx: Context) -> str:
     store = ctx.require_store()
+    stored = _stored(ctx)
+    if stored is not None:  # the greetings' records, by the record ids read; hello's element and tickets stay
+        held = _held(stored, OVERLAY)
+        if held:
+            _done(project_store.run({'delete': {f'{stored}.{HOLDER}': {OVERLAY: [one['record'] for one in held]}}}))
+        return 'Greeting history deleted.\n'
     if any(layer.name == LAYER for layer in store.layers(limit=0).results):
         store.discard(LAYER)
     return 'Greeting history deleted.\n'
@@ -188,26 +257,53 @@ def _own_element(store: Store) -> Layer:
 def todo(ctx: Context) -> str:
     """A work record on this module's own element: missing, with the task given, MAP-046 and STORE-042."""
     store = ctx.require_store()
-    _own_element(store)
-    record = store.add_work(Node('element', HOLDER), 'unbuilt', note='hello has more to do', task=ctx.nouns['task'])
+    task = ctx.nouns['task']
+    stored = _stored(ctx)
+    if stored is not None:  # a ticket of the tickets overlay at hello's element, the one the board shows
+        work_id = 't-' + secrets.token_hex(4)
+        _add(stored, 'tickets', {'id': work_id, 'title': task.splitlines()[0][:120], 'task': task,
+                                 'note': 'hello has more to do'})
+    else:
+        _own_element(store)
+        work_id = store.add_work(Node('element', HOLDER), 'unbuilt', note='hello has more to do', task=task).id
     with store.tables() as tx:  # hello's own field on the record, in its own table, STORE-045
-        tx.insert('todos', {'work_id': record.id, 'greeted': len(_names(store))})
-    return f'To do: {ctx.nouns["task"]} ({record.id})\n'
+        tx.insert('todos', {'work_id': work_id, 'greeted': len(_names(ctx))})
+    return f'To do: {task} ({work_id})\n'
 
 
 def done(ctx: Context) -> str:
     """Mark one of this module's work records done, its resolution kept beside it."""
-    record = ctx.require_store().finish_work(ctx.nouns['id'], ctx.nouns['resolution'])
-    return f'Done: {record.task} ({record.resolution})\n'
+    store, work_id, resolution = ctx.require_store(), ctx.nouns['id'], ctx.nouns['resolution']
+    stored = _stored(ctx)
+    if stored is None:
+        record = store.finish_work(work_id, resolution)
+        return f'Done: {record.task} ({record.resolution})\n'
+    found = next((one for one in _held(stored, 'tickets') if one.get('id') == work_id), None)
+    if found is None:
+        raise Stop(f"No ticket {work_id!r} at hello's element.", 'metaform hello todo <task>')
+    # the tickets overlay has no resolution field: it goes in the note, its own paragraph after what the note says;
+    # the change names the position, record id and revision it found, so it never lands on another ticket (F02)
+    note = '\n\n'.join(part for part in (str(found.get('note') or '').strip(), f'Resolution: {resolution}') if part)
+    _done(project_store.run({'update': {f'{stored}.{HOLDER}': {'tickets': [
+        {'position': found['position'], 'record': found['record'], 'revision': found['revision'],
+         'done': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'outcome': 'completed', 'note': note}]}}}))
+    return f'Done: {found.get("task")} ({resolution})\n'
 
 
-def _to_do(store: Store) -> int:
-    return len(store.work(Node('element', HOLDER), open=True, limit=0).results)
+def _to_do(ctx: Context) -> int:
+    stored = _stored(ctx)
+    if stored is not None:
+        return sum(1 for one in _held(stored, 'tickets') if not one.get('done'))
+    return len(ctx.require_store().work(Node('element', HOLDER), open=True, limit=0).results)
 
 
 def record(payload: dict[str, Any], ctx: Context) -> None:
     """hello.greeted: remember the name as one item of this module's layer."""
     store = ctx.require_store()
+    stored = _stored(ctx)
+    if stored is not None:  # one record of hello's overlay in the project store
+        _add(stored, OVERLAY, {'name': payload['name']})
+        return
     with store.atomic():
         layer = store.layer(LAYER, 'hello', 'Who hello has greeted.', mutable=True, hideable=True,
                             provenance=PROVENANCE)
@@ -219,7 +315,7 @@ def record(payload: dict[str, Any], ctx: Context) -> None:
 
 def count(ctx: Context) -> dict[str, int]:
     """ctx.say writes a message for a person; the data an agent needs back is the return value, BASE-036."""
-    greeted = len(_names(ctx.require_store()))
+    greeted = len(_names(ctx))
     ctx.say(f'hello has greeted {greeted} {"name" if greeted == 1 else "names"}.')
     return {'greeted': greeted}
 
@@ -306,8 +402,11 @@ def greet_friends(ctx: Context) -> str:
 
 
 def report(ctx: Context) -> str:
-    """save_report writes a report file in the home, on hello's layer, whose provenance then carries it, BASE-045."""
+    """save_report writes a report file in the home, on hello's layer, whose provenance then carries it, BASE-045. A
+    project in the project store keeps no layers and so no provenance: the report is saved under hello's name."""
     store = ctx.require_store()
+    if _stored(ctx) is not None:
+        return save_report(store.project_id, 'hello', 'report', ctx.nouns['text'], store=store) + '\n'
     layer = _own_element(store)
     return save_report(store.project_id, layer.id, 'report', ctx.nouns['text'], store=store,
                        layer=layer.id) + '\n'
@@ -380,7 +479,7 @@ def node_read(ctx: Context, node: Node) -> dict[str, int] | None:
     The chassis puts it under `hello` in `map where` and `map node`, BASE-035."""
     if ctx.store is None or node != Node('element', HOLDER):
         return None
-    return {'greeted': len(_names(ctx.store))}
+    return {'greeted': len(_names(ctx))}
 
 
 def work_read(ctx: Context, record: WorkRecord) -> dict[str, int] | None:
@@ -396,7 +495,7 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, int] | None:
 def status(ctx: Context) -> Status:
     if ctx.store is None:
         return Status()
-    count, open_work = len(_names(ctx.store)), _to_do(ctx.store)
+    count, open_work = len(_names(ctx)), _to_do(ctx)
     if not count and not open_work:
         return Status()
     return Status(lines=(f'Hello: {count} greeted' + (f', {open_work} to do' if open_work else ''),))

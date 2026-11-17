@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- 2026-11-17, decision t-legacy-keep (kickoff Phase 3, `docs/plans/old-store-removal.md` step 2): for a project whose map is in the project store, hello shows the project-store way. It tests `metaform.project.holds(stored_name(id))` and then reads and writes through `metaform.project.run` and `overlay_records`: the greetings are records of its overlay `hello_greetings` at its own element `<project>.code.module.hello`, the overlay defined on `OVERLAY_NOT_DEFINED` and the element added with the record on `ELEMENT_NOT_IN_SKELETON`; `todo` and `done` write a ticket of the `tickets` overlay, done by the revision it read; `forget` deletes the greeting records by id; `basedemo` returns `{"map": ...}`; `report` saves under run id `hello`. Other projects take the old path unchanged.
+
 - `base-restore` is declared `person_says=True` (UX review round 1, 2026-10-17), showing a verb that is the person's decision: an agent's confirm never runs it.
 - `noncedemo` is gone with the nonce service, BASE-050: work is handed to an agent over ACP, the hand-off as its first prompt and its identity in `METAFORM_ROLE`, `METAFORM_SESSION`, `METAFORM_WORK` and `METAFORM_NODE`, or by its ticket id, so hello has no nonce to show. `metaform <nonce>` no longer runs anything.
 

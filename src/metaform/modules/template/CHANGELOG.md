@@ -4,6 +4,14 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- 2026-11-17, decision t-legacy-keep (kickoff Phase 3, `docs/plans/old-store-removal.md` step 2): a module reads and
+  writes a project whose map is in the project store through `metaform.project`, never through the old store's map.
+  Test `holds(stored_name(ctx.store.project_id))`; then `run(command)` answers one command of the `project` tool
+  (`add`, `update`, `delete`, a read by path, `{"map": "<project>"}`) and `overlay_records(project, key)` lists one
+  overlay's records with their element, position, record id and revision. A module's knowledge is an overlay, keyed
+  with the module's id first; define it the first time a write answers `OVERLAY_NOT_DEFINED`, and change a record by
+  the position, record id and revision it read. hello shows it.
+
 - 2026-11-17, the founder's decision 33 of 2026-11-15 (`core/SPECIFICATION.md`): a prompt is a named Markdown file in
   the module's `prompts` folder, `prompts/<name>.md`, and no new prompt is added to `resources/prompts.xml`. Read one
   with `metaform.prompt_files.markdown(resources.files(__name__), name, **fills)`; a variable is written `{{ name }}` in
