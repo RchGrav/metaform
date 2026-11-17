@@ -2894,6 +2894,58 @@ def test_the_critic_of_a_project_in_the_project_store_keeps_its_challenges_in_it
 
 
 @pytest.mark.req('MAP-021')
+def test_the_layers_of_a_project_in_the_project_store_are_its_overlays_and_its_knowledge_their_records(run, in_store):
+    """Decision t-legacy-keep: a knowledge layer is an overlay, an item a record at an element; the reads answer from
+    the overlays, citing reads refs and links address fields; each edit names the record and revision it found; what
+    has no place in the store is refused by name and writes nothing."""
+    from metaform.project import overlay_records
+
+    def refused(*args):
+        answer = run('map', *args, cwd=in_store, ok=False)
+        assert answer.returncode != 0, args
+        return answer.stdout + answer.stderr
+    assert {'tickets', 'wants'} <= {one['layer'] for one in j(run, 'layers', cwd=in_store)['results']}
+    assert 'an overlay has no tags' in refused('tag', 'layer=tickets', 'tag=x')
+    assert 'cannot be hidden' in refused('knowledge', 'op=create', 'layer=practices-cpp', 'variable=C++ here?',
+                                         'hideable=true')
+    made = j(run, 'knowledge', 'op=create', 'layer=practices-cpp', 'variable=C++ practice here.', 'mutable=true',
+             'fields=["standard"]', cwd=in_store)
+    assert (made['layer'], made['fields']) == ('practices_cpp', ['standard', 'value', 'link'])
+    item = j(run, 'knowledge', 'op=add-item', 'layer=practices-cpp', 'node=element:code.timer.kitchen',
+             'value={"standard": "C++17"}', 'link=element:code.alarm.audible', 'refs=[["path", "./src/timer.cc"]]',
+             cwd=in_store)
+    assert (item['node'], item['standard'], item['link'], item['ref']) == (
+        'code.timer.kitchen', 'C++17', 'proj.code.alarm.audible', './src/timer.cc')
+    j(run, 'knowledge', 'op=add-property', 'layer=practices_cpp', 'element=code.alarm.audible', 'value=7',
+      cwd=in_store)
+    assert [one['value'] for one in j(run, 'layer', 'layer=practices-cpp', 'node=element:code.alarm.audible',
+                                      cwd=in_store)['results']] == ['7']
+    assert [one['layer'] for one in j(run, 'node', 'element:code.timer.kitchen', cwd=in_store)['layers']] == [
+        'practices_cpp', 'wants']
+    below = j(run, 'context', 'code', cwd=in_store)
+    assert not below['applying'] and {one['node'] for one in below['results']} == {
+        'code.timer.kitchen', 'code.alarm.audible', 'code.menu.dish'}
+    assert {(one['layer'], one['node']) for one in j(run, 'links', 'element:code.alarm.audible',
+                                                      cwd=in_store)['results']} == {
+        ('practices_cpp', 'code.timer.kitchen'), ('wants', 'code.timer.kitchen')}
+    assert [one['node'] for one in j(run, 'citing', 'key=path', 'value=src/timer.cc', cwd=in_store)['results']] == [
+        'code.timer.kitchen']
+    edited = j(run, 'knowledge', 'op=edit', f'id={item["record"]}', 'value={"standard": "C++20"}', cwd=in_store)
+    assert (edited['record'], edited['revision'], edited['standard'], edited['link']) == (
+        item['record'], item['revision'] + 1, 'C++20', 'proj.code.alarm.audible')
+    assert 'holds ./src/timer.cc already' in refused('knowledge', 'op=add-ref', f'owner={item["record"]}', 'key=path',
+                                                     'value="src/other.cc"')
+    for args, said in ((('op=finish', 'layer=practices-cpp'), 'no finished state'),
+                       (('op=add-item', 'layer=practices-cpp', 'node=join:j1', 'value=1'), 'never by a join'),
+                       (('op=add-item', 'layer=practices-cpp', 'node=element:code.menu.dish', 'value=1',
+                         'read_first=true'), 'a record has no read_first')):
+        assert said in refused('knowledge', *args), args
+    assert len(overlay_records('proj', 'practices_cpp') or []) == 2
+    j(run, 'knowledge', 'op=remove', f'id={item["record"]}', cwd=in_store)
+    assert [one['element'] for one in overlay_records('proj', 'practices_cpp') or []] == ['proj.code.alarm.audible']
+
+
+@pytest.mark.req('MAP-021')
 def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
     """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; a hidden layer resolves
     to nothing."""

@@ -62,7 +62,7 @@ from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
-from . import project_messages, ticket_history
+from . import project_layers, project_messages, ticket_history
 from .around import told
 from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
@@ -534,7 +534,16 @@ def children(ctx: Context) -> Any:
     return _kept_elsewhere(_store(ctx), found) if not found.results and not ctx.nouns['address'] else found
 
 
+def _in_store(ctx: Context) -> str | None:
+    """The project's name in the project store when its map is held there, where its layers are overlays
+    (project_layers.py, decision t-legacy-keep); None when the old store holds its map."""
+    name = project_store.stored_name(_store(ctx).project_id)
+    return name if project_store.holds(name) else None
+
+
 def layers(ctx: Context) -> Any:
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.layers(ctx, held)
     return _store(ctx).layers(ctx.nouns.get('tag'), ctx.nouns.get('kind'), ctx.nouns.get('module'), **_paging(ctx))
 
 
@@ -551,11 +560,15 @@ def untag(ctx: Context) -> Any:
 
 
 def layer(ctx: Context) -> Any:
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.layer(ctx, held)
     target = _node(ctx.nouns['node']) if 'node' in ctx.nouns else None
     return _store(ctx).layer_items(ctx.nouns['layer'], target, **_paging(ctx))
 
 
 def node(ctx: Context) -> Any:
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.node(ctx, held)
     target = _node(ctx.nouns['node'])
     found = _store(ctx).node(target, **_reading(ctx))
     if found is None:
@@ -564,10 +577,14 @@ def node(ctx: Context) -> Any:
 
 
 def context(ctx: Context) -> Any:
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.context(ctx, held)
     return _store(ctx).context(ctx.nouns['address'], **_paging(ctx))
 
 
 def links(ctx: Context) -> Any:
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.links(ctx, held)
     return _store(ctx).links_to(_node(ctx.nouns['node']), ctx.nouns.get('layer'), **_reading(ctx), **_paging(ctx))
 
 
@@ -585,6 +602,8 @@ def citing(ctx: Context) -> Any:
             except ValueError:
                 raise Stop(f'{value} is outside the project folder {root}.',
                            'metaform map citing key=path value=<project-relative path>') from None
+    if (held := _in_store(ctx)) is not None:
+        return project_layers.citing(ctx, held, key, value)
     return store.citing(key, value, **_paging(ctx))
 
 
@@ -1097,6 +1116,8 @@ def knowledge(ctx: Context) -> Any:
         raise Stop('knowledge creates a knowledge layer: kind=layer.',
                    'metaform help map knowledge')
     notices = _unread(ctx, op)
+    if (held := _in_store(ctx)) is not None:
+        return _with_notices(project_layers.knowledge(ctx, held, op, notices), notices)
     return _with_notices(_knowledge(ctx, op, notices), notices)
 
 
@@ -2621,8 +2642,13 @@ _DECLARED = Module(
 # `guide` reads no map, `glossary` and `term` read the map and write the glossary overlay there
 # (project_glossary.py, decision t-legacy-keep), and `critic`, `challenges`, `answer` and `approve` keep a critic run's
 # blind spots as records of the challenges overlay there (project_critic.py, decision t-legacy-keep).
-ANSWERED_BESIDE_THE_STORE = frozenset({'answer', 'approve', 'ask', 'boards', 'challenges', 'critic', 'glossary',
-                                       'guide', 'messages', 'reopen', 'reply', 'term', 'work'})
+# `guide` reads no map, and `glossary` and `term` read the map and write the glossary overlay there
+# (project_glossary.py, decision t-legacy-keep). The layer and knowledge verbs work on its overlays there
+# (project_layers.py, t-legacy-keep); those with no faithful meaning there, such as `tag` and `hide`, are refused with
+# their reason, project_layers.NO_PLACE.
+ANSWERED_BESIDE_THE_STORE = frozenset({'answer', 'approve', 'ask', 'boards', 'challenges', 'citing', 'context',
+                                       'critic', 'glossary', 'guide', 'knowledge', 'layer', 'layers', 'links',
+                                       'messages', 'node', 'reopen', 'reply', 'term', 'work'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:
@@ -2634,6 +2660,10 @@ def _beside_the_store(verb: Verb) -> Verb:
         if ctx.store is not None:
             name = project_store.stored_name(ctx.store.project_id)
             if project_store.holds(name):
+                reason = project_layers.refusal(verb.name)
+                if reason is not None:  # a layer verb with no faithful meaning in the store: its reason, by name
+                    raise Stop(f"{name}'s map is in the project store, so `map {verb.name}` has no place there: "
+                               f'{reason}', f'metaform map layers; the project tool, {{"map": "{name}"}}')
                 raise Stop(f"{name}'s map is in the project store, so `map {verb.name}` has nothing of it: the old "
                            "store's map is not this project's map. Read and write the map with the project tool, "
                            f'{{"map": "{name}"}} or {{"{name}.<address>": {{}}}}; tickets with `metaform map work`.',
