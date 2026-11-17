@@ -1154,3 +1154,13 @@ def test_the_specification_round_trips_through_its_document_and_refuses_what_wou
         answer = project_store.specification_document(P, broken.replace('dropped.', 'kept.'), served)
         assert answer['code'] == 'DOCUMENT_REFUSED', answer
     assert project_store.specification_document(P, home=served)['document'] == before
+
+
+def test_an_elements_read_carries_its_specification_so_an_agent_reads_its_purpose_first(mapped):
+    """Phase 4 step 4: the project tool's read of an element brings its specification blocks unasked, as it brings
+    its wants; an element with none is read as before."""
+    blocks = [{'level': 1, 'title': 'Purpose', 'text': 'Relay each packet as it arrives.'}]
+    assert run({'add': {WIDGET: {'specification': blocks}}}) == {'status': 'ok'}
+    read = run({WIDGET: {}})[WIDGET]
+    assert fields_only(read['specification']) == blocks and 'specification' in read['overlays']
+    assert 'specification' not in run({CS: {}})[CS]

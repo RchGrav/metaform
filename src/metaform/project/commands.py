@@ -326,7 +326,12 @@ def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str
         'wanted_by': [full(project, holder) for holder in opened.holders(at)],
         'overlays': [key for key in tables if opened.record_count(key, at)],
     }
-    defs = definitions(opened.parts()) if named else {}
+    # The element's specification comes with every read of it, as its wants do: what the part is for, read before
+    # anything at it is changed (docs/plans/specifications-overlay.md step 4; kickoff 2026-11-17 Phase 4).
+    held = cast(list[str], answer['overlays'])
+    defs = definitions(opened.parts()) if named or specification.KEY in held else {}
+    if specification.KEY in held and specification.KEY in defs:
+        answer[specification.KEY] = _records(opened, defs[specification.KEY], at)
     for name in named:
         if name == 'wants':
             continue
