@@ -70,6 +70,10 @@ No layers. Two tables, `place='metaform'`, version 2, readable from version 1. `
 
 No `start` or `stop`, no tasks. The watcher `send` or `web start` starts runs until it is stopped or nothing is left to follow; it removes its record as it ends. Disabling the module leaves the table and the tickets.
 
+## A project held in the project store
+
+For a project whose map is in the project store (kickoff 2026-11-17, decision t-legacy-keep), `stored.py` keeps its tickets and messages there: an issue's ticket is a record of the `tickets` overlay, a comment that crosses in is a message of the `questions` overlay, and the questions that cross out are that overlay's questions naming the ticket. A resolution, which the tickets overlay has no field for, is a paragraph of the note, `Resolution: ... Why: ...`, as `map work done` writes it. The brief is the project tool's read of the element, `project {"<project>.<address>": {}}`, in `brief`, the issue document and `links`. An issue cancelled in Paperclip stops a running session with dispatch's `stop`, and the ticket is closed here, since dispatch's `cancel` closes a ticket of the old store only. `watch` counts a `project.map` commit, which names no ticket, and syncs only the links whose ticket or questions changed revision since its last sync read them. The `links` and `bridged` tables stay in this module's own tables, which are not the map.
+
 ## Modules relied on
 
 map, for tickets, messages, replies and briefs. dispatch, when it is on: `heartbeat` runs its `autostart` for the tickets it took while `dispatch_autostart` is on, and `sync` ends a session through its `cancel` and `stop`. A dispatched agent carries none of the run's `PAPERCLIP_*` variables, which `harness.IDENTITY` strips from every process Metaform starts.

@@ -559,3 +559,138 @@ def test_the_watcher_syncs_a_link_when_paperclip_says_its_issue_changed_and_read
     assert ended == [{'state': 'idle', 'syncs': 2}]
     assert Store('proj').ticket(shown['ticket']).work.resolution == 'Fixed in src/beep.c.'
     assert server.streams[0][0] == f'ws://localhost:3100/api/companies/{COMPANY}/events/ws'
+
+
+@pytest.fixture
+def held(folder, home):
+    """`proj` held in the project store, its two Addresses elements there, so its tickets and messages are the tickets
+    and questions overlays' records (kickoff 2026-11-17, t-legacy-keep). Its single-writer service stops at the end."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    for address, name, role in (('code.timer.kitchen', 'kitchen timer', 'Defining Element'),
+                                ('code.alarm.audible', 'audible alarm', 'Supporting Element')):
+        assert command({'add': {f'proj.{address}': {'technical_name': name, 'name': name, 'role': role}}}) == \
+            {'status': 'ok'}
+    yield folder
+    service.stop(home)
+    owner.close_all()
+
+
+def held_records(key: str) -> dict[str, dict[str, Any]]:
+    from metaform.project import overlay_records
+    return {str(one['id']): one for one in overlay_records('proj', key) or []}
+
+
+def held_ticket(title: str, address: str = 'code.timer.kitchen') -> str:
+    from metaform.project import run as command
+    ident = f"t-{title.lower().replace(' ', '-')}"
+    assert command({'add': {f'proj.{address}': {'tickets': [{'id': ident, 'title': title, 'task': f'{title}.'}]}}}) \
+        == {'status': 'ok'}
+    return ident
+
+
+def test_on_a_project_in_the_project_store_send_and_sync_work_its_tickets_and_questions_overlays(held, server):
+    """A ticket sent is the tickets overlay's record, taken for Paperclip and given back when the issue cannot be made;
+    the issue's document names the project tool's read as its brief; what the Paperclip agent said is a message of
+    the questions overlay, and its last word resolves the ticket there. The old store gets no ticket."""
+    work_id = held_ticket('Wire the beeper')
+    server.refuse[('POST', f'/companies/{COMPANY}/issues')] = 500
+    with pytest.raises(Stop, match='create the issue'):
+        verb(held, 'send', id=work_id, assignee=WORKER)
+    assert 'taken_by' not in held_records('tickets')[work_id]
+    del server.refuse[('POST', f'/companies/{COMPANY}/issues')]
+
+    shown = verb(held, 'send', id=work_id, assignee=WORKER)
+    brief = 'project {"proj.code.timer.kitchen": {}}'
+    assert shown['ticket'] == work_id and shown['address'] == 'code.timer.kitchen' and shown['brief'] == brief
+    assert server.issues[shown['issue_id']]['title'] == 'Wire the beeper'
+    assert server.documents[(shown['issue_id'], paperclip.DOCUMENT)]['body'] == \
+        f'address: code.timer.kitchen\nbrief: {brief}\nticket: {work_id}\n'
+    assert held_records('tickets')[work_id]['taken_by'] == 'paperclip'
+
+    finding = 'Root cause: the cadence timer used 500ms ticks; changed to 250ms in src/beep.c.'
+    server.comment(shown['issue_id'], 'Looking at the cadence timer.', authorAgentId=WORKER)
+    server.comment(shown['issue_id'], finding, authorAgentId=WORKER)
+    server.issues[shown['issue_id']]['status'] = 'done'
+    assert verb(held, 'sync') == {'changed': [{'issue': shown['issue'], 'ticket': work_id, 'comments_in': 2,
+                                               'ticket_now': 'completed'}], 'failed': []}
+    closed = held_records('tickets')[work_id]
+    assert closed['outcome'] == 'completed' and closed['done']
+    assert closed['note'] == f"Resolution: {finding} Why: Paperclip closed issue {shown['issue']}."
+    said = [one for one in held_records('questions').values() if one['element'] == 'proj.code.timer.kitchen']
+    assert [(one['kind'], one['text']) for one in said] == [('message', 'Looking at the cadence timer.'),
+                                                            ('message', finding)]
+    assert verb(held, 'sync')['changed'] == []  # closed once
+    assert not Store('proj').work(limit=0).results
+
+
+def test_on_a_project_in_the_project_store_heartbeat_takes_issues_and_questions_cross_both_ways(
+        held, server, monkeypatch):
+    """An issue taken is a ticket of the tickets overlay in To do; a question there naming it goes out once as a card
+    and its answer closes it through map reply; a failed ticket is reported with the resolution its note keeps."""
+    from metaform.modules.map import project_messages
+    shown = taken_in(held, server, monkeypatch)
+    work_id = shown['ticket']
+    one = held_records('tickets')[work_id]
+    assert one['element'] == 'proj.code.alarm.audible' and one['title'] == 'Make the alarm louder'
+    assert 'taken_by' not in one and shown['brief'] == 'project {"proj.code.alarm.audible": {}}'
+    assert paperclip._candidates(Store('proj'), {'audible'}) == {'code.alarm.audible': 'audible alarm'}  # Jev's
+
+    asked = project_messages.ask('proj', {'node': 'element:code.alarm.audible', 'question': 'Which tone should it '
+                                          'play?', 'suggestions': ['Chime'], 'work': work_id}, [])
+    project_messages.ask('proj', {'node': 'element:code.alarm.audible', 'question': 'Another ticket\'s question.'}, [])
+    assert verb(held, 'sync')['changed'] == [{'issue': shown['issue'], 'ticket': work_id, 'questions_out': 1}]
+    [card] = server.interactions[shown['issue_id']]
+    assert card['title'] == 'Which tone should it play?'
+    assert card['payload']['questionSet']['questions'][0]['initialText'] == 'Chime'
+    server.answered(card, text='Chime, twice')
+    assert verb(held, 'sync')['changed'] == [{'issue': shown['issue'], 'ticket': work_id, 'answers_in': 1}]
+    answered = held_records('questions')[asked['id']]
+    assert answered['answer'] == 'Chime, twice' and answered['closed']
+
+    paperclip.overlay.finish(paperclip.overlay.tickets('proj')[work_id], 'The beeper is not wired.',
+                             'no hardware here', 'failed')
+    assert verb(held, 'sync')['changed'] == [{'issue': shown['issue'], 'ticket': work_id, 'issue_now': 'in_review'}]
+    ended = server.comments[shown['issue_id']][-1]['body']
+    assert 'The beeper is not wired.' in ended and 'no hardware here' not in ended
+
+
+@pytest.mark.req('QUAL-015')
+def test_the_watcher_of_a_project_in_the_project_store_syncs_a_link_only_when_its_ticket_changed_there(
+        held, server, monkeypatch):
+    """A commit of the project store names no ticket: a burst of commits that change no followed ticket, the watcher's
+    own writes among them, and memory commits, make no Paperclip read; the person cancelling the ticket there syncs it
+    at once, its issue is cancelled, and the watcher, with nothing left to follow, ends."""
+    import threading
+
+    from metaform.module import Context
+    shown = verb(held, 'send', id=held_ticket('Wire the beeper'), assignee=WORKER)
+    handlers = []
+
+    class Heard:
+        def close(self):
+            return None
+    monkeypatch.setattr(Context, 'listen', lambda self, handler: (handlers.append(handler), Heard())[1])
+    ended: list[Any] = []
+    running = threading.Thread(target=lambda: ended.append(verb(held, 'watch')), daemon=True)
+    running.start()
+    threading.Event().wait(1.0)  # the stream open and the first sync done
+
+    def reads() -> int:
+        return sum(1 for method, path, _ in server.calls if method == 'GET' and path.startswith('/issues/'))
+    before = reads()
+    held_ticket('Another ticket')  # a change of the project store that concerns no link
+    for _ in range(50):
+        for handler in handlers:
+            handler({'project': 'proj', 'base_id': None, 'tables': ['project.map'], 'kinds': ['map']})
+            handler({'project': 'proj', 'base_id': None, 'tables': ['project.memory'], 'kinds': ['memory']})
+    threading.Event().wait(0.5)
+    burst = reads() - before
+    paperclip.overlay.finish(paperclip.overlay.tickets('proj')[shown['ticket']], 'Not needed.', 'plans changed',
+                             'cancelled')
+    for handler in handlers:
+        handler({'project': 'proj', 'base_id': None, 'tables': ['project.map'], 'kinds': ['map']})
+    running.join(5)
+    assert burst == 0
+    assert ended == [{'state': 'idle', 'syncs': 2}]
+    assert server.issues[shown['issue_id']]['status'] == 'cancelled'
