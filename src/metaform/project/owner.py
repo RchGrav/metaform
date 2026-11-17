@@ -325,6 +325,18 @@ class Owner:
                 kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
             return True
 
+    @contextmanager
+    def released(self, project: str) -> Generator[Path]:
+        """The project's database closed, after the writes already queued for it, and kept closed for the block, which
+        is given its path: no command opens it until the block ends, so the block may move its files, as a switch of
+        the project's base does (`bases`). The next command opens whatever database is at the path then."""
+        with self._opening:
+            with self._lock:
+                database = self._open.pop(project, None)
+            if database is not None:
+                database.close()
+            yield store.location(self.home, project)
+
     def _discard(self, project: str, database: Database) -> None:
         """Remove a database this process made whose first write failed, unless another caller is using it."""
         with self._lock:

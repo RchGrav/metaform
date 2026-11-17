@@ -2945,6 +2945,52 @@ def test_the_layers_of_a_project_in_the_project_store_are_its_overlays_and_its_k
     assert [one['element'] for one in overlay_records('proj', 'practices_cpp') or []] == ['proj.code.alarm.audible']
 
 
+@pytest.mark.req('MAP-045')
+def test_the_bases_of_a_project_in_the_project_store_are_its_databases_and_its_memory_goes_with_the_project(
+        run, in_store, home):
+    """Decision t-legacy-keep: a store project's bases are whole databases of the project store. add-base sets the
+    active one aside with its tickets and makes an empty one active, which the memory layer moves into; activate
+    brings the kept one back as it was; collapse carries the map as it is now without overlay records; remove-base
+    keeps a copy and refuses the active base; history and promote refuse by name with the reason."""
+    from metaform.project import drawn, memory, overlay_records
+
+    def names() -> list[str]:
+        found = memory('proj', 'read_graph', {})
+        return [one['name'] for one in found['result']['entities']]
+    j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Make it louder.', cwd=in_store)
+    memory('proj', 'create_entities', {'entities': [{'name': 'tone', 'entityType': 'fact', 'observations': ['rings']}]})
+    whole = drawn('proj')
+    assert [(one['name'], one['active'], one['mapped']) for one in j(run, 'bases', cwd=in_store)['results']] == [
+        ('main', True, True)]
+    made = j(run, 'add-base', 'name=fresh', '--confirm', cwd=in_store)
+    assert (made['name'], made['active']) == ('fresh', True) and 'main is kept whole with 1 tickets record' in str(made)
+    assert drawn('proj')['elements'] == [] and not overlay_records('proj', 'tickets') and names() == ['tone']
+    memory('proj', 'create_entities', {'entities': [{'name': 'snooze', 'entityType': 'fact', 'observations': ['x']}]})
+    again = run('map', 'activate', 'name=fresh', cwd=in_store, ok=False)
+    assert 'already the active map' in again.stdout + again.stderr
+    j(run, 'activate', 'name=main', '--confirm', cwd=in_store)
+    assert drawn('proj') == whole and len(overlay_records('proj', 'tickets') or []) == 1
+    assert names() == ['tone', 'snooze']
+    collapsed = j(run, 'collapse', 'name=fresh', '--confirm', cwd=in_store)
+    assert collapsed['name'] == 'fresh-2' and 'already has a base named fresh' in str(collapsed)
+    now = drawn('proj')
+    assert (now['elements'], now['wants']) == (whole['elements'], whole['wants'])
+    assert 'tickets' in [one['key'] for one in now['overlays']] and not overlay_records('proj', 'tickets')
+    listed = j(run, 'bases', cwd=in_store)['results']
+    assert [(one['name'], one['active'], one['mapped']) for one in listed] == [
+        ('main', False, True), ('fresh', False, False), ('fresh-2', True, True)]
+    refused = run('map', 'remove-base', 'name=fresh-2', '--confirm', cwd=in_store, ok=False)
+    assert 'not removed while it is active' in refused.stdout + refused.stderr
+    removed = j(run, 'remove-base', 'name=fresh', '--confirm', cwd=in_store)
+    assert Path(removed['kept']).exists() and [one['name'] for one in j(run, 'bases', cwd=in_store)['results']] == [
+        'main', 'fresh-2']
+    history = run('map', 'history', 'id=code.alarm.audible', cwd=in_store, ok=False)
+    assert 'no earlier version' in history.stdout + history.stderr
+    promote = run('map', 'promote', 'receiver=code.timer.kitchen', 'provider=code.alarm.audible',
+                  'address=code.countdown.delivery', cwd=in_store, ok=False)
+    assert 'no field to name an element of its own' in promote.stdout + promote.stderr
+
+
 @pytest.mark.req('MAP-021')
 def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
     """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; a hidden layer resolves

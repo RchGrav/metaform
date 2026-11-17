@@ -9,7 +9,7 @@ from pathlib import Path
 
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
-__all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'memory', 'memory_answer',
+__all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'bases', 'clear', 'drawn', 'holds', 'memory', 'memory_answer',
            'memory_tools', 'memory_tools_changing', 'overlay_records', 'run', 'specification_document',
            'stored_name']
 
@@ -88,3 +88,13 @@ def specification_document(project: str, document: str | None = None, home: Path
     where = home if home is not None else metaform_home.home()
     return service.send(None, where, caller or 'specification',
                         specification={'project': project, 'document': document})
+
+
+def bases(project: str, op: str = 'list', name: str = '', home: Path | None = None) -> dict[str, object]:
+    """A project's bases, the maps it keeps of itself (`metaform.project.base_maps`): op=list, the default, answers each
+    with whether it is active and mapped; add, collapse, activate and remove change them by `name`. A refusal answers
+    as the tool's refusals do."""
+    from metaform import home as metaform_home
+    from metaform.project import service
+    where = home if home is not None else metaform_home.home()
+    return service.send(None, where, 'bases', bases={'project': project, 'op': op, 'name': name})

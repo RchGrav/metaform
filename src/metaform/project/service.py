@@ -156,6 +156,9 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 elif isinstance(message.get('memory'), dict):  # a call of a memory tool, `memory`
                     from metaform.project import memory_layer
                     answer = memory_layer.perform(message['memory'], owned, str(message.get('caller') or ''))
+                elif isinstance(message.get('bases'), dict):  # a base operation: list, add, activate, collapse, remove
+                    from metaform.project import base_maps
+                    answer = base_maps.perform(cast(dict[str, Any], message['bases']), owned)
                 elif isinstance(message.get('clear'), str):  # clearing a project removes its database
                     answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear']) else 'error'}
                 elif isinstance(message.get('drawn'), str) and isinstance(message.get('overlay'), str):
@@ -241,7 +244,7 @@ def _writes(command: Any) -> bool:
 
 def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '',
          overlay: str = '', memory: dict[str, object] | None = None,
-         specification: dict[str, object] | None = None) -> dict[str, object]:
+         specification: dict[str, object] | None = None, bases: dict[str, object] | None = None) -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
     Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
@@ -255,7 +258,8 @@ def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: 
                           **({'clear': clear} if clear else {}),
                           **({'overlay': overlay} if overlay else {}),
                           **({'memory': memory} if memory else {}),
-                          **({'specification': specification} if specification else {})}).encode('utf-8')
+                          **({'specification': specification} if specification else {}),
+                          **({'bases': bases} if bases else {})}).encode('utf-8')
     for attempt in range(ATTEMPTS):
         try:
             connection = _connection(home, fresh=attempt > 0)

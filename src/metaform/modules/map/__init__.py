@@ -36,6 +36,7 @@ from metaform.data import (
     author,
     plain,
     shown_open,
+    sliced,
 )
 from metaform.finish_xml import xml as map_xml
 from metaform.module import (
@@ -171,17 +172,86 @@ BASE_SWITCH = ('This changes the active map for every agent and the page of the 
 
 def _switch_caution(ctx: Context) -> str:
     """BASE_SWITCH for this call: what the active base holds that leaves view, and the command that switches back."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        return _stored_switch_caution(stored)
     return home.switch_caution(_other_project(ctx).project_id)
 
 
 def _activate_caution(ctx: Context) -> str:
     """activate's caution for this call: nothing, said so, when the base named is the active map already."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        return _stored_switch_caution(stored, str(ctx.nouns.get('name') or '') or None)
     return home.switch_caution(_other_project(ctx).project_id, str(ctx.nouns.get('name') or '') or None)
 
 
 def _remove_caution(ctx: Context) -> str:
     """remove-base's caution for this call: the base named, with what it holds, and the copy kept."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        name = str(ctx.nouns.get('name') or '')
+        return (f'Removing {name} takes it out of {stored}. Its database is kept under '
+                f'{home.home() / "backups" / "remove-base" / stored}, but no command brings a removed base back. The '
+                'active base is refused.')
     return home.remove_caution(_other_project(ctx).project_id, str(ctx.nouns.get('name') or ''))
+
+
+# Bases of a project held in the project store (decision t-legacy-keep, kickoff 2026-11-17 Phase 3): each base is a
+# whole project database, the active one the project's own and the others set aside (metaform.project.base_maps). The map
+# and every overlay's records stay with the base they were written in; the memory layer is the project's and moves
+# into whichever base is made active, as the old store's bases and its project-level memory did (STORE-041, STORE-020).
+
+def _stored_bases(ctx: Context) -> str | None:
+    """The project's name in the project store when its map is held there, where its bases are kept; None otherwise,
+    and the old store's bases answer as before."""
+    project = ctx.nouns.get('project')
+    if not project and ctx.store is None:
+        return None
+    stored = project_store.stored_name(str(project) if project else _store(ctx).project_id)
+    return stored if project_store.holds(stored) else None
+
+
+def _bases_answer(stored: str, op: str, name: str = '') -> dict[str, Any]:
+    answer = cast(dict[str, Any], project_store.bases(stored, op, name))
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message')), str(answer.get('remediation') or 'metaform map bases'))
+    return answer
+
+
+def _stored_switch_caution(stored: str, target: str | None = None) -> str:
+    active = str(_bases_answer(stored, 'list')['active'])
+    if target is not None and target == active:
+        return f'{target} is already the active map of {stored}; nothing changes.'
+    return (f'This changes the active map for every agent and the page of {stored}. In the project store every reader '
+            'follows the active base, an agent at work included; the tickets and other overlay records of '
+            f'{active} stay with it, out of view until it is active again, and the memory layer goes with the '
+            f'project. {active} is kept whole: metaform map activate {active} --confirm switches back.')
+
+
+def _records_said(held: dict[str, int]) -> str:
+    return ', '.join(f'{count} {key} {"record" if count == 1 else "records"}' for key, count in sorted(held.items()))
+
+
+def _stored_switched(ctx: Context, stored: str, op: str) -> home.Base:
+    """add-base, collapse or activate on a project held in the project store, answered as the old store's switch is:
+    the base made active, with notices for a name already taken and for what the base it left keeps."""
+    project_id = str(ctx.nouns.get('project') or _store(ctx).project_id)
+    answer = _bases_answer(stored, op, str(ctx.nouns['name']))
+    notices: list[Notice] = []
+    if answer['base'] != answer['asked']:
+        notices.append(Notice('name', f'{stored} already has a base named {answer["asked"]}; this one was named '
+                                      f'{answer["base"]}.'))
+    left = cast('dict[str, Any] | None', answer.get('left'))
+    if left is not None:
+        held = _records_said(cast(dict[str, int], left['held']))
+        notices.append(Notice('kept', f'{left["name"]} is kept whole' + (f' with {held}' if held else '') +
+                              ', out of view until it is active again; the memory layer came along. To switch back: '
+                              f'metaform map activate {left["name"]} --confirm'))
+    listed = {one['name']: one for one in cast(list[dict[str, Any]], _bases_answer(stored, 'list')['bases'])}
+    made = listed[str(answer['base'])]
+    return home.Base(made['name'], project_id, made['name'], made.get('created') or '', made['active'],
+                     notices=tuple(notices))
 
 
 def base_holds(store: Store) -> dict[str, int]:
@@ -608,6 +678,12 @@ def citing(ctx: Context) -> Any:
 
 
 def history(ctx: Context) -> Any:
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        raise Stop(f"{stored}'s map is in the project store, which keeps each element, want and record as it is now "
+                   'and no earlier version of it: a record counts its revisions but keeps no earlier values, so there '
+                   'is no history of a thing to read there. A base set aside with map add-base or map collapse keeps '
+                   'the map as it was then.', 'metaform map bases')
     return _store(ctx).history(ctx.nouns['id'], **_paging(ctx))
 
 
@@ -615,6 +691,13 @@ def bases(ctx: Context) -> Any:
     """The project's bases, each with whether it holds a finished map and when it was last made active, so a surface
     showing an empty one can point to the map the person last worked on (UX review round 2, 2026-10-17, project-scope
     F3)."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        project_id = str(ctx.nouns.get('project') or _store(ctx).project_id)
+        listed = cast(list[dict[str, Any]], _bases_answer(stored, 'list')['bases'])
+        return sliced(tuple(home.BaseRead(one['name'], project_id, one['name'], one.get('created') or '',
+                                          one['active'], mapped=one['mapped'], activated=one.get('activated'))
+                            for one in listed), int(ctx.nouns.get('limit') or 0), ctx.nouns.get('after'))
     store = _other_project(ctx)
     found = store.bases(**_paging(ctx))
     when = home.activations(store.project_id)
@@ -644,22 +727,38 @@ def _switched(store: Store, switch: Callable[[], home.Base]) -> home.Base:
 
 
 def add_base(ctx: Context) -> Any:
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        return _stored_switched(ctx, stored, 'add')
     store = _other_project(ctx)
     return _switched(store, lambda: store.add_base(ctx.nouns['name']))
 
 
 def collapse(ctx: Context) -> Any:
+    """The current map written as a new base and made active, LAYER-026. In the project store, which keeps no earlier
+    versions, the new base holds the map as it is now, its root, elements and wants, and each overlay's definition
+    without its records, which stay with the old base."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        return _stored_switched(ctx, stored, 'collapse')
     store = _other_project(ctx)
     return _switched(store, lambda: store.collapse(ctx.nouns['name']))
 
 
 def activate(ctx: Context) -> Any:
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        return _stored_switched(ctx, stored, 'activate')
     store = _other_project(ctx)
     return _switched(store, lambda: store.activate_base(ctx.nouns['name']))
 
 
 def remove_base(ctx: Context) -> Any:
-    from metaform import home
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        answer = _bases_answer(stored, 'remove', str(ctx.nouns['name']))
+        return home.Removed(str(ctx.nouns.get('project') or _store(ctx).project_id), str(answer['base']),
+                            str(answer['base']), str(answer['kept']))
     return home.remove_base(_other_project(ctx).project_id, ctx.nouns['name'])
 
 
@@ -962,6 +1061,12 @@ def _one(found: list[Any], what: str, notices: list[Notice], purposes: bool = Fa
 
 def promote(ctx: Context) -> Any:
     """Associate a receiver's purpose with an ordinary element, preserving its join, MAP-054."""
+    stored = _stored_bases(ctx)
+    if stored is not None:
+        raise Stop(f"{stored}'s map is in the project store, where a want is an edge from its holder to the element it "
+                   'wants, carrying only why, how, direction and ref; it has no field to name an element of its own '
+                   "(MAP-054's element), and the store refuses a field outside a definition. Add the element with the "
+                   'project tool and record the wants to and from it.', 'the project tool over MCP')
     _need(ctx, 'receiver', 'provider', 'address', verb='promote')
     store = _store(ctx)
     nouns = ctx.nouns
@@ -2646,9 +2751,13 @@ _DECLARED = Module(
 # (project_glossary.py, decision t-legacy-keep). The layer and knowledge verbs work on its overlays there
 # (project_layers.py, t-legacy-keep); those with no faithful meaning there, such as `tag` and `hide`, are refused with
 # their reason, project_layers.NO_PLACE.
-ANSWERED_BESIDE_THE_STORE = frozenset({'answer', 'approve', 'ask', 'boards', 'challenges', 'citing', 'context',
-                                       'critic', 'glossary', 'guide', 'knowledge', 'layer', 'layers', 'links',
-                                       'messages', 'node', 'reopen', 'reply', 'term', 'work'})
+# t-legacy-keep, kickoff 2026-11-17 Phase 3). `bases`, `add-base`, `activate`, `remove-base` and `collapse` keep the
+# project's bases as databases of the project store, and `history` and `promote` refuse there by name with the reason,
+# the store keeping no earlier versions and a want having no field for an element of its own (the same decision).
+ANSWERED_BESIDE_THE_STORE = frozenset({'activate', 'add-base', 'answer', 'approve', 'ask', 'bases', 'boards',
+                                       'challenges', 'citing', 'collapse', 'context', 'critic', 'glossary', 'guide',
+                                       'history', 'knowledge', 'layer', 'layers', 'links', 'messages', 'node',
+                                       'promote', 'remove-base', 'reopen', 'reply', 'term', 'work'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:
