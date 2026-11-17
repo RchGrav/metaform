@@ -368,3 +368,48 @@ def test_system_runs_canonical_user_task_and_deduplicates_input(run, project_fol
         for entry in entries():
             if 'pid' in entry:
                 end_group(entry['pid'])
+
+
+@pytest.mark.timeout(20)
+def test_the_system_agents_question_is_put_to_the_person_not_answered_for_it(run, project_folder, tmp_path,
+                                                                             monkeypatch):
+    """The system agent runs as the user_agent task, which carries no system flag since tasks retired roles: a question
+    it puts through ACP's elicitation waits for the person in its thread, and is never given the standing answer that
+    tells a ticket's agent to decide for itself, VIEW-045."""
+    from metaform.data import Store
+    from metaform.modules.dispatch import end_group
+
+    log = tmp_path / 'user-agent-question.jsonl'
+    monkeypatch.setenv('FAKE_ACP_LOG', str(log))
+    monkeypatch.setenv('FAKE_ACP_ELICIT', 'form')
+    run('enable', 'dispatch', cwd=project_folder)
+    task_id = runner_pid = None
+
+    def entries():
+        if not log.exists():
+            return []
+        data = log.read_bytes()
+        return [json.loads(line) for line in data[:data.rfind(b'\n') + 1].decode().splitlines()]
+
+    def asked():
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            return [json.loads(row['text']) for row in tx.rows('session_lines', {'kind': 'elicitation'}, limit=0).results]
+    try:
+        launch = json.loads(run('dispatch', 'system', 'agent=claude', '--json', cwd=project_folder).stdout)
+        task_id = launch['task_id']
+        with Store('proj', module='tasks').tables(write=False) as tx:
+            runner_pid = dict(tx.get('assignments', {'task_id': task_id}))['locator']['pid']
+        deadline = time.monotonic() + 10
+        while not asked() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        [question] = asked()
+        assert question['state'] == 'waiting', question
+        assert not [entry for entry in entries() if 'elicited' in entry], 'the question was answered for the person'
+    finally:
+        if task_id is not None:
+            run('tasks', 'cancel', task_id, '--json', cwd=project_folder, ok=False)
+        if runner_pid is not None:
+            end_group(runner_pid)
+        for entry in entries():
+            if 'pid' in entry:
+                end_group(entry['pid'])

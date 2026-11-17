@@ -2743,7 +2743,9 @@ class Session:
         scope = {'session_id': getattr(mode, 'session_id', None), 'tool_call_id': getattr(mode, 'tool_call_id', None)}
         deadline = next((float(mark['autoResolutionMs']) / 1000 for mark in meta_records(kwargs)
                          if isinstance(mark.get('autoResolutionMs'), (int, float))), None)
-        if not self.system:  # only the head agent asks the person, VIEW-045
+        # only the head agent asks the person, VIEW-045: the system agent, now the user_agent task's agent, which
+        # carries no system flag since tasks retired roles (2026-10-24)
+        if not (self.system or self.task_name() == 'user_agent'):
             self.incoming.pop(rpc, None)
             return decided(fields)
         how = await asyncio.to_thread(self.ctx.setting, 'dispatch_elicitation')
