@@ -67,3 +67,14 @@ recorded, each becomes a ticket on the element it concerns.
     and the message steering and pre-empting in the `message` op) does not apply to the system agent. The question
     gate and the page's recognition are fixed (2026-11-17); each of the rest needs checking against what the task's
     own instructions now do before it is switched on.
+20. **The `metaform` intake surveyed the documentation instead of tracing the code.** Found 2026-11-17 from session
+    `aaf50c9d…` (2026-11-16 20:00 to 20:07 UTC, task `task-b0ba7bee…`): 99 project tool calls and about 30 shell
+    commands. Before its first writes it read the README, `AGENTS.md`, folder listings, the first 12 lines of each
+    module README and the first line of each Python file's docstring; no file was read whole and no function was
+    followed. The procedure asks for "a element by element trace operation focused strictly on the functionality".
+    Example: it recorded `upstream.code.harness.agent` as "Claude Code, Codex, Gemini CLI" with ref
+    `src/metaform/harness.py`, a file that names none of them and is about the AI tools that connect to Metaform's MCP
+    server, not ACP; it then grepped for "gemini|antigravity|opencode", found Antigravity in dispatch, and changed the
+    name to "Claude Code, Codex, Google Antigravity". The name came from the model's own knowledge, and the type from
+    the word "harness" in a docstring. The `metaform-intake-pass` skill it loaded covers only how to record with the
+    tool. Not yet checked: the exact payload the intake agent was given around the procedure.
