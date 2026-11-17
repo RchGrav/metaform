@@ -78,8 +78,10 @@ overlay.
   answered `NAME_ROUND_TRIP_FAILURE`. The Rust form's refusal table (`contract.rs`) is kept as a test of the project
   tool, every row asserted, the rows the founder's decisions changed marked with the decision.
 
-**Still to do:** the other modules' prompts from `prompts.xml` to Markdown (decision 33); a fresh intake of `metaform`
-on the new delivery, after the person deletes the failed one and says to start (it spends tokens).
+**Still to do:** the other modules' prompts from `prompts.xml` to Markdown (decision 33). The failed intake was cleared
+on 2026-11-17 (backup `20261117T032817Z`), and a fresh intake of `metaform` was started on Codex `gpt-6.1-sol` at
+`ultra` (`task-e0c8b1ae...`); review what it recorded. Running work the person asked for, an intake included, needs no
+further permission because it spends tokens.
 
 ---
 
@@ -141,7 +143,7 @@ The badge matters for safety: the person twice had Codex running when they thoug
 
 1. **Step 3a**, the registry as the list (above).
 2. **Step 2b**, `runner.Session` onto `dispatch/acp/` (plan, step 2, with the notes for the move). Then one live
-   Claude Code and one live Codex session from the page, after asking the person.
+   Claude Code and one live Codex session from the page.
 3. **Step 3b**, options by id; the settings per harness name go.
 4. **Step 4: profiles and assignments**, each profile naming harness, model, reasoning level, `agent` and prompt.
    Designed only; nothing built.
