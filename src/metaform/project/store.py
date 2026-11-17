@@ -65,7 +65,6 @@ _SCHEMA = (
     )),
 )
 HOLDS = 'HOLDS'  # the relationship from an element to each of its overlay records, one pair per overlay table
-DEPTH = 30  # the bound of a walk down the tree: the engine walks at most 30 steps, deeper than any address
 REQUESTS_KEPT = 10000  # the most recent write ids kept; a write is only ever sent again within moments of the first
 _ELEMENT_COLUMNS = ', '.join(f'e.`{field}`' for field in ELEMENT_FIELDS)
 _PART_COLUMNS = ', '.join(f'p.`{field}`' for field in PART_FIELDS)
@@ -317,14 +316,20 @@ class Store:
         """Every element beneath this one, walked down the tree by `CONTAINS` one level at a time, in address order. A
         walk of many steps in one query took the engine's whole buffer pool once the map was large (2026-11-17), so
         each level is one plain query of the elements the level above holds."""
+        # The walk goes on until a level holds nothing, however deep the tree is: a fixed bound returned a partial
+        # list as if it were whole (F14, kickoff 2026-11-17). A `CONTAINS` cycle, which the tree never holds, is
+        # reported by name rather than walked for ever or cut short.
         found: list[str] = []
+        seen = {address}
         level = [address]
-        for _ in range(DEPTH):
+        while level:
             rows = self._rows('MATCH (p:Element)-[:CONTAINS]->(e:Element) WHERE p.address IN $level RETURN e.address',
                               level=level)
             level = [str(row[0]) for row in rows]
-            if not level:
-                break
+            looped = sorted(seen.intersection(level))
+            if looped:
+                raise StoreError(f"the tree beneath '{address}' loops back to '{looped[0]}': CONTAINS holds a cycle")
+            seen.update(level)
             found.extend(level)
         return sorted(found)
 

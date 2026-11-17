@@ -996,3 +996,16 @@ def test_the_page_reads_memory_from_the_memory_layer_the_memory_tools_write(serv
     assert shown['relations'] == [{'from': 'watch', 'to': WIDGET, 'relationType': 'reads'}]
     assert [join['address'] for join in shown['joins']] == ['code.masher.widget']
     assert shown['overlay_records'] == []
+
+
+def test_the_walk_beneath_an_element_reaches_every_level_however_deep(mapped):
+    """F14: a branch more than 30 levels deep is walked whole; the walk once stopped at 30 and returned what it had."""
+    deep = f'{P}.code.' + '.'.join(f's{n}' for n in range(40))
+    assert run({'add': {deep: {'technical_name': 's39 s38', 'name': 'deep', 'role': 'Notable Element'}}}) == {
+        'status': 'ok'}
+    owned = owner.of(metaform_home.home())
+    below = owned.read(P, lambda opened: opened.beneath('code.s0'))
+    assert len(below) == 39 and below[-1] == deep[len(P) + 1:]
+    # deleting the top of it is refused while elements are beneath, naming the deepest
+    answer = run({'delete': {f'{P}.code.s0': {}}})
+    assert answer['code'] == 'ELEMENTS_BENEATH' and answer['remediation'] == {'delete': {deep: {}}}
