@@ -34,6 +34,7 @@ from metaform.project.overlays import (
     encode_example,
     is_placeholder,
     key_of,
+    placeholder,
 )
 from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, Scalar, Store
 from metaform.project.texts import ROLE_PLACEHOLDER
@@ -338,6 +339,7 @@ class Writer:
                                      f"{old[name].type} to {definition.fields[name].type} while {key} records hold "
                                      "this field")
                     plan += [('drop', key, name, ''), ('add', key, name, column)]
+        self.check_compatible(defs_before, defs_after, tables)
         for address in changed:
             self.store.put_part(address, after[address])
         for action, key, name, column in plan:
@@ -348,6 +350,43 @@ class Writer:
                 self.store.add_column(key, name, column)
             else:
                 self.store.drop_column(key, name)
+
+    def check_compatible(self, defs_before: dict[str, Definition], defs_after: dict[str, Definition],
+                         tables: set[str]) -> None:
+        """A definition change that would leave stored records outside it is refused, and nothing changes (F03,
+        kickoff 2026-11-17, OVERLAY_CONTRACT section 3): narrowed choices, a field made required or added as required,
+        or a field's logical type changed while records hold values it does not accept. The column type alone does
+        not show this, since text, address and every choice are stored as STRING. The refusal names the records and
+        their fields, and the update that fixes the first; no value is invented and no record is changed. An
+        instruction, description, rule or example edit, or a new optional field, leaves every record valid."""
+        for key, definition in defs_after.items():
+            old = defs_before.get(key)
+            if old is None or key not in tables or {name: (spec.type, spec.optional) for name, spec in
+                                                     definition.fields.items()} == {
+                    name: (spec.type, spec.optional) for name, spec in old.fields.items()}:
+                continue
+            names = [name for name in old.order if name != 'ref' and name in old.fields]
+            broken: list[tuple[str, int, list[str]]] = []
+            for address, position, row in self.store.all_records(key, names):
+                record = {name: decode(old.fields[name].kind, row[name]) for name in names if row[name] is not None}
+                wrong = [name for name in definition.order if name != 'ref' and name in definition.fields and (
+                    (record.get(name) is None and not definition.fields[name].optional)
+                    or (record.get(name) is not None and not definition.fields[name].accepts(record[name],
+                                                                                             self.project)))]
+                if wrong:
+                    broken.append((address, position, wrong))
+            if not broken:
+                continue
+            shown = '; '.join(f"'{self.full(address)}' position {position} ({', '.join(wrong)})"
+                              for address, position, wrong in broken[:5])
+            more = f' and {len(broken) - 5} more' if len(broken) > 5 else ''
+            address, position, wrong = broken[0]
+            raise Refusal('DEFINITION_INCOMPATIBLE',
+                          f"'{self.full(definition.address)}': the change would leave {len(broken)} {key} records "
+                          f'outside the definition: {shown}{more}. Update those records first so they meet the new '
+                          'definition, or leave the definition as it is.',
+                          {'update': {self.full(address): {key: [
+                              {'position': position, **{name: placeholder(name) for name in wrong}}]}}})
 
     def check_structure(self, changed: list[str], after: dict[str, dict[str, Scalar]],
                         keys_of: dict[str, list[Key]]) -> None:

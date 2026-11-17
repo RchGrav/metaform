@@ -859,3 +859,35 @@ def test_the_pages_layers_find_each_definition_by_its_key_with_underscores_insid
     for address, description in defined.items():  # each definition is still read at the address it was written at
         assert commands.run({address: {}}, home=served)[address]['description'] == description
     assert commands.run({WIDGET: {'review_findings': {}}}, home=served) == before
+
+
+def test_a_definition_change_that_would_leave_records_outside_it_is_refused(mapped):
+    """F03: narrowing choices, making a field required, adding a required field or changing text to address while
+    stored records break the change is refused with the records named, and nothing changes. Compatible changes, and
+    the same change once the records are fixed, go through."""
+    notes = f'{P}.overlay.notes'
+    assert run({'add': {notes: {'description': 'd', 'instruction': 'i',
+                                'title': {'type': 'text', 'rule': 'r', 'example': 'x'},
+                                'kind': {'type': 'alpha | beta', 'rule': 'r', 'example': 'alpha'},
+                                'extra': {'type': 'text', 'rule': 'r', 'example': 'x', 'optional': True}}}}) == {
+        'status': 'ok'}
+    assert run({'add': {CS: {'notes': [{'title': 'B', 'kind': 'beta'}, {'title': 'C', 'kind': 'beta', 'extra': 'e'}]}}}
+               ) == {'status': 'ok'}
+    before = snapshot(), run({notes: {}})
+    for change, wrong in (({'kind': {'type': 'alpha | gamma', 'rule': 'r', 'example': 'alpha'}}, 'kind'),
+                          ({'extra': {'type': 'text', 'rule': 'r', 'example': 'x', 'optional': False}}, 'extra'),
+                          ({'owner': {'type': 'text', 'rule': 'r', 'example': 'x'}}, 'owner'),
+                          ({'title': {'type': 'address', 'rule': 'r', 'example': WIDGET}}, 'title')):
+        answer = run({'update': {notes: change}})
+        assert answer['code'] == 'DEFINITION_INCOMPATIBLE', (change, answer)
+        assert f"'{CS}' position 0 ({wrong})" in answer['message']
+        assert answer['remediation'] == {'update': {CS: {'notes': [{'position': 0, wrong: f'<{wrong}>'}]}}}
+        assert (snapshot(), run({notes: {}})) == before
+    # compatible changes leave every record valid
+    assert run({'update': {notes: {'instruction': 'One note a line.'}}}) == {'status': 'ok'}
+    assert run({'update': {notes: {'seen': {'type': 'boolean', 'rule': 'r', 'example': True, 'optional': True}}}}) == {
+        'status': 'ok'}
+    # once the records meet it, the same change is taken
+    assert run({'update': {CS: {'notes': [{'position': 0, 'extra': 'given'}]}}}) == {'status': 'ok'}
+    assert run({'update': {notes: {'extra': {'type': 'text', 'rule': 'r', 'example': 'x', 'optional': False}}}}) == {
+        'status': 'ok'}
