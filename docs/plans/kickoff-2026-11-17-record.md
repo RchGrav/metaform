@@ -48,7 +48,25 @@ used one hidden acceptance test that neither arm saw, the F04 regression test, r
 | Output tokens | 10,722 | 9,442 |
 | Repair | the display read carries descriptions by key; `layers` uses it | the same design |
 
-One pair proves nothing on its own; VALIDATION_PLAN says so. B's context came from the slice-1 mapping, which this run
+**The five-pair pilot** (VALIDATION_PLAN: "proposed pilot: five pairs"). Pairs 2 to 5 had the same inputs, fresh
+worktrees at `c4c2e031`, the arms alternating in start order, and the same hidden acceptance test:
+
+| Pair | A: time, cost, total tokens | B: time, cost, total tokens | B's paired saving |
+|---|---|---|---|
+| 1 | 125 s, $0.863, 1,179,941 | 125 s, $0.767, 945,331 | $0.096 |
+| 2 | 197 s, $1.181, 1,867,542 | 152 s, $0.801, 1,105,481 | $0.380 |
+| 3 | 218 s, $1.069, 1,667,575 | 168 s, $0.913, 1,268,291 | $0.156 |
+| 4 | 185 s, $1.051, 1,483,368 | 110 s, $0.732, 1,045,060 | $0.319 |
+| 5 | 188 s, $0.975, 1,496,321 | 159 s, $0.803, 1,041,264 | $0.172 |
+
+Acceptance: 5 of 5 in both conditions. B cost less in 5 of 5 pairs (by $0.096 to $0.380, a mean of $0.225, about
+22%), used fewer total tokens in 5 of 5 (a mean of 1.08 M against 1.54 M, about 30% fewer), and finished sooner in 4
+of 5 (equal in pair 1). Rework, a returned attempt, was none in either condition. Not counted: the preparation of B's
+context, which came from the slice-1 mapping. This is one task, five pairs and one model, so it is direction, not a
+general proof (VALIDATION_PLAN section 3). The plan's expansion rule needs the owner's numeric targets before any
+wider trial. The diffs are in `/tmp/kickoff-chars/exp-*.diff`.
+
+The first pair, taken alone, proves nothing; VALIDATION_PLAN says so. B's context came from the slice-1 mapping, which this run
 does not count. Both arms converged on the design that had already been committed (`3b9fdd9d`). The diffs are kept in
 `/tmp/kickoff-chars/exp-a.diff` and `exp-b.diff`. The plan's next step, five pairs, waits on the owner's numeric
 targets.
@@ -140,7 +158,7 @@ a session can be loaded or resumed, already read what the agent advertises (`res
    `metaform map specification op=import file=docs/plans/specification-region-3d-map.proposed.md --project metaform`.
 2. Every decision in the table above, to keep or reverse.
 3. GitHub billing, so that CI runs.
-4. The numeric targets for widening the experiment from one pair to five (VALIDATION_PLAN section 4).
+4. The numeric targets for widening the experiment beyond the five-pair pilot (VALIDATION_PLAN section 4).
 5. Which features with no counterpart in the store to keep (`old-store-removal.md` step 3; the kickoff's Phase 3
    "decide retention of bases, critic, glossary, questions and other legacy features"): questions and messages, layers
    and knowledge, bases, Cypher, the critic, the glossary. Unlike F02 and F03, the kickoff offers no proposal to
