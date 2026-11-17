@@ -2193,7 +2193,7 @@ def reexamining(folder: Path) -> bool:
     return project is not None and any(layer.reexamine for layer in Store(project).layers(limit=0).results)
 
 
-MODULE = Module(
+_DECLARED = Module(
     id='map',
     # The kanban lines speak to nodes, which exist once an intake is finished, MAP-048 and MCP-029.
     # The tasks instruction is read on demand with map's full instructions, not handed to every agent at connect.
@@ -2547,3 +2547,32 @@ MODULE = Module(
         *GLOSSARY_PANES,
     ),
 )
+
+
+# A project whose map is in the project store has nothing in the old store's map, so a `map` verb that reads or writes
+# that map would answer from an empty or stale one as if it were the project's (an agent saw an empty map and filed a
+# ticket the page never showed, 2026-11-16). Such a verb refuses there, naming the project tool, as
+# docs/plans/old-store-removal.md step 1 sets out (kickoff 2026-11-17, Phase 3, audit F01). `work` answers from the
+# project store itself, `boards` names the board's boards, which have no counterpart there yet and the page reads, and
+# `guide` reads no map.
+ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards'})
+
+
+def _beside_the_store(verb: Verb) -> Verb:
+    if not verb.needs_project or verb.name in ANSWERED_BESIDE_THE_STORE:
+        return verb
+    run = verb.run
+
+    def refused_in_the_store(ctx: Context) -> Any:
+        if ctx.store is not None:
+            name = project_store.stored_name(ctx.store.project_id)
+            if project_store.holds(name):
+                raise Stop(f"{name}'s map is in the project store, so `map {verb.name}` has nothing of it: the old "
+                           "store's map is not this project's map. Read and write the map with the project tool, "
+                           f'{{"map": "{name}"}} or {{"{name}.<address>": {{}}}}; tickets with `metaform map work`.',
+                           'the project tool over MCP')
+        return run(ctx)
+    return dataclasses.replace(verb, run=refused_in_the_store)
+
+
+MODULE = dataclasses.replace(_DECLARED, verbs=tuple(_beside_the_store(verb) for verb in _DECLARED.verbs))

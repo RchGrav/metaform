@@ -1089,3 +1089,23 @@ def test_a_list_written_back_keeps_its_records_ids_and_record_and_revision_are_n
         answer = run({'add': {f'{P}.overlay.notes': {'description': 'd', 'instruction': 'i',
                                                      name: {'type': 'text', 'rule': 'r', 'example': 'x'}}}})
         assert answer['status'] == 'error' and "tool's word" in answer['message'], name
+
+
+def test_a_map_verb_refuses_on_a_project_whose_map_is_in_the_project_store(served):
+    """Phase 3, F01: the old store's map is not a store project's map, so its verbs refuse there naming the project
+    tool, instead of answering from an empty map; work, boards and guide are answered, and other projects as before."""
+    from types import SimpleNamespace
+
+    from metaform.module import Stop
+    from metaform.modules.map import MODULE
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+    verbs = {verb.name: verb for verb in MODULE.verbs}
+    in_store, elsewhere = SimpleNamespace(store=SimpleNamespace(project_id=P)), SimpleNamespace(store=None)
+    with pytest.raises(Stop, match=f"{P}'s map is in the project store, so `map where`"):
+        verbs['where'].run(in_store)
+    for name in ('work', 'boards', 'guide'):
+        assert verbs[name].run.__name__ != 'refused_in_the_store', name
+    assert verbs['where'].run.__name__ == 'refused_in_the_store'
+    with pytest.raises(Exception) as raised:  # no store: the verb's own code runs, as before
+        verbs['where'].run(elsewhere)
+    assert "map is in the project store" not in str(raised.value)
