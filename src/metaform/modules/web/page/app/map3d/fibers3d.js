@@ -24,7 +24,6 @@ const TUBE = new THREE.CylinderGeometry(1, 1, 1, 6, 1, false).translate(0, 0.5, 
 // A fiber's head, the cone that says which way its information goes, as the 2D map's arrowhead does, `ends2d`: its
 // base at z 0 and its tip at z 1, drawn with the fiber's own shader and tint (2026-10-21).
 const CONE = new THREE.ConeGeometry(1, 1, 8, 1, false).translate(0, 0.5, 0).rotateX(Math.PI / 2);
-const GAP = 0.25;  // the space left between a node's surface and its fiber, as a share of the node's radius
 const HEAD = {radius: 3, length: 7};  // a cone's base radius and its length, in the fiber's radii
 // read when first drawn: graph3d.js, which these parts import from each other, has run by then
 const LOOKS = {
@@ -47,6 +46,9 @@ const radiusOf = node => Math.cbrt(nodeSize(node)) * REL;
 function made(name, room) {
   const look = LOOKS[name](), geometry = TUBE.clone();
   geometry.setAttribute('fiber', new THREE.InstancedBufferAttribute(new Float32Array(room * 4), 4)
+    .setUsage(THREE.DynamicDrawUsage));
+  // how far each end's node reaches along the fiber, so the shader draws nothing inside a node, FIBER_VERTEX
+  geometry.setAttribute('ends', new THREE.InstancedBufferAttribute(new Float32Array(room * 2), 2)
     .setUsage(THREE.DynamicDrawUsage));
   // in the scene's haze of depth, `depth3d`, as the nodes are
   const material = new THREE.ShaderMaterial({transparent: true, depthWrite: look.depthWrite,
@@ -140,19 +142,22 @@ export function fibers3d() {
 /* The fibers of a look written into `mesh`, and whether they differ from those `now` draws. */
 function place(mesh, list, now) {
   const matrices = mesh.instanceMatrix.array, fiber = mesh.geometry.getAttribute('fiber'), values = fiber.array;
+  const ends = mesh.geometry.getAttribute('ends'), reach = ends.array;
   const cone = mesh.userData.cone, heads = cone.instanceMatrix.array, headFiber = cone.geometry.getAttribute('fiber'),
     headValues = headFiber.array;
   list.forEach((link, i) => {
     const look = link.__fiber, from = link.source, to = link.target;
     FROM.set(from.x, from.y || 0, from.z || 0);
     TO.set(to.x, to.y || 0, to.z || 0);
-    // A fiber stops short of each node, GAP beyond its surface, and never runs inside it: what is inside the glass
-    // is the node's own, and only that is hidden; what is behind the glass still shows through it (2026-10-21). Two
-    // nodes that overlap leave their fiber no length.
-    const span = FROM.distanceTo(TO), into = radiusOf(from) * (1 + GAP), out = radiusOf(to) * (1 + GAP);
-    let length = Math.max(0, span - into - out);
-    if (span > 0) FROM.addScaledVector(DIR.subVectors(TO, FROM).divideScalar(span), Math.min(into, span));
+    // A fiber runs from its source's centre to its target's centre, and the part inside each node is not drawn: the
+    // shader drops what lies within the node's radius of either end, so the fiber reads as going into the node and
+    // nothing of it shows inside the glass (the person, 2026-11-17).
+    const span = FROM.distanceTo(TO);
+    let length = span;
+    if (span > 0) DIR.subVectors(TO, FROM).divideScalar(span);
     else DIR.set(0, 0, 1);
+    reach[i * 2] = span > 0 ? radiusOf(from) / span : 0;
+    reach[i * 2 + 1] = span > 0 ? radiusOf(to) / span : 0;
     // its heads, each taking its length off the tube, which ends at the cone's base
     const long = Math.min(look.radius * HEAD.length, length / 2), wide = look.radius * HEAD.radius;
     if (look.heads & 1) {
@@ -181,8 +186,10 @@ function place(mesh, list, now) {
   mesh.count = list.length;
   cone.count = list.length * 2;
   if (now !== mesh && now.count === mesh.count && same(now.instanceMatrix.array, matrices, list.length * 16)
-    && same(now.geometry.getAttribute('fiber').array, values, list.length * 4)) return false;
-  for (const [attribute, size] of [[mesh.instanceMatrix, 16], [fiber, 4], [cone.instanceMatrix, 32], [headFiber, 8]]) {
+    && same(now.geometry.getAttribute('fiber').array, values, list.length * 4)
+    && same(now.geometry.getAttribute('ends').array, reach, list.length * 2)) return false;
+  for (const [attribute, size] of [[mesh.instanceMatrix, 16], [fiber, 4], [ends, 2], [cone.instanceMatrix, 32],
+    [headFiber, 8]]) {
     attribute.clearUpdateRanges();
     attribute.addUpdateRange(0, list.length * size);
     attribute.needsUpdate = true;

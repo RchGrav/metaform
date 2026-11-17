@@ -9,7 +9,8 @@ import {graphData, nodeIn, workShown, joinOf} from '/page/app/graph/data.js';
 import {ballOf} from '/page/app/figures/agents.js';
 import {endOf} from '/page/app/map3d/waves.js';
 import {G, grounded, wake3d, FIBERS} from '/page/app/map3d/graph3d.js';
-import {unbuilt} from '/page/app/map3d/ghosts.js';
+import {unbuilt, nodeObject} from '/page/app/map3d/ghosts.js';
+import {glassTheme} from '/page/app/map3d/light.js';
 import {hovered, setHovered} from '/page/app/map3d/pick3d.js';
 import {tags, dropLabel, relabel} from '/page/app/map3d/labels.js';
 import {phaseOf} from '/page/app/flow/fx3d.js';
@@ -184,7 +185,10 @@ const linkKey = link => `${end(link.source)}>${end(link.target)}>${link.k}>${lin
 /* The theme is the one choice of look: space draws the 3D map in outer space, ULTRA, and every other theme flat. */
 export const PLAIN = {last: 'black'};
 export function setTheme(name, keep = true) {
+  const glassBefore = glassTheme();
   document.documentElement.dataset.theme = name;
+  // a glass theme draws its elements in glass and every other solid, so a change between them makes the nodes again
+  if (G && glassTheme() !== glassBefore) G.nodeThreeObject(node => nodeObject(node));
   if (name !== 'space') PLAIN.last = name;
   if ($('#theme') && $('#theme').value !== name) $('#theme').value = name;
   ULTRA.setting(name === 'space' ? 'ultra' : 'clean');

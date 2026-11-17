@@ -988,9 +988,11 @@ function hashOf(text) {
  * fainter than the joins. Never over full brightness, so the bloom never takes it and the map stays clear. Its light
  * is added to what is behind it and writes no depth. The page draws every filament in one draw, `fibers3d`, whose
  * shader gives each its tint and strength, `vFiber`. */
-export const FILAMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+export const FILAMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber; varying vec2 vEnds;
+      varying float vAlong;
       #include <fog_pars_fragment>
-      void main() { vec3 tint = vFiber.rgb; float strength = vFiber.a;
+      void main() { if (vAlong < vEnds.x || vAlong > 1.0 - vEnds.y) discard;  // inside a node: not drawn
+        vec3 tint = vFiber.rgb; float strength = vFiber.a;
         float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 2.4), thread = pow(facing, 16.0);
         vec3 c = (tint * (0.16 + 0.74 * core) + vec3(0.95) * thread * 0.45) * strength;

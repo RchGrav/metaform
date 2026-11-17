@@ -15,12 +15,12 @@ from .. import home
 from ..errors import StoreError
 
 NodeKind = Literal['element', 'join', 'type']
-LayerKind = Literal['layer', 'intake', 'memory']
+LayerKind = Literal['layer', 'base', 'memory']  # the kinds layering.create takes; intake was renamed base
 Op = Literal['add', 'change', 'remove']  # what a row does, STORE-017
 Answer = Literal['A', 'B', 'C', 'plan']  # a challenge's state, STORE-040
 NODE_KINDS: tuple[NodeKind, ...] = ('element', 'join')
 PLACE_KINDS: tuple[NodeKind, ...] = (*NODE_KINDS, 'type')
-LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'intake', 'memory')
+LAYER_KINDS: tuple[LayerKind, ...] = ('layer', 'base', 'memory')
 OPS: tuple[Op, ...] = ('add', 'change', 'remove')
 ROLES = ('CQU', 'DE', 'SE', 'NE')  # the intake's classification of an element, MAP-017
 HELD_ROLES = ('DE', 'SE', 'NE')  # the role of an element a join holds, in

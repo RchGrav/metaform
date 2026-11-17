@@ -126,6 +126,10 @@ export const shapes = new Map();
 let SEGMENTS = 16;  // as the graph draws its own nodes; 32 halves the frame rate where there is no graphics card
 export function setSegments(value) { SEGMENTS = value; }  // a binding written from another part goes through its own
 export const isGlass = node => node.t === 'el';
+// The glass is for the two glass themes, Glass and Tinted Glass, which the person added for it (2026-11-17); every
+// other theme draws an element solid, in its shape. Glass reads the scene behind it each frame, the heaviest look.
+export const GLASS_THEMES = ['glass', 'tinted-glass'];
+export const glassTheme = () => GLASS_THEMES.includes(document.documentElement.dataset.theme);
 const ballShape = radius => shapes.get(radius)
   || shapes.set(radius, new THREE.SphereGeometry(radius, SEGMENTS, SEGMENTS)).get(radius);
 /* An element's shape tells its artifact type, the first segment of its address, before any text is read, P042: code a

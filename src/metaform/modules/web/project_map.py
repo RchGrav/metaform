@@ -76,7 +76,10 @@ def layers(project: str, base: str) -> list[Layer] | None:
         return None
 
     def layer(key: str, said: str) -> Layer:
-        return Layer(id=key, base_id=base, name=key, module='project', variable=said, kind='layer', mutable=True,
+        # the base map is of kind base, which the page draws in the intake's colour and never loads as an overlay; as
+        # kind layer it took the first knowledge colour, an amber the 3D map's shading turned brown (2026-11-17)
+        return Layer(id=key, base_id=base, name=key, module='project', variable=said,
+                     kind='base' if key == BASE else 'layer', mutable=True,
                      hideable=key != BASE, result_id=None, created='', ready='recorded', on=True)
 
     made = [layer(BASE, "The project's map: its elements and what each wants of another.")]

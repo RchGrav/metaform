@@ -9,7 +9,7 @@ import {css, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {layerColor} from '/page/app/header/layers.js';
 import {nodeById} from '/page/app/figures/agents.js';
-import {paceOf, lightOf, has, colorOf, ownColor, dim, dimmed, colored, isGlass, nodeShape, bead,
+import {paceOf, lightOf, has, colorOf, ownColor, dim, dimmed, colored, isGlass, glassTheme, nodeShape, bead,
   shine} from '/page/app/map3d/light.js';
 import {R} from '/page/app/map3d/waves.js';
 import {nodeSize} from '/page/app/map3d/graph3d.js';
@@ -35,19 +35,24 @@ function ghostly(material, opacity) {
   const back = material.userData.back;
   if (back) Object.assign(back, {transparent: true, opacity, depthWrite: opacity >= 1});
 }
-/* What a node is drawn as: a ghost while its part is not built, glass if it is an element, else the graph's own
- * sphere. A join's purpose node, which the graph draws itself, is made a ghost of its own here. */
-export function nodeObject(node, glass = true) {
-  if (unbuilt(node)) {
-    const plain = () => new THREE.Mesh(nodeShape(node, Math.cbrt(nodeSize(node)) * 3),
+/* What a node is drawn as: a ghost while its part is not built; an element in glass in a glass theme and solid in its
+ * shape in any other, `glassTheme`; else the graph's own sphere. A join's purpose node, which the graph draws itself,
+ * is made a ghost of its own here. */
+export function nodeObject(node, glass = glassTheme()) {
+  const plain = () => {
+    const object = new THREE.Mesh(nodeShape(node, Math.cbrt(nodeSize(node)) * 3),
       new THREE.MeshLambertMaterial({color: colorOf(node)}));
+    object.material.userData.own = true;
+    return object;
+  };
+  if (unbuilt(node)) {
     const object = ULTRA.body(node) || (isGlass(node) && glass ? bead(node) : plain());  // ULTRA: a body in outer space
     object.material.userData.own = true;
     ghostly(object.material, GHOST.opacity);
     object.userData.ghost = true;
     return object;
   }
-  return ULTRA.body(node) || (glass && isGlass(node) ? bead(node) : false);  // ULTRA
+  return ULTRA.body(node) || (isGlass(node) ? (glass ? bead(node) : plain()) : false);  // ULTRA
 }
 /* Each frame: a part built since it was drawn as a ghost comes up to solid. */
 const eased = share => share * share * (3 - 2 * share);

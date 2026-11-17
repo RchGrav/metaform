@@ -49,8 +49,10 @@ export const FIBERS = {version: 0};
  * in CSS pixels, set when the stage is measured, never each frame; every fiber material shares the one uniform. */
 export const EDGE = {least: 1.5, uniform: {value: 0}};
 // a fiber takes the haze of depth as the nodes do, `depth3d`, through three.js's own fog
-export const FIBER_VERTEX = `attribute vec4 fiber; uniform float edgeLeast;
-      varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+// `ends` is how far each end's node reaches along the fiber, as a share of its length from that end, and `vAlong` where
+// along it a point is: a fiber runs from centre to centre, and what falls inside a node is not drawn (2026-11-17).
+export const FIBER_VERTEX = `attribute vec4 fiber; attribute vec2 ends; uniform float edgeLeast;
+      varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber; varying vec2 vEnds; varying float vAlong;
       #include <fog_pars_vertex>
       void main() { vec4 axis = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, position.z, 1.0);
         vec3 side = mat3(modelViewMatrix) * (mat3(instanceMatrix) * vec3(position.xy, 0.0));
@@ -60,13 +62,16 @@ export const FIBER_VERTEX = `attribute vec4 fiber; uniform float edgeLeast;
         float least = edgeLeast * (projectionMatrix * axis).w / projectionMatrix[1][1] / 0.8660254;
         vec4 at = axis + vec4(side * max(1.0, least / max(radius, 1e-6)), 0.0);
         vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
-        vView = normalize(-at.xyz); vFiber = fiber; gl_Position = projectionMatrix * at;
+        vView = normalize(-at.xyz); vFiber = fiber; vEnds = ends; vAlong = position.z;
+        gl_Position = projectionMatrix * at;
         vec4 mvPosition = at;
         #include <fog_vertex>
       }`;
-export const FIBER_FRAGMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber;
+export const FIBER_FRAGMENT = `varying vec3 vNormal; varying vec3 vView; varying vec4 vFiber; varying vec2 vEnds;
+      varying float vAlong;
       #include <fog_pars_fragment>
-      void main() { vec3 tint = vFiber.rgb; float opacity = vFiber.a;
+      void main() { if (vAlong < vEnds.x || vAlong > 1.0 - vEnds.y) discard;  // inside a node: not drawn
+        vec3 tint = vFiber.rgb; float opacity = vFiber.a;
         float facing = abs(dot(normalize(vNormal), normalize(vView)));
         float core = pow(facing, 1.6), spark = pow(facing, 12.0);
         gl_FragColor = vec4(tint * min(1.0, 0.4 + 0.5 * core + 0.3 * spark), opacity * (0.25 + 0.75 * core));
