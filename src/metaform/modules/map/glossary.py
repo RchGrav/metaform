@@ -14,6 +14,9 @@ the person wrote it, then `@STATE_INIT`, one `{Term} := "definition"` line per t
 the map module's canonical prompt `glossary` in resources/prompts.xml, which ships with Metaform and is not edited at
 runtime. Its size is held to the setting glossary_bytes: the most-used terms go in, the rest are counted with the call
 that lists them all.
+
+A project held in the project store reads its terms from that map and keeps them as records of its glossary overlay,
+at the element each term belongs to: `project_glossary.py`.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from importlib import resources
 from typing import Any
 
+from metaform import project as project_store
 from metaform import prompt_files, settings
 from metaform.data import GraphPage, Store, reference
 from metaform.module import Context, Noun, Pane, Stop, Verb
@@ -62,6 +66,8 @@ class Term:
     number: int | None = None
     by: str | None = None
     uses: int = 0
+    record: str | None = None  # in the project store: the id of the glossary record that holds it, F02
+
 
     def row(self) -> dict[str, Any]:
         shown: dict[str, Any] = {'term': self.term, 'definition': self.definition, 'kind': self.kind}
@@ -71,6 +77,8 @@ class Term:
                 shown[name] = value
         if self.address and self.number:
             shown['item'] = reference(self.address, self.number)
+        if self.address and self.record:  # the project store numbers no item: the term is its record at its node
+            shown['node'], shown['record'] = self.address, self.record
         return shown
 
 
@@ -93,30 +101,33 @@ def derived(store: Store, graph: GraphPage | None = None) -> dict[str, Term]:
     graph = graph if graph is not None else store.graph(limit=0)
     efs: dict[str, list[str]] = {}
     ops: dict[str, list[str]] = {}
-    degree: dict[str, int] = {}
     for join in graph.joins:
         if join.receiver_address:
             ops.setdefault(join.receiver_address, []).append(join.purpose or '')
-            degree[join.receiver_address] = degree.get(join.receiver_address, 0) + 1
         for held in join.elements:
             if held.address:
                 efs.setdefault(held.address, []).append(join.ef or '')
-                degree[held.address] = degree.get(held.address, 0) + 1
+    return named(((one.element.address, one.element.name) for one in graph.elements), efs, ops)
+
+
+def named(elements: Iterable[tuple[str, str | None]], efs: dict[str, list[str]],
+          ops: dict[str, list[str]]) -> dict[str, Term]:
+    """The terms of named elements, each `(address, name)`: defined by the EF of what it provides and the OP of what it
+    receives, and used once for each of them. Read from the old store's joins and from the project store's wants."""
     found: dict[str, Term] = {}
-    for one in graph.elements:
-        element = one.element
-        name = _clean(element.name)
+    for address, name in elements:
+        name = _clean(name)
         if not name:
             continue
-        said = _definition(element.address, efs.get(element.address, ()), ops.get(element.address, ()))
+        said = _definition(address, efs.get(address, ()), ops.get(address, ()))
+        uses = len(efs.get(address, ())) + len(ops.get(address, ()))
         held = found.get(key_of(name))
         if held is None:
-            found[key_of(name)] = Term(name, said, 'element', [element.address],
-                                       uses=degree.get(element.address, 0))
+            found[key_of(name)] = Term(name, said, 'element', [address], uses=uses)
         else:
             held.definition = f'{held.definition} | {said}'
-            held.addresses.append(element.address)
-            held.uses += degree.get(element.address, 0)
+            held.addresses.append(address)
+            held.uses += uses
     return found
 
 
@@ -130,22 +141,28 @@ def terms(store: Store) -> list[Term]:
     the terms added; a removed one is left out. Use is counted from the map: the joins naming the element, and every
     time the term's words appear in a purpose, an EF or another term's definition."""
     graph = store.graph(limit=0)
-    found = derived(store, graph)
-    for row in _rows(store):
+    return merged(derived(store, graph), _rows(store),
+                  ' '.join(_clean(one) for join in graph.joins for one in (join.purpose, join.ef)))
+
+
+def merged(found: dict[str, Term], rows: Iterable[dict[str, Any]], said: str) -> list[Term]:
+    """The glossary from the elements' terms, `found`, and the rows added, edited or removed over them, most used
+    first; `said` is the map's own words, where each term's use is counted."""
+    for row in rows:
         key = str(row['key'])
         held = found.get(key)
         if row['state'] == REMOVED:
             found.pop(key, None)
             continue
         why, source, by = row['why'], row['source'], row['by']
-        address, number = row['address'] or None, row['number']
+        address, number, record = row['address'] or None, row['number'], row.get('record')
         if held is not None and row['state'] == EDITED:
             found[key] = replace(held, definition=_clean(row['definition']) or held.definition, kind=EDITED, why=why,
-                                 source=source, address=address, number=number, by=by)
+                                 source=source, address=address, number=number, by=by, record=record)
         else:
             found[key] = Term(str(row['term']), _clean(row['definition']), ADDED, [address] if address else [],
-                              why=why, source=source, address=address, number=number, by=by)
-    text = ' '.join(_clean(one) for join in graph.joins for one in (join.purpose, join.ef)).lower()
+                              why=why, source=source, address=address, number=number, by=by, record=record)
+    text = said.lower()
     texts = {key: one.definition.lower() for key, one in found.items()}
     for key, one in found.items():
         words = re.compile(r'(?<![\w])' + re.escape(key) + r'(?![\w])')
@@ -159,16 +176,14 @@ def _line(one: Term) -> str:
     return _prompt('glossary_term', term=one.term.replace('}', ')'), definition=said.replace('"', "'"))
 
 
-def render(ctx: Context, store: Store) -> str:
+def render(ctx: Context, project: str, listed: list[Term]) -> str:
     """The project's glossary as the canonical prompt `glossary` gives its form, within glossary_bytes."""
     peer = ctx.setting('glossary_register') == 'peer'
-    project = str(store.project_id)
     budget = int(ctx.setting('glossary_bytes'))
     fills = {'register': _prompt('register_standard') + '\n\n' if peer else '', 'project': project,
              'mode': _prompt('glossary_mode_peer' if peer else 'glossary_mode_none'),
              'standard': '\n  ' + _prompt('glossary_standard') if peer else '',
              'add': ctx.calls('metaform map term op=add')}
-    listed = terms(store)
     lines: list[str] = []
 
     def drawn(more: int) -> str:
@@ -203,22 +218,27 @@ def glossary(ctx: Context) -> Any:
     """The project's glossary: the block an agent reads at `metaform://<project>`, or with format=list each term with
     its definition, why, source and uses, a page at a time; with term=, that one term."""
     store = ctx.require_store()
+    name = project_store.stored_name(store.project_id)
+    held = project_store.holds(name)  # its terms are the project store's, kickoff 2026-11-17 Phase 3
+    from . import project_glossary  # it builds on this module's names
+    listed = project_glossary.terms(name) if held else terms(store)
     given = _clean(ctx.nouns.get('term'))
     if given:
-        found = next((one for one in terms(store) if key_of(one.term) == key_of(given)), None)
+        found = next((one for one in listed if key_of(one.term) == key_of(given)), None)
         if found is None:
             raise Stop(f'{given} is not a term here.', f'metaform map term op=add term="{given}" definition=... '
                                                        'why=... source=...')
         return found.row()
     if str(ctx.nouns.get('format') or 'block') != 'list':
-        return render(ctx, store)
-    listed = terms(store)
+        return render(ctx, str(store.project_id), listed)
     start = int(ctx.nouns.get('after') or 0)
     limit = int(ctx.nouns.get('limit') or LIST)
     page = listed[start:start + limit] if limit else listed[start:]
     result: dict[str, Any] = {'project': store.project_id, 'total': len(listed), 'results': [one.row() for one in page]}
     if limit and start + limit < len(listed):
         result['next'] = str(start + limit)
+    if held:  # terms the old store kept before the map moved are listed apart, labelled, never mixed in
+        result.update(project_glossary.left_behind(store))
     return result
 
 
@@ -234,6 +254,10 @@ def term(ctx: Context) -> Any:
     words = _clean(ctx.nouns['term'])
     key = key_of(words)
     node = _clean(ctx.nouns.get('node')) or None
+    name = project_store.stored_name(store.project_id)
+    if project_store.holds(name):  # its terms are records of the glossary overlay there
+        from . import project_glossary  # it builds on this module's names
+        return project_glossary.term(ctx, name, op, words, node)
     if node is not None and store.element(node) is None:
         from . import _missing  # pyright: ignore[reportPrivateUsage]  # shared within the map module
         raise _missing(store, node)
@@ -294,6 +318,7 @@ def term(ctx: Context) -> Any:
 def _now() -> str:
     from datetime import UTC, datetime
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
 
 
 def item_read(store: Store, address: str, number: int) -> dict[str, Any] | None:

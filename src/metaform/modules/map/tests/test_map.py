@@ -2703,6 +2703,73 @@ def test_the_glossary_follows_the_map_and_keeps_the_terms_added_with_their_why_a
     assert len(small.encode('utf-8')) <= cap and re.search(r'// \d+ more terms, by use: metaform map glossary', small)
 
 
+@pytest.fixture
+def in_store(run, tmp_path, home):
+    """`proj` with its map in the project store: a dish menu wanting a kitchen timer wanting an alarm. Its single-writer
+    service is stopped when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    assert command({'add': {'proj.code.alarm.audible': {
+        'technical_name': 'audible alarm', 'name': 'alarm', 'role': 'Supporting Element'}}}) == {'status': 'ok'}
+    assert command({'add': {'proj.code.timer.kitchen': {
+        'technical_name': 'kitchen timer', 'name': 'kitchen timer', 'role': 'Defining Element',
+        'wants': [{'element': 'proj.code.alarm.audible', 'why': 'get attention', 'how': 'plays a tone',
+                   'direction': 'receive'}]}}}) == {'status': 'ok'}
+    assert command({'add': {'proj.code.menu.dish': {
+        'technical_name': 'dish menu', 'name': 'dish menu', 'role': 'Coupled Element',
+        'wants': [{'element': 'proj.code.timer.kitchen', 'why': 'know when a dish is done',
+                   'how': 'counts down and rings', 'direction': 'receive'}]}}}) == {'status': 'ok'}
+    yield folder
+    service.stop(home)
+    owner.close_all()
+
+
+@pytest.mark.req('MAP-021')
+def test_the_glossary_of_a_project_in_the_project_store_reads_its_map_and_keeps_terms_in_its_glossary_overlay(
+        run, in_store):
+    """Decision t-legacy-keep: an element's name is a term defined by its wants; a term added, edited or removed is a
+    record of the glossary overlay at its element, each change naming the record it found; a term for the whole
+    project has no place there and is refused by name; the old store keeps none."""
+    from metaform.data import Store
+    from metaform.project import overlay_records
+
+    def records():
+        return {one['term']: one for one in overlay_records('proj', 'glossary') or []}
+    listed = {one['term']: one for one in j(run, 'glossary', 'format=list', cwd=in_store)['results']}
+    assert listed['kitchen timer']['definition'] == ('code.timer.kitchen — EF: counts down and rings. '
+                                                     'OP: get attention.')
+    whole = run('map', 'term', 'term=ding', 'definition=The tone at zero.', 'why=Cooks say ding.', 'source=the cook',
+                cwd=in_store, ok=False)
+    assert 'no place in the project store' in whole.stdout + whole.stderr and not records()
+    added = j(run, 'term', 'term=ding', 'definition=The tone at zero.', 'why=Cooks say ding.', 'source=the cook',
+              'node=code.alarm.audible', cwd=in_store)
+    ding = records()['ding']
+    assert ding['element'] == 'proj.code.alarm.audible' and ding['state'] == 'added'
+    assert (added['kind'], added['node'], added['record']) == ('added', 'code.alarm.audible', ding['record'])
+    assert '{ding} := "The tone at zero."' in run('map', 'glossary', cwd=in_store).stdout
+    j(run, 'term', 'op=edit', 'term=ding', 'why=Heard at the timer.', 'node=code.timer.kitchen', cwd=in_store)
+    moved = records()['ding']
+    assert moved['element'] == 'proj.code.timer.kitchen' and moved['definition'] == 'The tone at zero.'
+    j(run, 'term', 'op=edit', 'term=kitchen timer', 'definition=The countdown for one dish.',
+      'why=The project says so.', cwd=in_store)
+    timer = records()['kitchen timer']
+    assert (timer['element'], timer['state']) == ('proj.code.timer.kitchen', 'edited')
+    assert j(run, 'glossary', 'term=kitchen timer', cwd=in_store)['definition'] == 'The countdown for one dish.'
+    j(run, 'term', 'op=edit', 'term=kitchen timer', 'source=the menu', 'why=Named on the menu.', cwd=in_store)
+    again = records()['kitchen timer']
+    assert (again['record'], again['revision'], again['source']) == (timer['record'], timer['revision'] + 1,
+                                                                    'the menu')
+    j(run, 'term', 'op=remove', 'term=ding', 'why=Not the project\'s word.', cwd=in_store)
+    j(run, 'term', 'op=remove', 'term=kitchen timer', 'why=Not the project\'s word.', cwd=in_store)
+    assert 'ding' not in records() and records()['kitchen timer']['state'] == 'removed'
+    assert [one['term'] for one in j(run, 'glossary', 'format=list', cwd=in_store)['results']] == ['alarm', 'dish menu']
+    with Store('proj', module='map').tables(write=False) as tx:
+        assert not tx.rows('terms', limit=0).results
+
+
 @pytest.mark.req('MAP-021')
 def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
     """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; a hidden layer resolves

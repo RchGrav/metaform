@@ -2553,9 +2553,10 @@ _DECLARED = Module(
 # that map would answer from an empty or stale one as if it were the project's (an agent saw an empty map and filed a
 # ticket the page never showed, 2026-11-16). Such a verb refuses there, naming the project tool, as
 # docs/plans/old-store-removal.md step 1 sets out (kickoff 2026-11-17, Phase 3, audit F01). `work` answers from the
-# project store itself, `boards` names the board's boards, which have no counterpart there yet and the page reads, and
-# `guide` reads no map.
-ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards'})
+# project store itself, `boards` names the board's boards, which have no counterpart there yet and the page reads,
+# `guide` reads no map, and `glossary` and `term` read the map and write the glossary overlay there
+# (project_glossary.py, decision t-legacy-keep).
+ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards', 'glossary', 'term'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:
