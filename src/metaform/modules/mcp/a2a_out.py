@@ -19,6 +19,10 @@ peer's task does comes back to that Address, over the official `a2a-sdk` client.
   such a peer pushes nothing to this server; and again after each restart. Without a server,
   `mcp a2a_exchanges` reads the open ones again when it lists them. Receiving the peer's push notifications needs a
   webhook this server serves, and is not built.
+- For a project held in the project store (kickoff 2026-11-17, t-legacy-keep), the Address is an element of that map,
+  and what the peer says and asks is a record of its `questions` overlay at the Address, written through the map
+  module's `project.messages`, where the page's Messages pane reads it. The exchanges stay in the mcp module's tables,
+  which are not the map. Any other project keeps the old store's path.
 
 Specification: https://a2a-protocol.org/latest/specification/ (1.0); SDK: https://github.com/a2aproject/a2a-python.
 """
@@ -62,11 +66,12 @@ from google.protobuf.json_format import MessageToDict
 from starlette.applications import Starlette
 
 from metaform import events, home, prompt_files
+from metaform import project as project_store
 from metaform.data import Node, Store, StoreError
-from metaform.module import Context, Stop, chassis_version, first_line, request_scope
+from metaform.module import Context, Stop, chassis_version, first_line, provided, request_scope
 
 from . import a2a_records as records
-from .a2a import EXTENSION, SLOW, Changes
+from .a2a import EXTENSION, SLOW, Changes, held, mapped
 from .a2a_peers import Peer, peer
 
 log = logging.getLogger(__name__)
@@ -149,6 +154,35 @@ def _said(parts: Any) -> str:
                        and part.text.strip())
 
 
+def _messages(project: str) -> Any:
+    """The map module's questions and messages of a project held in the project store, `project.messages`: found before
+    anything is claimed, so a module turned off leaves what the peer said to be heard again, never lost."""
+    registered = home.project(project)
+    found = provided(Path(registered.path), 'project.messages') if registered is not None else []
+    if not found:
+        raise Stop(f"The map module, which keeps {project}'s questions and messages, is not enabled; what the peer said "
+                   'is kept until it is.', 'metaform enable map')
+    return found[0][1]
+
+
+def _tell(project: str, address: str, text: str, by: str, title: str, messages: Any = None) -> None:
+    """A message for the person at the Address, as the peer said it."""
+    name = held(project)
+    if name is None:
+        Store(project).tell(Node('element', address), text, by=by, title=title)
+    else:
+        (messages or _messages(project)).tell(name, address, text, by=by, title=title)
+
+
+def _ask(project: str, address: str, said: str, by: str, title: str, why: str, messages: Any) -> str:
+    """An open question at the Address, as the peer asked it; its id."""
+    name = held(project)
+    if name is None:
+        return Store(project).ask(Node('element', address), said, by=by, title=title, why=why).id
+    asked: Any = messages.ask(name, {'node': address, 'question': said, 'by': by, 'title': title, 'why': why}, [])
+    return str(asked['id'])
+
+
 def heard(project: str, exchange_id: str, status: TaskStatus | None = None, artifacts: tuple[Artifact, ...] = (),
           peer_task_id: str | None = None) -> records.Exchange | None:
     """What a peer told of an exchange's task, recorded where the work lives: the state on the exchange; each new
@@ -162,18 +196,20 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
     if state == 'input_required' and said:
         asked = status.message.message_id if status is not None and status.message.message_id else ''
         claims.append(f'question:{asked or format(zlib.crc32(said.encode()), "08x")}')
+    messages = _messages(project) if claims and held(project) else None
     now, _, taken = records.moved(project, exchange_id, state=state, said=said, peer_task_id=peer_task_id,
                                   claims=tuple(claims))
     if now is None or not taken:
         return now
-    store, node, by = Store(project), Node('element', now.address), f'a2a {now.peer}'
+    by = f'a2a {now.peer}'
     for one in artifacts:
         if f'artifact:{one.artifact_id}' in taken:
             text = _said(one.parts)
-            store.tell(node, text, by=by, title=one.name or _title(text))
+            _tell(project, now.address, text, by, one.name or _title(text), messages)
     if any(key.startswith('question:') for key in taken) and said:
-        question = store.ask(node, said, by=by, title=_title(said), why=prompt('a2a_peer_question_why', peer=now.peer))
-        if records.asking(project, exchange_id, now.asked, question.id):  # its answer goes back, `answered`
+        question = _ask(project, now.address, said, by, _title(said), prompt('a2a_peer_question_why', peer=now.peer),
+                        messages)
+        if records.asking(project, exchange_id, now.asked, question):  # its answer goes back, `answered`
             now = records.exchange(project, exchange_id)
     return now
 
@@ -181,6 +217,11 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
 def _answer(project: str, found: records.Exchange) -> tuple[bool, str | None]:
     """Whether the exchange's open question is closed, and the answer it was closed with: read at its Address, else
     wherever it was moved to. A question no longer kept waits on nothing."""
+    name = held(project)
+    if name is not None:  # a record of the questions overlay, wherever it is now
+        one = next((one for one in project_store.overlay_records(name, 'questions') or []
+                    if one.get('id') == found.asked), None)
+        return (True, None) if one is None else (bool(one.get('closed')), str(one.get('answer') or '').strip() or None)
     store = Store(project)
     for node in (Node('element', found.address), None):
         for one in store.messages(node, kind='question', limit=0).results:
@@ -215,7 +256,7 @@ def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange |
 
     async def go(client: Client) -> list[StreamResponse]:
         return [event async for event in client.send_message(request)]
-    node, by = Node('element', found.address), f'a2a {found.peer}'
+    by = f'a2a {found.peer}'
     try:
         told = cast(list[StreamResponse], anyio.run(calling, project, to, found.sender, go))
     except Stop:  # not reached: the answer waits to be sent again
@@ -225,7 +266,7 @@ def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange |
         records.asking(project, exchange_id, asked, None)
         refused = prompt('a2a_answer_refused', peer=found.peer, error=str(error))
         if refused:
-            Store(project).tell(node, refused, by=by, title=_title(refused))
+            _tell(project, found.address, refused, by, _title(refused))
         now, _, _ = records.moved(project, exchange_id, said=str(error))
         return now
     records.asking(project, exchange_id, asked, None)
@@ -234,7 +275,7 @@ def answered(project: str, exchange_id: str, folder: Path) -> records.Exchange |
         if event.WhichOneof('payload') == 'message':  # the peer answered at once; its task goes on
             said = _said(event.message.parts)
             if said:
-                Store(project).tell(node, said, by=by, title=_title(said))
+                _tell(project, found.address, said, by, _title(said))
         else:
             now = heard_event(project, exchange_id, event)
     return now
@@ -271,11 +312,11 @@ def _shown(found: records.Exchange) -> dict[str, Any]:
 def send(ctx: Context) -> Any:
     """Send a peer one message about an Address and keep the exchange, MCP-041: the Address is the `contextId`, and
     the sending agent instance is named in the metadata, MCP-042. Returns the exchange id and the peer's task id."""
-    store = ctx.require_store()
+    ctx.require_store()
     project = str(ctx.project)
     to = peer(ctx.folder, str(ctx.nouns['peer']))
     address, text = str(ctx.nouns['address']).strip(), str(ctx.nouns['text']).strip()
-    if store.element(address) is None:
+    if not mapped(project, address):
         raise Stop(f'{address} is no Address in this project\'s map; what the peer returns is kept at the Address.',
                    'metaform map where <address>')
     if not text:
@@ -305,7 +346,7 @@ def send(ctx: Context) -> Any:
         if event.WhichOneof('payload') == 'message':  # the peer answered at once, with no task to follow
             said = _said(event.message.parts)
             if said:
-                Store(project).tell(Node('element', address), said, by=f'a2a {to.name}', title=_title(said))
+                _tell(project, address, said, f'a2a {to.name}', _title(said))
             now, _, _ = records.moved(project, made.exchange_id, state='completed', said=said)
         else:
             now = heard_event(project, made.exchange_id, event)

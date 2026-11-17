@@ -41,7 +41,7 @@ Verbs are synchronous. The CLI runs the declared dispatch coroutine through `met
 
 ## Layers
 
-The mutable, hideable `fork` layer records the modules whose tickets the harness owns. Work uses the common DAO and map module's retained work operations. There are no private persistence files. Check reports and Git worktrees are repository artifacts, under `.metaform/`, ignored by Git.
+The mutable, hideable `fork` layer records the modules whose tickets the harness owns. For a project held in the project store (kickoff 2026-11-17, t-legacy-keep), which keeps no layer of a module's own elements, each ticket is a record of its `tickets` overlay at the element `code.module.<name>`, or the nearest element above it the map holds; with none on that path the ticket is refused by name. The verdict and the upkeep state are read from that record. Work uses the common DAO and map module's retained work operations. There are no private persistence files. Check reports and Git worktrees are repository artifacts, under `.metaform/`, ignored by Git.
 
 ## Lifecycle and cleanup
 

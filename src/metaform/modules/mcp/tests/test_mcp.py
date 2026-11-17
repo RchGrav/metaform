@@ -645,6 +645,81 @@ def test_an_a2a_message_opens_one_numbered_ticket_at_its_address_and_the_task_fo
 
 
 @pytest.mark.req('MCP-002')
+def test_a2a_on_a_project_in_the_project_store_opens_and_follows_its_tickets_overlay(run, home, in_project_store):
+    """Kickoff 2026-11-17, t-legacy-keep: for a project held in the project store, an Address is an element of that
+    map, the ticket is a record of its tickets overlay, and the task follows that record to done; the old store gets
+    no ticket, and a change there is a change a follower hears."""
+    from metaform import project
+    from metaform.modules.mcp import a2a as served
+    mapped = in_project_store
+    message = {'messageId': 'm-1', 'role': 'ROLE_USER', 'contextId': 'code.timer.kitchen',
+               'parts': [{'text': 'Make the timer louder\nThe cook misses it over the fan.'}]}
+
+    async def calls(client, token):
+        headers = {'A2A-Version': '1.0', 'Authorization': f'Bearer {token}', 'User-Agent': 'peer/1'}
+        first = (await client.post('/a2a', json=rpc('SendMessage', {'message': message}), headers=headers)).json()
+        old_only = (await client.post('/a2a', json=rpc('SendMessage', {
+            'message': {**message, 'messageId': 'm-2', 'contextId': 'code.alarm.audible'}}), headers=headers)).json()
+        asked = (await client.post('/a2a', json=rpc('SendMessage', {
+            'message': {**message, 'messageId': 'm-3', 'contextId': '',
+                        'parts': [{'text': 'The kitchen timer rings too quietly'}]}}), headers=headers)).json()
+        task_id = first['result']['task']['id']
+        run('map', 'work', 'op=take', f'id={task_id}', 'by=claude', cwd=mapped)
+        working = (await client.post('/a2a', json=rpc('GetTask', {'id': task_id}), headers=headers)).json()
+        run('map', 'work', 'op=done', f'id={task_id}', 'resolution=Louder now', 'why=The cook hears it', cwd=mapped)
+        done = (await client.get(f'/a2a/rest/tasks/{task_id}', headers=headers)).json()
+        listed = (await client.post('/a2a', json=rpc('ListTasks', {}), headers=headers)).json()
+        return first, old_only, asked, working, done, listed
+    first, old_only, asked, working, done, listed = a2a(mapped, calls)
+    task = first['result']['task']
+    assert task['contextId'] == 'code.timer.kitchen' and task['status']['state'] == 'TASK_STATE_SUBMITTED'
+    detail = task['metadata']['https://metaform.ing/a2a/address-context/v1']
+    assert detail['item'] == task['id'] and detail['title'] == 'Make the timer louder'  # no item numbers there
+    record = next(one for one in project.overlay_records('proj', 'tickets') or [] if one['id'] == task['id'])
+    assert record['element'] == 'proj.code.timer.kitchen' and 'peer/1' in str(record['note'])
+    assert not Store('proj').work(limit=0).results  # the old store gets no ticket
+    assert old_only['error']['code'] == -32602  # an Address only the old store holds is no Address of this map
+    assert asked['result']['task']['status']['state'] == 'TASK_STATE_INPUT_REQUIRED'
+    offered = asked['result']['task']['metadata']['https://metaform.ing/a2a/address-context/v1']['candidates']
+    assert offered[0] == 'code.timer.kitchen'  # offered from the project store's map
+    assert working['result']['status']['state'] == 'TASK_STATE_WORKING'
+    assert done['status']['state'] == 'TASK_STATE_COMPLETED'
+    assert done['artifacts'][0]['parts'][0]['text'] == 'Louder now'
+    assert done['artifacts'][0]['metadata'] == {'why': 'The cook hears it'}
+    assert {one['id'] for one in listed['result']['tasks']} >= {task['id']}
+    assert served.concerns({'project': 'proj', 'tables': ['project.map'], 'kinds': ['map']}, 'proj', task['id'])
+    assert not served.concerns({'project': 'proj', 'tables': ['project.memory'], 'kinds': ['memory']}, 'proj',
+                               task['id'])
+
+
+@pytest.mark.req('MCP-041')
+def test_what_a_peer_says_on_a_project_in_the_project_store_is_its_questions_overlay(run, home, in_project_store):
+    """An artifact is a message and an input-required status an open question, records of the questions overlay at the
+    exchange's Address; the answer given there is the one sent back. No peer is reached."""
+    from a2a.types import Artifact, Message, Part, Role, TaskState, TaskStatus
+
+    from metaform import project
+    from metaform.modules.mcp import a2a_out
+    from metaform.modules.mcp import a2a_records as records
+    mapped = in_project_store
+    made = records.send('proj', records.Exchange('x-1', 'peer', 'code.timer.kitchen', 'Check the bell'))
+    status = TaskStatus(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=Message(
+        message_id='s-1', role=Role.ROLE_AGENT, parts=[Part(text='Which bell?')]))
+    artifact = Artifact(artifact_id='a-1', name='report', parts=[Part(text='The bell is fine.')])
+    now = a2a_out.heard('proj', made.exchange_id, status, (artifact,), 'peer-task')
+    again = a2a_out.heard('proj', made.exchange_id, status, (artifact,), 'peer-task')
+    kept = project.overlay_records('proj', 'questions') or []
+    assert sorted((one['kind'], one['text'], one['by']) for one in kept) == [
+        ('message', 'The bell is fine.', 'a2a peer'), ('question', 'Which bell?', 'a2a peer')]  # each once
+    assert {one['element'] for one in kept} == {'proj.code.timer.kitchen'}
+    assert now is not None and again is not None and now.asked == next(one['id'] for one in kept
+                                                                      if one['kind'] == 'question')
+    assert a2a_out._answer('proj', now) == (False, None)
+    run('map', 'reply', f'id={now.asked}', 'answer=The kitchen one', cwd=mapped)
+    assert a2a_out._answer('proj', now) == (True, 'The kitchen one')
+
+
+@pytest.mark.req('MCP-002')
 def test_a2a_push_webhooks_are_only_those_the_person_allows(run, home, mapped):
     from metaform.modules.mcp.a2a import allowed
     run('set', '--mcp-a2a-webhooks', 'https://agent.example/hooks/', cwd=mapped)

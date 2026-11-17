@@ -308,6 +308,76 @@ def test_upkeep_records_newer_entries_once_and_dispatches_a_pr_task(fork_context
     assert len(fork_context.require_store().work(open=True, limit=0).results) == 1
 
 
+@pytest.fixture
+def in_project_store(fork_context, home):
+    """proj with its map in the project store: code and code.module.good are elements there, code.module a bare step.
+    Its tickets are the tickets overlay's records (kickoff 2026-11-17, t-legacy-keep); the service stops at the end."""
+    from metaform import project
+    from metaform.project import owner, service
+    for path, role in (('proj.code', 'Defining Element'), ('proj.code.module.good', 'Supporting Element')):
+        assert project.run({'add': {path: {'technical_name': path.rsplit('.', 1)[1], 'name': path.rsplit('.', 1)[1],
+                                           'role': role}}}) == {'status': 'ok'}
+    yield fork_context
+    service.stop(home)
+    owner.close_all()
+
+
+def stored_tickets():
+    from metaform import project
+    return {one['id']: one for one in project.overlay_records('proj', 'tickets') or []}
+
+
+def test_muster_on_a_project_in_the_project_store_is_a_ticket_there_and_its_verdict_is_read_from_it(
+        in_project_store, run):
+    from metaform.modules.fork import review
+    ctx = in_project_store
+    record = review.ticket(ctx, ctx.folder / 'good', 'Review the module.', 'CI muster of good, source abc.')
+    one = stored_tickets()[record['id']]
+    assert one['element'] == 'proj.code.module.good' and one['task'] == 'Review the module.'
+    assert not ctx.require_store().work(limit=0).results  # the old store gets no ticket, and no fork layer
+    run('map', 'work', 'op=done', f'id={one["id"]}', 'resolution={"passed": true, "reason": "Tests cover it."}',
+        'why=Reviewed against the standard', cwd=ctx.folder)
+    assert review.verdict(ctx, str(one['id'])) == (True, 'Tests cover it.')
+
+
+def test_upkeep_on_a_project_in_the_project_store_files_once_at_the_nearest_element_held(
+        in_project_store, run, monkeypatch):
+    from metaform.module import call
+    from metaform.modules.fork import repository, review, upkeep
+    ctx = in_project_store
+    candidate(ctx.folder, 'old', '0.2.0')
+    monkeypatch.setattr(repository, 'template_changelog', lambda: '## 0.3.0\n\n- New public service.\n')
+    monkeypatch.setattr(repository, 'update_worktree', lambda root, work_id: root)
+    started = []
+
+    async def dispatch(ctx, work_id, agent):
+        started.append(work_id)
+        assert 'New public service.' in str(stored_tickets()[work_id]['task'])
+        run('map', 'work', 'op=done', f'id={work_id}', 'resolution=https://github.example.invalid/module/pull/1',
+            'why=The pull request is open', cwd=ctx.folder)
+    monkeypatch.setattr(review, 'dispatch', dispatch)
+    first = call(upkeep, ctx)
+    second = call(upkeep, ctx)
+    assert first['tickets'] == second['tickets'] and len(started) == 1  # a completed upkeep starts no other
+    assert stored_tickets()[first['tickets'][0]]['element'] == 'proj.code'  # the nearest element, not the bare step
+
+
+def test_a_module_ticket_with_no_element_on_its_path_in_the_project_store_is_refused_by_name(fork_context, home):
+    from metaform import project
+    from metaform.module import Stop
+    from metaform.modules.fork import review
+    from metaform.project import owner, service
+    assert project.run({'add': {'proj.upstream.harness': {'technical_name': 'harness', 'name': 'harness',
+                                                          'role': 'Defining Element'}}}) == {'status': 'ok'}
+    try:
+        with pytest.raises(Stop, match='keeps no layer'):
+            review.ticket(fork_context, fork_context.folder / 'old', 'Update it.', 'Template upkeep of old.')
+        assert not stored_tickets()
+    finally:
+        service.stop(home)
+        owner.close_all()
+
+
 @pytest.mark.req('BASE-047')
 @pytest.mark.parametrize('transition', ['newer', 'handed', 'first', 'same', 'downgrade', 'blocked', 'failed'])
 def test_install_transition_runs_existing_upkeep_only_after_a_newer_success(

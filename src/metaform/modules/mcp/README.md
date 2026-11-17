@@ -170,6 +170,14 @@ same port, built on the official `a2a-sdk`, `a2a.py`. Other agents send Metaform
 The extended card, `GetExtendedAgentCard`, lists one interface per registered project, its id as the tenant. The
 wording other agents read, the card, the status messages and the errors, is in `resources/prompts.xml` under `a2a_`.
 
+For a project held in the project store (kickoff 2026-11-17, t-legacy-keep), its map and tickets are there: an Address
+is an element of that map with its role, a message opens a record of its `tickets` overlay through the same `map work
+op=add`, and a task reads that record (`StoreTicket`), wakes on the store's `project.map` commits, and offers the
+elements of that map as candidates. The overlay keeps no times and no item numbers: a task's time is when A2A opened
+it, and its item is the ticket's id. Outbound, what a peer says and asks is a record of the project's `questions`
+overlay, written through the map module's `project.messages`. A2A's own records and the exchanges stay in this
+module's tables, which are not the map. Any other project keeps the old store's path.
+
 ### A2A outbound
 
 Agents here send work to other A2A agents, `a2a_out.py`, MCP-040 to MCP-043, through the official `a2a-sdk` client:

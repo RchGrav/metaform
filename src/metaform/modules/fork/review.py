@@ -1,9 +1,17 @@
-"""Tickets drive CI review and template upkeep through dispatch's declared verbs."""
+"""Tickets drive CI review and template upkeep through dispatch's declared verbs.
+
+For a project held in the project store (kickoff 2026-11-17, t-legacy-keep), each ticket is a record of its `tickets`
+overlay, the one the board reads, at the module's element `code.module.<name>`, or the nearest element above it that the
+map holds: the project store keeps no layer of a module's own elements, as the old store's `fork` layer was. The verdict
+and the upkeep's state are read from that record, the resolution from the paragraph `map work done` writes in its note.
+Any other project, a CI run's fresh home among them, keeps the old store's path.
+"""
 from __future__ import annotations
 
 import inspect
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -11,11 +19,12 @@ import tempfile
 import zipfile
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from metaform import home, prompt_files, settings
+from metaform import project as project_store
 from metaform.data import Node, WorkRecord
-from metaform.module import Context, Stop, call, context, surface
+from metaform.module import Context, Stop, call, context, first_line, surface
 
 from . import checks, repository
 
@@ -45,9 +54,58 @@ async def dispatch(ctx: Context, work_id: str, agent: str) -> Any:
     return await result if inspect.isawaitable(result) else result
 
 
-def ticket(ctx: Context, module: Path, task: str, note: str, *, reuse: bool = False) -> WorkRecord:
-    store = ctx.require_store()
+def held(ctx: Context) -> str | None:
+    """The project's name in the project store when its map and tickets are kept there, else None."""
+    name = project_store.stored_name(ctx.require_store().project_id)
+    return name if project_store.holds(name) else None
+
+
+def _tickets(name: str) -> list[dict[str, Any]]:
+    return [dict(one) for one in project_store.overlay_records(name, 'tickets') or []]
+
+
+def _stored(name: str, address: str, task: str, note: str, reuse: bool) -> dict[str, Any]:
+    """A ticket of the project store at the module's element, or the nearest element above it the map holds; with
+    `reuse`, the one already there whose note begins with `note`, as `map work done` adds its paragraph after it."""
+    steps = address.split('.')
+    paths = [f'{name}.{".".join(steps[:size])}' for size in range(len(steps), 0, -1)]
+    # an element the intake placed, with its role; a bare step above one holds no tickets
+    at = next((path for path in paths if cast(dict[str, Any], project_store.run({path: {}}).get(path) or {}).get('role')),
+              None)
+    if at is None:
+        raise Stop(f"{name}'s map, in the project store, holds neither {address} nor an element above it, and the project "
+                   "store keeps no layer of a module's own elements, as the old store's fork layer was; the ticket has "
+                   f'nowhere to be. Record {address.split(".")[0]} in the map with the project tool first.',
+                   f'metaform help fork {"upkeep" if reuse else "wheel"}')
+    if reuse:
+        current = next((one for one in _tickets(name) if one['element'] == at
+                        and str(one.get('note') or '').split('\n\n')[0] == note), None)
+        if current is not None:
+            return current
+    ident = 't-' + secrets.token_hex(4)
+    answer = project_store.run({'add': {at: {'tickets': [{'id': ident, 'title': first_line(note) or note[:120],
+                                                          'task': task, 'note': note}]}}})
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message') or 'The ticket was not written.'),
+                   str(answer.get('remediation') or 'metaform help fork'))
+    return next(one for one in _tickets(name) if one.get('id') == ident)
+
+
+def _resolution(note: str) -> str:
+    """The resolution `map work done` wrote as its own paragraph of a store ticket's note, without its why."""
+    at = note.rfind('\n\nResolution: ')
+    said = note[at + 2:] if at >= 0 else note if note.startswith('Resolution: ') else ''
+    resolution, found, _ = said.removeprefix('Resolution: ').rpartition(' Why: ')
+    return (resolution if found else said.removeprefix('Resolution: ')).strip()
+
+
+def ticket(ctx: Context, module: Path, task: str, note: str, *, reuse: bool = False) -> WorkRecord | dict[str, Any]:
+    """The module's ticket: a work record in the old store, or a record of the project store's tickets overlay."""
     address = f'code.module.{module.name}'
+    name = held(ctx)
+    if name is not None:
+        return _stored(name, address, task, note, reuse)
+    store = ctx.require_store()
     with store.atomic():
         if not any(layer.name == 'fork' for layer in store.layers(limit=0).results):
             store.layer('fork', 'fork', 'User modules and their upkeep.', mutable=True, hideable=True)
@@ -60,13 +118,23 @@ def ticket(ctx: Context, module: Path, task: str, note: str, *, reuse: bool = Fa
         return store.add_work(Node('element', address), None, note=note, task=task)
 
 
+def _ident(record: WorkRecord | dict[str, Any]) -> str:
+    return str(record['id']) if isinstance(record, dict) else record.id
+
+
 def verdict(ctx: Context, work_id: str) -> tuple[bool, str]:
-    record = ctx.require_store().ticket(work_id).work
-    if not record.done:
+    name = held(ctx)
+    if name is not None:
+        one = next((one for one in _tickets(name) if one.get('id') == work_id), dict[str, Any]())
+        done, resolution = bool(one.get('done')), _resolution(str(one.get('note') or ''))
+    else:
+        record = ctx.require_store().ticket(work_id).work
+        done, resolution = bool(record.done), record.resolution
+    if not done:
         raise Stop(f'Muster did not complete work {work_id}; no wheel was built.',
                    f'metaform map work id={work_id}')
     try:
-        data = json.loads(record.resolution or '')
+        data = json.loads(resolution or '')
         if type(data['passed']) is not bool or not isinstance(data['reason'], str) or not data['reason'].strip():
             raise ValueError('the verdict needs a boolean passed and a reason')
         return data['passed'], data['reason']
@@ -124,9 +192,10 @@ def wheel(ctx: Context) -> dict[str, Any]:
                                          standard=repository.resource('quality.md'),
                                          checks=failures.get(item.name, 'All six matrix jobs passed.')),
                         f'CI muster of {item.name}, source {snapshots[item.name]}.')
+        work_id = _ident(record)
         ctx.publish('map.changed', {'project': ctx.project})
-        call(dispatch, ctx, record.id, agent_of(ctx))
-        passed, reason = verdict(ctx, record.id)
+        call(dispatch, ctx, work_id, agent_of(ctx))
+        passed, reason = verdict(ctx, work_id)
         reason = failures.get(item.name, reason)
         if passed and item.name not in failures:
             approved.append(item)
@@ -176,15 +245,25 @@ def upkeep(ctx: Context) -> dict[str, Any]:
         record = ticket(ctx, item, prompt('upkeep', module=str(item), current=current, latest=latest,
                                          changelog='\n\n'.join(newer)),
                         f'Template upkeep of {item.name} from {current} to {latest}.', reuse=True)
-        records.append(record.id)
+        work_id = _ident(record)
+        records.append(work_id)
         ctx.publish('map.changed', {'project': ctx.project})
         # A caller retries an interrupted ticket but never starts another session on a taken one.
-        if not record.done and not record.taken:
-            worktree = repository.update_worktree(ctx.folder, record.id)
-            ctx.require_store().edit_work(record.id, {'task': prompt(
-                'upkeep', module=str(worktree / item.name), current=current, latest=latest,
-                changelog='\n\n'.join(newer))})
-            call(dispatch, ctx, record.id, agent_of(ctx))
+        waiting = (not record.get('done') and not record.get('taken_by') if isinstance(record, dict)
+                   else not record.done and not record.taken)
+        if waiting:
+            worktree = repository.update_worktree(ctx.folder, work_id)
+            task = prompt('upkeep', module=str(worktree / item.name), current=current, latest=latest,
+                          changelog='\n\n'.join(newer))
+            if isinstance(record, dict):  # named by the record it found (F02), so it never lands on another ticket
+                answer = project_store.run({'update': {str(record['element']): {'tickets': [
+                    {'position': record['position'], 'record': record['record'], 'task': task}]}}})
+                if answer.get('status') == 'error':
+                    raise Stop(str(answer.get('message') or 'The ticket was not changed.'),
+                               str(answer.get('remediation') or 'metaform help fork upkeep'))
+            else:
+                ctx.require_store().edit_work(work_id, {'task': task})
+            call(dispatch, ctx, work_id, agent_of(ctx))
     return {'tickets': records, 'template_version': latest}
 
 

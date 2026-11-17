@@ -2420,7 +2420,10 @@ _DECLARED = Module(
     item_kinds=('work', 'question', 'message', 'term'),
     provides=(Provides('base.holds', base_holds), Provides('ticket.runtime', TICKET_RUNTIME),
               Provides('work.held', held_work_project), Provides('work.hold_reason', validate_hold_reason),
-              Provides('agent.tool.instructions', tool_instructions)),
+              Provides('agent.tool.instructions', tool_instructions),
+              # a project in the project store's questions and messages, for a module that writes them for the person,
+              # such as A2A's: `tell`, `ask` and `listed` of project_messages.py (kickoff 2026-11-17, t-legacy-keep)
+              Provides('project.messages', project_messages)),
     resources=(Resource('metaform://map/construction', 'Map construction guidance',
                         'Read before map construction: operation-specific Canonical Intake grammar and layer boundaries.',
                         'guide'),),

@@ -20,6 +20,11 @@ protocol onto what already exists:
   announced, `map.changed` from this process or any other of the home, BASE-053, with a slow read in between for
   what announces nothing; a stream closes when its task ends or asks the client for input, as the SDK's own does.
 - Push notifications go only to webhooks the person allows in `mcp_a2a_webhooks`, through the SDK's own sender.
+- For a project held in the project store (`metaform.project`; kickoff 2026-11-17, t-legacy-keep), its map and tickets
+  are there: an Address is an element of that map, a ticket opens in its `tickets` overlay through the same `map work
+  op=add`, and a task reads that record, `StoreTicket`. The overlay keeps no times and no item numbers, so a task's
+  time is when A2A opened it, from A2A's own record, and its item is the ticket's id. A2A's own records stay in the mcp
+  module's tables, which are not the map. Any other project keeps the old store's path.
 
 The public Agent Card at `/.well-known/agent-card.json` names no project: its one skill is the ticket. Every other
 request needs the bearer token in `<home>/run/a2a-token`, separate from every other token, and is checked for a
@@ -121,6 +126,7 @@ from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from metaform import events, home, prompt_files, settings
+from metaform import project as project_store
 from metaform.data import KINDS, Store, StoreError, WorkRecord, status
 from metaform.module import (
     Stop,
@@ -362,7 +368,8 @@ class Waiter:
 HUBS: weakref.WeakSet[Changes] = weakref.WeakSet()
 # What a ticket's task is read from, A2A's `read`: its ticket, steps and questions, dispatch's sessions and signals,
 # the A2A records, and the protocol settings.
-TASK_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work', 'dispatch'})
+TASK_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work', 'dispatch',
+                         'project.map'})  # the project store's commit of a map change, its overlays' records among them
 TASK_PREFIXES = ('dispatch.', 'mcp.a2a_')
 
 
@@ -432,7 +439,80 @@ def _verb(folder: Path, project: str, module_id: str, name: str, arguments: dict
     return call(verb.run, ctx)
 
 
-def _work(project: str, work_id: str) -> WorkRecord | None:
+def held(project: str) -> str | None:
+    """The project's name in the project store when its map and tickets are kept there, else None: the old store's
+    path is taken."""
+    name = project_store.stored_name(project)
+    return name if project_store.holds(name) else None
+
+
+def mapped(project: str, address: str) -> bool:
+    """Whether the project's map holds the Address: the project store's for a project held there, an element the
+    intake placed there with its role, since a bare step above one holds no tickets; else the old store's."""
+    name = held(project)
+    if name is None:
+        return Store(project).element(address) is not None
+    path = f'{name}.{address}'
+    return bool(cast(dict[str, Any], project_store.run({path: {}}).get(path) or {}).get('role'))
+
+
+@dataclass(frozen=True)
+class StoreTicket(WorkRecord):
+    """A record of the project store's tickets overlay read as a work record, so a task reads alike from either store.
+    The overlay keeps its title, and the resolution and why that `map work done` writes as the last paragraph of its
+    note; it keeps no time of its take, so it is doing once someone took it."""
+    title: str = ''
+    why: str = ''
+
+    @property
+    def column(self) -> str:
+        return 'done' if self.done else 'doing' if self.taken_by else 'backlog' if self.held else 'todo'
+
+
+def _resolved(note: str) -> tuple[str | None, str | None]:
+    """The resolution and why `map work done` wrote as their own paragraph of a store ticket's note."""
+    at = max(note.rfind('\n\nResolution: '), note.rfind('\n\nWhy: '))
+    said = note[at + 2:] if at >= 0 else note if note.startswith(('Resolution: ', 'Why: ')) else ''
+    if said.startswith('Why: '):
+        return None, said.removeprefix('Why: ').strip() or None
+    resolution, found, why = said.removeprefix('Resolution: ').rpartition(' Why: ')
+    if not found:
+        resolution, why = said.removeprefix('Resolution: '), ''
+    return resolution.strip() or None, why.strip() or None
+
+
+def _stored(name: str, one: dict[str, Any], created: str) -> StoreTicket:
+    """One record of the tickets overlay as a work record; `created` is when A2A opened it, from its own record."""
+    address = str(one['element'])[len(name) + 1:]
+    note = str(one.get('note') or '')
+    resolution, why = _resolved(note) if one.get('done') else (None, None)
+    steps: Any = one.get('steps')
+    return StoreTicket(id=str(one['id']), node_kind='element', node_id=address, address=address, receiver_address=None,
+                       provider_address=None, condition='', note=note or None, task=cast('str | None', one.get('task')),
+                       held=bool(one.get('held')), reviewed=False, created=created,
+                       done=cast('str | None', one.get('done')) or None, resolution=resolution,
+                       steps=int(steps) if isinstance(steps, (int, float)) else None,
+                       steps_done=int(cast(Any, one.get('steps_done')) or 0),
+                       taken_by=cast('str | None', one.get('taken_by')) or None, kind=str(one.get('kind') or ''),
+                       outcome=cast('str | None', one.get('outcome')) or None, title=str(one.get('title') or ''),
+                       why=why or '')
+
+
+def _works(project: str, wanted: dict[str, str]) -> dict[str, WorkRecord]:
+    """The tickets named, by id, in one read; `wanted` gives each id when A2A opened it."""
+    if not wanted:
+        return {}
+    name = held(project)
+    if name is None:
+        return {work.id: work for work in Store(project).work(limit=0, joins=True).results if work.id in wanted}
+    return {str(one['id']): _stored(name, cast(dict[str, Any], one), wanted[str(one['id'])])
+            for one in project_store.overlay_records(name, 'tickets') or [] if str(one.get('id')) in wanted}
+
+
+def _work(project: str, work_id: str, created: str = '') -> WorkRecord | None:
+    name = held(project)
+    if name is not None:
+        return _works(project, {work_id: created}).get(work_id)
     try:
         return cast(WorkRecord, Store(project).ticket(work_id).work)
     except (Stop, AttributeError):  # no such ticket, or the map module, which keeps tickets, is off
@@ -517,7 +597,7 @@ def ticket_state(work: WorkRecord, kept: dict[str, Any]) -> Said:
     for signal, why in WAITS.items():
         if signal in raised:
             return 'input_required', why, 'a2a_login' if why == 'login' else 'a2a_person'
-    if work.taken:
+    if work.column == 'doing':  # taken; a store ticket keeps who took it, not when
         sessions = cast(list[Any], dispatch.get('sessions') or [])
         last = _dict(sessions[-1]) if sessions else {}
         if last.get('state') not in (None, 'running') or 'stopped-open' in raised:
@@ -536,6 +616,8 @@ def ticket_task(project: str, folder: Path, work: WorkRecord, history_length: in
     `waitingOn` naming them and `reason` what for; the resolution is an artifact only when the ticket completed."""
     kept = work_reads(folder, work, project=project)
     mapped = _dict(kept.get('map'))
+    if isinstance(work, StoreTicket):  # the overlay keeps the title and why the map module keeps of an old ticket
+        mapped = {**mapped, **{key: value for key, value in (('title', work.title), ('why', work.why)) if value}}
     sent = sent or (None if task_id else records.sent(project, work.id))
     own = task_id or work.id
     context_id = context_id or (sent.context_id if sent else (work.address or work.receiver_address or ''))
@@ -598,13 +680,13 @@ def read(project: str, folder: Path, task_id: str, history_length: int | None = 
     A2A 1.0 section 3.3.2."""
     asked = records.asked(project, task_id)
     if asked is not None:
-        work = _work(project, asked.work_id) if asked.work_id else None
+        work = _work(project, asked.work_id, asked.created) if asked.work_id else None
         if work is None:
             return ask_task(project, asked, history_length)
         return ticket_task(project, folder, work, history_length, task_id=asked.task_id,
                            context_id=asked.context_id)
     sent = records.sent(project, task_id)
-    work = _work(project, task_id) if sent is not None else None
+    work = _work(project, task_id, sent.created) if sent is not None else None
     return None if work is None else ticket_task(project, folder, work, history_length, sent=sent)
 
 
@@ -624,26 +706,45 @@ def candidates(project: str, text: str, most: int = CANDIDATES) -> list[dict[str
     purposes it receives, hold the most of the work's words, whole or as a prefix, as the map's search matches.
     When no word fits, the trunk elements, fewest segments first, so the client still has somewhere to start."""
     words = {word for word in WORD.findall(text.lower()) if len(word) > 2}
-    store = Store(project)
     found: list[tuple[int, int, str, str]] = []
-    after: str | None = None
-    while True:
-        page = store.graph(limit=500, after=after)
-        purposes: dict[str, list[str]] = {}
-        for join in page.joins:
-            if join.receiver_address and join.purpose:
-                purposes.setdefault(join.receiver_address, []).append(join.purpose)
-        for one in page.elements:
-            element = one.element
-            held = ' '.join([element.address.replace('.', ' ').replace('_', ' '), element.name or '',
-                             element.reading, element.note or '', *purposes.get(element.address, [])])
-            tokens = set(WORD.findall(held.lower()))
-            hits = sum(1 for word in words if any(token.startswith(word) for token in tokens))
-            found.append((-hits, element.address.count('.'), element.address,
-                          first_line(' '.join(purposes.get(element.address, [])[:1]), 0) or ''))
-        after = page.next
-        if not after:
-            break
+
+    def scored(address: str, held_text: str, received: list[str]) -> None:
+        tokens = set(WORD.findall(held_text.lower()))
+        hits = sum(1 for word in words if any(token.startswith(word) for token in tokens))
+        found.append((-hits, address.count('.'), address, first_line(' '.join(received[:1]), 0) or ''))
+    name = held(project)
+    if name is not None:  # the project store's map: an element's fields, and the whys of the wants it holds
+        drawn: dict[str, Any] = cast(dict[str, Any], project_store.drawn(name) or {})
+        lead = len(name) + 1
+        whys: dict[str, list[str]] = {}
+        for want in cast(list[dict[str, Any]], drawn.get('wants') or []):
+            if want.get('why'):
+                whys.setdefault(str(want.get('holder'))[lead:], []).append(str(want['why']))
+        for one in cast(list[dict[str, Any]], drawn.get('elements') or []):
+            if not one.get('role'):  # a bare step above an element, which holds no tickets
+                continue
+            address = str(one['address'])[lead:]
+            scored(address, ' '.join([address.replace('.', ' ').replace('_', ' '), str(one.get('name') or ''),
+                                      str(one.get('technical_name') or ''), *whys.get(address, [])]),
+                   whys.get(address, []))
+    else:
+        store = Store(project)
+        after: str | None = None
+        while True:
+            page = store.graph(limit=500, after=after)
+            purposes: dict[str, list[str]] = {}
+            for join in page.joins:
+                if join.receiver_address and join.purpose:
+                    purposes.setdefault(join.receiver_address, []).append(join.purpose)
+            for one in page.elements:
+                element = one.element
+                scored(element.address, ' '.join([element.address.replace('.', ' ').replace('_', ' '),
+                                                  element.name or '', element.reading, element.note or '',
+                                                  *purposes.get(element.address, [])]),
+                       purposes.get(element.address, []))
+            after = page.next
+            if not after:
+                break
     matched = [one for one in found if one[0] < 0] or found
     return [{'address': address, 'purpose': purpose} for _, _, address, purpose in sorted(matched)[:most]]
 
@@ -975,11 +1076,10 @@ class Tickets(RequestHandler):
         def listed() -> tuple[list[Task], int]:
             sent = records.every_sent(project)
             asked = records.asks(project)
-            by_work = {one.work_id: one for one in asked if one.work_id}
             # each entry: when, its contextId, what its state may be as A2A names it, and how to read it in full
             entries: list[tuple[str, str, frozenset[str] | None, Callable[[], Read | None]]] = []
-            works = {work.id: work for work in Store(project).work(limit=0, joins=True).results
-                     if work.id in sent or work.id in by_work} if sent or by_work else {}
+            works = _works(project, {**{one.work_id: one.created for one in asked if one.work_id},
+                                     **{work_id: one.created for work_id, one in sent.items()}})
             for work_id, one_sent in sent.items():
                 work = works.get(work_id)
                 if work is not None:
@@ -1043,7 +1143,9 @@ class Tickets(RequestHandler):
               caller: str | None) -> str:
         """Open a ticket at an Address the map holds, titled from metadata or the text's first line; return its id."""
         title = meta.get('title') or first_line(text) or (first_line(text, 0) or '')[:120].rstrip()
-        arguments: dict[str, Any] = {'op': 'add', 'address': address, 'title': title, 'task': text,
+        # a ticket in the project store is at one element, which map work names with node=
+        at: dict[str, Any] = {'node': f'element:{address}'} if held(project) else {'address': address}
+        arguments: dict[str, Any] = {'op': 'add', **at, 'title': title, 'task': text,
                                      'note': prompt('a2a_note', caller=caller or prompt('a2a_caller'),
                                                     message=message_id)}
         if meta.get('kind'):
@@ -1080,7 +1182,7 @@ class Tickets(RequestHandler):
         if asked.work_id:
             raise UnsupportedOperationError(message=prompt('a2a_follow_up'))
         address = _chosen(message, meta, text)
-        if not address or Store(project).element(address) is None:
+        if not address or not mapped(project, address):
             raise InvalidParamsError(message=prompt('a2a_no_answer', address=address or '""',
                                                     candidates=_offered(asked.candidates)))
         given = {key: value for key, value in (('title', asked.title), ('kind', asked.kind)) if value}
@@ -1104,7 +1206,7 @@ class Tickets(RequestHandler):
             return self._ask(project, message, text, meta, caller, None)
         if records.asks(project, context_id):
             return self._ask(project, message, text, meta, caller, context_id)
-        if Store(project).element(context_id) is None:
+        if not mapped(project, context_id):
             raise InvalidParamsError(message=prompt('a2a_no_address', address=context_id))
         work_id = self._open(project, folder, context_id, text, meta, message.message_id or '', caller)
         records.record(project, work_id, message.message_id or work_id, context_id, caller)
@@ -1231,7 +1333,7 @@ def _could_be(work: WorkRecord) -> frozenset[str]:
     if work.done:
         return frozenset({status.a2a(status.known(work.outcome or 'completed', f'metaform map work id={work.id}'))})
     working = status.a2a('running')
-    return frozenset({working} if work.taken else {working, status.a2a('submitted')})
+    return frozenset({working} if work.column == 'doing' else {working, status.a2a('submitted')})
 
 
 def _for_task(config: TaskPushNotificationConfig, task_id: str, tenant: str) -> TaskPushNotificationConfig:
