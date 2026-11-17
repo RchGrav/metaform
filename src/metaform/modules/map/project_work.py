@@ -79,7 +79,8 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
                         if nouns.get(name))
         kept = str(found.get('note') or '').strip()
         fields = {'done': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'outcome': 'completed',
-                  'note': ' '.join(part for part in (kept, said) if part) or None}
+                  'note': '\n\n'.join(part for part in (kept, said) if part) or None}  # its own paragraph, so a
+        # writer that refreshes a line of the note, as autoticket refreshes its status line, never drops it
     if not fields:
         raise Stop(f'op={op} was given no field to change.', HELP)
     _done(project_store.run({'update': {str(found['element']): {'tickets': [

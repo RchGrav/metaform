@@ -974,7 +974,7 @@ def test_map_work_reads_and_writes_the_tickets_of_a_project_in_the_project_store
     project_work(P, 'edit', {'id': other['id'], 'note': 'Snooze added.'})
     done = project_work(P, 'done', {'id': other['id'], 'resolution': 'Snooze works.', 'why': 'Tested.'})
     assert (done['status'], done['outcome'], done['note']) == (
-        'done', 'completed', 'Snooze added. Resolution: Snooze works. Why: Tested.')  # the note is kept
+        'done', 'completed', 'Snooze added.\n\nResolution: Snooze works. Why: Tested.')  # the note is kept
     assert project_work(P, 'list', {})['results'] == []
     assert [row['id'] for row in project_work(P, 'list', {'open': False})['results']] == [other['id']]
     for op, nouns, said in (('plan', {'id': other['id']}, 'op=plan has no place'),
