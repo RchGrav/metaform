@@ -136,7 +136,10 @@ HELP: dict[str, object] = {
         'does': ("Changes fields of an element. A field set to null is removed; a field left out is unchanged. A "
                  "wants record names its element and gives only the fields to change. A list written to another overlay "
                  "replaces that overlay's list at the element; a record that gives its position, its place in the "
-                 "list counted from 0, changes that one record and leaves the others as they are."),
+                 "list counted from 0, changes that one record and leaves the others as they are. A read gives each "
+                 "record its record id and revision: give them with the position, and an edit made from a read that "
+                 "is no longer current is refused, RECORD_MOVED, RECORD_GONE or RECORD_CHANGED, instead of changing "
+                 "another record."),
         'fields': {
             'technical_name, name, role, ref, status': 'As in add.',
             'wants': ("A list of records. Each holds element, and ref to say which want when the element has "

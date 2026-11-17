@@ -43,7 +43,8 @@ ONE_ENTRY = ('a command has one entry: add, update, delete, orphaned, map, help,
 REF_FORM = 'the entry point of this functionality, or a discrete reference to it'
 DELETE_FORM = ('delete takes {} to delete the element, or {"wants": ["<path>"]} to remove wants; '
                '{"wants": [{"element": "<path>", "ref": "<ref>"}]} removes the one want about that artifact; '
-               '{"<overlay>": [0, 2]} removes the records at those positions of another overlay\'s list')
+               '{"<overlay>": [0, 2]} removes the records at those positions of another overlay\'s list, and '
+               '{"<overlay>": ["r-..."]} removes records by the record ids a read gives')
 STEP_FORM = ('a step is lowercase letters and digits, with single underscores between words, each before a letter, '
              'so that it survives storage')
 
@@ -502,12 +503,14 @@ class Form:
         if not fields:
             return
         if len(fields) == 1 and 'wants' not in fields:
-            # Records of another overlay, by their positions in the list at this element.
+            # Records of another overlay, each by its position in the list at this element or by its record id as a
+            # read gives it, so a delete made from a stale read cannot remove another record (F02).
             ((key, positions),) = fields.items()
             items = as_list(positions)
             if not is_name(key) or not items or not all(
-                    isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in items) or len(
-                    set(cast(list[int], items))) != len(items):
+                    (isinstance(item, int) and not isinstance(item, bool) and item >= 0)
+                    or (isinstance(item, str) and item.startswith('r-')) for item in items) or len(
+                    set(cast(list[int | str], items))) != len(items):
                 raise refuse(DELETE_FORM)
             return
         if list(fields) != ['wants']:

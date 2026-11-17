@@ -54,6 +54,11 @@ def refusal(answer):
     return answer['code'], answer['remediation']
 
 
+def fields_only(records):
+    """Records as they were written: without the record id and revision the store gives each one (F02)."""
+    return [{name: value for name, value in record.items() if name not in ('record', 'revision')} for record in records]
+
+
 def snapshot():
     """Everything a read can see of the project."""
     found = run({'map': P})
@@ -153,7 +158,7 @@ def test_defined_overlay_takes_valid_records_and_refuses_wrong_ones(mapped):
     before = snapshot()
     assert run(answer['remediation'])['code'] == 'FIELD_MISMATCH'  # run as it is, the placeholder is refused
     assert snapshot() == before
-    assert run({CS: {'project_specifications': {}}})[CS]['project_specifications'] == [
+    assert fields_only(run({CS: {'project_specifications': {}}})[CS]['project_specifications']) == [
         {'level': 1, 'title': 'Purpose', 'ref': 'a.md'}]
 
 
@@ -162,7 +167,7 @@ def test_update_replaces_an_overlays_records(mapped):
     run({'add': {CS: {'project_specifications': [{'title': 'A', 'level': 1}, {'title': 'B', 'level': 2}]}}})
     assert run({'update': {CS: {'project_specifications': [{'title': 'C', 'level': 1, 'draft': True}]}}}) == {
         'status': 'ok'}
-    assert run({CS: {'project_specifications': {}}})[CS]['project_specifications'] == [
+    assert fields_only(run({CS: {'project_specifications': {}}})[CS]['project_specifications']) == [
         {'draft': True, 'level': 1, 'title': 'C'}]
 
 
@@ -482,7 +487,7 @@ def test_one_record_of_an_overlay_is_changed_or_removed_without_rewriting_the_li
     run({'add': {CS: {'project_specifications': blocks}}})
 
     def stored():
-        return run({CS: {'project_specifications': {}}})[CS]['project_specifications']
+        return fields_only(run({CS: {'project_specifications': {}}})[CS]['project_specifications'])
 
     # a record that gives its position is changed in place: the fields given are laid over it, null removes one
     assert run({'update': {CS: {'project_specifications': [{'position': 1, 'title': 'Usage', 'draft': None}]}}}) == {
@@ -534,7 +539,7 @@ def test_the_overlay_help_examples_are_commands_the_tool_accepts(mapped):
     define, write, read = commands.texts.HELP['overlay']['examples']
     assert run(define) == {'status': 'ok'} and run(write) == {'status': 'ok'}
     assert run(read)[f'{P}.overlay.concerns']['key'] == 'concerns'
-    assert run({WIDGET: {'concerns': {}}})[WIDGET]['concerns'] == write['add'][WIDGET]['concerns']
+    assert fields_only(run({WIDGET: {'concerns': {}}})[WIDGET]['concerns']) == write['add'][WIDGET]['concerns']
     refused = run({'add': {f'{P}.overlay.notes': {'fields': {'text': 'x'}}}})
     assert refusal(refused) == ('FIELD_MISMATCH', {'help': 'overlay'})
 
@@ -561,7 +566,7 @@ def test_every_project_is_given_tickets_and_memories_and_one_made_before_them_ga
     assert run({'add': {WIDGET: {'tickets': [ticket], 'memories': [
         {'entity': 'watch', 'entity_type': 'behaviour', 'observation': 'It loads the timers once.'}]}}}) == {'status': 'ok'}
     assert run({'update': {WIDGET: {'tickets': [{'position': 0, 'taken_by': 'claude'}]}}}) == {'status': 'ok'}
-    assert run({WIDGET: {'tickets': {}}})[WIDGET]['tickets'] == [{**ticket, 'taken_by': 'claude'}]
+    assert fields_only(run({WIDGET: {'tickets': {}}})[WIDGET]['tickets']) == [{**ticket, 'taken_by': 'claude'}]
     assert refusal(run({'add': {WIDGET: {'tickets': [{**ticket, 'outcome': 'lost'}]}}}))[0] == 'FIELD_MISMATCH'
     # a project whose database was made before these overlays existed is given them when it is next opened
     owned = owner.of(metaform_home.home())
@@ -575,7 +580,7 @@ def test_a_display_lists_every_record_of_one_overlay_across_the_project(served):
     for path, title in ((WIDGET, 'Ring'), (CS, 'Relay')):
         assert commands.run({'add': {path: {**(WIDGET_FIELDS if path == WIDGET else CS_FIELDS), 'tickets': [
             {'id': f't-{title}', 'title': title, 'task': 'Do it.'}]}}}, served) == {'status': 'ok'}
-    assert commands.overlay_records(P, 'tickets', served) == [
+    assert fields_only(commands.overlay_records(P, 'tickets', served)) == [
         {'element': WIDGET, 'position': 0, 'id': 't-Ring', 'title': 'Ring', 'task': 'Do it.'},
         {'element': CS, 'position': 0, 'id': 't-Relay', 'title': 'Relay', 'task': 'Do it.'}]
     assert commands.overlay_records(P, 'memories', served) == [] and commands.overlay_records('nosuch', 'tickets', served) is None
@@ -665,7 +670,9 @@ def test_a_database_made_before_the_tree_is_given_it_on_open(home):
     try:
         assert opened.root()['name'] == 'Mashtrac'
         assert opened.tree() == [('.', 'code'), ('code', 'code.loop'), ('code.loop', 'code.loop.main')]
-        assert opened.records('notes', 'code.loop.main', ['text']) == [{'ref': None, 'text': 'Kept.'}]
+        (kept,) = opened.records('notes', 'code.loop.main', ['text'])
+        assert {name: kept[name] for name in ('ref', 'text', 'revision')} == {'ref': None, 'text': 'Kept.', 'revision': 1}
+        assert str(kept['record']).startswith('r-')  # a record made before ids is given one, its content untouched
     finally:
         opened.close()
     again = store.Store(path)  # a second open finds the structure in place and changes nothing
@@ -891,3 +898,38 @@ def test_a_definition_change_that_would_leave_records_outside_it_is_refused(mapp
     assert run({'update': {CS: {'notes': [{'position': 0, 'extra': 'given'}]}}}) == {'status': 'ok'}
     assert run({'update': {notes: {'extra': {'type': 'text', 'rule': 'r', 'example': 'x', 'optional': False}}}}) == {
         'status': 'ok'}
+
+
+def test_an_edit_from_a_stale_read_is_refused_instead_of_landing_on_another_record(mapped):
+    """F02: each record keeps an id for its life and a revision counted up on each change. An edit that names the
+    record and revision it read is refused when the record moved, went or changed, and nothing changes; an edit by
+    position alone is taken as before. A delete may name records by id."""
+    run({'add': {SPEC: SPEC_DEFINITION}})
+    run({'add': {CS: {'project_specifications': [{'title': t, 'level': 1} for t in 'ABC']}}})
+
+    def stored():
+        return run({CS: {'project_specifications': {}}})[CS]['project_specifications']
+
+    a, b, c = stored()
+    assert len({a['record'], b['record'], c['record']}) == 3 and a['revision'] == b['revision'] == c['revision'] == 1
+    assert run({'delete': {CS: {'project_specifications': [0]}}}) == {'status': 'ok'}  # another client removes A
+    stale = {'update': {CS: {'project_specifications': [
+        {'position': 1, 'record': b['record'], 'revision': 1, 'title': 'B2'}]}}}
+    before = stored()
+    moved = run(stale)
+    assert moved['code'] == 'RECORD_MOVED' and stored() == before  # C was not touched
+    assert moved['remediation'] == {'update': {CS: {'project_specifications': [
+        {'position': 0, 'record': b['record'], 'revision': 1, 'title': 'B2'}]}}}
+    assert run(moved['remediation']) == {'status': 'ok'}
+    b2, c_now = stored()
+    assert (b2['title'], b2['record'], b2['revision']) == ('B2', b['record'], 2) and c_now == c
+    changed = run({'update': {CS: {'project_specifications': [
+        {'position': 0, 'record': b['record'], 'revision': 1, 'title': 'B3'}]}}})
+    assert changed['code'] == 'RECORD_CHANGED' and stored() == [b2, c_now]
+    gone = run({'update': {CS: {'project_specifications': [{'position': 0, 'record': a['record'], 'title': 'A2'}]}}})
+    assert gone['code'] == 'RECORD_GONE' and stored() == [b2, c_now]
+    assert run({'delete': {CS: {'project_specifications': [a['record']]}}})['code'] == 'RECORD_GONE'
+    # by position alone, as before
+    assert run({'update': {CS: {'project_specifications': [{'position': 1, 'title': 'C2'}]}}}) == {'status': 'ok'}
+    assert run({'delete': {CS: {'project_specifications': [c['record']]}}}) == {'status': 'ok'}
+    assert fields_only(stored()) == [{'title': 'B2', 'level': 1}]

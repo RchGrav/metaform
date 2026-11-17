@@ -184,8 +184,10 @@ class Writer:
         whole list."""
         where = change.address.full
         current = self.current_records(definition, change.address.address) if stored else []
+        identity = [(str(row['record']), row['revision']) for row in self.store.records(
+            definition.key, change.address.address, [])] if stored else []
         merged: dict[int, dict[str, object]] = {}
-        for record in records:
+        for index, record in enumerate(records):
             given = as_object(record)
             position = given.get('position') if given is not None else None
             if given is None or 'position' not in given:
@@ -197,7 +199,9 @@ class Writer:
                              f'{held}')
             if position in merged:
                 raise refuse(f"update of {key} at '{where}' names position {position} more than once")
-            laid = {**current[position], **{name: value for name, value in given.items() if name != 'position'}}
+            self.check_identity(key, where, change, index, given, position, identity)
+            laid = {**current[position], **{name: value for name, value in given.items()
+                                            if name not in ('position', 'record', 'revision')}}
             merged[position] = {name: value for name, value in laid.items() if value is not None}
         order = sorted(merged)
         try:
@@ -206,6 +210,26 @@ class Writer:
         except Refusal as refusal:
             raise Refusal(refusal.code, refusal.message) from None
         return list(zip(order, checked))
+
+    def check_identity(self, key: str, where: str, change: Change, index: int, given: dict[str, object],
+                       position: int, identity: list[tuple[str, Scalar]]) -> None:
+        """An edit by position that names the `record` it read, and the `revision` it read, lands only on that record
+        as it was read (F02, kickoff 2026-11-17). Otherwise it is refused and nothing changes: RECORD_MOVED when the
+        record is now at another position, with the command corrected to it; RECORD_GONE when it is no longer
+        there; RECORD_CHANGED when it changed since it was read. An edit that names neither is taken by position."""
+        named, expected = given.get('record'), given.get('revision')
+        ident, revision = identity[position]
+        read = {where: {key: {}}}
+        if named is not None and named != ident:
+            now = next((at for at, (other, _) in enumerate(identity) if other == named), None)
+            if now is None:
+                raise Refusal('RECORD_GONE', f"{key} record {named!r} at '{where}' is no longer there; position "
+                              f'{position} now holds {ident!r}. Read the list again.', read)
+            raise Refusal('RECORD_MOVED', f"{key} record {named!r} at '{where}' is now at position {now}, not "
+                          f'{position}', replaced(self.command, [*change.keys, key, index, 'position'], now))
+        if expected is not None and expected != revision:
+            raise Refusal('RECORD_CHANGED', f"{key} record {ident!r} at '{where}' is at revision {revision}, not "
+                          f'{expected}: it changed since it was read. Read it again.', read)
 
     def merge_wants(self, want_writes: list[tuple[Change, list[dict[str, Scalar]]]],
                     existing: dict[str, dict[str, Scalar]], definition: Definition,
@@ -484,6 +508,16 @@ class Writer:
                 raise Refusal('OVERLAY_NOT_DEFINED', f"'{key}' at '{self.address.full}' is not an overlay of "
                               f'{self.project}', {'map': self.project})
             held = self.store.record_count(key, address) if key in self.store.overlay_keys() else 0
+            named = [item for item in cast(list[object], positions) if isinstance(item, str)]
+            if named:  # record ids, each the position its record holds now (F02)
+                ids = [str(row['record']) for row in self.store.records(key, address, [])] if held else []
+                gone = [ident for ident in named if ident not in ids]
+                if gone:
+                    raise Refusal('RECORD_GONE', f"{key} record {gone[0]!r} at '{self.address.full}' is no longer "
+                                  'there; nothing was deleted. Read the list again.',
+                                  {self.address.full: {key: {}}})
+                positions = [ids.index(item) if isinstance(item, str) else item
+                             for item in cast(list[object], positions)]
             wrong = [position for position in cast(list[int], positions) if position >= held]
             if wrong:
                 raise refuse(f"position {wrong[0]} of {key} at '{self.address.full}' is not a record there: the list "

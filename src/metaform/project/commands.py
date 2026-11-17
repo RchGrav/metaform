@@ -86,7 +86,8 @@ def perform_records(project: str, key: str, owned: Owner) -> dict[str, object]:
         return {'records': [
             {'element': full(project, address), 'position': position,
              **{name: decode(definition.fields[name].kind, row[name]) for name in names if row[name] is not None},
-             **({'ref': row['ref']} if row['ref'] is not None else {})}
+             **({'ref': row['ref']} if row['ref'] is not None else {}),
+             'record': row['record'], 'revision': row['revision']}
             for address, position, row in opened.all_records(key, names)]}
     try:
         return owned.read(project, read)
@@ -351,6 +352,8 @@ def _records(opened: Store, definition: Definition, at: str) -> list[dict[str, o
                                      if row[name] is not None}
         if row['ref'] is not None:
             record['ref'] = row['ref']
+        # its identity, which an edit may name so a stale one is refused instead of landing on another record (F02)
+        record.update(record=row['record'], revision=row['revision'])
         out.append(record)
     return out
 

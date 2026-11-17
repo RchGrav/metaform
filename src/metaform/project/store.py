@@ -180,6 +180,9 @@ class Store:
                 for statement in _MEMORY:
                     self._rows(statement)
         overlays = sorted(name for name in tables if name.startswith('ov_'))
+        if overlays:  # every overlay record has its lasting id and revision (F02)
+            with self.transaction():
+                self.give_identity()
         if 'Map' in tables and 'Root' not in tables and (HOLDS in tables or not overlays):
             return
         with self.transaction():
@@ -454,7 +457,8 @@ class Store:
         """The overlay's own table, and its pair in `HOLDS`, so each record is reached from its element."""
         fields = ''.join(f', {_column(field)} {_kind(kind)}' for field, kind in columns.items())
         table = _table(key)
-        self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING{fields})')
+        self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING, record STRING, '
+                   f'revision INT64{fields})')
         if HOLDS in self._tables():
             self._rows(f'ALTER TABLE {HOLDS} ADD FROM Element TO {table}')
         else:
@@ -481,17 +485,35 @@ class Store:
         return f'MATCH (:Element {{address: $address}})-[:{HOLDS}]->(r:{_table(key)})'
 
     def records(self, key: str, address: str, fields: list[str]) -> list[dict[str, Scalar]]:
+        """The records at an element in their order, each with `ref`, its fields, and its identity: `record`, the id
+        it keeps for its life, and `revision`, counted up on each change (F02)."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'{self._held_at(key)} RETURN r.ref{columns} ORDER BY r.position', address=address)
-        return [dict(zip(['ref', *fields], row)) for row in rows]
+        rows = self._rows(f'{self._held_at(key)} RETURN r.ref, r.record, r.revision{columns} ORDER BY r.position',
+                          address=address)
+        return [dict(zip(['ref', 'record', 'revision', *fields], row)) for row in rows]
 
     def all_records(self, key: str, fields: list[str]) -> list[tuple[str, int, dict[str, Scalar]]]:
         """Every record of an overlay in the project, each with the address of the element that holds it and its
         position there."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
         rows = self._rows(f'MATCH (e:Element)-[:{HOLDS}]->(r:{_table(key)}) RETURN e.address, r.position, '
-                          f'r.ref{columns} ORDER BY e.address, r.position')
-        return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', *fields], row[2:]))) for row in rows]
+                          f'r.ref, r.record, r.revision{columns} ORDER BY e.address, r.position')
+        return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', 'record', 'revision', *fields], row[2:])))
+                for row in rows]
+
+    def give_identity(self) -> None:
+        """Every overlay record has a `record` id it keeps for its life and a `revision` (F02, kickoff 2026-11-17).
+        A table made before them gains both columns, and each record without an id is given one at revision 1. Its
+        fields, ref and position are not touched. Run inside the writer's transaction each time a database opens."""
+        for name in sorted(table for table in self._tables() if table.startswith('ov_')):
+            held = {str(row[0]) for row in self._rows(f"CALL table_info('{name}') RETURN name")}
+            if 'record' not in held:
+                self._rows(f'ALTER TABLE {name} ADD record STRING')
+            if 'revision' not in held:
+                self._rows(f'ALTER TABLE {name} ADD revision INT64')
+            for (ident,) in self._rows(f'MATCH (r:{name}) WHERE r.record IS NULL RETURN r.id'):
+                self._rows(f'MATCH (r:{name}) WHERE r.id = $id SET r.record = $record, r.revision = 1', id=ident,
+                           record=new_record_id())
 
     def record_count(self, key: str, address: str) -> int:
         rows = self._rows(f'{self._held_at(key)} RETURN count(*)', address=address)
@@ -511,20 +533,29 @@ class Store:
         last = rows[0][0] if rows else None
         return int(last) + 1 if isinstance(last, int) else 0
 
-    def insert_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
-        """One record, created with the `HOLDS` that reaches it from its element."""
-        fields = [field for field in record if field != 'ref']
+    def insert_record(self, key: str, address: str, position: int, record: dict[str, Scalar],
+                      ident: str | None = None, revision: int = 1) -> None:
+        """One record, created with the `HOLDS` that reaches it from its element. A new record is given a new id at
+        revision 1; a record rewritten in place keeps its id, `ident`, at its next `revision`."""
+        fields = [field for field in record if field not in ('ref', 'record', 'revision')]
         columns = ''.join(f', {_column(field)}: $v{index}' for index, field in enumerate(fields))
         values = {f'v{index}': record[field] for index, field in enumerate(fields)}
         self._rows(f'MATCH (e:Element {{address: $address}}) '
-                   f'CREATE (e)-[:{HOLDS}]->(:{_table(key)} {{position: $position, ref: $ref{columns}}})',
-                   address=address, position=position, ref=record.get('ref'), **values)
+                   f'CREATE (e)-[:{HOLDS}]->(:{_table(key)} {{position: $position, ref: $ref, record: $record, '
+                   f'revision: $revision{columns}}})',
+                   address=address, position=position, ref=record.get('ref'), record=ident or new_record_id(),
+                   revision=revision, **values)
 
     def replace_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
-        """Rewrite the one record at `position`; the other records of the list are not touched."""
+        """Rewrite the one record at `position`, keeping its id at its next revision; the other records of the list
+        are not touched."""
+        found = self._rows(f'{self._held_at(key)} WHERE r.position = $position RETURN r.record, r.revision',
+                           address=address, position=position)
+        ident, revision = (found[0][0], found[0][1]) if found else (None, None)
         self._rows(f'{self._held_at(key)} WHERE r.position = $position DETACH DELETE r', address=address,
                    position=position)
-        self.insert_record(key, address, position, record)
+        self.insert_record(key, address, position, record, str(ident) if ident else None,
+                           int(revision) + 1 if isinstance(revision, int) else 1)
 
     def delete_records_at(self, key: str, address: str, positions: list[int]) -> None:
         """Remove the records at `positions`, and close the gaps so a record's position stays its place in the list."""
@@ -538,6 +569,12 @@ class Store:
 
     def delete_records(self, key: str, address: str) -> None:
         self._rows(f'{self._held_at(key)} DETACH DELETE r', address=address)
+
+
+def new_record_id() -> str:
+    """A record's id, kept for its life: `r-` and 16 random hex digits."""
+    import secrets
+    return f'r-{secrets.token_hex(8)}'
 
 
 def _kind(kind: str) -> str:
