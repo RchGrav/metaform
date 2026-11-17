@@ -9,13 +9,42 @@ from pathlib import Path
 
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
-__all__ = ['COMMANDS', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'overlay_records', 'run', 'stored_name']
+__all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'clear', 'drawn', 'holds', 'memory', 'memory_answer',
+           'memory_tools', 'memory_tools_changing', 'overlay_records', 'run', 'stored_name']
+
+MEMORY_URI = 'memory://knowledge-graph'  # the memory layer's whole graph as a resource, as the reference serves it
+
+
+def memory_tools() -> tuple[dict[str, object], ...]:
+    """The memory layer's nine tools as the MCP reference memory server registers them: name, title, description,
+    input and output schemas and annotations."""
+    from metaform.project import memory_layer
+    return memory_layer.TOOLS
+
+
+def memory_tools_changing() -> tuple[str, ...]:
+    """The memory tools that change the graph, after which a subscribed client is told the graph was updated."""
+    from metaform.project import memory_layer
+    return memory_layer.MUTATIONS
 
 
 def run(command: object, home: Path | None = None, caller: str = '') -> dict[str, object]:
     """Answer one command of the project tool: one JSON command in, one JSON answer out, `commands.run`."""
     from metaform.project import commands
     return commands.run(command, home, caller)
+
+
+def memory(project: str, tool: str, arguments: object, home: Path | None = None,
+           caller: str = '') -> dict[str, object]:
+    """Call one of the memory layer's tools, the MCP reference memory server's nine, on a project: `memory.run`."""
+    from metaform.project import memory_layer
+    return memory_layer.run(project, tool, arguments, home, caller)
+
+
+def memory_answer(tool: str, arguments: dict[str, object], result: object) -> tuple[list[str], dict[str, object]]:
+    """A memory tool's result as the reference returns it: its text items and its structured content."""
+    from metaform.project import memory_layer
+    return memory_layer.answer(tool, arguments, result)
 
 
 def drawn(project: str, home: Path | None = None) -> dict[str, object] | None:

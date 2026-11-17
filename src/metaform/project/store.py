@@ -51,6 +51,13 @@ _SCHEMA = (
     'CREATE NODE TABLE Project(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
     # The id of each write that was stored, written in the write's own transaction, so a write sent twice is done once.
     'CREATE NODE TABLE Request(id STRING PRIMARY KEY, seq SERIAL)',
+    *(_MEMORY := (
+        # The memory layer: the entities and relations of the MCP reference memory server, kept beside the map and
+        # never in an overlay. An entity whose `entityType` is null is an object of the graph, named by its address,
+        # that holds memory; its type is read from the object. `seq` keeps the order the reference returns things in.
+        'CREATE NODE TABLE MemoryEntity(name STRING PRIMARY KEY, entityType STRING, observations STRING[], seq SERIAL)',
+        'CREATE REL TABLE MemoryRelation(FROM MemoryEntity TO MemoryEntity, relationType STRING, seq INT64)',
+    )),
     *(_TREE := (
         'CREATE NODE TABLE Map(id STRING PRIMARY KEY)',
         'CREATE REL TABLE ROOT(FROM Map TO Project)',
@@ -168,6 +175,10 @@ class Store:
         its `ROOT`, a `CONTAINS` to every element from its parent, and a `HOLDS` to every overlay record from the element
         its address names. A database already in that structure is left as it is."""
         tables = self._tables()
+        if 'MemoryEntity' not in tables:  # a database made before the memory layer gains its tables, empty
+            with self.transaction():
+                for statement in _MEMORY:
+                    self._rows(statement)
         overlays = sorted(name for name in tables if name.startswith('ov_'))
         if 'Map' in tables and 'Root' not in tables and (HOLDS in tables or not overlays):
             return
@@ -363,6 +374,56 @@ class Store:
                    holder=holder, element=element, **{field: want.get(field) for field in WANT_FIELDS})
 
     # Overlay definitions
+
+    def objects(self, addresses: list[str]) -> dict[str, str]:
+        """Of these addresses, the ones the graph holds an object at, each with the type its memory reports: an
+        element's technical name (`element` when it has none), `overlay` for an overlay's definition and `overlay
+        field` for one of its fields. Only the addresses asked for are read."""
+        if not addresses:
+            return {}
+        found = {str(row[0]): str(row[1] or 'element') for row in self._rows(
+            'MATCH (e:Element) WHERE e.address IN $addresses RETURN e.address, e.`technical_name`',
+            addresses=addresses)}
+        for row in self._rows('MATCH (p:OverlayPart) WHERE p.address IN $addresses RETURN p.address, p.`instruction`',
+                              addresses=addresses):
+            found[str(row[0])] = 'overlay' if row[1] is not None else 'overlay field'
+        return found
+
+    def memory_entities(self) -> list[tuple[str, str | None, list[str]]]:
+        """Every entity of the memory layer in the order it was made: its name, its type (null for an object of the
+        graph) and its observations in the order they were added."""
+        rows = self._rows('MATCH (m:MemoryEntity) RETURN m.name, m.entityType, m.observations ORDER BY m.seq')
+        return [(str(row[0]), None if row[1] is None else str(row[1]),
+                 [str(one) for one in cast(list[object], row[2] or [])]) for row in rows]
+
+    def memory_relations(self) -> list[tuple[str, str, str]]:
+        """Every relation of the memory layer in the order it was made: from, to and its type."""
+        rows = self._rows('MATCH (a:MemoryEntity)-[r:MemoryRelation]->(b:MemoryEntity) '
+                          'RETURN a.name, b.name, r.relationType ORDER BY r.seq')
+        return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
+
+    def put_memory_entity(self, name: str, entity_type: str | None, observations: list[str]) -> None:
+        self._rows('CREATE (:MemoryEntity {name: $name, entityType: $type, observations: $observations})',
+                   name=name, type=entity_type, observations=observations)
+
+    def set_observations(self, name: str, observations: list[str]) -> None:
+        self._rows('MATCH (m:MemoryEntity {name: $name}) SET m.observations = $observations', name=name,
+                   observations=observations)
+
+    def delete_memory_entities(self, names: list[str]) -> None:
+        """Remove these entities with every relation to or from them."""
+        self._rows('MATCH (m:MemoryEntity) WHERE m.name IN $names DETACH DELETE m', names=names)
+
+    def add_memory_relation(self, start: str, end: str, relation_type: str) -> None:
+        last = self._rows('MATCH ()-[r:MemoryRelation]->() RETURN max(r.seq)')
+        seq = int(cast(int, last[0][0])) + 1 if last and last[0][0] is not None else 0
+        self._rows('MATCH (a:MemoryEntity {name: $source}), (b:MemoryEntity {name: $target}) '
+                   'CREATE (a)-[:MemoryRelation {relationType: $type, seq: $seq}]->(b)',
+                   source=start, target=end, type=relation_type, seq=seq)
+
+    def delete_memory_relation(self, start: str, end: str, relation_type: str) -> None:
+        self._rows('MATCH (a:MemoryEntity {name: $source})-[r:MemoryRelation {relationType: $type}]->'
+                   '(b:MemoryEntity {name: $target}) DELETE r', source=start, target=end, type=relation_type)
 
     def parts(self) -> dict[str, dict[str, Scalar]]:
         """Every part of every overlay definition, in the order the parts were first written: a definition's fields

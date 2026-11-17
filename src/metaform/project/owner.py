@@ -13,6 +13,7 @@ connection, against the last committed state, and never waits for a write.
 from __future__ import annotations
 
 import atexit
+import json
 import threading
 from collections import OrderedDict, deque
 from collections.abc import Callable, Generator
@@ -32,6 +33,31 @@ GROUP = 64  # the most waiting writes committed together as one transaction
 READERS = 4  # the most reading connections one database holds; a read waits for one when all are in use
 
 
+def kept_memory(path: Path) -> Path:
+    """Where a cleared project's memory layer waits for its next map: beside the database it was in. Clearing removes
+    the map, and a memory whose object is gone is hidden, never deleted, so the memory is kept until the project's
+    database is made again and is then put back into it."""
+    return path.with_name(f'{path.stem}.memory.json')
+
+
+def _memory_of(path: Path) -> dict[str, list[list[object]]]:
+    with Store(path) as opened, opened.reading():
+        return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
+                'relations': [list(relation) for relation in opened.memory_relations()]}
+
+
+def _put_back(opened: Store) -> None:
+    """Into a database just made, the memory layer its project had when it was last cleared."""
+    kept = kept_memory(opened.path)
+    if not kept.exists():
+        return
+    memory = json.loads(kept.read_text(encoding='utf-8'))
+    for name, kind, observations in memory['entities']:
+        opened.put_memory_entity(name, kind, observations)
+    for start, end, relation_type in memory['relations']:
+        opened.add_memory_relation(start, end, relation_type)
+
+
 class Missing(Exception):
     """The project has no database."""
 
@@ -44,13 +70,14 @@ class Database:
     """One open project database: its writer thread, its queue of writes and its readers."""
 
     def __init__(self, path: Path, create: str | None = None,
-                 committed: Callable[[str], None] | None = None) -> None:
+                 committed: Callable[[str, set[str]], None] | None = None) -> None:
         self.path = path
-        self._committed = committed  # told the project's name after each commit that stored a write
+        # told the project's name after each commit that stored a write, with the kinds of what it stored: map, memory
+        self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
         self._wake = threading.Condition()
-        self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any]]]] = {}
+        self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
         self._turn: deque[str] = deque()  # the callers with writes waiting, in the order they are served
         self._closing = False
         self._readers: list[Store] = []  # every reading connection made, closed with the database
@@ -66,9 +93,10 @@ class Database:
         if self._failed is not None:
             raise self._failed
 
-    def write(self, caller: str, work: Callable[[Store], T]) -> Future[T]:
+    def write(self, caller: str, work: Callable[[Store], T], kind: str = 'map') -> Future[T]:
         """Queue one write for `caller`. `work` is given the writing connection on the writer thread, inside a
-        transaction the writer opens and commits; the future holds its result only after that commit."""
+        transaction the writer opens and commits; the future holds its result only after that commit. `kind` says
+        what it changes, the map or the memory layer, for the announcement of the commit."""
         future: Future[T] = Future()
         with self._wake:
             if self._closing:
@@ -77,7 +105,7 @@ class Database:
             if waiting is None:
                 waiting = self._jobs[caller] = deque()
                 self._turn.append(caller)
-            waiting.append((work, future))
+            waiting.append((work, future, kind))
             self._wake.notify_all()
         return future
 
@@ -118,6 +146,8 @@ class Database:
             from metaform.project.writes import give_standing_overlays
             with self._writing.transaction():
                 give_standing_overlays(self._writing, self.path.stem)
+                if create is not None:
+                    _put_back(self._writing)
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
             self._failed = error
             opened.set()
@@ -129,7 +159,7 @@ class Database:
                     self._wake.wait()
                 if not self._turn:
                     break  # closing, and every queued write has been served
-                group: list[tuple[Callable[[Store], Any], Future[Any]]] = []
+                group: list[tuple[Callable[[Store], Any], Future[Any], str]] = []
                 while self._turn and len(group) < GROUP:
                     caller = self._turn.popleft()
                     waiting = self._jobs[caller]
@@ -146,7 +176,7 @@ class Database:
             self._writing.close()
             self._writing = None
 
-    def _commit(self, group: list[tuple[Callable[[Store], Any], Future[Any]]]) -> None:
+    def _commit(self, group: list[tuple[Callable[[Store], Any], Future[Any], str]]) -> None:
         """Run the writes that were waiting together as one transaction with one commit, each in its turn and each
         seeing the ones before it, and answer them after that commit. When one of them fails or is refused, the group
         is rolled back and each write runs as a transaction of its own, so one write's failure is only its own. A
@@ -156,21 +186,21 @@ class Database:
         if len(group) > 1:
             try:
                 with store_.transaction():
-                    results = [work(store_) for work, _ in group]
+                    results = [work(store_) for work, _, _ in group]
             except StoreError as error:
                 if error.unknown:
-                    for _, future in group:
+                    for _, future, _ in group:
                         future.set_exception(error)
                     return
             except BaseException:  # noqa: BLE001, S110  one write of the group failed: each is now run alone
                 pass
             else:
-                for (_, future), result in zip(group, results):
+                for (_, future, _), result in zip(group, results):
                     future.set_result(result)
-                self._tell()
+                self._tell({kind for _, _, kind in group})
                 return
-        stored = False
-        for work, future in group:
+        stored: set[str] = set()
+        for work, future, kind in group:
             try:
                 with store_.transaction():
                     result = work(store_)
@@ -178,14 +208,15 @@ class Database:
                 future.set_exception(error)
             else:
                 future.set_result(result)
-                stored = True
+                stored.add(kind)
         if stored:
-            self._tell()
+            self._tell(stored)
 
-    def _tell(self) -> None:
-        """Say once that a commit stored writes: one telling for a group, however many writes it held."""
+    def _tell(self, kinds: set[str]) -> None:
+        """Say once that a commit stored writes, and of which kinds: one telling for a group, however many writes it
+        held."""
         if self._committed is not None:
-            self._committed(self.path.stem)
+            self._committed(self.path.stem, kinds)
 
     def close(self) -> None:
         """Serve every write already queued, then close the database."""
@@ -200,7 +231,7 @@ class Owner:
 
     def __init__(self, home: Path) -> None:
         self.home = home
-        self.committed: Callable[[str], None] | None = None  # set by the service, to announce each commit
+        self.committed: Callable[[str, set[str]], None] | None = None  # set by the service, to announce each commit
         folder = home / 'maps'
         folder.mkdir(parents=True, exist_ok=True)
         self._held = ExitStack()
@@ -220,16 +251,20 @@ class Owner:
         with self._using(project, create=False) as database:
             return database.read(work)
 
-    def write(self, project: str, caller: str, work: Callable[[Store], T], *, create: bool = False) -> T:
+    def write(self, project: str, caller: str, work: Callable[[Store], T], *, create: bool = False,
+              kind: str = 'map') -> T:
         """Queue one write and wait for it. With `create`, a project that has no database is made by this write; when
-        the write fails, the database it made is removed again, so a refused command leaves nothing behind."""
+        the write fails, the database it made is removed again, so a refused command leaves nothing behind. `kind`
+        is what the write changes: the map, or the memory layer."""
         with self._using(project, create=create) as database:
             try:
-                result = database.write(caller, work).result()
+                result = database.write(caller, work, kind).result()
             except BaseException:
                 if database.fresh:
                     self._discard(project, database)
                 raise
+            if database.fresh:  # the first write stored: the memory put back from a clear is held by the database now
+                kept_memory(database.path).unlink(missing_ok=True)
             database.fresh = False
             return result
 
@@ -284,7 +319,10 @@ class Owner:
             path = store.location(self.home, project)
             if not path.exists():
                 return False
+            memory = _memory_of(path)
             store.remove(path)
+            if memory['entities']:  # the map goes; its memory is kept for the next one, LAYER-013
+                kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
             return True
 
     def _discard(self, project: str, database: Database) -> None:

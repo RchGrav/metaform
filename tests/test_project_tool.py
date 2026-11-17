@@ -379,7 +379,8 @@ def test_acknowledged_writes_survive_the_service_being_killed(served):
 def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_path):
     import threading
     told = []
-    database = owner.Database(tmp_path / 'group.lbug', create='group', committed=told.append)
+    database = owner.Database(tmp_path / 'group.lbug', create='group',
+                              committed=lambda name, kinds: told.append((name, kinds)))
     gate, commits = threading.Event(), []
     real = database._writing.transaction
 
@@ -415,7 +416,7 @@ def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_
         database.close()
     # each commit that stored writes is told once, however many writes it held: the holder and the group of ten,
     # then the holder and the three run alone, of which two were stored
-    assert told == ['group'] * 4
+    assert told == [('group', {'map'})] * 4  # each told with the kind of what it stored
 
 
 def test_a_write_sent_again_with_the_same_request_id_is_done_once(mapped):
@@ -744,3 +745,88 @@ def test_the_rust_forms_refusal_table(mapped):
         answer = run(command)
         assert (answer.get('code'), answer.get('remediation')) == (code, remediation), command
     assert snapshot() == before  # a refused command changes nothing
+
+
+def remember(tool, arguments, caller=''):
+    """A memory tool called in this process, as the service answers it: its texts, and its result or error."""
+    from metaform.project import memory_layer
+    try:
+        given = memory_layer.checked(tool, arguments)
+    except memory_layer.MemoryError as error:
+        return str(error), None
+    answer = memory_layer.perform({'project': P, 'tool': tool, 'arguments': given}, owner.of(metaform_home.home()),
+                                  caller)
+    if answer['status'] != 'ok':
+        return answer['message'], None
+    return memory_layer.answer(tool, given, answer['result'])
+
+
+def test_the_memory_layer_is_the_reference_with_the_maps_objects_as_entities(mapped):
+    watch = {'name': 'watch command', 'entityType': 'behaviour', 'observations': ['rings each timer']}
+    texts, made = remember('create_entities', {'entities': [watch, watch, {**watch, 'name': WIDGET}]})
+    # the repeat and the element, which is an entity already, are skipped and said to be, as the reference says it
+    assert made == {'entities': [watch], 'skipped': ['watch command', WIDGET]}
+    assert texts[1] == ('Skipped 2 entities that already exist: watch command, mashtrac.code.masher.widget. Their '
+                        'observations were not added; use add_observations for existing entities.')
+    _, added = remember('add_observations', {'observations': [{'entityName': WIDGET, 'contents': ['mashes', 'mashes']}]})
+    assert added == {'results': [{'entityName': WIDGET, 'addedObservations': ['mashes']}]}
+    relation = {'from': 'watch command', 'to': WIDGET, 'relationType': 'reads'}
+    assert remember('create_relations', {'relations': [relation, relation]})[1] == {'relations': [relation]}
+    assert remember('create_relations', {'relations': [relation]})[1] == {'relations': []}
+    assert remember('create_relations', {'relations': [{**relation, 'to': 'nothing'}]}) == (
+        'Entity with name nothing not found', None)
+    message, _ = remember('create_entities', {'entities': [{**watch, 'name': f'{P}.code.not.there'}]})
+    assert message.startswith('Entity with name mashtrac.code.not.there not found')
+    # the element reports its technical name as its type, so a search finds it by that too
+    _, found = remember('search_nodes', {'query': 'MASHER'})
+    assert found == {'entities': [{'name': WIDGET, 'entityType': 'widget masher', 'observations': ['mashes']}],
+                     'relations': [relation]}
+    _, opened = remember('open_nodes', {'names': [CS], 'observationLimit': 0})
+    assert opened['entities'] == [{'name': CS, 'entityType': 'cs tracker network protocol', 'observations': [],
+                                   'observationCount': 0}]
+    assert remember('delete_relations', {'relations': [relation, {**relation, 'relationType': 'x'}]})[0] == [
+        'Deleted 1 of 2 relations. The rest matched nothing.']
+    assert remember('read_graph', {})[1] == {
+        'entities': [watch, {'name': WIDGET, 'entityType': 'widget masher', 'observations': ['mashes']}],
+        'relations': []}
+    assert remember('search_nodes', {'query': 'x' * 2049})[0].startswith('Input validation error')
+
+
+def test_memory_tied_to_an_object_the_map_no_longer_holds_is_hidden_and_shows_again(mapped):
+    remember('create_entities', {'entities': [{'name': 'relay', 'entityType': 'part', 'observations': []}]})
+    remember('add_observations', {'observations': [{'entityName': CS, 'contents': ['tracks the mash']}]})
+    remember('create_relations', {'relations': [{'from': 'relay', 'to': CS, 'relationType': 'feeds'}]})
+    assert run({'delete': {CS: {}}}) == {'status': 'ok'}
+    assert remember('read_graph', {})[1] == {
+        'entities': [{'name': 'relay', 'entityType': 'part', 'observations': []}], 'relations': []}
+    assert remember('add_observations', {'observations': [{'entityName': CS, 'contents': ['x']}]})[0] == (
+        'Entity with name mashtrac.code.protocol.network.tracker.cs not found')
+    assert run({'add': {CS: CS_FIELDS}}) == {'status': 'ok'}
+    assert remember('open_nodes', {'names': [CS]})[1] == {
+        'entities': [{'name': CS, 'entityType': 'cs tracker network protocol', 'observations': ['tracks the mash']}],
+        'relations': [{'from': 'relay', 'to': CS, 'relationType': 'feeds'}]}
+
+
+def test_a_memory_write_is_announced_as_memory(tmp_path):
+    told = []
+    database = owner.Database(tmp_path / 'told.lbug', create='told',
+                              committed=lambda name, kinds: told.append((name, kinds)))
+    try:
+        database.write('a', lambda opened: opened.put_memory_entity('relay', 'part', []), 'memory').result(timeout=10)
+    finally:
+        database.close()
+    assert told == [('told', {'memory'})]
+
+
+def test_clearing_a_map_keeps_its_memory_for_the_next_map(mapped):
+    remember('create_entities', {'entities': [{'name': 'relay', 'entityType': 'part', 'observations': ['kept']}]})
+    remember('add_observations', {'observations': [{'entityName': WIDGET, 'contents': ['mashes']}]})
+    remember('create_relations', {'relations': [{'from': 'relay', 'to': WIDGET, 'relationType': 'feeds'}]})
+    assert owner.of(metaform_home.home()).remove(P)
+    assert P not in store.projects(metaform_home.home())  # no map: the project reads as cleared everywhere
+    assert run({'add': {WIDGET: WIDGET_FIELDS}}) == {'status': 'ok'}  # the next map, with the element again
+    assert remember('read_graph', {})[1] == {
+        'entities': [{'name': 'relay', 'entityType': 'part', 'observations': ['kept']},
+                     {'name': WIDGET, 'entityType': 'widget masher', 'observations': ['mashes']}],
+        'relations': [{'from': 'relay', 'to': WIDGET, 'relationType': 'feeds'}]}
+    assert not owner.kept_memory(store.location(metaform_home.home(), P)).exists()

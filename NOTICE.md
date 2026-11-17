@@ -20,6 +20,15 @@ verbatim. `aliases.md` is the exact Aliases section from
 All new chassis code is specific to this repository. No license grant or
 publication to a package index is added on the owner's behalf.
 
+## MCP reference memory server
+
+The memory layer's nine tools and its resource (`src/metaform/project/memory_layer.py`) take their names, titles,
+descriptions, input and output schemas, annotations, result messages and behaviour from the MCP reference memory
+server, `src/memory/index.ts` in https://github.com/modelcontextprotocol/servers, read on 2026-11-17, so that an agent
+uses them as it uses the reference. The code is this repository's own. That project is licensed under the Apache
+License, Version 2.0, with contributions whose authors have not agreed to relicense remaining under the MIT License;
+its terms are in https://github.com/modelcontextprotocol/servers/blob/main/LICENSE.
+
 ## Solid Glass
 
 The Glass and Tinted Glass themes of the web page (`src/metaform/modules/web/page/app.css`, their token blocks and

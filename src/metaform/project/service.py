@@ -100,12 +100,12 @@ class _Announcer:
 
     def __init__(self) -> None:
         self._wake = threading.Condition()
-        self._changed: set[str] = set()
+        self._changed: dict[str, set[str]] = {}  # each project told of, with the kinds of what changed in it
         threading.Thread(target=self._run, name='announcer', daemon=True).start()
 
-    def changed(self, project: str) -> None:
+    def changed(self, project: str, kinds: set[str]) -> None:
         with self._wake:
-            self._changed.add(project)
+            self._changed.setdefault(project, set()).update(kinds)
             self._wake.notify()
 
     def _run(self) -> None:
@@ -116,13 +116,14 @@ class _Announcer:
             with self._wake:
                 while not self._changed:
                     self._wake.wait()
-                names, self._changed = self._changed, set()
+                names, self._changed = self._changed, {}
             try:
                 registered = {stored_name(found.project_id): found.project_id for found in metaform_home.projects()}
-                for name in names:
+                for name, kinds in names.items():
                     if name in registered:  # a page shows registered projects only
                         relay.deliver('map.changed', {'project': registered[name], 'base_id': None,
-                                                      'tables': ['project.map'], 'kinds': ['map']})
+                                                      'tables': [f'project.{kind}' for kind in sorted(kinds)],
+                                                      'kinds': sorted(kinds)})
             except Exception:  # noqa: BLE001, S110  a telling that fails loses one redraw, never a write
                 pass
 
@@ -147,7 +148,10 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 listener.close()
                 return
             try:
-                if isinstance(message.get('clear'), str):  # clearing a project removes its database
+                if isinstance(message.get('memory'), dict):  # a call of a memory tool, `memory`
+                    from metaform.project import memory_layer
+                    answer = memory_layer.perform(message['memory'], owned, str(message.get('caller') or ''))
+                elif isinstance(message.get('clear'), str):  # clearing a project removes its database
                     answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear']) else 'error'}
                 elif isinstance(message.get('drawn'), str) and isinstance(message.get('overlay'), str):
                     answer = commands.perform_records(message['drawn'], message['overlay'], owned)
@@ -231,7 +235,7 @@ def _writes(command: Any) -> bool:
 
 
 def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '',
-         overlay: str = '') -> dict[str, object]:
+         overlay: str = '', memory: dict[str, object] | None = None) -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
     Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
@@ -243,7 +247,8 @@ def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: 
                           'request': uuid.uuid4().hex if _writes(given) else '',
                           **({'drawn': drawn} if drawn else {}),
                           **({'clear': clear} if clear else {}),
-                          **({'overlay': overlay} if overlay else {})}).encode('utf-8')
+                          **({'overlay': overlay} if overlay else {}),
+                          **({'memory': memory} if memory else {})}).encode('utf-8')
     for attempt in range(ATTEMPTS):
         try:
             connection = _connection(home, fresh=attempt > 0)
