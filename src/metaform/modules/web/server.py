@@ -2088,6 +2088,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A memory change is a list of steps, each a command of '
                                             f'{", ".join(MEMORY_WRITES)} with its arguments.'})
         done: list[Any] = []
+        from metaform import project as project_store
+        stored = project_store.stored_name(str(given.get('project', '')))
+        if project_store.holds(stored):
+            # a project in the project store keeps its memory in the memory layer, which the page reads and the
+            # memory tools write (F05): each step is that layer's tool of the same name
+            for step in cast(list[dict[str, Any]], steps):
+                if step['command'] not in project_store.memory_tools_changing():
+                    return self.send(400, {'error': f"{step['command']} has no place in the memory layer, where "
+                                                    f"{stored}'s memory is kept; its tools are "
+                                                    f"{', '.join(project_store.memory_tools_changing())}.", 'done': done})
+                answer = project_store.memory(stored, step['command'], dict(step.get('arguments') or {}),
+                                              caller='web')
+                if answer.get('status') == 'error':
+                    return self.send(400, {'error': str(answer.get('message') or 'The memory was not changed.'),
+                                           'done': done})
+                done.append(answer.get('result'))
+            return self.send(200, {'done': done})
         for step in cast(list[dict[str, Any]], steps):
             try:
                 done.append(module_verb(given, 'memory', step['command'], dict(step.get('arguments') or {})))

@@ -255,22 +255,29 @@ def assignment(project: str, work_id: str) -> str | None:
 
 
 def memories(project: str) -> dict[str, Any] | None:
-    """The project's memories as the page reads the memory graph: each entity with its observations, and where each
-    is kept. A record of the memories overlay is one observation of the entity it names, at the element it is at.
-    None when the project store holds no such project."""
+    """The project's memories as the page reads them: the memory layer's graph, the one the memory tools write
+    (F05, kickoff 2026-11-17). The founder set on 2026-11-17 that memory is "all stored in the memory layer", never an
+    overlay. Each entity comes with its observations and the relations among the entities; an entity named by an
+    element's address shows at that element, and one tied to an object the map no longer holds is hidden by the layer
+    itself. Records an older version wrote to the memories overlay are not mixed into the graph: they are listed apart
+    as `overlay_records`, labelled, so nothing is lost or counted twice. None when the project store holds no such
+    project."""
     name = commands.stored_name(project)
-    found = commands.overlay_records(name, 'memories')
-    if found is None:
+    if not commands.holds(name):
         return None
+    read = commands.memory(name, 'read_graph', {})
+    if read.get('status') == 'error':
+        return None
+    graph = cast(dict[str, Any], read.get('result') or {})
     lead = len(name) + 1
-    entities: dict[str, dict[str, Any]] = {}
-    joins: dict[tuple[str, str], dict[str, Any]] = {}
-    for record in found:
-        entity, address = str(record.get('entity') or ''), str(record['element'])[lead:]
-        held = entities.setdefault(entity, {'name': entity, 'entityType': record.get('entity_type') or '',
-                                            'observations': []})
-        held['observations'].append({'content': record.get('observation') or '', 'by': ''})
-        joins.setdefault((entity, address), {'join_id': f'{address}:{entity}', 'entity': entity, 'address': address,
-                                             'by': '', 'orphaned': False, 'shows': True})
-    return {'entities': list(entities.values()), 'relations': [], 'joins': list(joins.values())}
+    entities = [{'name': entity['name'], 'entityType': entity.get('entityType') or '',
+                 'observations': [{'content': text, 'by': ''} for text in entity.get('observations') or []]}
+                for entity in cast(list[dict[str, Any]], graph.get('entities') or [])]
+    joins = [{'join_id': f'{str(entity["name"])[lead:]}:{entity["name"]}', 'entity': entity['name'],
+              'address': str(entity['name'])[lead:], 'by': '', 'orphaned': False, 'shows': True}
+             for entity in entities if str(entity['name']).startswith(f'{name}.')]
+    older = commands.overlay_records(name, 'memories') or []
+    return {'entities': entities, 'relations': list(graph.get('relations') or []), 'joins': joins,
+            'overlay_records': [{**record, 'kept_in': 'memories overlay, from before the memory layer'}
+                                for record in older]}
 

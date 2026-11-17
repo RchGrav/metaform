@@ -975,3 +975,24 @@ def test_map_work_reads_and_writes_the_tickets_of_a_project_in_the_project_store
                             ('read', {'id': 't-none'}, 'No ticket')):
         with pytest.raises(Stop, match=said):
             project_work(P, op, nouns)
+
+
+def test_the_page_reads_memory_from_the_memory_layer_the_memory_tools_write(served):
+    """F05: the page's memories are the memory layer's graph, not the memories overlay: an observation an agent adds
+    to an element with the memory tools shows at that element, with the relations among entities."""
+    from metaform import project as project_store
+    from metaform.modules.web import project_map
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+    assert project_store.memory(P, 'add_observations', {'observations': [
+        {'entityName': WIDGET, 'contents': ['It loads the timers once.']}]}, served)['status'] == 'ok'
+    assert project_store.memory(P, 'create_entities', {'entities': [
+        {'name': 'watch', 'entityType': 'behaviour', 'observations': ['It polls.']}]}, served)['status'] == 'ok'
+    assert project_store.memory(P, 'create_relations', {'relations': [
+        {'from': 'watch', 'to': WIDGET, 'relationType': 'reads'}]}, served)['status'] == 'ok'
+    shown = project_map.memories(P)
+    by_name = {entity['name']: entity for entity in shown['entities']}
+    assert by_name[WIDGET]['observations'] == [{'content': 'It loads the timers once.', 'by': ''}]
+    assert by_name['watch']['entityType'] == 'behaviour'
+    assert shown['relations'] == [{'from': 'watch', 'to': WIDGET, 'relationType': 'reads'}]
+    assert [join['address'] for join in shown['joins']] == ['code.masher.widget']
+    assert shown['overlay_records'] == []
