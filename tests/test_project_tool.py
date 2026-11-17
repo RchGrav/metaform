@@ -1237,3 +1237,26 @@ def test_dispatch_waits_on_a_ticket_of_the_project_store(served):
     assert asyncio.run(wait_in_store(ctx, P, P, 'done', 't-open'))['state'] == 'pending'
     with pytest.raises(Stop, match='until=stopped has no meaning yet'):
         asyncio.run(wait_in_store(ctx, P, P, 'stopped', 't-open'))
+
+
+def test_the_specification_command_never_overwrites_a_document_and_a_refusal_keeps_the_edits(served, tmp_path):
+    """Phase 4, after verification: an export never writes over an existing file, which may hold edits not yet
+    imported, and a refused import names the import again as its next step, never an export over the edited file."""
+    from types import SimpleNamespace
+
+    from metaform.module import Stop
+    from metaform.modules.map import specification as verb
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, served) == {'status': 'ok'}
+
+    def ctx(**nouns):
+        return SimpleNamespace(require_store=lambda: SimpleNamespace(project_id=P), nouns=nouns)
+    path = tmp_path / 'spec.md'
+    assert verb(ctx(file=str(path)))['bytes'] > 0
+    edited = path.read_text().replace('Role: Coupled Element.', 'Role: Defining Element.')  # stale: refused
+    path.write_text(edited)
+    with pytest.raises(Stop, match='already exists') as refused:
+        verb(ctx(file=str(path)))
+    assert 'spec-fresh.md' in str(refused.value.next_step) and path.read_text() == edited
+    with pytest.raises(Stop, match='Nothing was written') as stale:
+        verb(ctx(op='import', file=str(path)))
+    assert f'op=import file={path}' in str(stale.value.next_step) and path.read_text() == edited

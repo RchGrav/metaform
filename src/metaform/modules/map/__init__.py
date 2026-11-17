@@ -2593,15 +2593,21 @@ def specification(ctx: Context) -> Any:
         if not given:
             raise Stop('op=import reads the edited document from file=<path>.', 'metaform help map specification')
         answer = project_store.specification_document(name, Path(str(given)).read_text(encoding='utf-8'))
-        if answer.get('status') == 'error':
-            raise Stop(str(answer.get('message')), f'metaform map specification file={given}')
+        if answer.get('status') == 'error':  # the next step keeps the edits: fix this file and import it again
+            raise Stop(f"{answer.get('message')} Nothing was written; {given} is as you left it.",
+                       f'fix {given}, then metaform map specification op=import file={given}')
         return answer
     answer = project_store.specification_document(name)
     if answer.get('status') == 'error':
         raise Stop(str(answer.get('message')), 'metaform help map specification')
     document = str(answer['document'])
     if given:
-        Path(str(given)).write_text(document, encoding='utf-8')
+        target = Path(str(given))
+        if target.exists():  # an export never writes over a file, which may hold edits not yet imported
+            raise Stop(f'{given} already exists, and an export never writes over a file: it may hold edits not yet '
+                       'imported. Export to a new file, or import this one with op=import.',
+                       f'metaform map specification file={target.with_name(target.stem + "-fresh" + target.suffix)}')
+        target.write_text(document, encoding='utf-8')
         return {'file': str(given), 'bytes': len(document.encode('utf-8'))}
     return document
 
