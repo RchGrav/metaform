@@ -21,7 +21,16 @@ from metaform.project import forms, intake, specification, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
-from metaform.project.store import ELEMENT_FIELDS, PART_FIELDS, ROOT_FIELDS, Scalar, Store, StoreError
+from metaform.project.store import (
+    CYPHER_SECONDS,
+    ELEMENT_FIELDS,
+    PART_FIELDS,
+    ROOT_FIELDS,
+    Scalar,
+    Store,
+    StoreError,
+    cypher_refusal,
+)
 from metaform.project.store import projects as store_projects
 from metaform.project.writes import Writer
 
@@ -105,6 +114,48 @@ def perform_drawn(project: str, owned: Owner) -> dict[str, object]:
         return refused({'drawn': project}, _missing(project))
     except StoreError as error:
         return refused({'drawn': project}, Refusal('INTERNAL_ERROR', f'the store failed: {error}'))
+
+
+def perform_cypher(project: str, query: str, owned: Owner) -> dict[str, object]:
+    """Answer a caller's Cypher query in the service, on a reader, inside a read-only transaction: `{'columns':
+    [names], 'rows': [[values]]}`, each value as JSON holds it. Not reachable through the tool, which sends commands
+    only. A query that would write, or that the engine cannot answer, is refused and changes nothing."""
+    asked: dict[str, object] = {'cypher': project}
+    refusal = cypher_refusal(query)
+    if refusal is not None:
+        return refused(asked, Refusal('QUERY_REFUSED', f'the query was refused: {refusal}.'))
+
+    def read(opened: Store) -> dict[str, object]:
+        try:
+            names, rows = opened.cypher(query)
+        except StoreError as error:  # answered here, so the reader does not run a refused query a second time
+            said = (str(error).strip().splitlines() or ['the engine gave no reason'])[0][:300]
+            if 'read-only transaction' in said:
+                return refused(asked, Refusal('QUERY_REFUSED', 'the query was refused: it would change the map, '
+                                              'and a query only reads.'))
+            if said.rstrip('.') == 'Interrupted':
+                return refused(asked, Refusal('QUERY_TIMEOUT', f'the query ran past its limit of {CYPHER_SECONDS} '
+                                              'seconds and was stopped.'))
+            return refused(asked, Refusal('QUERY_INVALID', f'the query was not understood: {said}'))
+        return {'columns': names, 'rows': [[_plain(value) for value in row] for row in rows]}
+    try:
+        return owned.read(project, read)
+    except Missing:
+        return refused(asked, _missing(project))
+    except StoreError as error:
+        return refused(asked, Refusal('INTERNAL_ERROR', f'the store failed: {error}'))
+
+
+def _plain(value: object) -> object:
+    """A value the engine returned, as JSON holds it: nodes, edges and paths as objects, lists as lists, and a value
+    of another type, such as a date or a decimal, as its text."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _plain(held) for key, held in cast(dict[object, object], value).items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(held) for held in cast(list[object], value)]
+    return str(value)
 
 
 def _drawn(opened: Store, project: str) -> dict[str, object]:

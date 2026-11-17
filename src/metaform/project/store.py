@@ -113,6 +113,23 @@ class _Engine:
         except Exception as error:
             raise StoreError(str(error)) from error
 
+    def table(self, query: str, seconds: float) -> tuple[list[str], list[list[Any]]]:
+        """A query given by a caller as text, with no parameters, answered as its column names and its rows. The
+        engine interrupts it at the time limit; the limit is taken off the connection again afterwards."""
+        try:
+            self._connection.set_query_timeout(int(seconds * 1000))
+            try:
+                result: Any = self._connection.execute(query)
+                names = [str(name) for name in result.get_column_names()]
+                rows: list[list[Any]] = []
+                while result.has_next():
+                    rows.append(list(result.get_next()))
+                return names, rows
+            finally:
+                self._connection.set_query_timeout(0)
+        except Exception as error:
+            raise StoreError(str(error)) from error
+
     def close(self) -> None:
         self._connection.close()
         if self._owns:
@@ -144,6 +161,46 @@ def _column(field: str) -> str:
     if not _NAME.match(field):
         raise StoreError(f'{field!r} is not a field name')
     return f'f_{field}'
+
+
+# A Cypher query a caller writes runs in a read-only transaction, and the engine refuses there every statement that
+# changes the database. A few statements change something else and pass it: `COPY (...) TO` writes a file,
+# `CALL <setting> = <value>` changes the connection or the database, `COMMIT` and `ROLLBACK` end the read's own
+# transaction, and `LOAD FROM` reads a file, or an object of the process, which is not the graph. So a query is one
+# statement that starts as a read does, and those forms are refused before it reaches the engine.
+CYPHER_SECONDS = 30  # a query runs on one of the readers every process of the home shares; one never ending holds it
+_CYPHER_STARTS = frozenset({'MATCH', 'OPTIONAL', 'UNWIND', 'WITH', 'RETURN', 'CALL'})
+_CYPHER_TOKEN = re.compile(r"""\s+|//[^\n]*|/\*.*?(?:\*/|\Z)|'(?:\\.|[^'\\])*(?:'|\Z)|"(?:\\.|[^"\\])*(?:"|\Z)"""
+                           r'|`(?:``|[^`])*(?:`|\Z)|[A-Za-z_][A-Za-z0-9_]*|\d+(?:\.\d+)?|.', re.DOTALL)
+
+
+def cypher_refusal(query: str) -> str | None:
+    """Why a caller's Cypher query is refused before the engine sees it, or None when it is one statement that reads.
+    Strings, quoted names and comments are read past, so a word inside them is never taken for a clause."""
+    words: list[str] = []  # the query's clause words in capitals, and its signs, outside strings and comments
+    for token in _CYPHER_TOKEN.findall(query):
+        if token.isspace() or token.startswith(('//', '/*')):
+            continue
+        if token[0] in '\'"`' or token[0].isdigit():
+            words.append('')  # a value or a quoted name: no clause, and not to be read as one
+        elif token[0].isalpha() or token[0] == '_':
+            words.append('' if words and words[-1] in ('.', ':') else token.upper())  # a property or a label is a name
+        else:
+            words.append(token)
+    while words and words[-1] == ';':
+        words.pop()
+    if ';' in words:
+        return 'it holds more than one statement; send one query'
+    start = next((word for word in words if word not in ('EXPLAIN', 'PROFILE')), '')
+    if start not in _CYPHER_STARTS:
+        return (f'`{start or query.strip()[:20]}` does not start a read of the graph; a query starts with MATCH, '
+                'OPTIONAL MATCH, UNWIND, WITH, RETURN or CALL <function>(...)')
+    for at, word in enumerate(words):
+        if word == 'CALL' and at + 2 < len(words) and words[at + 1] and words[at + 2] == '=':
+            return f'CALL {words[at + 1].lower()} = ... changes a setting of the store, which a query never does'
+        if word == 'LOAD' and at + 1 < len(words) and words[at + 1] in ('FROM', 'WITH'):
+            return 'LOAD FROM reads a file or an object outside the graph; a query reads the graph alone'
+    return None
 
 
 class Store:
@@ -312,6 +369,14 @@ class Store:
                 self._rows('COMMIT')
             except StoreError:
                 pass  # a query that failed has already ended the transaction
+
+    def cypher(self, query: str) -> tuple[list[str], list[list[Any]]]:
+        """A caller's Cypher query over the graph, as its column names and rows. Called inside `reading()` alone, the
+        read-only transaction that makes the engine refuse any write; `cypher_refusal` refuses what that misses."""
+        refusal = cypher_refusal(query)
+        if refusal is not None:
+            raise StoreError(f'the query was refused: {refusal}')
+        return self._engine.table(query, CYPHER_SECONDS)
 
     def root(self) -> dict[str, Scalar]:
         columns = ', '.join(f'r.`{field}`' for field in ROOT_FIELDS)

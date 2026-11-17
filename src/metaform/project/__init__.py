@@ -9,7 +9,7 @@ from pathlib import Path
 
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
-__all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'bases', 'clear', 'drawn', 'holds', 'memory', 'memory_answer',
+__all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'bases', 'clear', 'cypher', 'drawn', 'holds', 'memory', 'memory_answer',
            'memory_tools', 'memory_tools_changing', 'overlay_records', 'run', 'specification_document',
            'stored_name']
 
@@ -59,6 +59,16 @@ def overlay_records(project: str, key: str, home: Path | None = None) -> list[di
     display that lists them all; None when the store holds no such project."""
     from metaform.project import commands
     return commands.overlay_records(project, key, home)
+
+
+def cypher(project: str, query: str, home: Path | None = None, caller: str = '') -> dict[str, object]:
+    """A Cypher query over a project's graph, run by the home's service on a reader inside a read-only transaction:
+    `{'columns': [names], 'rows': [[values]]}`. A query that would write, or that the engine cannot answer, is refused
+    as the tool's refusals are, with `status`, `code` and `message`, and changes nothing."""
+    from metaform import home as metaform_home
+    from metaform.project import service
+    where = home if home is not None else metaform_home.home()
+    return service.send(None, where, caller or 'cypher', cypher={'project': project, 'query': query})
 
 
 def clear(project: str, home: Path | None = None) -> bool:

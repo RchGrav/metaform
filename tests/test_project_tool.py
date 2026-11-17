@@ -344,6 +344,42 @@ def test_a_read_does_not_wait_for_a_write_in_progress(mapped):
     assert f'{P}.code.pending' in run({'map': P})['addresses']
 
 
+def test_a_cypher_query_reads_the_graph_on_a_reader_and_never_writes(mapped, monkeypatch, tmp_path):
+    """Decision t-legacy-keep: map cypher runs on a project store's graph, read only. A write is refused by the engine
+    in the read-only transaction; what that lets through (a file written, a setting changed, the transaction ended, a
+    file read) is refused before it; a query past its time limit is stopped, and the readers still answer."""
+    owned = owner.of(mapped)
+    found = commands.perform_cypher(P, 'MATCH (h:Element)-[w:Wants]->(e:Element) RETURN h.address, e.address, w.why',
+                                    owned)
+    assert found == {'columns': ['h.address', 'e.address', 'w.why'],
+                     'rows': [['code.protocol.network.tracker.cs', 'code.masher.widget', WANT['why']]]}
+    before = snapshot()
+    written = tmp_path / 'out.csv'
+    for query, code in (('MATCH (e:Element) SET e.name = "changed"', 'QUERY_REFUSED'),
+                        ('MATCH (e:Element) DETACH DELETE e', 'QUERY_REFUSED'),
+                        ('CREATE (e:Element {address: "code.new"})', 'QUERY_REFUSED'),
+                        (f'COPY (MATCH (e:Element) RETURN e.address) TO "{written}"', 'QUERY_REFUSED'),
+                        ('CALL threads=1', 'QUERY_REFUSED'),
+                        ('COMMIT', 'QUERY_REFUSED'),
+                        ('MATCH (e:Element) RETURN e.address; CREATE (e:Element {address: "code.new"})',
+                         'QUERY_REFUSED'),
+                        ('LOAD FROM "/etc/hostname" (file_format="csv") RETURN *', 'QUERY_REFUSED'),
+                        ('MATCH (e:Element RETURN e', 'QUERY_INVALID')):
+        assert refusal(commands.perform_cypher(P, query, owned)) == (code, None), query
+    assert snapshot() == before and not written.exists()
+    # a word inside a string or a name is no clause
+    assert commands.perform_cypher(P, 'MATCH (load:Element) WHERE load.name = "x; COPY" RETURN load.address;',
+                                   owned) == {'columns': ['load.address'], 'rows': []}
+    counted = 'MATCH (e:Element) RETURN count(e)'
+    count = commands.perform_cypher(P, counted, owned)['rows']
+    monkeypatch.setattr(store, 'CYPHER_SECONDS', 0.001)
+    slow = 'UNWIND range(1, 4000) AS a UNWIND range(1, 4000) AS b WITH a * b AS s WHERE s % 7 = 0 RETURN sum(s)'
+    assert refusal(commands.perform_cypher(P, slow, owned)) == ('QUERY_TIMEOUT', None)
+    monkeypatch.setattr(store, 'CYPHER_SECONDS', 30)
+    for _ in range(owner.READERS + 1):  # every reader still answers, the one interrupted among them
+        assert commands.perform_cypher(P, counted, owned)['rows'] == count
+
+
 def test_processes_writing_at_once_are_all_stored_through_the_one_service(served, tmp_path):
     import subprocess
     import sys
@@ -1106,7 +1142,7 @@ def test_a_map_verb_refuses_on_a_project_whose_map_is_in_the_project_store(serve
     in_store, elsewhere = SimpleNamespace(store=SimpleNamespace(project_id=P)), SimpleNamespace(store=None)
     with pytest.raises(Stop, match=f"{P}'s map is in the project store, so `map where`"):
         verbs['where'].run(in_store)
-    for name in ('work', 'boards', 'guide', 'ask', 'reply', 'reopen', 'messages'):
+    for name in ('work', 'boards', 'guide', 'ask', 'reply', 'reopen', 'messages', 'cypher'):
         assert verbs[name].run.__name__ != 'refused_in_the_store', name
     assert verbs['where'].run.__name__ == 'refused_in_the_store'
     with pytest.raises(Exception) as raised:  # no store: the verb's own code runs, as before

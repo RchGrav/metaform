@@ -1535,6 +1535,22 @@ def test_questions_and_messages_of_a_project_in_the_project_store_are_its_questi
     assert 'answer' not in next(one for one in overlay_records('proj', 'questions') if one['id'] == asked['id'])
 
 
+def test_cypher_on_a_project_in_the_project_store_reads_its_graph_and_never_writes(run, stored):
+    """Decision t-legacy-keep: for a project held in the project store, map cypher answers from its LadybugDB graph
+    through the service, read only, in the old answer's shape; layers=, which has no place there, is refused by name."""
+    found = j(run, 'cypher', 'MATCH (p:Project)-[:CONTAINS*]->(e:Element) WHERE e.name IS NOT NULL '
+              'RETURN e.address, e.name ORDER BY e.address', cwd=stored)
+    assert found == {'columns': {'e.address': ['code.alarm.audible', 'code.timer.kitchen'],
+                                 'e.name': ['audible alarm', 'kitchen timer']}, 'rows': 2}
+    assert not (Store('proj').cypher('MATCH (e) WHERE e.kind = "element" RETURN e.address') or {}).get('e.address')
+    refused = run('map', 'cypher', 'MATCH (e:Element) SET e.name = "x"', cwd=stored, ok=False)
+    assert refused.returncode != 0 and 'it would change the map' in refused.stderr + refused.stdout
+    refused = run('map', 'cypher', 'layers=intake-1', 'MATCH (e:Element) RETURN e.address', cwd=stored, ok=False)
+    assert refused.returncode != 0 and 'layers= has no place' in refused.stderr + refused.stdout
+    assert j(run, 'cypher', 'MATCH (e:Element {address: "code.alarm.audible"}) RETURN e.name', cwd=stored)[
+        'columns'] == {'e.name': ['audible alarm']}  # nothing was changed
+
+
 @pytest.mark.req('STORE-025')
 @pytest.mark.req('LAYER-005')
 def test_where_shows_the_properties_that_apply_at_the_address_and_those_visible_there(run, mapped):

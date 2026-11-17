@@ -153,6 +153,10 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                     answer = commands.perform_specification(str(asked.get('project') or ''),
                                                             cast('str | None', asked.get('document')), owned,
                                                             str(message.get('caller') or ''))
+                elif isinstance(message.get('cypher'), dict):  # a caller's Cypher query, read only
+                    asked = cast(dict[str, Any], message['cypher'])
+                    answer = commands.perform_cypher(str(asked.get('project') or ''), str(asked.get('query') or ''),
+                                                     owned)
                 elif isinstance(message.get('memory'), dict):  # a call of a memory tool, `memory`
                     from metaform.project import memory_layer
                     answer = memory_layer.perform(message['memory'], owned, str(message.get('caller') or ''))
@@ -244,7 +248,8 @@ def _writes(command: Any) -> bool:
 
 def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '',
          overlay: str = '', memory: dict[str, object] | None = None,
-         specification: dict[str, object] | None = None, bases: dict[str, object] | None = None) -> dict[str, object]:
+         specification: dict[str, object] | None = None, bases: dict[str, object] | None = None,
+         cypher: dict[str, object] | None = None) -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
     Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
@@ -259,7 +264,8 @@ def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: 
                           **({'overlay': overlay} if overlay else {}),
                           **({'memory': memory} if memory else {}),
                           **({'specification': specification} if specification else {}),
-                          **({'bases': bases} if bases else {})}).encode('utf-8')
+                          **({'bases': bases} if bases else {}),
+                          **({'cypher': cypher} if cypher else {})}).encode('utf-8')
     for attempt in range(ATTEMPTS):
         try:
             connection = _connection(home, fresh=attempt > 0)

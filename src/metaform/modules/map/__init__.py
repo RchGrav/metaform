@@ -769,8 +769,12 @@ def cypher(ctx: Context) -> Any:
     query = (' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple))
              else str(given))
     named = [name for name in str(ctx.nouns.get('layers') or '').split(',') if name]
+    store = _store(ctx)
+    stored = project_store.stored_name(store.project_id)
+    if project_store.holds(stored):
+        return _cypher_in_project_store(stored, query, named)
     try:
-        found = _store(ctx).cypher(query, named or None)
+        found = store.cypher(query, named or None)
     except (Stop, OSError):  # the store's own refusal is said as itself
         raise
     except Exception as error:  # the query library refuses with errors of many types, its parser's and its own; each is said plainly with what usually causes it
@@ -780,10 +784,31 @@ def cypher(ctx: Context) -> Any:
         raise Stop(f'The query was not understood: {said}. Strings take double quotes; edges are matched by their '
                    'kind, as [x] WHERE x.kind = "join".', 'metaform help map cypher') from None
 
-    def scalar(value: Any) -> Any:
-        return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
-    columns = {str(name): [scalar(value) for value in values] for name, values in dict(found).items()}
+    columns = {str(name): [_cypher_scalar(value) for value in values] for name, values in dict(found).items()}
     return {'columns': columns, 'rows': max((len(values) for values in columns.values()), default=0)}
+
+
+def _cypher_scalar(value: Any) -> Any:
+    return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+
+
+def _cypher_in_project_store(stored: str, query: str, named: list[str]) -> dict[str, Any]:
+    """A Cypher query over the LadybugDB graph of a project held in the project store (decision t-legacy-keep, kickoff
+    2026-11-17 Phase 3), run by the home's single-writer service on a reader inside a read-only transaction, so it
+    never writes. Answered in the old path's shape: each returned column with its values in order."""
+    if named:  # the store has no layers to put in or out of view: each overlay is its own table, every one readable
+        raise Stop(f"layers= has no place for {stored}, whose map is in the project store: it keeps no layers to show or "
+                   'hide, and each overlay is a table of its own, ov_<key>. Match the overlay tables the query wants, '
+                   'as MATCH (e:Element)-[:HOLDS]->(t:ov_tickets) RETURN e.address, t.f_title, and leave layers= out.',
+                   'metaform help map cypher')
+    found = project_store.cypher(stored, query)
+    if found.get('status') == 'error':
+        raise Stop(f"{found.get('message')} The graph of {stored}'s map is described in the help; strings take double "
+                   'quotes.', 'metaform help map cypher')
+    names = [str(name) for name in cast(list[Any], found.get('columns') or [])]
+    rows = cast(list[list[Any]], found.get('rows') or [])
+    columns = {name: [_cypher_scalar(row[at]) for row in rows] for at, name in enumerate(names)}
+    return {'columns': columns, 'rows': len(rows)}
 
 
 def search(ctx: Context) -> Any:
@@ -2514,8 +2539,20 @@ _DECLARED = Module(
              nouns=(_noun('layers', 'The layers to see, by name, comma separated; left out, the layers turned on.'),
                     Noun('query', 'The Cypher query: MATCH, WHERE, RETURN, ORDER BY, LIMIT; strings in double quotes.',
                          many=True)),
-             details='The graph: nodes have a kind, element, join, item or property, and their fields. An element '
-                     'has address, name, name_length, role and layer_id. A join has purpose, ef, ifd, receiver and '
+             details='For a project whose map is in the project store, the query runs on its LadybugDB graph, read '
+                     'only: a query that would write is refused, and so are COPY, LOAD FROM, CALL <setting>=<value> '
+                     'and more than one statement; one query runs for 30 seconds at most. Nodes and edges have labels. '
+                     'Map {id} -ROOT-> Project {id, name, project}, the project\'s root. Project -CONTAINS-> Element '
+                     'and Element -CONTAINS-> Element: the namespace tree. Element has address (without the '
+                     'project\'s name), technical_name, name, role, ref and status. Element -Wants {why, how, direction, '
+                     'ref}-> Element: what an element wants of another. Element -HOLDS-> ov_<key>, and Project -HOLDS-> '
+                     'ov_specification: overlay records, one table per overlay (ov_tickets, ov_questions, ...), each '
+                     'with position, ref, record, revision and f_<field> for each field of its definition. OverlayPart '
+                     '{address, description, instruction, type, rule, example, optional, ordinal}: the parts of the '
+                     'overlay definitions. MemoryEntity {name, entityType, observations} -MemoryRelation {relationType}-> '
+                     'MemoryEntity: the memory layer. CALL show_tables() RETURN * lists every table. layers= has no '
+                     'place there. For a project in the old store: nodes have a kind, element, join, item or property, '
+                     'and their fields. An element has address, name, name_length, role and layer_id. A join has purpose, ef, ifd, receiver and '
                      'type. An item has value, target_kind, target_id and layer_id. Edges have a kind: join runs from '
                      'a receiver element to each element its join holds and carries the join\'s id, purpose, ef and '
                      'ifd; receives runs from a receiver to its join node; holds runs from a join node to each element '
@@ -2526,7 +2563,9 @@ _DECLARED = Module(
              examples=(('metaform map cypher MATCH \'(e) WHERE e.kind = "element" AND e.role = "DE" RETURN e.address, e.name\'',
                         'The defining elements.'),
                        (('metaform map cypher \'MATCH (r)-[j]->(e) WHERE r.address = "code.store" AND j.kind = "join" '
-                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.')),
+                         'RETURN e.address, j.purpose\''), 'What the store relies on, with the purpose of each join.'),
+                       (('metaform map cypher \'MATCH (h:Element)-[w:Wants]->(e:Element) WHERE h.address = "code.store" '
+                         'RETURN e.address, w.why\''), 'The same, for a project whose map is in the project store.')),
              effect='read', reads_layers=True),
         Verb('search', search, 'Find the layer items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read',
@@ -2754,10 +2793,12 @@ _DECLARED = Module(
 # t-legacy-keep, kickoff 2026-11-17 Phase 3). `bases`, `add-base`, `activate`, `remove-base` and `collapse` keep the
 # project's bases as databases of the project store, and `history` and `promote` refuse there by name with the reason,
 # the store keeping no earlier versions and a want having no field for an element of its own (the same decision).
+# `ask`, `reply`, `reopen` and `messages` answer from the project store's questions overlay, and `cypher` runs on the
+# project store's graph, read only (decision t-legacy-keep, kickoff 2026-11-17 Phase 3).
 ANSWERED_BESIDE_THE_STORE = frozenset({'activate', 'add-base', 'answer', 'approve', 'ask', 'bases', 'boards',
-                                       'challenges', 'citing', 'collapse', 'context', 'critic', 'glossary', 'guide',
-                                       'history', 'knowledge', 'layer', 'layers', 'links', 'messages', 'node',
-                                       'promote', 'remove-base', 'reopen', 'reply', 'term', 'work'})
+                                       'challenges', 'citing', 'collapse', 'context', 'critic', 'cypher', 'glossary',
+                                       'guide', 'history', 'knowledge', 'layer', 'layers', 'links', 'messages',
+                                       'node', 'promote', 'remove-base', 'reopen', 'reply', 'term', 'work'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:
