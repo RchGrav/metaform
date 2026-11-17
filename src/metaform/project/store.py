@@ -172,32 +172,80 @@ class Store:
     def _upgrade(self) -> None:
         """Bring a database made before the tree and `HOLDS` were stored to the graph's structure, once: the map and
         its `ROOT`, a `CONTAINS` to every element from its parent, and a `HOLDS` to every overlay record from the element
-        its address names. A database already in that structure is left as it is."""
+        its address names. A database already in that structure is left as it is. The structure comes first: when it
+        cannot be made whole nothing at all is changed, and the later upgrades, the memory tables and the records' ids,
+        run only on a database in the graph's structure."""
         tables = self._tables()
+        overlays = sorted(name for name in tables if name.startswith('ov_'))
+        if not ('Map' in tables and 'Root' not in tables and (HOLDS in tables or not overlays)):
+            with self.transaction():
+                self._restructure(tables, overlays)
+                self._checked('bringing the database to the tree and HOLDS', tree=True)
         if 'MemoryEntity' not in tables:  # a database made before the memory layer gains its tables, empty
             with self.transaction():
                 for statement in _MEMORY:
                     self._rows(statement)
-        overlays = sorted(name for name in tables if name.startswith('ov_'))
         if overlays:  # every overlay record has its lasting id and revision (F02)
             with self.transaction():
-                self.give_identity()
-        if 'Map' in tables and 'Root' not in tables and (HOLDS in tables or not overlays):
-            return
-        with self.transaction():
-            if 'Root' in tables:  # the project's root before the tree: the same node under the name `Project`
-                self._rows('ALTER TABLE Root RENAME TO Project')
-            if 'Map' not in tables:
-                for statement in _TREE:
-                    self._rows(statement)
-                self._plant(self.path.stem)
-                for row in self._rows('MATCH (e:Element) RETURN e.address ORDER BY e.address'):
-                    self._contain(str(row[0]))
-            if overlays and HOLDS not in tables:
-                pairs = ', '.join(f'FROM Element TO {name}' for name in overlays)
-                self._rows(f'CREATE REL TABLE {HOLDS}({pairs})')
-                for name in overlays:
-                    self._rows(f'MATCH (e:Element), (r:{name}) WHERE r.address = e.address CREATE (e)-[:{HOLDS}]->(r)')
+                if self.give_identity():
+                    self._checked('giving overlay records their ids', tree=False)
+
+    def _checked(self, upgrade: str, tree: bool) -> None:
+        """An upgrade is finished only when the graph it leaves is whole, F15: checked inside its own transaction, so
+        a shortfall rolls the upgrade back and is reported by name, and the database is left as it was. Never run on an
+        ordinary open, so a fault already in a database cannot shut its owner out."""
+        problems = self.integrity(tree=tree)
+        if problems:
+            raise StoreError(f"{self.path.stem}: {upgrade} would leave the graph incomplete, so nothing was changed: "
+                             f"{'; '.join(problems)}")
+
+    def integrity(self, tree: bool = True) -> list[str]:
+        """What is not whole in the graph, each in a sentence; empty when it is whole (F15, kickoff 2026-11-17). With
+        `tree`: one map and root joined by ROOT, and every element reached by exactly one CONTAINS. Always: every overlay
+        record reached by exactly one HOLDS, with a record id at a revision, and no record id held twice in an overlay."""
+        problems: list[str] = []
+        tables = self._tables()
+        if tree:
+            roots = self._rows('MATCH (:Map)-[:ROOT]->(r:Project) RETURN count(*)')[0][0] if 'Map' in tables else 0
+            if roots != 1:
+                problems.append(f'{roots} roots are joined to the map by ROOT, not 1')
+            for address, parents in self._rows('MATCH (e:Element) OPTIONAL MATCH (p)-[:CONTAINS]->(e) '
+                                               'RETURN e.address, count(p) ORDER BY e.address'):
+                if parents != 1:
+                    problems.append(f"element '{address}' is reached by {parents} CONTAINS, not 1")
+        for name in sorted(table for table in tables if table.startswith('ov_')):
+            held = {str(row[0]) for row in self._rows(f"CALL table_info('{name}') RETURN name")}
+            if HOLDS in tables:
+                loose = self._rows(f'MATCH (r:{name}) OPTIONAL MATCH (e:Element)-[:{HOLDS}]->(r) WITH r, count(e) AS n '
+                                   'WHERE n <> 1 RETURN count(*)')[0][0]
+                if loose:
+                    problems.append(f'{loose} {name[3:]} records are not held by exactly one element')
+            if 'record' in held:
+                missing = self._rows(f'MATCH (r:{name}) WHERE r.record IS NULL OR r.revision IS NULL RETURN count(*)')
+                if missing[0][0]:
+                    problems.append(f'{missing[0][0]} {name[3:]} records have no record id or revision')
+                twice = self._rows(f'MATCH (r:{name}) WHERE r.record IS NOT NULL WITH r.record AS id, count(*) AS n '
+                                   'WHERE n > 1 RETURN count(*)')
+                if twice[0][0]:
+                    problems.append(f'{twice[0][0]} {name[3:]} record ids are held twice')
+        return problems
+
+    def _restructure(self, tables: set[str], overlays: list[str]) -> None:
+        """The tree and HOLDS, made once from a database stored before them."""
+        if 'Root' in tables:  # the project's root before the tree: the same node under the name `Project`
+            self._rows('ALTER TABLE Root RENAME TO Project')
+        if 'Map' not in tables:
+            for statement in _TREE:
+                self._rows(statement)
+            self._plant(self.path.stem)
+            for row in self._rows('MATCH (e:Element) RETURN e.address ORDER BY e.address'):
+                self._contain(str(row[0]))
+        if overlays and HOLDS not in tables:
+            pairs = ', '.join(f'FROM Element TO {name}' for name in overlays)
+            self._rows(f'CREATE REL TABLE {HOLDS}({pairs})')
+            for name in overlays:
+                self._rows(f'MATCH (e:Element), (r:{name}) WHERE r.address = e.address CREATE (e)-[:{HOLDS}]->(r)')
+
     def reader(self) -> Store:
         """Another connection on the same open database. It sees the last committed state and never waits for a
         write in progress on this one."""
@@ -506,19 +554,25 @@ class Store:
         return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', 'record', 'revision', *fields], row[2:])))
                 for row in rows]
 
-    def give_identity(self) -> None:
+    def give_identity(self) -> bool:
         """Every overlay record has a `record` id it keeps for its life and a `revision` (F02, kickoff 2026-11-17).
         A table made before them gains both columns, and each record without an id is given one at revision 1. Its
-        fields, ref and position are not touched. Run inside the writer's transaction each time a database opens."""
+        fields, ref and position are not touched. Run inside a transaction each time a database opens; whether it
+        changed anything, so the change can be checked."""
+        changed = False
         for name in sorted(table for table in self._tables() if table.startswith('ov_')):
             held = {str(row[0]) for row in self._rows(f"CALL table_info('{name}') RETURN name")}
             if 'record' not in held:
                 self._rows(f'ALTER TABLE {name} ADD record STRING')
+                changed = True
             if 'revision' not in held:
                 self._rows(f'ALTER TABLE {name} ADD revision INT64')
+                changed = True
             for (ident,) in self._rows(f'MATCH (r:{name}) WHERE r.record IS NULL RETURN r.id'):
                 self._rows(f'MATCH (r:{name}) WHERE r.id = $id SET r.record = $record, r.revision = 1', id=ident,
                            record=new_record_id())
+                changed = True
+        return changed
 
     def record_count(self, key: str, address: str) -> int:
         rows = self._rows(f'{self._held_at(key)} RETURN count(*)', address=address)

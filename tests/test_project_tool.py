@@ -1009,3 +1009,33 @@ def test_the_walk_beneath_an_element_reaches_every_level_however_deep(mapped):
     # deleting the top of it is refused while elements are beneath, naming the deepest
     answer = run({'delete': {f'{P}.code.s0': {}}})
     assert answer['code'] == 'ELEMENTS_BENEATH' and answer['remediation'] == {'delete': {deep: {}}}
+
+
+def test_an_upgrade_that_would_leave_the_graph_incomplete_changes_nothing_and_says_why(home, mapped):
+    """F15: an upgrade is finished only when the graph it leaves is whole, checked inside its transaction. A record
+    an old database ties to no element would be left unheld, so the upgrade is refused by name and the old database
+    is left as it was; a whole graph reports nothing."""
+    assert owner.of(metaform_home.home()).read(P, lambda opened: opened.integrity()) == []
+    owner.close_all()
+    path = store.location(home, 'oldproject')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = store._Engine(path)
+    for statement in (('CREATE NODE TABLE Element(address STRING PRIMARY KEY, `technical_name` STRING, `name` STRING, '
+                       '`role` STRING, `ref` STRING, `status` STRING)'),
+                      'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
+                      ('CREATE NODE TABLE ov_notes(id SERIAL PRIMARY KEY, address STRING, position INT64, ref STRING, '
+                       'f_text STRING)'),
+                      "CREATE (:Root {k: 'root', name: 'Old'})", "CREATE (:Element {address: 'code'})",
+                      "CREATE (:ov_notes {address: 'code.gone', position: 0, f_text: 'Held by nothing.'})"):
+        old.rows(statement, {})
+    old.close()
+    with pytest.raises(store.StoreError, match='notes records are not held by exactly one element'):
+        store.Store(path)
+    again = store._Engine(path)
+    try:  # left as it was: still the old root, no map, the record's text untouched
+        tables = {str(row[0]) for row in again.rows('CALL show_tables() RETURN name', {})}
+        assert 'Root' in tables and 'Map' not in tables and 'MemoryEntity' not in tables
+        assert 'record' not in {str(row[0]) for row in again.rows("CALL table_info('ov_notes') RETURN name", {})}
+        assert again.rows('MATCH (r:ov_notes) RETURN r.f_text', {}) == [['Held by nothing.']]
+    finally:
+        again.close()
