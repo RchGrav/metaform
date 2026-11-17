@@ -107,11 +107,16 @@ def perform_drawn(project: str, owned: Owner) -> dict[str, object]:
 
 
 def _drawn(opened: Store, project: str) -> dict[str, object]:
+    # Each overlay is listed by its key with the address its definition is stored at: a key cannot be turned back into
+    # an address, since a step may hold an underscore (review_findings is not findings.review), F04.
     return {'elements': [{'address': full(project, address), **_fields(values)}
                          for address, values in opened.all_elements()],
             'wants': [{'holder': full(project, holder), 'element': full(project, str(want['element'])),
                        **{name: value for name, value in want.items() if name != 'element' and value is not None}}
-                      for holder, want in opened.all_wants()]}
+                      for holder, want in opened.all_wants()],
+            'overlays': [{'key': key, 'address': full(project, definition.address),
+                          'description': definition.description or ''}
+                         for key, definition in sorted(definitions(opened.parts()).items())]}
 
 
 def perform(command: object, owned: Owner, caller: str = '', request: str = '') -> dict[str, object]:

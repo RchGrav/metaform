@@ -71,8 +71,8 @@ def layers(project: str, base: str) -> list[Layer] | None:
     name = commands.stored_name(project)
     if not commands.holds(name):
         return None
-    found = commands.run({'map': name})
-    if found.get('status') == 'error':
+    found = commands.drawn(name)
+    if found is None:
         return None
 
     def layer(key: str, said: str) -> Layer:
@@ -83,12 +83,12 @@ def layers(project: str, base: str) -> list[Layer] | None:
                      hideable=key != BASE, result_id=None, created='', ready='recorded', on=True)
 
     made = [layer(BASE, "The project's map: its elements and what each wants of another.")]
-    for key in cast(list[str], found.get('overlays') or []):
-        if key == 'wants':  # the wants are the base map's own joins
+    # each overlay with the description its stored definition holds, found by its key: a key is never split back into
+    # an address, since a step may hold an underscore (F04)
+    for overlay in cast(list[dict[str, Any]], found.get('overlays') or []):
+        if overlay['key'] == 'wants':  # the wants are the base map's own joins
             continue
-        steps = '.'.join(reversed(key.split('_')))
-        definition = cast(dict[str, Any], commands.run({f'{name}.overlay.{steps}': {}}).get(f'{name}.overlay.{steps}') or {})
-        made.append(layer(key, str(definition.get('description') or '')))
+        made.append(layer(str(overlay['key']), str(overlay.get('description') or '')))
     return made
 
 

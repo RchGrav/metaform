@@ -830,3 +830,32 @@ def test_clearing_a_map_keeps_its_memory_for_the_next_map(mapped):
                      {'name': WIDGET, 'entityType': 'widget masher', 'observations': ['mashes']}],
         'relations': [{'from': 'relay', 'to': WIDGET, 'relationType': 'feeds'}]}
     assert not owner.kept_memory(store.location(metaform_home.home(), P)).exists()
+
+
+def test_the_pages_layers_find_each_definition_by_its_key_with_underscores_inside_a_step(served):
+    """F04: a definition whose step holds an underscore keeps its description on the page. Its key reversed back
+    into steps names another address, demo.overlay.findings.review, so the page must look it up, not rebuild it."""
+    from metaform.modules.web import project_map
+    defined = {f'{P}.overlay.review_findings': 'Findings of a review.',
+               f'{P}.overlay.design_notes.team': 'Notes the team keeps on a design.',
+               SPEC: SPEC_DEFINITION['description']}
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, home=served) == {'status': 'ok'}
+    for address, description in defined.items():
+        fields = SPEC_DEFINITION if address == SPEC else {
+            'description': description, 'instruction': 'One record a finding.',
+            'title': {'type': 'text', 'rule': 'The finding in a line.', 'example': 'A leak'}}
+        assert commands.run({'add': {address: fields}}, home=served) == {'status': 'ok'}
+    record = {'title': 'A leak'}
+    assert commands.run({'add': {WIDGET: {'review_findings': [record]}}}, home=served) == {'status': 'ok'}
+    before = commands.run({WIDGET: {'review_findings': {}}}, home=served)
+
+    found = {layer.name: layer.variable for layer in project_map.layers(P, 'base')}
+
+    expected = {'base': "The project's map: its elements and what each wants of another.",
+                'review_findings': 'Findings of a review.',
+                'team_design_notes': 'Notes the team keeps on a design.',
+                'project_specifications': SPEC_DEFINITION['description']}
+    assert {name: found.get(name) for name in expected} == expected  # the store's own overlays are listed beside them
+    for address in defined:  # each definition is still read at the address it was written at
+        assert commands.run({address: {}}, home=served)[address]['description'] == defined[address]
+    assert commands.run({WIDGET: {'review_findings': {}}}, home=served) == before
