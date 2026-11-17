@@ -12974,3 +12974,27 @@ def test_roundtable_pipeline_review_and_person_decision_use_the_exact_revision(r
     (folder / 'plan.md').write_text(text, encoding='utf-8')
     response = decide('no', revision=2)
     assert response[0] == 200 and json.loads(response[1])['pipeline']['state'] == 'stopped', response
+
+
+def test_the_system_agent_read_while_it_starts_is_found_once_its_workspace_announces_it(monkeypatch):
+    """The page reads the system agent's conversation while it starts, before its session row exists in the workspace:
+    the change the workspace announces for that work id lets the next read find it. Changes naming other work cause
+    no read at all, however many arrive."""
+    from metaform.modules.web import server as web_server
+    held: list[dict[str, str]] = []
+    reads: list[str] = []
+
+    def sessions(given, owner, verb, arguments):
+        reads.append(arguments['id'])
+        return {'sessions': held}
+    monkeypatch.setattr(web_server, 'module_verb', sessions)
+    monkeypatch.setattr(web_server, '_LEADS', {})
+    assert not web_server.leads('task-system')                       # read while the system agent starts
+    held.append({'session_id': 's1'})
+    for number in range(500):                                         # a burst that does not concern it
+        web_server.system_agent_heard({'project': 'workspace', 'work_ids': [f'task-other-{number}']})
+    assert not web_server.leads('task-system') and reads == ['task-system']
+    web_server.system_agent_heard({'project': 'workspace', 'work_ids': ['task-system']})
+    assert web_server.leads('task-system') and reads == ['task-system', 'task-system']
+    web_server.system_agent_heard({'project': 'workspace'})           # a change naming nothing keeps what is held
+    assert web_server.leads('task-system') and reads == ['task-system', 'task-system']
