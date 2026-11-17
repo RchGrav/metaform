@@ -408,7 +408,8 @@ def test_waiting_writes_commit_together_and_a_refused_one_fails_alone(home, tmp_
         with pytest.raises(ValueError):
             mixed[1].result(timeout=10)
         stored = database.read(lambda opened: [address for address, _ in opened.all_elements()])
-        assert {'code.kept_a', 'code.kept_c'} <= set(stored) and len(stored) == 12
+        # twelve written, and their parent `code`, which the store makes so every element is reached from the root
+        assert {'code', 'code.kept_a', 'code.kept_c'} <= set(stored) and len(stored) == 13
     finally:
         database.close()
     # each commit that stored writes is told once, however many writes it held: the holder and the group of ten,
@@ -594,3 +595,79 @@ def test_help_serves_the_intake_procedure_one_section_at_a_time(home):
         assert run({'help': f'intake/{one.name}'}) == {'help': {f'intake/{one.name}': one.text}}
     unknown = run({'help': 'intake/no such section'})
     assert unknown['code'] == 'FIELD_MISMATCH' and unknown['remediation'] == {'help': 'intake'}
+
+
+def opened_store(home):
+    """The project's database, opened as the owner's writer opens it, after the owner has let it go."""
+    owner.close_all()
+    return store.Store(store.location(home, P))
+
+
+def test_the_map_is_one_tree_from_its_root(mapped):
+    """The Rust form's shape (R-4.16, `metaform-store/src/graph.rs`): the map reaches the project's root by `ROOT`, and
+    every element is reached by exactly one `CONTAINS` from its parent address, a top-level element from the root."""
+    opened = opened_store(mapped)
+    try:
+        assert opened._rows("MATCH (:Map {id: $id})-[:ROOT]->(r:Project) RETURN count(r)", id=P) == [[1]]
+        edges = opened.tree()
+        addresses = [address for address, _ in opened.all_elements()]
+        parents: dict[str, list[str]] = {}
+        for parent, child in edges:
+            parents.setdefault(child, []).append(parent)
+        for address in addresses:
+            assert parents.get(address) == [address.rpartition('.')[0] or '.'], address
+        assert opened.beneath('code.masher') == ['code.masher.widget']
+    finally:
+        opened.close()
+
+
+def test_overlay_records_are_reached_from_their_element_and_go_with_it(mapped):
+    """Each overlay record is reached from its element by `HOLDS`, and deleting the element removes them."""
+    note = {f'{P}.overlay.notes': {'description': 'Notes.', 'instruction': 'Write a note.'},
+            f'{P}.overlay.notes.text': {'type': 'text', 'rule': 'One sentence.', 'example': 'It works.'}}
+    for path, fields in note.items():
+        assert run({'add': {path: fields}}) == {'status': 'ok'}, path
+    assert run({'add': {WIDGET: {'notes': [{'text': 'Kept.'}]}}}) == {'status': 'ok'}
+    opened = opened_store(mapped)
+    try:
+        held = opened._rows('MATCH (e:Element)-[:HOLDS]->(r:ov_notes) RETURN e.address, r.f_text')
+        assert held == [['code.masher.widget', 'Kept.']]
+    finally:
+        opened.close()
+    assert run({'delete': {CS: {'wants': [WIDGET]}}}) == {'status': 'ok'}
+    assert run({'delete': {WIDGET: {}}}) == {'status': 'ok'}
+    opened = opened_store(mapped)
+    try:
+        assert opened._rows('MATCH (r:ov_notes) RETURN count(r)') == [[0]]
+    finally:
+        opened.close()
+
+
+def test_a_database_made_before_the_tree_is_given_it_on_open(home):
+    """A project database from before the tree and `HOLDS` were stored, with its root named `Root` and its records
+    tied to elements by an address column, is brought to the graph's structure once, when the writer opens it."""
+    path = store.location(home, P)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = store._Engine(path)
+    for statement in (('CREATE NODE TABLE Element(address STRING PRIMARY KEY, `technical_name` STRING, `name` STRING, '
+                       '`role` STRING, `ref` STRING, `status` STRING)'),
+                      'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
+                      ('CREATE NODE TABLE ov_notes(id SERIAL PRIMARY KEY, address STRING, position INT64, ref STRING, '
+                       'f_text STRING)'),
+                      "CREATE (:Root {k: 'root', name: 'Mashtrac'})",
+                      "CREATE (:Element {address: 'code'})", "CREATE (:Element {address: 'code.loop.main'})",
+                      "CREATE (:ov_notes {address: 'code.loop.main', position: 0, f_text: 'Kept.'})"):
+        old.rows(statement, {})
+    old.close()
+    opened = store.Store(path)
+    try:
+        assert opened.root()['name'] == 'Mashtrac'
+        assert opened.tree() == [('.', 'code'), ('code', 'code.loop'), ('code.loop', 'code.loop.main')]
+        assert opened.records('notes', 'code.loop.main', ['text']) == [{'ref': None, 'text': 'Kept.'}]
+    finally:
+        opened.close()
+    again = store.Store(path)  # a second open finds the structure in place and changes nothing
+    try:
+        assert len(again.tree()) == 3
+    finally:
+        again.close()

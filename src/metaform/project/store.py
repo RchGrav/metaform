@@ -1,11 +1,21 @@
 """One project's map in LadybugDB, at `<home>/maps/<project>.lbug`.
 
-The map is stored by field. `Element` holds one row per address, the address without the project's name as its key
-and one column per field of an element. `OverlayPart` holds the parts of overlay definitions, everything beneath the
-`overlay` root. `Wants` is a relationship between elements with the want's fields as its columns. Every other overlay
-has a node table `ov_<key>` of its own: one row per record, with the address it sits at, its position in the list, its
-`ref`, and one column `f_<field>` per field of its definition. The fixed tables are named in capitals and every
-overlay table starts with `ov_`, so the two never meet.
+The map is a graph, in the structure of the Rust form (`core/metaform/rust/crates/metaform-store/src/graph.rs`), which
+the founder confirmed on 2026-11-17, with the founder's later decisions of 2026-11-15/16:
+
+    (Map) -ROOT-> (Project) -CONTAINS-> (Element) -CONTAINS-> (Element) ...   the namespace tree, as edges
+    (Element) -Wants {why, how, direction, ref}-> (Element)                 wants, as edges
+    (Element) -HOLDS-> (ov_<key>)                                           overlay records, as edges
+
+`Map` is the map, keyed by the project's stored name. `Project` is the project's root: it holds the project's own id, name
+and source, where the Rust form keeps them on its root element `.`. Every element is reached from the root by exactly
+one `CONTAINS` from its parent address, a top-level element from `Project` itself (R-4.16). The engine's names
+are not case-sensitive, so the root node cannot be called `Root` beside the relationship `ROOT`. `Element` holds one row per
+address, the address without the project's name as its key and one column per field of an element. `OverlayPart` holds
+the parts of overlay definitions, everything beneath the `overlay` root. Each overlay has a node table `ov_<key>` of its
+own, one column `f_<field>` per field of its definition, its position in the list and its `ref`: the records stored as
+structs of arrays, the founder's decision of 2026-11-15, each reached from its element by `HOLDS`. The fixed tables are
+named in capitals and every overlay table starts with `ov_`, so the two never meet.
 
 Every value reaches the engine as a query parameter. The only names written into query text are the fixed tables and
 the overlay tables and columns, and those are checked here against the form of a step before use.
@@ -38,10 +48,17 @@ _SCHEMA = (
      '`type` STRING, `rule` STRING, `example` STRING, `optional` BOOLEAN, ordinal INT64)'),
     'CREATE REL TABLE Wants(FROM Element TO Element, why STRING, how STRING, direction STRING, ref STRING)',
     # The project's own fields, held at its root: one row.
-    'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
+    'CREATE NODE TABLE Project(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
     # The id of each write that was stored, written in the write's own transaction, so a write sent twice is done once.
     'CREATE NODE TABLE Request(id STRING PRIMARY KEY, seq SERIAL)',
+    *(_TREE := (
+        'CREATE NODE TABLE Map(id STRING PRIMARY KEY)',
+        'CREATE REL TABLE ROOT(FROM Map TO Project)',
+        'CREATE REL TABLE CONTAINS(FROM Project TO Element, FROM Element TO Element)',
+    )),
 )
+HOLDS = 'HOLDS'  # the relationship from an element to each of its overlay records, one pair per overlay table
+DEPTH = 30  # the bound of a walk down the tree: the engine walks at most 30 steps, deeper than any address
 REQUESTS_KEPT = 10000  # the most recent write ids kept; a write is only ever sent again within moments of the first
 _ELEMENT_COLUMNS = ', '.join(f'e.`{field}`' for field in ELEMENT_FIELDS)
 _PART_COLUMNS = ', '.join(f'p.`{field}`' for field in PART_FIELDS)
@@ -133,9 +150,41 @@ class Store:
             with self.transaction():
                 for statement in _SCHEMA:
                     self._rows(statement)
+                self._plant(create)
                 for address, fields in texts.wants_definition(create).items():
                     self.put_part(address, dict(fields))
+        else:
+            self._upgrade()
 
+    def _plant(self, project: str) -> None:
+        """The map's node and the project's root, joined by `ROOT`."""
+        self._rows("MERGE (m:Map {id: $id}) MERGE (r:Project {k: 'root'}) MERGE (m)-[:ROOT]->(r)", id=project)
+
+    def _tables(self) -> set[str]:
+        return {str(row[0]) for row in self._rows('CALL show_tables() RETURN name')}
+
+    def _upgrade(self) -> None:
+        """Bring a database made before the tree and `HOLDS` were stored to the graph's structure, once: the map and
+        its `ROOT`, a `CONTAINS` to every element from its parent, and a `HOLDS` to every overlay record from the element
+        its address names. A database already in that structure is left as it is."""
+        tables = self._tables()
+        overlays = sorted(name for name in tables if name.startswith('ov_'))
+        if 'Map' in tables and 'Root' not in tables and (HOLDS in tables or not overlays):
+            return
+        with self.transaction():
+            if 'Root' in tables:  # the project's root before the tree: the same node under the name `Project`
+                self._rows('ALTER TABLE Root RENAME TO Project')
+            if 'Map' not in tables:
+                for statement in _TREE:
+                    self._rows(statement)
+                self._plant(self.path.stem)
+                for row in self._rows('MATCH (e:Element) RETURN e.address ORDER BY e.address'):
+                    self._contain(str(row[0]))
+            if overlays and HOLDS not in tables:
+                pairs = ', '.join(f'FROM Element TO {name}' for name in overlays)
+                self._rows(f'CREATE REL TABLE {HOLDS}({pairs})')
+                for name in overlays:
+                    self._rows(f'MATCH (e:Element), (r:{name}) WHERE r.address = e.address CREATE (e)-[:{HOLDS}]->(r)')
     def reader(self) -> Store:
         """Another connection on the same open database. It sees the last committed state and never waits for a
         write in progress on this one."""
@@ -189,12 +238,12 @@ class Store:
 
     def root(self) -> dict[str, Scalar]:
         columns = ', '.join(f'r.`{field}`' for field in ROOT_FIELDS)
-        rows = self._rows(f"MATCH (r:Root {{k: 'root'}}) RETURN {columns}")
+        rows = self._rows(f"MATCH (r:Project {{k: 'root'}}) RETURN {columns}")
         return dict(zip(ROOT_FIELDS, rows[0])) if rows else dict.fromkeys(ROOT_FIELDS)
 
     def put_root(self, fields: dict[str, Scalar]) -> None:
         sets = ', '.join(f'r.`{field}` = $r_{field}' for field in ROOT_FIELDS)
-        self._rows(f"MERGE (r:Root {{k: 'root'}}) SET {sets}",
+        self._rows(f"MERGE (r:Project {{k: 'root'}}) SET {sets}",
                    **{f'r_{field}': fields.get(field) for field in ROOT_FIELDS})
 
     def request_done(self, request: str) -> bool:
@@ -228,6 +277,21 @@ class Store:
         sets = ', '.join(f'e.`{field}` = ${field}' for field in ELEMENT_FIELDS)
         self._rows(f'MERGE (e:Element {{address: $address}}) SET {sets}', address=address,
                    **{field: fields.get(field) for field in ELEMENT_FIELDS})
+        self._contain(address)
+
+    def _contain(self, address: str) -> None:
+        """The one `CONTAINS` that reaches this element from its parent: the element above it, made empty where it is
+        missing, or the project's root for a top-level element."""
+        parent = address.rpartition('.')[0]
+        if not parent:
+            self._rows("MATCH (r:Project {k: 'root'}), (e:Element {address: $address}) MERGE (r)-[:CONTAINS]->(e)",
+                       address=address)
+            return
+        if not self._rows('MATCH (p:Element {address: $parent}) RETURN count(*)', parent=parent)[0][0]:
+            self._rows('CREATE (:Element {address: $parent})', parent=parent)
+            self._contain(parent)
+        self._rows('MATCH (p:Element {address: $parent}), (e:Element {address: $address}) '
+                   'MERGE (p)-[:CONTAINS]->(e)', parent=parent, address=address)
 
     def delete_element(self, address: str, keys: list[str]) -> None:
         """Delete an element with its own wants, a want on itself, and its records in every overlay table."""
@@ -236,9 +300,18 @@ class Store:
         self._rows('MATCH (e:Element {address: $address}) DETACH DELETE e', address=address)
 
     def beneath(self, address: str) -> list[str]:
-        rows = self._rows('MATCH (e:Element) WHERE e.address STARTS WITH $prefix RETURN e.address ORDER BY e.address',
-                          prefix=address + '.')
+        """Every element beneath this one, walked down the tree by `CONTAINS`, in address order."""
+        rows = self._rows(f'MATCH (:Element {{address: $address}})-[:CONTAINS*1..{DEPTH}]->(e:Element) '
+                          'RETURN DISTINCT e.address ORDER BY e.address', address=address)
         return [str(row[0]) for row in rows]
+
+    def tree(self) -> list[tuple[str, str]]:
+        """Every `CONTAINS` edge as (parent, child), the project's root written `.`, for a reader that draws the tree
+        or checks its shape."""
+        top = self._rows("MATCH (:Project {k: 'root'})-[:CONTAINS]->(e:Element) RETURN e.address ORDER BY e.address")
+        rest = self._rows('MATCH (p:Element)-[:CONTAINS]->(e:Element) RETURN p.address, e.address '
+                          'ORDER BY p.address, e.address')
+        return [('.', str(row[0])) for row in top] + [(str(row[0]), str(row[1])) for row in rest]
 
     # Wants
 
@@ -308,9 +381,14 @@ class Store:
         return sorted(str(row[0])[3:] for row in rows if str(row[0]).startswith('ov_'))
 
     def create_overlay(self, key: str, columns: dict[str, str]) -> None:
+        """The overlay's own table, and its pair in `HOLDS`, so each record is reached from its element."""
         fields = ''.join(f', {_column(field)} {_kind(kind)}' for field, kind in columns.items())
-        self._rows(f'CREATE NODE TABLE {_table(key)}(id SERIAL PRIMARY KEY, address STRING, position INT64, '
-                   f'ref STRING{fields})')
+        table = _table(key)
+        self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING{fields})')
+        if HOLDS in self._tables():
+            self._rows(f'ALTER TABLE {HOLDS} ADD FROM Element TO {table}')
+        else:
+            self._rows(f'CREATE REL TABLE {HOLDS}(FROM Element TO {table})')
 
     def add_column(self, key: str, field: str, kind: str) -> None:
         self._rows(f'ALTER TABLE {_table(key)} ADD {_column(field)} {_kind(kind)}')
@@ -319,28 +397,39 @@ class Store:
         self._rows(f'ALTER TABLE {_table(key)} DROP {_column(field)}')
 
     def drop_overlay(self, key: str) -> None:
-        self._rows(f'DROP TABLE {_table(key)}')
+        """The overlay's table, after its pair in `HOLDS`; `HOLDS` itself goes with the last overlay."""
+        table = _table(key)
+        others = [name for name in self._tables() if name.startswith('ov_') and name != table]
+        if others:
+            self._rows(f'ALTER TABLE {HOLDS} DROP FROM Element TO {table}')
+        elif HOLDS in self._tables():
+            self._rows(f'DROP TABLE {HOLDS}')
+        self._rows(f'DROP TABLE {table}')
+
+    def _held_at(self, key: str) -> str:
+        """The pattern of an element's records in one overlay, reached by `HOLDS`; `$address` names the element."""
+        return f'MATCH (:Element {{address: $address}})-[:{HOLDS}]->(r:{_table(key)})'
 
     def records(self, key: str, address: str, fields: list[str]) -> list[dict[str, Scalar]]:
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN r.ref{columns} '
-                          'ORDER BY r.position', address=address)
+        rows = self._rows(f'{self._held_at(key)} RETURN r.ref{columns} ORDER BY r.position', address=address)
         return [dict(zip(['ref', *fields], row)) for row in rows]
 
     def all_records(self, key: str, fields: list[str]) -> list[tuple[str, int, dict[str, Scalar]]]:
-        """Every record of an overlay in the project, each with the address it is at and its position there."""
+        """Every record of an overlay in the project, each with the address of the element that holds it and its
+        position there."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'MATCH (r:{_table(key)}) RETURN r.address, r.position, r.ref{columns} '
-                          'ORDER BY r.address, r.position')
+        rows = self._rows(f'MATCH (e:Element)-[:{HOLDS}]->(r:{_table(key)}) RETURN e.address, r.position, '
+                          f'r.ref{columns} ORDER BY e.address, r.position')
         return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', *fields], row[2:]))) for row in rows]
 
     def record_count(self, key: str, address: str) -> int:
-        rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN count(*)', address=address)
+        rows = self._rows(f'{self._held_at(key)} RETURN count(*)', address=address)
         return int(rows[0][0] or 0)
 
     def held(self, key: str) -> tuple[int, int]:
         """How many records the overlay holds, and at how many addresses."""
-        rows = self._rows(f'MATCH (r:{_table(key)}) RETURN count(*), count(DISTINCT r.address)')
+        rows = self._rows(f'MATCH (e:Element)-[:{HOLDS}]->(r:{_table(key)}) RETURN count(*), count(DISTINCT e.address)')
         return int(rows[0][0] or 0), int(rows[0][1] or 0)
 
     def field_in_use(self, key: str, field: str) -> bool:
@@ -348,37 +437,37 @@ class Store:
         return bool(rows[0][0])
 
     def next_position(self, key: str, address: str) -> int:
-        rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN max(r.position)',
-                          address=address)
+        rows = self._rows(f'{self._held_at(key)} RETURN max(r.position)', address=address)
         last = rows[0][0] if rows else None
         return int(last) + 1 if isinstance(last, int) else 0
 
     def insert_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
+        """One record, created with the `HOLDS` that reaches it from its element."""
         fields = [field for field in record if field != 'ref']
         columns = ''.join(f', {_column(field)}: $v{index}' for index, field in enumerate(fields))
         values = {f'v{index}': record[field] for index, field in enumerate(fields)}
-        self._rows(f'CREATE (:{_table(key)} {{address: $address, position: $position, ref: $ref{columns}}})',
+        self._rows(f'MATCH (e:Element {{address: $address}}) '
+                   f'CREATE (e)-[:{HOLDS}]->(:{_table(key)} {{position: $position, ref: $ref{columns}}})',
                    address=address, position=position, ref=record.get('ref'), **values)
 
     def replace_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
         """Rewrite the one record at `position`; the other records of the list are not touched."""
-        self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address AND r.position = $position DELETE r',
-                   address=address, position=position)
+        self._rows(f'{self._held_at(key)} WHERE r.position = $position DETACH DELETE r', address=address,
+                   position=position)
         self.insert_record(key, address, position, record)
 
     def delete_records_at(self, key: str, address: str, positions: list[int]) -> None:
         """Remove the records at `positions`, and close the gaps so a record's position stays its place in the list."""
-        self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address AND r.position IN $positions DELETE r',
-                   address=address, positions=positions)
-        rows = self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address RETURN r.id, r.position '
-                          'ORDER BY r.position', address=address)
+        self._rows(f'{self._held_at(key)} WHERE r.position IN $positions DETACH DELETE r', address=address,
+                   positions=positions)
+        rows = self._rows(f'{self._held_at(key)} RETURN r.id, r.position ORDER BY r.position', address=address)
         for index, (ident, position) in enumerate(rows):
             if position != index:
                 self._rows(f'MATCH (r:{_table(key)}) WHERE r.id = $id SET r.position = $position', id=ident,
                            position=index)
 
     def delete_records(self, key: str, address: str) -> None:
-        self._rows(f'MATCH (r:{_table(key)}) WHERE r.address = $address DELETE r', address=address)
+        self._rows(f'{self._held_at(key)} DETACH DELETE r', address=address)
 
 
 def _kind(kind: str) -> str:

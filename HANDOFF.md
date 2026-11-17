@@ -54,9 +54,23 @@ map and nothing the person has said needs the whole nested form read back; and a
 refused, not kept in `extra`, because the base map holds only well-named fields and any other data belongs in an
 overlay.
 
-**The work, each a commit, pushed:** tests first for each rule above (from `core/`'s tests where they apply, rewritten
-for the later decisions where they differ); then the store's graph edges; then the intake sections at the highest
-reasoning level; then the readers; ask the person before a new intake.
+**Built on 2026-11-17** (commits `acb951bf` and the store commit after it):
+- The intake procedure is served as the founder's Markdown sections, copied unchanged from `core/` into
+  `src/metaform/project/procedure/` and read by `metaform.project.intake` (a port of the Rust `build.rs` and
+  `procedure.rs`). An intake agent gets the whole procedure inline, assembled from those sections; `{"help": "intake"}`,
+  `{"help": "intake/<section>"}` and `metaform://intake/<section>` serve them by address; the intake runs at the
+  highest reasoning level its harness offers. `digital_typology.xml` is no longer served (it is
+  `core/founder/intake_best.xml`, without the edits made on the founder's instruction) and is left in place, the
+  founder's file. The intake's own two prompts moved to Markdown (`modules/intake/prompts/`), read with
+  `prompt_files.markdown`.
+- The store is the graph: `(Map) -ROOT-> (Project) -CONTAINS-> (Element) -CONTAINS-> ...`, wants as `Wants` edges,
+  overlay records (structs of arrays, one table per overlay) reached by `HOLDS` from their element. The project's root
+  node is named `Project`, because the engine's names are not case-sensitive and `Root` would collide with `ROOT`. A
+  database made before is upgraded once on open. Tests: the Rust shape rule (R-4.16), records by `HOLDS`, the upgrade.
+
+**Still to do:** refusals that give no corrected command where the founder's examples and the Rust form give one; the
+"Must read these URI ..." pointers on the tools whose rules live in a section (which tools is for the person); the
+other modules' prompts from `prompts.xml` to Markdown; a fresh intake of `metaform`, after asking the person.
 
 ---
 
