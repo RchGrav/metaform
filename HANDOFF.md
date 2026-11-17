@@ -31,8 +31,22 @@ the tree is not stored (parents are empty nodes with no `CONTAINS` edge), there 
 project root is empty, overlay records are joined to elements by address text instead of `HOLDS` edges, the intake is
 served as one XML file, `help intake` is refused, and several refusals carry no corrected command.
 
-**Open for the person before building:** whether `raw dump` (reading the nested stored form) is kept, and whether a field
-an element does not define is refused (Python now) or kept in `extra` (Rust).
+**More of the person's decisions from the same session** (`L` numbers are from the Rust session's log, which the person
+pasted into db78ce04 at 01:08):
+- 01:21 "ladybug was how we started, albiet we have a nested structure now.. one I really need for you to fully grasp":
+  the nested structure is the point. The port flattened it; this is the main fault.
+- L2695, L3269: the base map is light. An agent is given the list of addresses and the wants overlay; `map` sends only
+  the base map.
+- L2562, L2626: one `ref` on an element in the base map, and a `ref` on each record of an overlay. A ref is an entry
+  point or a discrete reference, never an index of the code; more data goes in an overlay.
+- 01:44: the person's examples of commands and answers, such as delete of an element still wanted being refused with
+  the remediation that removes the want; `name` is an alias that does not match the address.
+- 03:09 "If fields come back filled with examples that IS NOT the design."
+
+**Settled on 2026-11-17 from those reasons, without asking:** no `raw dump`, because agents are given the light base
+map and nothing the person has said needs the whole nested form read back; and a field an element does not define is
+refused, not kept in `extra`, because the base map holds only well-named fields and any other data belongs in an
+overlay.
 
 **The work, each a commit, pushed:** tests first for each rule above (from `core/`'s tests where they apply, rewritten
 for the later decisions where they differ); then the store's graph edges; then the intake sections at the highest
