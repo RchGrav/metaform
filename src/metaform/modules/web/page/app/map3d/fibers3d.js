@@ -73,6 +73,10 @@ function made(name, room) {
  * at the receiver when the join receives, at both when both; a memory's relation points at what it names; a tree
  * line and an item's line have none. 1 is the target end, 2 the source end. */
 function headsOf(link) {
+  // No end carries a cone, as on the map of the first week of October 2026, the person's (2026-11-17): the cones of
+  // 2026-10-21, three times a fiber's radius across and seven long, were nearly as wide as a node. A head of no size is
+  // still placed, so the draw and its buffers are the same.
+  if (link) return 0;
   if (link.k === 'relation') return 1;
   if (link.k !== 'encounter') return 0;
   const join = S.joins.find(one => one.id === link.join);

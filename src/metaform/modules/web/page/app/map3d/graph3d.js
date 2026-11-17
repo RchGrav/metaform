@@ -82,8 +82,11 @@ export let G = null;
  * the map. The person asked on 2026-11-16 for the balanced look from before, so they are restored here. */
 export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4)
   : node.t === 'purpose' ? 0.9 : node.t === 'item' ? 0.3 : 0.35;
-export const linkWidthOf = link => link.k === 'tree' ? 1.2 : link.k === 'layer' || link.k === 'item' ? 0.75
-  : link.k === 'relation' ? 1.5 : 2.7;
+// The link widths of the first week of October 2026 (the page of 2026-10-08), the person's sizes: on 2026-10-17 agents
+// raised them half as wide again, and with the nodes back at their sizes an edge was nearly as wide as its node. The
+// person asked on 2026-11-17 for the sizes as they were then. A far edge is still held to `EDGE.least` on the screen.
+export const linkWidthOf = link => link.k === 'tree' ? 0.4 : link.k === 'layer' || link.k === 'item' ? 0.25
+  : link.k === 'relation' ? 0.5 : 0.9;
 /* The haze of depth, VIEW-038: what is far from the eye is dimmed toward the background, the theme's ground, as the
  * air dims a far hill, so the nodes, the edges and the figures say their depth as the names do. Its span is the names'
  * own fade, from the front of the names in view, where nothing is hazed, to past their back, where a thing keeps
