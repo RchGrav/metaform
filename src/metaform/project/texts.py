@@ -115,7 +115,7 @@ HELP: dict[str, object] = {
             'ref': ("The entry point of this functionality in the material, or a discrete reference that shows it, as "
                     "one text: a path from the project folder, a URL, or project://<name> for another project's map. "
                     "It is not a list of every file; more pointers belong in an overlay."),
-            'status': 'un_built for functionality that is intended and not built.',
+            'status': 'unbuilt for functionality that is intended and not built yet.',
             'wants': ("A list of want records. A record holds element (the wanted element's path), why, how, "
                       "direction (send, receive or both) and ref (the uri of the one artifact the want is about). An "
                       "element may hold several wants on the same element, one for each artifact or purpose. The "

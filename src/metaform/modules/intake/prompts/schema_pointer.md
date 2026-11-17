@@ -1,4 +1,4 @@
 Record the map with the project tool, each element and join as soon as it is reasoned. This project's name in the tool is {{ project }}, and it leads every path: the element code.loop.main is written {"add": {"{{ project }}.code.loop.main": {...}}}. {"help": "add"} gives the fields and an example.
 In the tool's words: an element's functional_name is technical_name, and its uri is ref. A role is written in full, such as Defining Element. A join is a want held by its Receiving Element: element is the Providing Element's address, why is the purpose, how is the ef, and direction is the ifd, written send, receive or both.
-A part the procedure marks missing is written with status un_built. A finding that needs words, such as what is broken and where it shows, goes in an overlay: {"help": "overlay"} shows how one is defined and written.
+A part the procedure marks missing is written with status unbuilt. A finding that needs words, such as what is broken and where it shows, goes in an overlay: {"help": "overlay"} shows how one is defined and written.
 {"map": "{{ project }}"} reads back what is recorded.

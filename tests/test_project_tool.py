@@ -234,7 +234,8 @@ def test_update_merges_into_a_want(mapped):
     ({'add': {WIDGET: {'role': 'CE'}}}, 'ROLE_TAXONOMY_FAILURE', {'add': {WIDGET: {'role': 'Coupled Element'}}}),
     ({'add': {WIDGET: {'technical_name': 'mash widget'}}}, 'TECHNICAL_NAME_ALIGNMENT_FAILURE',
      {'add': {WIDGET: {'technical_name': 'widget masher'}}}),
-    ({'add': {WIDGET: {'status': 'todo'}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'status': 'un_built'}}}),
+    ({'add': {WIDGET: {'status': 'todo'}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'status': 'unbuilt'}}}),
+    ({'add': {WIDGET: {'status': 'un_built'}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'status': 'unbuilt'}}}),
     ({'add': {WIDGET: {'name': None}}}, 'FIELD_MISMATCH', {'add': {WIDGET: {'name': '<name>'}}}),
     ({'add': {CS: {'wants': [{'pe': WIDGET, 'op': 'w', 'ef': 'h', 'ifd': 'sends'}]}}}, 'FIELD_MISMATCH',
      {'add': {CS: {'wants': [{'element': WIDGET, 'why': 'w', 'how': 'h', 'direction': 'send'}]}}}),
@@ -714,8 +715,8 @@ def test_the_rust_forms_refusal_table(mapped):
         # never an example value (the founder, 2026-11-16 03:09); the Rust form gave none
         ({'add': {at('code.relay'): {'wants': [{'element': WIDGET, **want('push')}]}}}, 'FIELD_MISMATCH',
          {'add': {at('code.relay'): {'wants': [{'element': WIDGET, **want('<direction>')}]}}}),
-        # the procedure's "missing" is written un_built, as the intake's recording lines tell the agent
-        ({'update': {WIDGET: {'status': 'missing'}}}, 'FIELD_MISMATCH', {'update': {WIDGET: {'status': 'un_built'}}}),
+        # the procedure's "missing" is written unbuilt (the founder, 2026-11-17), as the intake's recording lines tell the agent
+        ({'update': {WIDGET: {'status': 'missing'}}}, 'FIELD_MISMATCH', {'update': {WIDGET: {'status': 'unbuilt'}}}),
         ({'add': {}}, 'FIELD_MISMATCH', None),
         # no corrected command: the Rust form's removed the element's own field, which Fable's decision 18 found a fault
         ({'add': {f'{WIDGET}.name': {'name': 'n'}}}, 'FIELD_ELEMENT_COLLISION', None),

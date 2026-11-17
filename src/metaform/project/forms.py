@@ -29,7 +29,9 @@ Key = str | int
 ROOTS = ('code', 'document', 'media', 'data', 'upstream', 'downstream', 'overlay')
 TEXT_FIELDS = ('technical_name', 'name', 'role', 'status')
 PART_TEXT = ('description', 'instruction', 'rule')
-LEGACY_STATUS = ('missing', 'MISSING', 'BKN', 'broken', 'todo', 'TODO')
+# The earlier spellings of not built, each answered with `unbuilt`, the plain word the founder chose on 2026-11-17 and the
+# page's own; `un_built` is the Rust form's spelling of it.
+LEGACY_STATUS = ('missing', 'MISSING', 'BKN', 'broken', 'todo', 'TODO', 'un_built')
 WANT_WORDS = ('element', 'why', 'how', 'direction')
 PROCEDURE_WORDS = {'pe': 'element', 'provider': 'element', 'op': 'why', 'purpose': 'why', 'ef': 'how',
                    'ifd': 'direction'}
@@ -388,8 +390,8 @@ class Form:
             placeholder = ROLE_PLACEHOLDER if key == 'role' else f'<{key}>'
             raise refuse(f"{key} at '{where}' must be text that is not blank", self.fix(here, placeholder))
         if key == 'status' and value in LEGACY_STATUS:
-            raise refuse(f"status at '{where}' cannot be \"{value}\"; use un_built for functionality that is not built",
-                         self.fix(here, 'un_built'))
+            raise refuse(f"status at '{where}' cannot be \"{value}\"; use unbuilt for functionality that is not built",
+                         self.fix(here, 'unbuilt'))
         if key == 'role' and value not in ROLES:
             raise Refusal('ROLE_TAXONOMY_FAILURE', f"'{where}': role \"{value}\" is not one of: {', '.join(ROLES)}",
                           self.fix(here, ROLE_WORDS.get(value, ROLE_PLACEHOLDER)))
