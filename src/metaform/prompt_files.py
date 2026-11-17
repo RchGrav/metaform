@@ -365,6 +365,22 @@ def required(folder: Traversable, name: str, **fills: str) -> str:
     return got
 
 
+MARKDOWN_VARIABLE = re.compile(r'\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}')
+
+
+def markdown(folder: Traversable, name: str, **fills: str) -> str:
+    """The prompt `name` of a package, a Markdown file in its `prompts` folder, `prompts/<name>.md`, the form the
+    founder set on 2026-11-15 (decision 33 of `core/SPECIFICATION.md`): one prompt per file, plain text, no XML. A
+    variable is written `{{ name }}` and replaced by its value; one with no value is left as written, so an edit to a
+    prompt never stops it being served. A missing file is a defect of the package that ships it."""
+    path = folder / 'prompts' / f'{name}.md'
+    try:
+        raw = path.read_text(encoding='utf-8')
+    except OSError:
+        raise LookupError(f'{path} is missing: the prompt {name} ships with its package.') from None
+    return MARKDOWN_VARIABLE.sub(lambda match: fills.get(match.group(1), match.group(0)), raw).strip()
+
+
 def chassis(name: str, **fills: str) -> str:
     """The chassis's prompt `name`."""
     return required(resources.files('metaform'), name, **fills)

@@ -4,6 +4,12 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- 2026-11-17, the founder's decision 33 of 2026-11-15 (`core/SPECIFICATION.md`): a prompt is a named Markdown file in
+  the module's `prompts` folder, `prompts/<name>.md`, and no new prompt is added to `resources/prompts.xml`. Read one
+  with `metaform.prompt_files.markdown(resources.files(__name__), name, **fills)`; a variable is written `{{ name }}` in
+  the file, and one given no value is left as written. The intake module's prompts sent with the procedure moved first
+  (`modules/intake/prompts/`). Modules still on `prompts.xml` move to this form.
+
 - `metaform.module.module_registry()` exposes discovered module states, sources, summaries and load problems.
   `metaform.data` exports the existing `sources_index`, `relative` and `placed` helpers for linked source references.
   Modules use these public services instead of private loader or data imports.

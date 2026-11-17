@@ -94,7 +94,7 @@ def standing_overlays() -> dict[str, dict[str, object]]:
 
 
 COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'help')
-HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help')
+HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help', 'intake')
 
 _WIDGET = {'technical_name': 'widget masher', 'name': 'mashbox', 'role': 'Coupled Element',
            'ref': './src/widgets/mashbox.c'}

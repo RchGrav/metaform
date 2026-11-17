@@ -1802,6 +1802,15 @@ class Session:
         own = cast(dict[str, Any], cast(dict[str, Any], self.acp.get('task') or {}).get('options') or {})
         wanted = {**wanted, **{key: str(value) for key, value in own.items()
                                if key in ('model', 'thought_level', 'mode') and value}}
+        # The intake runs at the highest reasoning level its harness offers (the person, 2026-11-17): the metaform
+        # intake of 2026-11-16 ran at medium and surveyed documents instead of tracing the code. A harness lists its
+        # levels in ascending order, so the highest is the last, never `default`.
+        if self.task_name() == 'intake':
+            level = next((one for one in self.settings() if option_key(one) == 'thought_level'), None)
+            values = [str(choice.get('value')) for choice in cast(list[dict[str, Any]], (level or {}).get('options') or [])
+                      if choice.get('value') not in (None, 'default')]
+            if values:
+                wanted['thought_level'] = values[-1]
         rank = {key: at for at, key in enumerate(APPLY_ORDER)}
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):

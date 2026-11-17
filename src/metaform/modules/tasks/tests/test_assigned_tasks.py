@@ -178,20 +178,20 @@ def test_intake_is_discoverable_and_reads_the_canonical_procedure_component(run,
 
     from metaform import prompt_files
     from metaform.modules import intake
+    from metaform.project import intake as procedure
 
     ctx = context('tasks', project_folder, nouns={'name': 'intake'})
     entry = next(row for row in tasks.catalog(ctx)['tasks'] if row['name'] == 'intake')
     assert entry['uri'] == 'metaform://tasks/definitions/intake'
     definition = tasks.definition(ctx)
-    authored = intake.RESOURCE.read_text(encoding='utf-8')
-    expected = authored.replace('{project_id}', 'proj').replace('{prompt}', '', 1).rstrip('\n')
-    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj')
+    authored = procedure.whole()  # the procedure assembled from its sections, by the code that serves it
+    expected = authored.replace('{prompt}', '', 1).rstrip('\n')
+    pointer = prompt_files.markdown(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj')
     expected += '\n\n' + pointer + '\n'
     assert definition['instructions'] == expected
     assert definition['component']['text'] == expected
-    assert definition['component']['actual_version_id'] == 'intake-source:' + hashlib.sha256(
-        intake.RESOURCE.read_bytes()).hexdigest()
-    assert definition['component']['source']['path'] == str(intake.RESOURCE)
+    assert definition['component']['actual_version_id'] == 'intake-sections:' + hashlib.sha256(
+        authored.encode('utf-8')).hexdigest()
     assert intake.prompt(context('intake', project_folder)) == expected
     read = json.loads(run('tasks', 'read', 'name=intake', '--json', cwd=project_folder).stdout)
     assert read['instructions'] == expected
@@ -218,33 +218,6 @@ def test_list_shows_reusable_skills_beside_the_skill_layer_with_or_without_a_pro
     assert tasks.catalog(outside)['skills'] == [entry]
 
 
-@pytest.mark.parametrize(('filename', 'authored'), [
-    ('custom.md', '# Alternative instructions\nKeep {project}, {name variable} and {prompt}.\n\n'),
-    ('custom.xml', '<malformed attr="{prompt}"\nA & B without closing markup.\n'),
-    ('custom.txt', 'Follow the supplied method. No required headings or tags.\n'),
-])
-def test_intake_task_preserves_configured_source_with_canonical_prompt_binding(
-        project_folder, tmp_path, filename, authored):
-    from importlib import resources
-
-    from metaform import prompt_files, settings
-    from metaform.modules import intake
-
-    source = tmp_path / filename
-    source.write_text(authored, encoding='utf-8')
-    settings.put('intake_file', str(source), project_folder)
-    ctx = context('tasks', project_folder, nouns={'name': 'intake'})
-    definition = tasks.definition(ctx)
-    expected = authored.replace('{prompt}', '', 1).rstrip('\n')
-    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj') + '\n'
-    assert definition['instructions'] == expected
-    assert definition['component']['text'] == expected
-    assert definition['component']['source'] == {
-        'kind': 'configured_file', 'path': str(source), 'sha256': hashlib.sha256(authored.encode()).hexdigest()}
-    assert intake.prompt(context('intake', project_folder)).startswith(expected)
-    assert source.read_text(encoding='utf-8') == authored
-
-
 def test_intake_assignment_preserves_canonical_source_identity_and_separate_input(assigned):
     from importlib import resources
 
@@ -254,15 +227,16 @@ def test_intake_assignment_preserves_canonical_source_identity_and_separate_inpu
     ctx, lifecycle, adapter = assigned
     ctx.nouns.update(name='intake', text='Inspect the selected artifact.')
     definition = tasks.definition(ctx)
-    authored = intake.RESOURCE.read_text(encoding='utf-8')
-    expected = authored.replace('{project_id}', 'proj').replace('{prompt}', '', 1).rstrip('\n')
-    expected += '\n\n' + prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj') + '\n'
+    from metaform.project import intake as procedure
+    authored = procedure.whole()
+    expected = authored.replace('{prompt}', '', 1).rstrip('\n')
+    expected += '\n\n' + prompt_files.markdown(resources.files('metaform.modules.intake'), 'schema_pointer', project='proj') + '\n'
     edited = 'Use this revised method exactly. <unclosed> & {prompt}\n\n'
     with pytest.raises(ValueError, match='Canonical Intake'):
         prompt_files.save_edit('prompt.intake:intake.axiom', edited)
     assert tasks.definition(ctx) == definition
     assert definition['instructions'] == expected
-    assert definition['component']['source']['sha256'] == hashlib.sha256(intake.RESOURCE.read_bytes()).hexdigest()
+    assert definition['component']['source']['sha256'] == hashlib.sha256(authored.encode('utf-8')).hexdigest()
     assert intake.prompt(context('intake', ctx.folder)).startswith(expected)
     created = tasks.assign(ctx)
     row = lifecycle.assignment(ctx, created['task_id'])

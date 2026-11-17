@@ -12,30 +12,23 @@ import pytest
 pytestmark = pytest.mark.kind('fixture')
 
 ROOT = Path(__file__).parents[5]
-SPEC = Path(__file__).parents[1] / 'resources' / 'digital_typology.xml'  # the served intake
-RESOURCE = SPEC
+RESOURCE = Path(__file__).parents[1] / 'resources' / 'digital_typology.xml'  # the earlier single-file intake
 
 
 def stored_with_pointer() -> str:
-    """The served intake: the stored file, then, when it does not name its schema, the line saying where it is,
-    MCP-009."""
+    """The served intake: the procedure assembled from its sections, then how its records are written with the
+    project tool, MCP-009. Assembled by the code that serves it, so no test reads the procedure's own wording."""
     from importlib import resources
 
     from metaform import prompt_files
-    if 'metaform://intake/schema' in SPEC.read_text(encoding='utf-8'):
-        return SPEC.read_text(encoding='utf-8')
-    pointer = prompt_files.required(resources.files('metaform.modules.intake'), 'schema_pointer', project='timer')
-    return SPEC.read_text(encoding='utf-8').rstrip('\n') + '\n\n' + pointer + '\n'
+    from metaform.project import intake as procedure
+    pointer = prompt_files.markdown(resources.files('metaform.modules.intake'), 'schema_pointer', project='timer')
+    return procedure.whole().rstrip('\n') + '\n\n' + pointer + '\n'
 
 
 def served_asked(asked: str) -> str:
-    """The served intake with what the person asked: in an XML intake's prompt slot, escaped as an attribute value;
-    after an Axiom intake, which has no slot, as data."""
-    stored = stored_with_pointer()
-    if SPEC.suffix == '.xml':
-        escaped = asked.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-        return stored.replace('{prompt}', escaped, 1)
-    return stored.rstrip('\n') + f'\n\n<<DATA: Prompt>>\n{asked}\n<<END DATA>>\n' if asked else stored
+    """The served intake with what the person asked, in the procedure's own place for a request, as written."""
+    return stored_with_pointer().replace('{prompt}', asked, 1)
 
 
 def onboarding() -> str:
@@ -151,16 +144,10 @@ def test_prompt_serves_the_intake_with_only_its_prompt_filled(run, project):
 
 
 @pytest.mark.req('BASE-039')
-def test_the_prompt_is_filled_as_written_in_intake_2_1_and_escaped_only_in_an_xml_intake_file(run, project, tmp_path):
-    """Intake 2.1 is not XML, so what the person asks for reaches it exactly as written; an XML intake file, which the
-    intake_file setting can still name, gets it escaped as an XML attribute value, as its <target> is filled."""
+def test_what_was_asked_reaches_the_intake_exactly_as_written(run, project):
+    """The procedure is Markdown, so what the person asks for reaches it exactly as written, with nothing escaped."""
     asked = 'fix A & B in <main> "now"'
     assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout == served_asked(asked)
-    xml = tmp_path / 'own-intake.xml'
-    xml.write_text('<process><prompt text="{prompt}"/></process>\n', encoding='utf-8')
-    run('set', f'--intake-file={xml}', cwd=project)
-    assert run('intake', 'prompt', f'text={asked}', cwd=project).stdout.startswith(
-        '<process><prompt text="fix A &amp; B in &lt;main&gt; &quot;now&quot;"/></process>\n')  # then where its schema is
 
 
 @pytest.mark.req('CLI-034')
@@ -195,15 +182,6 @@ def test_a_dispatched_agent_is_never_given_the_first_run_onboarding(run, project
     handle the intake first, is not in what it reads, BASE-052."""
     monkeypatch.setenv(identity, 'worker')
     assert onboarding() not in run('help', 'agents', cwd=project).stdout
-
-
-@pytest.mark.req('BASE-039')
-def test_a_test_intake_file_is_served_only_when_the_setting_names_it(run, project, tmp_path):
-    other = tmp_path / 'other.xml'
-    other.write_text('<process><target type="x" value="y"/>{project_id}</process>\n', encoding='utf-8')
-    run('set', '--intake-file', str(other), cwd=project)
-    out = run('intake', 'prompt', cwd=project).stdout
-    assert out.startswith('<process><target type="path" value=') and 'timer</process>' in out
 
 
 def recorded(run, cwd, *args):

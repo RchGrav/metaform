@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import cast
 
 from metaform import home as metaform_home
-from metaform.project import forms, texts
+from metaform.project import forms, intake, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
 from metaform.project.owner import Missing, Owner
@@ -180,6 +180,17 @@ def _help(body: object) -> dict[str, object]:
     if body == {}:
         return {'help': {'type': 'object', 'properties': {'help': {'enum': list(texts.HELP_NAMES)}},
                          'required': ['help']}}
+    # `intake` lists the sections of the intake procedure and `intake/<section>` returns one, as the Rust form answers
+    # them (`metaform-core/src/contract.rs`): an agent reads a section when it needs the rules in it, and no sooner.
+    if body == 'intake':
+        return {'help': {'intake': intake.listing()}}
+    if isinstance(body, str) and body.startswith('intake/'):
+        wanted = body.removeprefix('intake/')
+        found = intake.section(wanted)
+        if found is None:
+            raise refuse(f'the intake procedure has no section \'{wanted}\'; {{"help": "intake"}} lists its sections',
+                         {'help': 'intake'})
+        return {'help': {body: found.text}}
     if isinstance(body, str) and body in texts.HELP:
         return {'help': {body: texts.HELP[body]}}
     raise refuse('help takes {} or the name of a command', {'help': {}})

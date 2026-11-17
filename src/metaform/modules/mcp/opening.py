@@ -20,6 +20,7 @@ from pathlib import Path
 from metaform import prompt_files
 from metaform.data import StoreError
 from metaform.module import Stop, context, project_for, provided, startup_notices
+from metaform.project import intake as procedure
 
 RULES_URI = 'metaform://rules'
 FIRSTRUN_URI = 'metaform://firstrun'
@@ -123,6 +124,9 @@ def block_text(folder: Path, uri: str) -> str | None:
         return first_run_text(folder)
     if uri == task_link(agent.task, agent.own):
         return task_text(folder, agent)
+    if uri.startswith(procedure.URI):  # a section of the intake procedure, read by any agent that needs its rules
+        found = procedure.section(uri.removeprefix(procedure.URI))
+        return found.text if found is not None else None
     return None
 
 
@@ -131,6 +135,11 @@ NAMES = {RULES_URI: ('Rules', 'Read first: the rules every agent works by.'),
 
 
 def listed(folder: Path) -> list[tuple[str, str, str]]:
-    """The resources the server lists: each link that applies now, with its name and description."""
-    return [(uri, *NAMES.get(uri, ('Task', 'What your task is and how Metaform\'s commands are run.')))
-            for uri in links(served_agent(folder))]
+    """The resources the server lists: each link that applies now, with its name and description, then each section of
+    the intake procedure, which an agent reads when a tool it uses needs that section's rules, once in a context."""
+    linked = [(uri, *NAMES.get(uri, ('Task', 'What your task is and how Metaform\'s commands are run.')))
+              for uri in links(served_agent(folder))]
+    return linked + [(procedure.URI + one.name, f'intake/{one.name}',
+                      f'The {one.name} section of the intake procedure.'
+                      + (' Required reading to perform an intake.' if one.required else ''))
+                     for one in procedure.sections()]

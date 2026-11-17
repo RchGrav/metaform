@@ -576,3 +576,21 @@ def test_a_display_lists_every_record_of_one_overlay_across_the_project(served):
         {'element': WIDGET, 'position': 0, 'id': 't-Ring', 'title': 'Ring', 'task': 'Do it.'},
         {'element': CS, 'position': 0, 'id': 't-Relay', 'title': 'Relay', 'task': 'Do it.'}]
     assert commands.overlay_records(P, 'memories', served) == [] and commands.overlay_records('nosuch', 'tickets', served) is None
+
+
+def test_help_serves_the_intake_procedure_one_section_at_a_time(home):
+    """`{"help": "intake"}` lists the sections of the intake procedure in reading order, and `{"help":
+    "intake/<section>"}` returns one section's text; a name the procedure does not hold is refused with the command
+    that lists them. Ported from the Rust form's `metaform-core/tests/help.rs`: it reads the list from the procedure
+    itself and asserts nothing about which sections exist, what they are named, which are required or what they say,
+    so the founder can edit the procedure without a test failing."""
+    from metaform.project import intake
+    sections = intake.sections()
+    listing = run({'help': 'intake'})['help']['intake']
+    assert listing['sections'] == [one.name for one in sections]
+    assert listing['required'] == [one.name for one in sections if one.required]
+    assert listing['when'] == {one.name: one.when for one in sections if one.when}
+    for one in sections:
+        assert run({'help': f'intake/{one.name}'}) == {'help': {f'intake/{one.name}': one.text}}
+    unknown = run({'help': 'intake/no such section'})
+    assert unknown['code'] == 'FIELD_MISMATCH' and unknown['remediation'] == {'help': 'intake'}
