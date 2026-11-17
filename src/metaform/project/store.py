@@ -300,10 +300,19 @@ class Store:
         self._rows('MATCH (e:Element {address: $address}) DETACH DELETE e', address=address)
 
     def beneath(self, address: str) -> list[str]:
-        """Every element beneath this one, walked down the tree by `CONTAINS`, in address order."""
-        rows = self._rows(f'MATCH (:Element {{address: $address}})-[:CONTAINS*1..{DEPTH}]->(e:Element) '
-                          'RETURN DISTINCT e.address ORDER BY e.address', address=address)
-        return [str(row[0]) for row in rows]
+        """Every element beneath this one, walked down the tree by `CONTAINS` one level at a time, in address order. A
+        walk of many steps in one query took the engine's whole buffer pool once the map was large (2026-11-17), so
+        each level is one plain query of the elements the level above holds."""
+        found: list[str] = []
+        level = [address]
+        for _ in range(DEPTH):
+            rows = self._rows('MATCH (p:Element)-[:CONTAINS]->(e:Element) WHERE p.address IN $level RETURN e.address',
+                              level=level)
+            level = [str(row[0]) for row in rows]
+            if not level:
+                break
+            found.extend(level)
+        return sorted(found)
 
     def tree(self) -> list[tuple[str, str]]:
         """Every `CONTAINS` edge as (parent, child), the project's root written `.`, for a reader that draws the tree
