@@ -119,3 +119,14 @@ The commands and answers differ too (2026-11-17, the Rust tests' commands sent t
 `raw dump` and `help intake` are refused; a root `technical_name` answers `FIELD_MISMATCH` with no remediation instead
 of `TECHNICAL_NAME_ALIGNMENT_FAILURE`; an unknown field or overlay records given as an object are refused with no
 remediation, where Rust stores the field in `extra` or answers with the corrected list. The role checks match.
+
+## Open: the structure of the main database (the person's to specify)
+
+The Rust form's chassis database, `<home>/metaform.lbug`, holds one node type, `Project(id, source, name)`
+(`core/metaform/rust/crates/metaform-store/src/registry.rs`); a project's own map database never stores its name
+(R-4.1). Nothing more is specified there. The Python home tracks projects across SQLite files instead: the home's
+`metaform.sqlite3` (folders, settings, glue, harnesses, installs, module state, no projects table) and each project's
+`project.sqlite3` (projects, bases, active_bases, settings), found by walking the project folders. The person said on
+2026-11-17 that they have not specified the main database's structure. The rebuild takes the registry as Rust has it
+and invents nothing beyond it; what else the main database holds (bases, settings, agents and sessions, tickets
+across projects) waits for the person.
