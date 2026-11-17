@@ -162,29 +162,59 @@ class Writer:
                 self.store.replace_record(key, change.address.address, position, record)
         for change, key, records in overlay_writes:
             address = change.address.address
-            # A list written back from a read keeps each record's id (F02): a record that names an id held at this
-            # element now keeps it, at its next revision; one that names none, or another, is a new record.
-            kept: dict[str, Scalar] = {}
-            if key in tables and self.verb == 'update' and records:
-                kept = {str(row['record']): row['revision'] for row in self.store.records(key, address, [])}
-            if key in tables and (self.verb == 'update' or records is None):
-                self.store.delete_records(key, address)
-            start = self.store.next_position(key, address) if records and self.verb == 'add' else 0
-            given = named.get((address, key), [])
-            for offset, record in enumerate(records or []):
-                ident = given[offset] if offset < len(given) else None
-                if isinstance(ident, str) and ident in kept:
-                    revision = kept.pop(ident)
-                    self.store.insert_record(key, address, start + offset, record, ident,
-                                             int(revision) + 1 if isinstance(revision, int) else 1)
-                else:
-                    self.store.insert_record(key, address, start + offset, record)
+            self.put_records(key, address, records, named.get((address, key), []), key in tables)
         if any(key == 'tickets' for _, key, _ in [*overlay_writes, *placed]):
             self.check_ticket_ids()
         touched = sorted({change.address.address for change, key, _ in [*overlay_writes, *placed]
                           if key == specification.KEY})
         if touched:
             self.check_specification(touched, defs[specification.KEY])
+
+    def put_records(self, key: str, address: str, records: list[dict[str, Scalar]] | None, given: list[object],
+                    stored: bool) -> None:
+        """Store an overlay's checked records at an address: `add` appends, `update` replaces the list, and null
+        removes it. A list written back from a read keeps each record's id (F02): a record that names an id held at
+        this address now keeps it, at its next revision; one that names none, or another, is a new record."""
+        kept: dict[str, Scalar] = {}
+        if stored and self.verb == 'update' and records:
+            kept = {str(row['record']): row['revision'] for row in self.store.records(key, address, [])}
+        if stored and (self.verb == 'update' or records is None):
+            self.store.delete_records(key, address)
+        start = self.store.next_position(key, address) if records and self.verb == 'add' else 0
+        for offset, record in enumerate(records or []):
+            ident = given[offset] if offset < len(given) else None
+            if isinstance(ident, str) and ident in kept:
+                revision = kept.pop(ident)
+                self.store.insert_record(key, address, start + offset, record, ident,
+                                         int(revision) + 1 if isinstance(revision, int) else 1)
+            else:
+                self.store.insert_record(key, address, start + offset, record)
+
+    def root(self, overlays: dict[str, object]) -> None:
+        """The records the project's root holds (F07): the specification's blocks, the project's own description,
+        written as an element's are: checked against the overlay's definition, a list by position changing only those
+        records, and the block rules checked after the write, in its transaction. `self.address` is the root, whose
+        store address is `''`."""
+        defs = definitions(self.store.parts())
+        tables = set(self.store.overlay_keys())
+        for key, value in overlays.items():
+            definition = defs.get(key)
+            if definition is None:
+                raise Refusal('OVERLAY_NOT_DEFINED', f"'{key}' at '{self.project}' is not an overlay of "
+                              f'{self.project}', {'map': self.project})
+            records = as_list(value)
+            change = Change(self.address, [self.verb, self.project], True)
+            if records is not None and self.verb == 'update' and any(
+                    'position' in (as_object(record) or {}) for record in records):
+                for position, record in self.placed(definition, change, key, records, key in tables):
+                    self.store.replace_record(key, '', position, record)
+            else:
+                checked = Records(definition, self.project, self.project, [self.verb, self.project, key],
+                                  self.command).check(records, False) if records is not None else None
+                self.put_records(key, '', checked, [(as_object(record) or {}).get('record')
+                                                    for record in records or []], key in tables)
+            if key == specification.KEY:
+                self.check_specification([''], definition)
 
     def check_specification(self, touched: list[str], definition: Definition) -> None:
         """The specification's blocks at each element written keep the round trip whole (kickoff 2026-11-17 Phase 4,

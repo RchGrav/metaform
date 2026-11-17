@@ -6,6 +6,7 @@ the founder confirmed on 2026-11-17, with the founder's later decisions of 2026-
     (Map) -ROOT-> (Project) -CONTAINS-> (Element) -CONTAINS-> (Element) ...   the namespace tree, as edges
     (Element) -Wants {why, how, direction, ref}-> (Element)                 wants, as edges
     (Element) -HOLDS-> (ov_<key>)                                           overlay records, as edges
+    (Project) -HOLDS-> (ov_<key>)                                           the root's records (F07)
 
 `Map` is the map, keyed by the project's stored name. `Project` is the project's root: it holds the project's own id, name
 and source, where the Rust form keeps them on its root element `.`. Every element is reached from the root by exactly
@@ -14,8 +15,10 @@ are not case-sensitive, so the root node cannot be called `Root` beside the rela
 address, the address without the project's name as its key and one column per field of an element. `OverlayPart` holds
 the parts of overlay definitions, everything beneath the `overlay` root. Each overlay has a node table `ov_<key>` of its
 own, one column `f_<field>` per field of its definition, its position in the list and its `ref`: the records stored as
-structs of arrays, the founder's decision of 2026-11-15, each reached from its element by `HOLDS`. The fixed tables are
-named in capitals and every overlay table starts with `ov_`, so the two never meet.
+structs of arrays, the founder's decision of 2026-11-15, each reached from its element by `HOLDS`. The project's root
+can hold records too, reached from `Project` by `HOLDS` (audit F07, kickoff 2026-11-17): the store gives every overlay
+table both pairs, and the writer holds at the root only the overlays `ROOT_OVERLAYS` names. A record at the root has
+the address `''` here. The fixed tables are named in capitals and every overlay table starts with `ov_`, so the two never meet.
 
 Every value reaches the engine as a query parameter. The only names written into query text are the fixed tables and
 the overlay tables and columns, and those are checked here against the form of a step before use.
@@ -35,6 +38,7 @@ from metaform.project import texts
 Scalar = str | int | float | bool | None
 ELEMENT_FIELDS = ('technical_name', 'name', 'role', 'ref', 'status')
 ROOT_FIELDS = ('id', 'name', 'project')  # what the project's root holds: the project's own id, name and source
+ROOT_OVERLAYS = ('specification',)  # the overlays whose records the root may hold: the project's own description (F07)
 PART_FIELDS = ('description', 'instruction', 'type', 'rule', 'example', 'optional')
 WANT_FIELDS = ('why', 'how', 'direction', 'ref')
 COLUMN_TYPES = ('STRING', 'DOUBLE', 'BOOLEAN')
@@ -64,7 +68,8 @@ _SCHEMA = (
         'CREATE REL TABLE CONTAINS(FROM Project TO Element, FROM Element TO Element)',
     )),
 )
-HOLDS = 'HOLDS'  # the relationship from an element to each of its overlay records, one pair per overlay table
+HOLDS = 'HOLDS'  # the relationship from an element, or the root, to each of its overlay records
+HOLDERS = ('Element', 'Project')  # the tables HOLDS runs from, one pair to each overlay table from each
 REQUESTS_KEPT = 10000  # the most recent write ids kept; a write is only ever sent again within moments of the first
 _ELEMENT_COLUMNS = ', '.join(f'e.`{field}`' for field in ELEMENT_FIELDS)
 _PART_COLUMNS = ', '.join(f'p.`{field}`' for field in PART_FIELDS)
@@ -185,10 +190,21 @@ class Store:
             with self.transaction():
                 for statement in _MEMORY:
                     self._rows(statement)
+        if overlays and (missing := self._root_pairs_missing(overlays)):  # the root holds records too (F07)
+            with self.transaction():
+                for name in missing:
+                    self._rows(f'ALTER TABLE {HOLDS} ADD FROM Project TO {name}')
+                self._checked('letting the root hold overlay records', tree=False)
         if overlays:  # every overlay record has its lasting id and revision (F02)
             with self.transaction():
                 if self.give_identity():
                     self._checked('giving overlay records their ids', tree=False)
+
+    def _root_pairs_missing(self, overlays: list[str]) -> list[str]:
+        """The overlay tables `HOLDS` does not yet reach from `Project`, in a database made before the root held
+        records."""
+        pairs = {(str(row[0]), str(row[1])) for row in self._rows(f"CALL show_connection('{HOLDS}') RETURN *")}
+        return [name for name in overlays if ('Project', name) not in pairs]
 
     def _checked(self, upgrade: str, tree: bool) -> None:
         """An upgrade is finished only when the graph it leaves is whole, F15: checked inside its own transaction, so
@@ -202,7 +218,7 @@ class Store:
     def integrity(self, tree: bool = True) -> list[str]:
         """What is not whole in the graph, each in a sentence; empty when it is whole (F15, kickoff 2026-11-17). With
         `tree`: one map and root joined by ROOT, and every element reached by exactly one CONTAINS. Always: every overlay
-        record reached by exactly one HOLDS, with a record id at a revision, and no record id held twice in an overlay."""
+        record reached by exactly one HOLDS, from its element or the root, with a record id at a revision, and no record id held twice in an overlay."""
         problems: list[str] = []
         tables = self._tables()
         if tree:
@@ -216,10 +232,10 @@ class Store:
         for name in sorted(table for table in tables if table.startswith('ov_')):
             held = {str(row[0]) for row in self._rows(f"CALL table_info('{name}') RETURN name")}
             if HOLDS in tables:
-                loose = self._rows(f'MATCH (r:{name}) OPTIONAL MATCH (e:Element)-[:{HOLDS}]->(r) WITH r, count(e) AS n '
+                loose = self._rows(f'MATCH (r:{name}) OPTIONAL MATCH (e)-[:{HOLDS}]->(r) WITH r, count(e) AS n '
                                    'WHERE n <> 1 RETURN count(*)')[0][0]
                 if loose:
-                    problems.append(f'{loose} {name[3:]} records are not held by exactly one element')
+                    problems.append(f'{loose} {name[3:]} records are not held by exactly one element or the root')
             if 'record' in held:
                 missing = self._rows(f'MATCH (r:{name}) WHERE r.record IS NULL OR r.revision IS NULL RETURN count(*)')
                 if missing[0][0]:
@@ -241,7 +257,7 @@ class Store:
             for row in self._rows('MATCH (e:Element) RETURN e.address ORDER BY e.address'):
                 self._contain(str(row[0]))
         if overlays and HOLDS not in tables:
-            pairs = ', '.join(f'FROM Element TO {name}' for name in overlays)
+            pairs = ', '.join(f'FROM {holder} TO {name}' for name in overlays for holder in HOLDERS)
             self._rows(f'CREATE REL TABLE {HOLDS}({pairs})')
             for name in overlays:
                 self._rows(f'MATCH (e:Element), (r:{name}) WHERE r.address = e.address CREATE (e)-[:{HOLDS}]->(r)')
@@ -507,15 +523,17 @@ class Store:
         return sorted(str(row[0])[3:] for row in rows if str(row[0]).startswith('ov_'))
 
     def create_overlay(self, key: str, columns: dict[str, str]) -> None:
-        """The overlay's own table, and its pair in `HOLDS`, so each record is reached from its element."""
+        """The overlay's own table, and its pairs in `HOLDS`, so each record is reached from its element or the
+        root."""
         fields = ''.join(f', {_column(field)} {_kind(kind)}' for field, kind in columns.items())
         table = _table(key)
         self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING, record STRING, '
                    f'revision INT64{fields})')
         if HOLDS in self._tables():
-            self._rows(f'ALTER TABLE {HOLDS} ADD FROM Element TO {table}')
+            for holder in HOLDERS:
+                self._rows(f'ALTER TABLE {HOLDS} ADD FROM {holder} TO {table}')
         else:
-            self._rows(f'CREATE REL TABLE {HOLDS}(FROM Element TO {table})')
+            self._rows(f"CREATE REL TABLE {HOLDS}({', '.join(f'FROM {holder} TO {table}' for holder in HOLDERS)})")
 
     def add_column(self, key: str, field: str, kind: str) -> None:
         self._rows(f'ALTER TABLE {_table(key)} ADD {_column(field)} {_kind(kind)}')
@@ -524,33 +542,37 @@ class Store:
         self._rows(f'ALTER TABLE {_table(key)} DROP {_column(field)}')
 
     def drop_overlay(self, key: str) -> None:
-        """The overlay's table, after its pair in `HOLDS`; `HOLDS` itself goes with the last overlay."""
+        """The overlay's table, after its pairs in `HOLDS`; `HOLDS` itself goes with the last overlay."""
         table = _table(key)
         others = [name for name in self._tables() if name.startswith('ov_') and name != table]
         if others:
-            self._rows(f'ALTER TABLE {HOLDS} DROP FROM Element TO {table}')
+            pairs = {(str(row[0]), str(row[1])) for row in self._rows(f"CALL show_connection('{HOLDS}') RETURN *")}
+            for holder in HOLDERS:
+                if (holder, table) in pairs:
+                    self._rows(f'ALTER TABLE {HOLDS} DROP FROM {holder} TO {table}')
         elif HOLDS in self._tables():
             self._rows(f'DROP TABLE {HOLDS}')
         self._rows(f'DROP TABLE {table}')
 
-    def _held_at(self, key: str) -> str:
-        """The pattern of an element's records in one overlay, reached by `HOLDS`; `$address` names the element."""
-        return f'MATCH (:Element {{address: $address}})-[:{HOLDS}]->(r:{_table(key)})'
+    def _held_at(self, key: str, address: str) -> str:
+        """The pattern of the records at `address` in one overlay, reached by `HOLDS`: `$address` names the element,
+        and the address `''` is the project's root."""
+        return f'MATCH (:{_holder(address)})-[:{HOLDS}]->(r:{_table(key)})'
 
     def records(self, key: str, address: str, fields: list[str]) -> list[dict[str, Scalar]]:
         """The records at an element in their order, each with `ref`, its fields, and its identity: `record`, the id
         it keeps for its life, and `revision`, counted up on each change (F02)."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'{self._held_at(key)} RETURN r.ref, r.record, r.revision{columns} ORDER BY r.position',
-                          address=address)
+        rows = self._rows(f'{self._held_at(key, address)} RETURN r.ref, r.record, r.revision{columns} '
+                          'ORDER BY r.position', address=address)
         return [dict(zip(['ref', 'record', 'revision', *fields], row)) for row in rows]
 
     def all_records(self, key: str, fields: list[str]) -> list[tuple[str, int, dict[str, Scalar]]]:
-        """Every record of an overlay in the project, each with the address of the element that holds it and its
-        position there."""
+        """Every record of an overlay in the project, each with the address of the element that holds it, `''` for the
+        root, and its position there."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'MATCH (e:Element)-[:{HOLDS}]->(r:{_table(key)}) RETURN e.address, r.position, '
-                          f'r.ref, r.record, r.revision{columns} ORDER BY e.address, r.position')
+        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) WITH coalesce(e.address, '') AS at, r "
+                          f'RETURN at, r.position, r.ref, r.record, r.revision{columns} ORDER BY at, r.position')
         return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', 'record', 'revision', *fields], row[2:])))
                 for row in rows]
 
@@ -575,12 +597,13 @@ class Store:
         return changed
 
     def record_count(self, key: str, address: str) -> int:
-        rows = self._rows(f'{self._held_at(key)} RETURN count(*)', address=address)
+        rows = self._rows(f'{self._held_at(key, address)} RETURN count(*)', address=address)
         return int(rows[0][0] or 0)
 
     def held(self, key: str) -> tuple[int, int]:
-        """How many records the overlay holds, and at how many addresses."""
-        rows = self._rows(f'MATCH (e:Element)-[:{HOLDS}]->(r:{_table(key)}) RETURN count(*), count(DISTINCT e.address)')
+        """How many records the overlay holds, and at how many addresses, the root counted as one."""
+        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) RETURN count(*), "
+                          "count(DISTINCT coalesce(e.address, ''))")
         return int(rows[0][0] or 0), int(rows[0][1] or 0)
 
     def field_in_use(self, key: str, field: str) -> bool:
@@ -588,18 +611,18 @@ class Store:
         return bool(rows[0][0])
 
     def next_position(self, key: str, address: str) -> int:
-        rows = self._rows(f'{self._held_at(key)} RETURN max(r.position)', address=address)
+        rows = self._rows(f'{self._held_at(key, address)} RETURN max(r.position)', address=address)
         last = rows[0][0] if rows else None
         return int(last) + 1 if isinstance(last, int) else 0
 
     def insert_record(self, key: str, address: str, position: int, record: dict[str, Scalar],
                       ident: str | None = None, revision: int = 1) -> None:
-        """One record, created with the `HOLDS` that reaches it from its element. A new record is given a new id at
+        """One record, created with the `HOLDS` that reaches it from its element or the root. A new record is given a new id at
         revision 1; a record rewritten in place keeps its id, `ident`, at its next `revision`."""
         fields = [field for field in record if field not in ('ref', 'record', 'revision')]
         columns = ''.join(f', {_column(field)}: $v{index}' for index, field in enumerate(fields))
         values = {f'v{index}': record[field] for index, field in enumerate(fields)}
-        self._rows(f'MATCH (e:Element {{address: $address}}) '
+        self._rows(f'MATCH (e:{_holder(address)}) '
                    f'CREATE (e)-[:{HOLDS}]->(:{_table(key)} {{position: $position, ref: $ref, record: $record, '
                    f'revision: $revision{columns}}})',
                    address=address, position=position, ref=record.get('ref'), record=ident or new_record_id(),
@@ -608,26 +631,31 @@ class Store:
     def replace_record(self, key: str, address: str, position: int, record: dict[str, Scalar]) -> None:
         """Rewrite the one record at `position`, keeping its id at its next revision; the other records of the list
         are not touched."""
-        found = self._rows(f'{self._held_at(key)} WHERE r.position = $position RETURN r.record, r.revision',
+        found = self._rows(f'{self._held_at(key, address)} WHERE r.position = $position RETURN r.record, r.revision',
                            address=address, position=position)
         ident, revision = (found[0][0], found[0][1]) if found else (None, None)
-        self._rows(f'{self._held_at(key)} WHERE r.position = $position DETACH DELETE r', address=address,
+        self._rows(f'{self._held_at(key, address)} WHERE r.position = $position DETACH DELETE r', address=address,
                    position=position)
         self.insert_record(key, address, position, record, str(ident) if ident else None,
                            int(revision) + 1 if isinstance(revision, int) else 1)
 
     def delete_records_at(self, key: str, address: str, positions: list[int]) -> None:
         """Remove the records at `positions`, and close the gaps so a record's position stays its place in the list."""
-        self._rows(f'{self._held_at(key)} WHERE r.position IN $positions DETACH DELETE r', address=address,
+        self._rows(f'{self._held_at(key, address)} WHERE r.position IN $positions DETACH DELETE r', address=address,
                    positions=positions)
-        rows = self._rows(f'{self._held_at(key)} RETURN r.id, r.position ORDER BY r.position', address=address)
+        rows = self._rows(f'{self._held_at(key, address)} RETURN r.id, r.position ORDER BY r.position', address=address)
         for index, (ident, position) in enumerate(rows):
             if position != index:
                 self._rows(f'MATCH (r:{_table(key)}) WHERE r.id = $id SET r.position = $position', id=ident,
                            position=index)
 
     def delete_records(self, key: str, address: str) -> None:
-        self._rows(f'{self._held_at(key)} DETACH DELETE r', address=address)
+        self._rows(f'{self._held_at(key, address)} DETACH DELETE r', address=address)
+
+
+def _holder(address: str) -> str:
+    """The node that holds the records at `address`: the element `$address` names, or the root for `''`."""
+    return "Project {k: 'root'}" if address == '' else 'Element {address: $address}'
 
 
 def new_record_id() -> str:

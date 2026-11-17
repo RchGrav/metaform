@@ -12,8 +12,9 @@ heading: the first titled block is level 1, each next at most one deeper, none b
 would break the round trip: a skipped level, a heading line inside text, a title that is not one line, a code used
 twice.
 
-Decision (F07): the project's root holds no records in this store yet, so the document holds no root blocks; the
-project's own description waits on root support, ticket t-f07-root.
+The project's root holds blocks too, the project's own description (audit F07): written at the path that is the
+project's name alone, rendered between the project's heading and the first element, one Markdown level deeper than
+the block's level, as `markdown.rs` renders them.
 """
 from __future__ import annotations
 
@@ -302,27 +303,35 @@ def document_addresses(elements: dict[str, dict[str, Any]], held: dict[str, list
                   key=_order)
 
 
+def _paragraphs(found: list[Block], base: int) -> list[str]:
+    """Blocks as document paragraphs, each heading `base` plus its level in hashes."""
+    parts: list[str] = []
+    for block in found:
+        if block.level is not None and block.title is not None:
+            parts.append(f"{'#' * (base + block.level)} {f'`{block.code}` ' if block.code else ''}{block.title}")
+        if block.text:
+            parts.append(block.text)
+    return parts
+
+
 def render(project: str, elements: dict[str, dict[str, Any]], wants: dict[str, list[dict[str, Any]]],
            held: dict[str, list[Block]]) -> str:
-    """The map's specification as one Markdown document: the project's heading, then each element's heading, its
-    skeleton facts and its blocks. Addresses are full, with the project's name, as the project tool writes them."""
-    parts = [f"{'#' * PROJECT_HASHES} {project}"]
+    """The map's specification as one Markdown document: the project's heading and the root's blocks, its own
+    description, then each element's heading, its skeleton facts and its blocks. Addresses are full, with the
+    project's name, as the project tool writes them; the root's is the project's name."""
+    parts = [f"{'#' * PROJECT_HASHES} {project}", *_paragraphs(held.get(project, []), PROJECT_HASHES)]
     for address in document_addresses(elements, held):
         parts.append(element_heading(elements, address))
         parts.extend(skeleton_facts(elements, wants, address))
-        for block in held.get(address, []):
-            if block.level is not None and block.title is not None:
-                parts.append(f"{'#' * (ELEMENT_HASHES + block.level)} "
-                             f"{f'`{block.code}` ' if block.code else ''}{block.title}")
-            if block.text:
-                parts.append(block.text)
+        parts.extend(_paragraphs(held.get(address, []), ELEMENT_HASHES))
     return '\n\n'.join(parts) + '\n'
 
 
 def parse(document: str, project: str, elements: dict[str, dict[str, Any]],
           wants: dict[str, list[dict[str, Any]]], held: dict[str, list[Block]]) -> dict[str, list[Block]]:
     """A document made by `render`, edited, read back as blocks by address: every section it holds, an empty list
-    for one with no blocks. The map supplies the skeleton: an element heading must name an element exactly as
+    for one with no blocks, and the root's blocks, the text before the first element heading, under the project's
+    name when it holds or held any. The map supplies the skeleton: an element heading must name an element exactly as
     `render` writes it, followed by its facts as the map holds them, or the document is stale and refused."""
     lines = document.split('\n')
     if lines and lines[-1] == '':
@@ -356,10 +365,6 @@ def parse(document: str, project: str, elements: dict[str, dict[str, Any]],
         (sections[-1][2] if sections else root_body).append((at, line))
     if fence is not None:
         raise ParseError(fence_line, 'a code fence opens here and is not closed')
-    if any(line.strip() for _, line in root_body):
-        at = next(at for at, line in root_body if line.strip())
-        raise ParseError(at, 'the project holds no description text yet (root blocks wait on root support); put text '
-                             'under an element heading')
     named = {section[0] for section in sections}
     missing = next((address for address in document_addresses(elements, held)
                     if address not in named and held.get(address)), None)
@@ -369,9 +374,10 @@ def parse(document: str, project: str, elements: dict[str, dict[str, Any]],
                                      'and delete the text under it.')
     out: dict[str, list[Block]] = {}
     codes: dict[str, tuple[str, int]] = {}
-    for address, heading_line, body in sections:
-        rest = _strip_facts(elements, wants, address, heading_line, body)
-        found, starts = _read_blocks(address, heading_line, rest)
+    for address, heading_line, body in [(project, first + 1, root_body), *sections]:
+        root = address == project
+        rest = body if root else _strip_facts(elements, wants, address, heading_line, body)
+        found, starts = _read_blocks(address, heading_line, rest, PROJECT_HASHES if root else ELEMENT_HASHES)
         for block, at in zip(found, starts, strict=True):
             if block.code is None:
                 continue
@@ -380,6 +386,8 @@ def parse(document: str, project: str, elements: dict[str, dict[str, Any]],
                 raise ParseError(at, f"code '{block.code}' is already used at line {first_line}, under "
                                      f"'{first_address}'; each code must be unique across the specification")
             codes[block.code.lower()] = (address, at)
+        if root and not found and not held.get(project):
+            continue
         out[address] = found
     return out
 
@@ -407,7 +415,10 @@ def _strip_facts(elements: dict[str, dict[str, Any]], wants: dict[str, list[dict
     return [(at, line) for at, line in body if at > consumed]
 
 
-def _read_blocks(address: str, heading_line: int, body: list[tuple[int, str]]) -> tuple[list[Block], list[int]]:
+def _read_blocks(address: str, heading_line: int, body: list[tuple[int, str]],
+                 base: int) -> tuple[list[Block], list[int]]:
+    """A section's body as blocks, each heading `base` plus its level in hashes: the root's under the project's
+    heading, an element's under its own."""
     found: list[dict[str, Any]] = []
     starts: list[int] = []
     open_: dict[str, Any] | None = None
@@ -429,12 +440,12 @@ def _read_blocks(address: str, heading_line: int, body: list[tuple[int, str]]) -
                 fence = None
         elif (opened := _opens_fence(line)) is not None:
             fence = opened
-        if heading is not None and ELEMENT_HASHES < heading <= ELEMENT_HASHES + MAX_LEVEL:
+        if heading is not None and base < heading <= base + MAX_LEVEL:
             close()
             code, title = _split_code(_atx_text(line))
-            open_ = {'line': at, 'level': heading - ELEMENT_HASHES, 'code': code, 'title': title, 'text': []}
+            open_ = {'line': at, 'level': heading - base, 'code': code, 'title': title, 'text': []}
         elif heading is not None:
-            allowed = f"{'#' * (ELEMENT_HASHES + 1)} to {'#' * (ELEMENT_HASHES + MAX_LEVEL)}"
+            allowed = f"{'#' * (base + 1)} to {'#' * (base + MAX_LEVEL)}"
             element_form = ('; an element heading ends with its address, such as (`code.api`)'
                             if heading == ELEMENT_HASHES else '')
             raise ParseError(at, f"a heading under '{address}' must use {allowed}{element_form}")

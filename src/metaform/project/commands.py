@@ -211,7 +211,7 @@ def _answer(verb: str, body: object, command: object, owned: Owner, caller: str,
             return _write(verb, path, value, command, owned, caller, request)
         if '.' not in verb:  # the project's root: its own fields
             try:
-                return owned.read(verb, lambda opened: {verb: _named(opened.root(), ROOT_FIELDS)})
+                return owned.read(verb, lambda opened: {verb: _root(opened)})
             except Missing:  # one word that is no project may be a command written wrongly: the answer names both
                 raise Refusal('NOT_FOUND', f"'{verb}' is not a command and not a project of this home: the commands "
                               f"are {', '.join(forms.COMMANDS)}, and {{\"map\": {{}}}} names the projects",
@@ -293,16 +293,34 @@ def _fields(values: dict[str, Scalar]) -> dict[str, object]:
 
 def _write_root(verb: str, project: str, fields: dict[str, object], owned: Owner, caller: str,
                 request: str) -> dict[str, object]:
-    """Write the project's own fields at its root. `add` makes a project that does not exist."""
+    """Write the project's own fields at its root, and the records it holds: the specification's blocks, the
+    project's own description (F07). `add` makes a project that does not exist."""
+    own = {name: value for name, value in fields.items() if name in ROOT_FIELDS}
+    held = {name: value for name, value in fields.items() if name not in ROOT_FIELDS}
+
     def work(opened: Store) -> None:
         if request and opened.request_done(request):
             return
-        opened.put_root({**opened.root(), **cast(dict[str, Scalar], fields)})
+        if own:
+            opened.put_root({**opened.root(), **cast(dict[str, Scalar], own)})
+        if held:
+            Writer(opened, Address(project, ()), {verb: {project: fields}}, verb).root(held)
         if request:
             opened.record_request(request)
 
     owned.write(project, caller, work, create=verb == 'add')
     return dict(OK)
+
+
+def _root(opened: Store) -> dict[str, object]:
+    """The project's root: its own fields, and its specification blocks when it holds any, the project's own
+    description (F07), brought unasked as an element's are."""
+    answer = _named(opened.root(), ROOT_FIELDS)
+    if specification.KEY in opened.overlay_keys() and opened.record_count(specification.KEY, ''):
+        found = definitions(opened.parts()).get(specification.KEY)
+        if found is not None:
+            answer[specification.KEY] = _records(opened, found, '')
+    return answer
 
 
 def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str, object]:
@@ -448,7 +466,10 @@ def perform_specification(project: str, document: str | None, owned: Owner, call
             for address in changed:
                 path = address
                 value: dict[str, object] = {specification.KEY: [block.stored() for block in read[address]]}
-                Writer(opened, parse(path), {'update': {path: value}}, 'update').write(path, value)
+                if path == project:  # the root's blocks, the project's own description (F07)
+                    Writer(opened, Address(project, ()), {'update': {path: value}}, 'update').root(value)
+                else:
+                    Writer(opened, parse(path), {'update': {path: value}}, 'update').write(path, value)
             return changed
 
         return {'status': 'ok', 'changed': owned.write(project, caller, work)}

@@ -1167,3 +1167,53 @@ def test_an_elements_read_carries_its_specification_so_an_agent_reads_its_purpos
     read = run({WIDGET: {}})[WIDGET]
     assert fields_only(read['specification']) == blocks and 'specification' in read['overlays']
     assert 'specification' not in run({CS: {}})[CS]
+
+
+def test_the_projects_root_holds_its_own_description_and_no_other_overlay(home, mapped):
+    """F07: the root, the project's name alone, holds specification blocks, the project's own description: written
+    with update, read back with the root's read, checked by the block rules and the project's one set of codes, and
+    held in a graph that stays whole. Any other overlay at the root is refused by name, and nothing changes."""
+    blocks = [{'text': 'Mashtrac tracks mash packets.'},
+              {'level': 1, 'title': 'Purpose', 'code': 'P-1', 'text': 'Relay each packet once.'},
+              {'level': 2, 'title': 'Scope', 'text': 'Packets only.'}]
+    assert run({'update': {P: {'name': 'Mashtrac', 'specification': blocks}}}) == {'status': 'ok'}
+    read = run({P: {}})[P]
+    assert read['name'] == 'Mashtrac' and fields_only(read['specification']) == blocks
+    assert owner.of(metaform_home.home()).read(P, lambda opened: opened.integrity()) == []
+    for command, code in (({'update': {P: {'tickets': [{'id': 't-1', 'title': 'T', 'task': 'T.'}]}}},
+                           'OVERLAY_NOT_AT_ROOT'),
+                          ({'update': {P: {'specification': [{'level': 2, 'title': 'Skips'}]}}},
+                           'HEADING_LEVEL_INVALID'),
+                          ({'add': {WIDGET: {'specification': [{'level': 1, 'title': 'T', 'code': 'p-1'}]}}},
+                           'CODE_TAKEN')):
+        answer = run(command)
+        assert answer.get('code') == code, (command, answer)
+        assert 'tickets' in answer['message'] if code == 'OVERLAY_NOT_AT_ROOT' else True
+    assert fields_only(run({P: {}})[P]['specification']) == blocks
+    kept = run({P: {}})[P]['specification'][1]
+    assert run({'update': {P: {'specification': [{'position': 1, 'record': kept['record'], 'title': 'Aim'}]}}}) == {
+        'status': 'ok'}
+    assert run({P: {}})[P]['specification'][1] == {**kept, 'title': 'Aim', 'revision': kept['revision'] + 1}
+    assert run({'update': {P: {'specification': []}}}) == {'status': 'ok'}
+    assert 'specification' not in run({P: {}})[P]
+
+
+def test_the_root_blocks_round_trip_through_the_document_between_its_heading_and_the_first_element(home, mapped):
+    """F07: the root's blocks are rendered after the project's heading and before the first element, one Markdown
+    level deeper than their level, and read back from there; export, edit, import and export again give the edited
+    document byte for byte."""
+    owned = owner.of(metaform_home.home())
+    assert run({'update': {P: {'specification': [{'text': 'Mashtrac tracks mash packets.'},
+                                                  {'level': 1, 'title': 'Purpose', 'code': 'P-1', 'text': 'Relay.'}]}}})[
+        'status'] == 'ok'
+    exported = commands.perform_specification(P, None, owned)['document']
+    assert exported.startswith(f'# {P}\n\nMashtrac tracks mash packets.\n\n## `P-1` Purpose\n\nRelay.\n\n'
+                               f'## mashbox (`{WIDGET}`)\n\n')
+    assert commands.perform_specification(P, exported, owned) == {'status': 'ok', 'changed': []}
+    edited = exported.replace('Relay.', 'Relay each packet once.\n\n### Scope\n\nPackets only.')
+    assert commands.perform_specification(P, edited, owned) == {'status': 'ok', 'changed': [P]}
+    assert commands.perform_specification(P, None, owned)['document'] == edited
+    assert fields_only(run({P: {}})[P]['specification'])[-1] == {'level': 2, 'title': 'Scope', 'text': 'Packets only.'}
+    for broken in (edited.replace('### Scope', '#### Scope'), edited.replace('Relay each', '# Relay each')):
+        assert commands.perform_specification(P, broken, owned)['code'] == 'DOCUMENT_REFUSED', broken
+    assert commands.perform_specification(P, None, owned)['document'] == edited

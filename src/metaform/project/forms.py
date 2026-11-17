@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
-from metaform.project.store import ROOT_FIELDS
+from metaform.project.store import ROOT_FIELDS, ROOT_OVERLAYS
 from metaform.project.texts import COMMANDS, ROLE_PLACEHOLDER, ROLE_WORDS, ROLES
 
 Key = str | int
@@ -101,7 +101,7 @@ class Address:
 
     @property
     def full(self) -> str:
-        return f'{self.project}.{self.address}'
+        return full(self.project, self.address)
 
     @property
     def in_overlay(self) -> bool:
@@ -112,7 +112,8 @@ class Address:
 
 
 def full(project: str, address: str) -> str:
-    return f'{project}.{address}'
+    """The path of a store address: the project's name and the address, or the name alone for the root, `''`."""
+    return f'{project}.{address}' if address else project
 
 
 def parse(text: object, rename: Callable[[str], object] | None = None) -> Address:
@@ -228,10 +229,12 @@ def root_of(body: object) -> str | None:
 
 
 def root_write(verb: str, body: object) -> None:
-    """A write to the project's root, which holds the project's own id, name and project, each a text."""
+    """A write to the project's root, which holds the project's own id, name and project, each a text, and the
+    records of the overlays `ROOT_OVERLAYS` names, each a list: the specification's blocks, the project's own
+    description (F07). Any other overlay is held at an element, and is refused here by name."""
     ((project, value),) = cast(dict[str, object], body).items()
-    takes = (f"the root of a project takes {', '.join(ROOT_FIELDS)}; an element is written at its own path, such as "
-             f"{project}.code.masher.widget")
+    takes = (f"the root of a project takes {', '.join(ROOT_FIELDS)}, and the records of {', '.join(ROOT_OVERLAYS)}; "
+             f"an element is written at its own path, such as {project}.code.masher.widget")
     if verb == 'delete':
         raise refuse(f"'{project}' is the root of the project and cannot be deleted")
     fields = as_object(value)
@@ -241,6 +244,14 @@ def root_write(verb: str, body: object) -> None:
         if name == 'technical_name':  # as the Rust form answers it (`metaform-core/src/rules.rs`): the root is the project
             raise Refusal('TECHNICAL_NAME_ALIGNMENT_FAILURE', f"'{project}': the root is the project and has no "
                           'technical_name', {'update': {project: {'technical_name': None}}})
+        if name in ROOT_OVERLAYS:
+            if as_list(given) is None and not (given is None and verb == 'update'):
+                raise refuse(f"{name} at '{project}' is a list of records", {verb: {project: {name: [given]}}})
+            continue
+        if as_list(given) is not None:
+            raise Refusal('OVERLAY_NOT_AT_ROOT', f"'{name}' at '{project}': the root of a project holds records of "
+                          f"{', '.join(ROOT_OVERLAYS)} only, the project's own description. Write {name} records at "
+                          f"an element, such as {project}.code.masher.widget")
         if name not in ROOT_FIELDS:
             raise refuse(f"'{name}' at '{project}': {takes}")
         if given is None and verb == 'update':
