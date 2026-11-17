@@ -89,6 +89,11 @@ anything, such as settings and module tables.
 
 ## The project store follows `core/` (confirmed by the person, 2026-11-17)
 
+**Correction, same day:** the target is the Rust graph plus the person's later decisions of 2026-11-15/16 (no
+`goto`, one `ref`, overlays defined under the overlay root and stored as structs of arrays, paths led by the project's
+name, the tool named `project`). See the top of `HANDOFF.md`. Of the departures listed below, those are the person's
+and stay; the missing graph edges, the intake delivery and the missing corrected commands are what get fixed.
+
 The person confirmed the Rust store's graph as the structure, from `core/metaform/rust/crates/metaform-store/src/graph.rs`:
 
 ```
