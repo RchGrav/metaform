@@ -86,3 +86,36 @@ anything, such as settings and module tables.
    so agents and people keep the commands they know, and the `project` tool and the CLI are one engine. The other way
    is one generic command, `metaform project '<command as JSON>'`, the same form as the tool, with the `map` verbs
    removed.
+
+## The project store follows `core/` (confirmed by the person, 2026-11-17)
+
+The person confirmed the Rust store's graph as the structure, from `core/metaform/rust/crates/metaform-store/src/graph.rs`:
+
+```
+(Map) -ROOT-> (Element) -CONTAINS-> (Element) -CONTAINS-> (Element) ...   the namespace tree, as edges
+(Element) -DEPENDS_ON {why, how, direction}-> (Element)                    wants, as edges
+(Element) -HOLDS-> (Record)                                                layer records, as edges
+```
+
+Node and edge types, with their properties: `Map(id)`; `Element(key, mapId, address, technicalName, name, role, uri,
+status, childMap, extra)`; `Record(key, mapId, layer, ordinal, data)`; `ROOT` (Map to Element); `CONTAINS` (Element to
+Element); `DEPENDS_ON(why, how, direction, extra)` (Element to Element); `HOLDS` (Element to Record). The stored form an
+agent reads back with `raw dump` is the nested JSON of `core/metaform/intake-example.json`: the project's name on top
+with `id`, `name` and `project`, each address segment a level, `refs` a list, and `wants` a list inside the wanting
+element.
+
+The Python store built on 2026-11-16 (`src/metaform/project/store.py`) departs from it, seen in a copy of the live
+`metaform` map on 2026-11-17:
+
+- Only wants are edges (`Wants`). The tree is not stored: a parent such as `upstream.code.harness` is a separate empty
+  node with no edge to its child. There is no `Map` node, no `ROOT` and no `CONTAINS`.
+- Overlay records are one node type per overlay (`ov_tickets`, `ov_memories`, ...), tied to their element by an
+  address string, not a `HOLDS` edge.
+- An element holds one `ref` text, not a `refs` list; there is no `extra`, so any other field is refused.
+- The project's `Root` node is unconnected and, for `metaform`, empty.
+- There is no `raw dump`, so the stored form cannot be read back in the nested shape.
+
+The commands and answers differ too (2026-11-17, the Rust tests' commands sent to the Python tool): `goto`,
+`raw dump` and `help intake` are refused; a root `technical_name` answers `FIELD_MISMATCH` with no remediation instead
+of `TECHNICAL_NAME_ALIGNMENT_FAILURE`; an unknown field or overlay records given as an object are refused with no
+remediation, where Rust stores the field in `extra` or answers with the corrected list. The role checks match.
