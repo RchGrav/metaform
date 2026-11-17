@@ -16,7 +16,7 @@ import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {narrowPage} from '/page/app/dock/place.js';
-import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel, readSessionHistory} from '/page/app/agents/dispatch.js';
+import {D, SESSIONS_DRAWN, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel, readSessionHistory} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, taskSummary} from '/page/app/session/tasks.js';
@@ -114,6 +114,18 @@ export function showMine() {
   drawTabs();
   drawHelpdesk();
 }
+/* A page loaded while the person's system agent runs, after a reload or in a new tab, opens on its conversation, as
+ * My agent does, so the person never finds the chat empty while their agent is there: once, with the first sessions
+ * read that hold it, unless the person is on a thread or a Call already. Nothing is started or sent. */
+let REOPENED = false;
+function reopenMine() {
+  if (REOPENED) return;
+  if (DOCK.target || DOCK.calling) { REOPENED = true; return; }
+  if (!D.sessions.some(one => one.state === 'running' && isSystemSession(one, D.states))) return;
+  REOPENED = true;
+  showMine();
+}
+SESSIONS_DRAWN.push(reopenMine);
 /* Closing a tab closes the thread on this page only; its agent keeps working. The one on view gives way to My agent. */
 function closeChat(chat) {
   DOCK.chats = DOCK.chats.filter(one => one !== chat);

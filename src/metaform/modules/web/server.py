@@ -2641,8 +2641,16 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 own = module_verb({'project': WORKSPACE}, 'dispatch', 'sessions', {'thread': False})
                 listed = cast(dict[str, Any], found)
+                theirs = cast(dict[str, Any], own)
                 listed['sessions'] = [*cast(list[Any], listed.get('sessions') or []),
-                                      *cast(list[Any], cast(dict[str, Any], own).get('sessions') or [])]
+                                      *cast(list[Any], theirs.get('sessions') or [])]
+                # what the page needs to know the system agent among them, not their whole states, which carry each
+                # task's instructions: its task's name, and the role and subject of an older session
+                states = cast(dict[str, Any], listed.setdefault('states', {}))
+                for session_id, state in cast(dict[str, Any], theirs.get('states') or {}).items():
+                    if session_id not in states and isinstance(state, dict):
+                        held = cast(dict[str, Any], state)
+                        states[session_id] = {key: held.get(key) for key in ('task_name', 'role', 'about')}
             except (Stop, StoreError):
                 pass  # no workspace yet, or dispatch is off there: the project's own agents alone
         if given.get('thread') == 'false' and isinstance(found, dict):

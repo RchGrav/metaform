@@ -28,12 +28,13 @@ export const isIntake = (workId, session = null) => {
 };
 /* Whether a work id is a helper's, one the system agent started with a brief, dispatch helper: it is never a ticket. */
 export const isHelper = workId => String(workId || '').startsWith('helper-');
-/* Whether a session is the person's own system agent, by what its runner says it is, `role`, and for a session from
- * before roles were kept, by what it is about: never an intake agent, which is about the system too, so
+/* Whether a session is the person's own system agent: the `user_agent` task's agent, which carries no role since
+ * tasks retired them (2026-10-24), else by what its runner says it is, `role`, and for a session from before roles
+ * were kept, by what it is about: never an intake agent, which is about the system too, so
  * My agent never opens the intake and the intake is never called "your system agent" (UX review round 2, 2026-10-17,
  * combined F3). `state` is the session's state line, `workId` its work id. */
-export const isSystemState = (state, workId) => Boolean(state)
-  && (state.role ? state.role === 'system' : state.about === 'system') && !isIntake(workId);
+export const isSystemState = (state, workId) => Boolean(state) && !isIntake(workId)
+  && (state.task_name === 'user_agent' || (state.role ? state.role === 'system' : state.about === 'system'));
 /* The same for a session row, read through the states the agents key holds. */
 export const isSystemSession = (session, states) => isSystemState(states?.[session.session_id], session.work_id);
 /* What a session works on, in words: the intake, or its ticket's part. An intake's work id is never a ticket. */
