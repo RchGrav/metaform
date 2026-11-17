@@ -32,7 +32,7 @@ from metaform import events, outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
 from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, node_items, provided
 
-from . import engine, follow, live_summary, pipeline
+from . import engine, follow, live_summary, pipeline, stored
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
 # The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
@@ -179,7 +179,8 @@ def opening(ctx: Context, address: str, topic: str) -> str:
     it, then the question."""
     if not address:
         return prompt_files.served(PACKAGE, 'opening_question', question=topic)
-    part = outline.markdown(ctx.require_store(), address)
+    name = stored.held(ctx.require_store().project_id)  # held in the project store: the part as that map holds it
+    part = stored.part(name, address) if name is not None else outline.markdown(ctx.require_store(), address)
     found = node_items(ctx.folder, address, kinds=('memory',), limit=20, project=ctx.project)
     held = cast(list[dict[str, Any]], found.get('items') or [])
     memories = '\n'.join(f'- {one.get("title")}' + (f': {one["why"]}' if one.get('why') else '') for one in held)
@@ -611,12 +612,14 @@ def adopt(ctx: Context) -> dict[str, Any]:
         return {'table': row['table_id'], 'idea': wanted, 'ticket': held['work_id'], 'address': held['address'],
                 'said': 'This idea was adopted already; its ticket is given again.'}
     store = ctx.require_store()
+    name = stored.held(store.project_id)  # held in the project store: the ticket is a record of its tickets overlay
     given_address = str(ctx.nouns.get('address') or '').strip()
     part = str(row.get('address') or '')
     proposed = ''  # an Address the map does not hold: named in the note, never written to the map
     if part:
         address = given_address or part
-    elif given_address and store.element(given_address) is not None:
+    elif given_address and (stored.has(name, given_address) if name is not None
+                            else store.element(given_address) is not None):
         address = given_address
     else:
         found = follow.top_element(store)
@@ -634,10 +637,14 @@ def adopt(ctx: Context) -> dict[str, Any]:
     if proposed:
         note += ' ' + prompt_files.required(PACKAGE, 'adopted_proposed', proposed=proposed)
     title = str(ctx.nouns.get('title') or idea.get('name') or wanted).strip()[:120]
-    record = store.add_work(Node('element', address), None, kind='enhancement', title=title,
-                            task=prompt_files.required(PACKAGE, 'adopted', **fills), note=note)
+    task = prompt_files.required(PACKAGE, 'adopted', **fills)
+    if name is not None:
+        work_id, notices = stored.add(name, address, title=title, task=task, note=note), ()
+    else:
+        record = store.add_work(Node('element', address), None, kind='enhancement', title=title, task=task, note=note)
+        work_id, notices = record.id, record.notices
     seq = max((int(one['seq']) for one in told), default=0) + 1
-    payload = {'idea': wanted, 'name': fills['idea'], 'work_id': record.id, 'address': address,
+    payload = {'idea': wanted, 'name': fills['idea'], 'work_id': work_id, 'address': address,
                **({'proposed': proposed} if proposed else {})}
     with store.tables() as tx:
         tx.concern(kind=follow.CHANGE_KIND)
@@ -646,11 +653,10 @@ def adopt(ctx: Context) -> dict[str, Any]:
                              'payload': payload, 'at': follow.now()})
     ctx.publish(follow.TOPIC, {'table': row['table_id'], 'seq': seq, 'kind': 'adopted', 'audience': 'person',
                                **payload})
-    return {'table': row['table_id'], 'idea': wanted, 'ticket': record.id, 'address': address,
+    return {'table': row['table_id'], 'idea': wanted, 'ticket': work_id, 'address': address,
             **({'proposed': proposed} if proposed else {}), 'title': title,
-            'next': f'metaform map work id={record.id}',
-            **({'notices': [{'where': one.where, 'message': one.message} for one in record.notices]}
-               if record.notices else {})}
+            'next': f'metaform map work id={work_id}',
+            **({'notices': [{'where': one.where, 'message': one.message} for one in notices]} if notices else {})}
 
 
 def run(ctx: Context) -> dict[str, Any]:

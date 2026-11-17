@@ -25,6 +25,10 @@ def write(ctx: Context, *, board: str, plan: str, project: str | None = None) ->
     if target.is_symlink():
         raise Stop('The execution outline must be a project file.', 'remove the outline symlink')
     project_id = project or source.project_id
+    from . import stored
+    name = stored.held(project_id)
+    if name is not None:  # its tickets are kept in the project store, which has no board yet
+        stored.refuse_board(name)
     base = source.bound_base() if project_id == source.project_id else None
     store = Store(project_id, base=base.id if base else None, module='map')
     with store.atomic(), store.tables(write=False) as tx:

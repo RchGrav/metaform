@@ -416,6 +416,54 @@ def test_a_table_with_no_part_records_its_result_and_files_ideas_where_the_map_h
     assert Store('proj').element('code.peers.directory') is None, 'a ticket never changes the map'
 
 
+def test_a_table_on_a_project_in_the_project_store_opens_on_and_files_its_ideas_in_that_map(
+        run, home, table, tmp_path, monkeypatch):
+    """Kickoff 2026-11-17, t-legacy-keep: for a project held in the project store, a part's opening is that map's
+    part, the top element is its Defining Element, and an adopted idea is a record of its tickets overlay. The old
+    store's map, which still holds other parts here, is not read, and it gets no ticket."""
+    from metaform.project import overlay_records, owner, service
+    from metaform.project import run as command
+    folder, _ = table
+    room = {'element': 'proj.code.room', 'why': 'Hold the seats.', 'how': 'Seats held in one room.',
+            'direction': 'receive'}
+    assert command({'add': {'proj.code.room': {'technical_name': 'room', 'name': 'seat room',
+                                               'role': 'Coupled Element', 'ref': './src/room.py'}}}) == {'status': 'ok'}
+    assert command({'add': {'proj.code.engine': {'technical_name': 'engine', 'name': 'table engine',
+                                                 'role': 'Defining Element', 'wants': [room]}}}) == {'status': 'ok'}
+    try:
+        broken(monkeypatch, tmp_path)
+        run('roundtables', 'open', 'Who holds the seats?', 'address=code.room', 'seats=["stub/vega"]', cwd=folder,
+            ok=False)
+        store = Store('proj', module='roundtables')
+        with store.tables(write=False) as tx:
+            opening = next(str(one['opening']) for one in tx.rows('tables', limit=0).results)
+        assert '`code.room`, Coupled Element' in opening and 'Paths: ./src/room.py' in opening, opening
+        assert 'table engine receives from seat room' in opening and 'Why: Hold the seats.' in opening, opening
+        assert PURPOSE not in opening, opening
+        assert follow.top_element(store) == 'code.engine'
+        with store.tables() as tx:
+            tx.insert('tables', {'table_id': 'rt3', 'topic': 'Where do seats wait?', 'opening': '.',
+                                 'seats': ['stub/vega'], 'spend': 0.0, 'state': 'ended', 'created': follow.now()})
+            tx.insert('events', {'table_id': 'rt3', 'seq': 1, 'kind': 'ideas', 'audience': 'table',
+                                 'at': follow.now(), 'payload': {'ideas': [
+                                     {'id': 'I1', 'name': 'Waiting room', 'summary': 'One room.'},
+                                     {'id': 'I2', 'name': 'Seat queue', 'summary': 'A queue.'},
+                                     {'id': 'I3', 'name': 'Lobby', 'summary': 'A lobby.'}]}})
+        top = json.loads(run('roundtables', 'adopt', 'rt3', 'I1', '--json', cwd=folder).stdout)
+        held = json.loads(run('roundtables', 'adopt', 'rt3', 'I2', 'address=code.room', '--json', cwd=folder).stdout)
+        new = json.loads(run('roundtables', 'adopt', 'rt3', 'I3', f'address={ADDRESS}', '--json', cwd=folder).stdout)
+        assert (top['address'], held['address'], new['address']) == ('code.engine', 'code.room', 'code.engine')
+        assert new['proposed'] == ADDRESS, 'an address only the old store holds is not in this map'
+        tickets = {one['id']: one for one in overlay_records('proj', 'tickets') or []}
+        assert [tickets[one['ticket']]['element'] for one in (top, held, new)] == [
+            'proj.code.engine', 'proj.code.room', 'proj.code.engine']
+        assert ADDRESS in tickets[new['ticket']]['note'] and tickets[new['ticket']]['kind'] == 'enhancement'
+        assert Store('proj').work(limit=0).results == ()
+    finally:
+        service.stop(home)
+        owner.close_all()
+
+
 @pytest.mark.timeout(LIMIT + 60)
 def test_hold_and_end_work_from_metaform_and_the_result_is_saved(run, home, table,
                                                                                                  monkeypatch):

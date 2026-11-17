@@ -372,6 +372,8 @@ No `start` or `stop`. A follower ends with its table: it gives its slots back, e
 
 dispatch, for the agent slots and agent commands. memory's items are read through the chassis's `node_items`, and a table's outcome is recorded through `memory.record`; without memory the opening says none are kept and nothing is recorded. map, for the tickets `adopt` files.
 
+A project held in the project store (`metaform.project`) has its map and tickets there, and `stored.py` reads and writes them (kickoff 2026-11-17, decision t-legacy-keep): a part's opening is that map's element with the wants it holds and the wants on it; the top element is its Defining Element nearest the root, else the element nearest it; and an adopted idea's ticket and each follow-through stage's ticket are records of its `tickets` overlay (id, title, task, kind enhancement, note), the ones the page's board shows. The intake stage's note names the target map as `<project> in the project store`. Decomposition is refused there by name before a Decomposer starts, and so is the execution outline: a board, ticket order and dependencies have no place in the project store yet. The tables, their events and the pipeline stay in this module's own tables. Projects not in the project store keep the old store's path.
+
 ## Systems supported
 
 Linux and macOS.

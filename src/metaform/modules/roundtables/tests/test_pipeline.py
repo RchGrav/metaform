@@ -209,6 +209,61 @@ def test_yes_chain_runs_each_task_and_requires_execution_outline_approval(finish
     assert len(runner.launches) == 5
 
 
+@pytest.fixture
+def stored_pipeline(finished_table, home):
+    """`source` held in the project store, its delivery part a Defining Element there (kickoff 2026-11-17,
+    t-legacy-keep), so its stage tickets are records of its tickets overlay. The single-writer service is stopped
+    when the test ends."""
+    from metaform.project import owner, service
+    from metaform.project import run as command
+    assert command({'add': {f'source.{ADDRESS}': {'technical_name': 'delivery', 'name': 'delivery',
+                                                  'role': 'Defining Element'}}}) == {'status': 'ok'}
+    yield finished_table
+    service.stop(home)
+    owner.close_all()
+
+
+def store_tickets(project):
+    from metaform.project import overlay_records
+    return {one['id']: one for one in overlay_records(project, 'tickets') or []}
+
+
+def test_stage_tickets_of_projects_in_the_project_store_are_kept_there_and_decomposition_is_refused_by_name(
+        stored_pipeline):
+    """Each stage's ticket is a tickets record at the part, the launch carries its task and element, the intake's
+    target map is named in the project store, and decomposition, whose board has no place there, is refused before
+    a decomposer starts; the old store gets no ticket."""
+    from metaform.modules.roundtables import execution_outline
+    from metaform.project import run as command
+    ctx, runner, _ = stored_pipeline
+    through_architecture(ctx)
+    tickets = store_tickets('source')
+    assert [one['title'] for one in tickets.values()] == [f'Roundtable {TABLE}: researcher',
+                                                         f'Roundtable {TABLE}: architect']
+    assert all(one['element'] == f'source.{ADDRESS}' and one['kind'] == 'enhancement' for one in tickets.values())
+    assert [one['work'] for one in runner.launches] == list(tickets)
+    first = runner.launches[0]
+    assert first['node'] == f'element:{ADDRESS}' and f'work={first["work"]}' in first['text'], first
+    assert 'YOUR_TICKET' not in first['text'] and ctx.require_store().work(limit=0).results == ()
+    decide(ctx, 'yes')
+    assert command({'add': {'target.code.plan': {'technical_name': 'plan', 'name': 'plan',
+                                                 'role': 'Defining Element'}}}) == {'status': 'ok'}
+    target = Store('target', module='roundtables')
+    pipeline.intake_finished({'project': 'target'}, replace(ctx, project='target', folder=Path(target.project().path),
+                                                            store=target, nouns={}))
+    assert 'Map: target in the project store\n' in pipeline.review(ctx)['output_text']
+    decide(ctx, 'yes')
+    planned = [one for one in store_tickets('target').values() if one['title'] == f'Roundtable {TABLE}: planner']
+    assert [one['element'] for one in planned] == ['target.code.plan'] and runner.launches[-1]['project'] == 'target'
+    submit(ctx, '# Full plan\n\n1. Build delivery.\n')
+    decide(ctx, 'approve')
+    kept = pipeline.state(ctx, TABLE)
+    assert kept['stage'] == 'decomposition' and 'no board, ticket order or dependency' in kept['error'], kept
+    assert 'decomposer' not in [one['role'] for one in runner.launches]
+    with pytest.raises(Stop, match='no board, ticket order or dependency'):
+        execution_outline.write(ctx, board='delivery', plan=f'{SAVED}/plan.md', project='target')
+
+
 @pytest.mark.parametrize('stage', ['roundtable', 'research', 'architecture', 'intake', 'plan_review'])
 def test_no_stops_without_admitting_later_task(finished_table, stage):
     ctx, runner, _ = finished_table

@@ -444,7 +444,11 @@ class Follower:
 
 def top_element(store: Store) -> str | None:
     """The project's top element, where a table about no part keeps what it leaves on the map: its DE, else its first
-    root element; None while the map holds none."""
+    root element; None while the map holds none. A project held in the project store has its top element there."""
+    from . import stored
+    name = stored.held(store.project_id)
+    if name is not None:
+        return stored.top(name)
     roots = store.roots(limit=1)
     found = next((entry.element for entry in roots.entry if entry.element.role == 'DE'), None) \
         or next((entry.element for entry in roots.entry), None) or next(iter(roots.elements), None)

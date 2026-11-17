@@ -12,7 +12,7 @@ from metaform import home, prompt_files, settings
 from metaform.data import Node, Store, TableTx
 from metaform.module import Context, Stop, provided
 
-from . import follow
+from . import follow, stored
 
 FILES = {'research': 'research.md', 'architecture': 'architecture.md', 'intake': 'intake.md',
          'plan_review': 'plan.md', 'decomposition': 'decomposition.md', 'execution_outline': 'execution-outline.md',
@@ -171,6 +171,9 @@ def claim_task(ctx: Context, table: str, role: str) -> str:
     kept = row(ctx, table)
     called = target(ctx, kept)
     owner = service(called)
+    name = stored.held(called.require_store().project_id)  # held in the project store: stage tickets are kept there
+    if name is not None and role == 'decomposer':
+        stored.refuse_board(name)
     work = kept.get('work_id')
     if not work:
         with ctx.require_store().tables(write=False) as tx:
@@ -200,14 +203,16 @@ def claim_task(ctx: Context, table: str, role: str) -> str:
             pending = tx.get('pending_stages', key)
         reserved = str(pending.get('work_id') or '') if pending and pending['stage'] == kept['stage'] else ''
         if reserved:
-            if not called.require_store().work(ids=[reserved]).results:
+            if not (stored.ticket(name, reserved) if name is not None
+                    else called.require_store().work(ids=[reserved]).results):
                 raise Stop('The reserved stage ticket is missing. It was not recreated.',
                            'metaform roundtables review ' + table)
             work = reserved
         else:
-            created = called.require_store().add_work(Node('element', address), None, kind='enhancement',
-                        title=f'Roundtable {table}: {role}', task=task)
-            work = created.id
+            title = f'Roundtable {table}: {role}'
+            work = stored.add(name, address, title=title, task=task) if name is not None else \
+                called.require_store().add_work(Node('element', address), None, kind='enhancement', title=title,
+                                                task=task).id
             with called.require_store().tables() as tx:
                 if pending is None:
                     tx.insert('pending_stages', {**key, 'stage': kept['stage'], 'work_id': work})
@@ -237,12 +242,17 @@ def claim_task(ctx: Context, table: str, role: str) -> str:
         history.append(attempt)
         # Record the launch intent first. Replaying a lost reply uses the same task request key.
         change(ctx, table, history=history)
-    records = called.require_store().work(ids=[str(work)]).results
-    if not records:
+    if name is not None:
+        one = stored.ticket(name, str(work))
+        given, node = (str(one.get('task') or ''), f"element:{one['address']}") if one else ('', '')
+    else:
+        records = called.require_store().work(ids=[str(work)]).results
+        one = records[0] if records else None
+        given, node = (str(one.task), f'{one.node_kind}:{one.node_id}') if one else ('', '')
+    if one is None:
         raise Stop('The stage ticket is missing.', 'metaform roundtables review ' + table)
-    ticket = records[0]
-    launch = replace(called, nouns={'text': str(ticket.task).replace('work=YOUR_TICKET', f'work={work}'),
-        'node': f'{ticket.node_kind}:{ticket.node_id}', 'options': {'requested_at': attempt.get('asked'), 'roundtable': {
+    launch = replace(called, nouns={'text': given.replace('work=YOUR_TICKET', f'work={work}'),
+        'node': node, 'options': {'requested_at': attempt.get('asked'), 'roundtable': {
             'origin': ctx.require_store().project_id, 'table': table, 'work': work, 'stage': kept['stage']}}})
     result = owner.assign(launch, 'roundtable_stage', None, request_key=str(attempt['request_key']))
     attempt['task_id'] = result['task_id']
@@ -313,8 +323,10 @@ def intake_complete(ctx: Context, table: str) -> bool:
     mapped = target(ctx, kept).require_store()
     if mapped.intake_building().results or not follow.top_element(mapped):
         return False
-    base = mapped.bound_base()
-    text = f'# Intake\n\nProject: {mapped.project_id}\nFolder: {kept["folder"]}\nMap: {base.id if base else ""}\n'
+    name = stored.held(mapped.project_id)  # a map in the project store is named by the project's name there
+    base = None if name is not None else mapped.bound_base()
+    held = f'{name} in the project store' if name is not None else base.id if base else ''
+    text = f'# Intake\n\nProject: {mapped.project_id}\nFolder: {kept["folder"]}\nMap: {held}\n'
     file = str(Path(str(kept['file'])).with_name(FILES['intake']))
     destination(ctx, file).write_text(text, encoding='utf-8')
     digest = hashlib.sha256(text.encode()).hexdigest()
