@@ -1,3 +1,51 @@
+# Handoff, 2026-11-17: replace the Python project store with the Rust design
+
+**Read this first. It overrides the order further down.**
+
+The person confirmed on 2026-11-17: **the Rust design in `core/` is the proper one; the Python project store built on
+2026-11-16 (`src/metaform/project/`) is not the new design or structure.** It is to be replaced, not patched. The whole
+project is built on this store, so nothing else (step 3a, profiles, a new intake) goes ahead until it matches.
+
+**The reference is `core/`**, the archive of the tested Rust form the person provided to be implemented here:
+- `core/SPECIFICATION.md`: sections 1 to 15 the design, 16 to 19 the exact reference (every form, message, answer,
+  fixed value); section 13 the decisions, among them 31 and 33 (prompts are Markdown files; an instruction names the
+  resources it must read).
+- `core/metaform/rust/crates/`: `metaform-store/src/graph.rs` (the graph), `metaform-core/src/` (`shape.rs`
+  commands, `contract.rs` help, `rules.rs` and `refusal.rs` codes and messages, `reads.rs` goto, `procedure.rs`),
+  `metaform-server/src/tool.rs` (resources), and `metaform-core/tests/` (about 70 tests: exact commands, codes and
+  remediations).
+- `core/metaform/mcp-tools.proposed.json` (the contract), `metaform.schema.json` (the stored form),
+  `mcp-tool.published.json` (what agents see), `intake-example.json` (the stored form as JSON).
+- `core/metaform/intake/procedure/`: **the intake procedure**, one Markdown file per section and `sections.md`,
+  served as Rust serves it (`{"help": "intake"}`, `{"help": "intake/<section>"}`, `metaform://intake/<section>`).
+
+**The confirmed structure** (also in `docs/plans/old-store-removal.md`, with every Python departure found):
+```
+(Map) -ROOT-> (Element) -CONTAINS-> (Element) -CONTAINS-> (Element) ...   the namespace tree, as edges
+(Element) -DEPENDS_ON {why, how, direction}-> (Element)                    wants, as edges
+(Element) -HOLDS-> (Record)                                                layer records, as edges
+```
+
+**The work, in order, each a commit, pushed:**
+1. Port the Rust tests in `core/metaform/rust/crates/metaform-core/tests/` to Python first, as the acceptance tests of
+   the project tool. They fail against today's store; that is the measure.
+2. Rebuild `src/metaform/project/` to the Rust design until they pass: the graph and stored form, `refs` and `extra`,
+   every command (`goto` and `raw dump` included), help (`intake`, `intake/<section>`), codes, messages and
+   remediations, word for word. Where `core/` and a later decision of the person's disagree, ask the person.
+3. Serve the intake procedure from `core/metaform/intake/procedure/` as Rust does; the intake agent's opening names
+   the resources it must read; launch it at the highest reasoning level (the `metaform` intake of 2026-11-16 ran at
+   `medium` and surveyed docs instead of tracing code, bug 20).
+4. Move the page and modules that read the store onto the rebuilt one; then the old SQLite map (plan in
+   `docs/plans/old-store-removal.md`).
+5. Ask the person before a new intake of `metaform`; it spends tokens.
+
+**Why it went wrong, so it does not again:** decisions 31 and 33 were written only in `core/SPECIFICATION.md`, while
+this project's `CLAUDE.md` told agents the opposite (fixed in `8d3b01fa`). The store was ported with departures the
+porting agent chose itself (`project/texts.py` says so). Port from `core/`, test against `core/`'s own tests, and
+change nothing the person did not decide.
+
+---
+
 # Handoff, 2026-11-16 (evening)
 
 Branch `feat/project-tool`, pushed; every item below is committed there unless it says otherwise.
