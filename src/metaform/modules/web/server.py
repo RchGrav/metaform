@@ -504,6 +504,7 @@ class Server(ThreadingHTTPServer):
         if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
             self.watch_backgrounds(str(payload['project']), refresh=True)
         if payload.get('project') == WORKSPACE:
+            system_agent_heard(payload)  # before the pages hear it, so the reads it starts find the system agent's work
             # The lead is with the person on every project: what changes in its workspace, its thread and its agents,
             # is told to each open page as a change of the project that page shows.
             with self.listening:
@@ -4026,6 +4027,17 @@ def leads(work_id: object) -> bool:
         if len(_LEADS) > 4096:
             _LEADS.clear()
     return _LEADS[work_id]
+
+
+def system_agent_heard(payload: dict[str, Any]) -> None:
+    """A change in the system agent's workspace: a work id it names that was asked about before the workspace held it,
+    such as the system agent's own conversation read while it starts, is asked again at its next read rather than
+    kept as another project's. A change that names no work ids may concern any of them."""
+    named = payload.get('work_ids')
+    unheld = [work_id for work_id in cast(list[Any], named) if _LEADS.get(work_id) is False] \
+        if isinstance(named, list) else [work_id for work_id, held in list(_LEADS.items()) if not held]
+    for work_id in unheld:
+        _LEADS.pop(work_id, None)
 
 
 def lead_given(given: dict[str, Any]) -> dict[str, Any]:
