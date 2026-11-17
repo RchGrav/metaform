@@ -329,6 +329,9 @@ The base holds RE, PE, OP and EF only. An intake note given without a condition,
 
 Merged finding notes are paragraphs joined by a blank line (`intake._condition`, MAP-046). Whether a note is already held is decided by `_holds(merged, note)` in `modules/intake/__init__.py`: the note equals the whole merged note or one of its paragraphs. Never test `note in merged`: a substring test dropped a shorter new finding ('sounds' inside 'never sounds') while its notice still said it was kept. Guard it with the `never` assertion in `test_a_finding_on_an_element_and_its_purpose_record_is_written_once`.
 
+## Map wants need a why and a direction
+- A `wants` entry written through the project tool's `update` must carry `why` (a bare infinitive verb phrase, no leading "to", no subject nouns, no word ending in -ing) and `direction` (`send`, `receive` or `both`), or the call returns `WANT_INCOMPLETE` and writes nothing. Send `why` and `direction` in the first call; the error's `remediation` block shows the exact shape. Check the write with a read-back of the element.
+
 ## Reading the live store
 `Store(project, base=...)` takes the base's id, not its name. `base='app-internal-refactor'` read zero records where the id read ten, and it raised nothing. Compare the row count with a read-only `sqlite3` module query (`mode=ro` URI) on the project's `.sqlite3` file before trusting a Store read. Use `Store(...).bases()` to get the ids.
 
