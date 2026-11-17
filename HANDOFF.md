@@ -14,8 +14,9 @@ the Rust session before it is summarized in `rich/other_fable_recap.md`). Every 
 - The intake procedure as Markdown sections, `core/metaform/intake/procedure/`, each also a resource,
   `metaform://intake/<section>`, and `{"help": "intake"}`, `{"help": "intake/<section>"}` (`core/SPECIFICATION.md` 7.3,
   decisions 31 and 33; `CLAUDE.md` Prompts). The procedure is sliced because much of its context is reused by other
-  operations. **Delivered two ways, as the person set out on 2026-11-17:** an agent performing an intake is given the
-  sections inline in its prompt, in `sections.md` order, with no resource to read; a long-running agent is given, with
+  operations. **Delivered two ways, as the person set out on 2026-11-17:** an agent performing an intake, a clean-context
+  agent with that one purpose, is given the whole procedure inline in its prompt, assembled from the same section files
+  in `sections.md` order, with no resource to read and no second copy (`digital_typology.xml` is no longer served); a long-running agent is given, with
   each tool that needs some of that context, the person's words "Must read these URI to perform ... properly" and the
   sections' addresses. The same address named by five tools is read once in that context, which is the reason for the
   slicing. The Rust build did only the second way.
