@@ -31,7 +31,6 @@ def enabled(run, tmp_path, monkeypatch):
 
 
 def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path, monkeypatch):
-    from metaform.modules import intake
     dispatch = active_dispatch(tmp_path)
 
     user_home = tmp_path / 'user'
@@ -47,15 +46,15 @@ def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path
     monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
     launched = []
 
-    def launch(store, work_id, agent, flags, mode, *, kept, ctx):
+    def launch(store, work_id, agent, flags, mode, *, kept, ctx, asked=None, subject=None):
         assert mode == 'task' and any(flag.startswith('task=') for flag in flags)
         assert 'intake=true' not in flags and 'system=true' not in flags
         assert ctx.folder == user_home / 'dish-clock-3'
         assert ctx.project == store.project_id == 'dish-clock-3'
         with Store(store.project_id, module='dispatch').tables(write=False) as tx:
             asked = json.loads(tx.get('raised', {'work_id': work_id})['asked'])
-        assert asked['name'] == 'intake' and design in asked['input']
-        assert asked['instructions'] == asked['component']['text']
+        # what the person asked goes in the procedure's own place for a request, inside the instructions, not as input
+        assert asked['name'] == 'intake' and design in asked['instructions'] and asked['input'] == ''
         launched.append(ctx)
         return {'pid': 12345}
 
@@ -66,16 +65,8 @@ def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path
     assert result['folder'] == str(user_home / 'dish-clock-3')
     assert result['state'] == 'starting', result
     assert registry.project(result['project']).path == result['folder']
-    # The agent records after launch releases the existing intake lock.
-    [ctx] = launched
-    target = Context('intake', ctx.folder, project=ctx.project, store=Store(ctx.project))
-    intake.start(target)
-    target.nouns = {'namespace_address': 'code.timer.kitchen', 'role': 'DE'}
-    intake.element(target)
-    target.nouns = {}
-    intake.finish(target)
-    assert Store(result['project']).has_intake()
-    assert Store(result['project']).element('code.timer.kitchen') is not None
+    # The agent records the map with the project tool once it runs (the old intake recording went on 2026-11-16).
+    assert len(launched) == 1
     assert (existing / 'keep.txt').read_text() == 'untouched'
     assert list(existing.iterdir()) == [existing / 'keep.txt']
     assert registry.project('dish-clock-2').path == str(other)

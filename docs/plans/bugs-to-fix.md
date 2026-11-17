@@ -82,7 +82,3 @@ recorded, each becomes a ticket on the element it concerns.
     fails: `metaform import src/metaform/demo/map.json` answers "The document has schema version 21; this Metaform
     supports version 23". The demo's map is an old-store document. Found 2026-11-17; not caused by the store's graph
     change, which does not touch import.
-22. **An intake design test calls code that no longer exists.**
-    `dispatch/tests/test_project_intake.py::test_design_gets_free_folder_registration_and_authored_intake` stubs
-    `spawn` without the `subject` and `asked` arguments the launch passes, and later calls `intake.start`, removed with
-    the old intake recording on 2026-11-16. Found 2026-11-17.
