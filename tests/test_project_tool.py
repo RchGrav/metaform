@@ -888,8 +888,14 @@ def test_a_definition_change_that_would_leave_records_outside_it_is_refused(mapp
         answer = run({'update': {notes: change}})
         assert answer['code'] == 'DEFINITION_INCOMPATIBLE', (change, answer)
         assert f"'{CS}' position 0 ({wrong})" in answer['message']
-        assert answer['remediation'] == {'update': {CS: {'notes': [{'position': 0, wrong: f'<{wrong}>'}]}}}
+        if wrong == 'owner':  # a new required field: defined optional first, since records cannot take it before
+            assert answer['remediation'] == {'update': {notes: {'owner': {
+                'type': 'text', 'rule': 'r', 'example': 'x', 'optional': True}}}}
+            optional_first = answer['remediation']
+        else:
+            assert answer['remediation'] == {'update': {CS: {'notes': [{'position': 0, wrong: f'<{wrong}>'}]}}}
         assert (snapshot(), run({notes: {}})) == before
+    assert run(optional_first) == {'status': 'ok'}  # the remedy offered for a new required field is taken
     # compatible changes leave every record valid
     assert run({'update': {notes: {'instruction': 'One note a line.'}}}) == {'status': 'ok'}
     assert run({'update': {notes: {'seen': {'type': 'boolean', 'rule': 'r', 'example': True, 'optional': True}}}}) == {
@@ -1065,3 +1071,21 @@ def test_a_ticket_id_names_one_ticket_and_a_claim_is_exclusive(served):
     assert commands.run({'update': {WIDGET: {'tickets': [{**claim, 'taken_by': 'a'}]}}}, served) == {'status': 'ok'}
     assert commands.run({'update': {WIDGET: {'tickets': [{**claim, 'taken_by': 'b'}]}}}, served)['code'] == (
         'RECORD_CHANGED')
+
+
+def test_a_list_written_back_keeps_its_records_ids_and_record_and_revision_are_no_field_names(mapped):
+    """F02, after verification: a whole list written back from a read keeps each record's id at its next revision,
+    and a new record in it gets a new id; a definition cannot name a field record or revision."""
+    run({'add': {SPEC: SPEC_DEFINITION}})
+    run({'add': {CS: {'project_specifications': [{'title': 'A', 'level': 1}, {'title': 'B', 'level': 1}]}}})
+    a, b = run({CS: {'project_specifications': {}}})[CS]['project_specifications']
+    assert run({'update': {CS: {'project_specifications': [b, {**a, 'title': 'A2'}, {'title': 'C', 'level': 2}]}}}) == {
+        'status': 'ok'}
+    b2, a2, c = run({CS: {'project_specifications': {}}})[CS]['project_specifications']
+    assert (b2['record'], b2['revision'], a2['record'], a2['revision'], a2['title']) == (
+        b['record'], 2, a['record'], 2, 'A2')
+    assert c['record'] not in (a['record'], b['record']) and c['revision'] == 1
+    for name in ('record', 'revision'):
+        answer = run({'add': {f'{P}.overlay.notes': {'description': 'd', 'instruction': 'i',
+                                                     name: {'type': 'text', 'rule': 'r', 'example': 'x'}}}})
+        assert answer['status'] == 'error' and "tool's word" in answer['message'], name

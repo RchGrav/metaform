@@ -113,9 +113,11 @@ def node(project: str, target: str, chosen: str | None = None) -> NodeView | Non
         overlays = [key for key in overlays if key in shown]
     asked: dict[str, object] = {key: {} for key in overlays}
     held = cast(dict[str, Any], commands.run({path: asked}).get(path) or {}) if overlays else {}
-    # the memories overlay is shown in the panel's Memories section, every other overlay under Knowledge
+    # the memories overlay is shown in the panel's Memories section, every other overlay under Knowledge; a record's
+    # id and revision are the store's own (F02), not fields the person wrote, so they are not shown as rows
     groups = tuple(LayerGroup(key, key, 'memory' if key == 'memories' else 'layer', tuple(
-        Item(id=f'{address}:{key}:{position}', layer_id=key, layer=key, target=place, value=record)
+        Item(id=f'{address}:{key}:{position}', layer_id=key, layer=key, target=place,
+             value={name: value for name, value in record.items() if name not in ('record', 'revision')})
         for position, record in enumerate(cast(list[dict[str, Any]], held.get(key) or []))))
         for key in overlays)
     return NodeView(place, address, groups)
@@ -270,12 +272,14 @@ def memories(project: str) -> dict[str, Any] | None:
         return None
     graph = cast(dict[str, Any], read.get('result') or {})
     lead = len(name) + 1
-    entities = [{'name': entity['name'], 'entityType': entity.get('entityType') or '',
-                 'observations': [{'content': text, 'by': ''} for text in entity.get('observations') or []]}
-                for entity in cast(list[dict[str, Any]], graph.get('entities') or [])]
-    joins = [{'join_id': f'{str(entity["name"])[lead:]}:{entity["name"]}', 'entity': entity['name'],
-              'address': str(entity['name'])[lead:], 'by': '', 'orphaned': False, 'shows': True}
-             for entity in entities if str(entity['name']).startswith(f'{name}.')]
+    entities: list[dict[str, Any]] = [
+        {'name': str(entity['name']), 'entityType': str(entity.get('entityType') or ''),
+         'observations': [{'content': str(text), 'by': ''} for text in cast(list[object], entity.get('observations') or [])]}
+        for entity in cast(list[dict[str, Any]], graph.get('entities') or [])]
+    joins: list[dict[str, Any]] = [
+        {'join_id': f"{str(entity['name'])[lead:]}:{entity['name']}", 'entity': str(entity['name']),
+         'address': str(entity['name'])[lead:], 'by': '', 'orphaned': False, 'shows': True}
+        for entity in entities if str(entity['name']).startswith(f'{name}.')]
     older = commands.overlay_records(name, 'memories') or []
     return {'entities': entities, 'relations': list(graph.get('relations') or []), 'joins': joins,
             'overlay_records': [{**record, 'kept_in': 'memories overlay, from before the memory layer'}

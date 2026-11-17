@@ -423,9 +423,11 @@ class Form:
             here = [*keys, key]
             self.name(key, address, here)
             if as_object(value) is not None:
-                if key == 'position':
-                    raise refuse(f"'position' at '{where}' cannot name a field or an overlay: it is the tool's word "
-                                 "for a record's place in its list")
+                words = {'position': "a record's place in its list", 'record': "a record's id, kept for its life",
+                         'revision': "how many times a record has changed"}  # the store's own, F02
+                if key in words:
+                    raise refuse(f"'{key}' at '{where}' cannot name a field or an overlay: it is the tool's word "
+                                 f'for {words[key]}')
                 self.part(cast(dict[str, object], value), address.child(key), here, update)
             elif as_list(value) is not None:
                 raise Refusal('ELEMENT_NOT_IN_SKELETON', f"'{where}': {key} records do not go on overlay definitions")

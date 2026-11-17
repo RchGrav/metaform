@@ -109,6 +109,7 @@ class Writer:
         overlay_writes: list[tuple[Change, str, list[dict[str, Scalar]] | None]] = []
         placed: list[tuple[Change, str, list[tuple[int, dict[str, Scalar]]]]] = []
         want_writes: list[tuple[Change, list[dict[str, Scalar]]]] = []
+        named: dict[tuple[str, str], list[object]] = {}  # the record ids a written list gives, by element and overlay
         for change in changes:
             where = change.address.full
             for key, records in change.overlays.items():
@@ -123,6 +124,8 @@ class Writer:
                     placed.append((change, key, self.placed(definition, change, key, records, key in tables)))
                     continue
                 if records is not None:
+                    named[(change.address.address, key)] = [(as_object(record) or {}).get('record')
+                                                            for record in records]
                     checked = Records(definition, where, self.project, [*change.keys, key], self.command).check(
                         records, False)
                     if checked and key not in tables:
@@ -158,11 +161,23 @@ class Writer:
                 self.store.replace_record(key, change.address.address, position, record)
         for change, key, records in overlay_writes:
             address = change.address.address
+            # A list written back from a read keeps each record's id (F02): a record that names an id held at this
+            # element now keeps it, at its next revision; one that names none, or another, is a new record.
+            kept: dict[str, Scalar] = {}
+            if key in tables and self.verb == 'update' and records:
+                kept = {str(row['record']): row['revision'] for row in self.store.records(key, address, [])}
             if key in tables and (self.verb == 'update' or records is None):
                 self.store.delete_records(key, address)
             start = self.store.next_position(key, address) if records and self.verb == 'add' else 0
+            given = named.get((address, key), [])
             for offset, record in enumerate(records or []):
-                self.store.insert_record(key, address, start + offset, record)
+                ident = given[offset] if offset < len(given) else None
+                if isinstance(ident, str) and ident in kept:
+                    revision = kept.pop(ident)
+                    self.store.insert_record(key, address, start + offset, record, ident,
+                                             int(revision) + 1 if isinstance(revision, int) else 1)
+                else:
+                    self.store.insert_record(key, address, start + offset, record)
         if any(key == 'tickets' for _, key, _ in [*overlay_writes, *placed]):
             self.check_ticket_ids()
 
@@ -236,7 +251,7 @@ class Writer:
         there; RECORD_CHANGED when it changed since it was read. An edit that names neither is taken by position."""
         named, expected = given.get('record'), given.get('revision')
         ident, revision = identity[position]
-        read = {where: {key: {}}}
+        read: dict[str, object] = {where: {key: {}}}
         if named is not None and named != ident:
             now = next((at for at, (other, _) in enumerate(identity) if other == named), None)
             if now is None:
@@ -422,6 +437,16 @@ class Writer:
                               for address, position, wrong in broken[:5])
             more = f' and {len(broken) - 5} more' if len(broken) > 5 else ''
             address, position, wrong = broken[0]
+            new = [name for name in wrong if name not in old.fields]
+            if new:  # a field the records cannot be given until it is defined: defined optional first, then required
+                field = definition.fields[new[0]]
+                raise Refusal('DEFINITION_INCOMPATIBLE',
+                              f"'{self.full(definition.address)}': the change would leave {len(broken)} {key} records "
+                              f'without {new[0]}, a new required field: {shown}{more}. Add it as optional first, give '
+                              'those records a value, then make it required.',
+                              {'update': {self.full(definition.address): {new[0]: {
+                                  'type': field.type, 'rule': field.rule, 'example': field.example,
+                                  'optional': True}}}})
             raise Refusal('DEFINITION_INCOMPATIBLE',
                           f"'{self.full(definition.address)}': the change would leave {len(broken)} {key} records "
                           f'outside the definition: {shown}{more}. Update those records first so they meet the new '
