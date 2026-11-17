@@ -11,9 +11,14 @@ the Rust session before it is summarized in `rich/other_fable_recap.md`). Every 
 - The graph: `(Map) -ROOT-> (Element) -CONTAINS-> (Element) ...` for the namespace tree, `(Element) -DEPENDS_ON
   {why, how, direction}-> (Element)` for wants, `(Element) -HOLDS-> (record)` for overlay records. Everything is
   reached by edges, nothing by matching address text (`core/metaform/rust/crates/metaform-store/src/graph.rs`).
-- The intake procedure as Markdown sections, `core/metaform/intake/procedure/`, served on request:
-  `{"help": "intake"}`, `{"help": "intake/<section>"}`, `metaform://intake/<section>` (`core/SPECIFICATION.md` 7.3,
-  decisions 31 and 33; `CLAUDE.md` Prompts).
+- The intake procedure as Markdown sections, `core/metaform/intake/procedure/`, each also a resource,
+  `metaform://intake/<section>`, and `{"help": "intake"}`, `{"help": "intake/<section>"}` (`core/SPECIFICATION.md` 7.3,
+  decisions 31 and 33; `CLAUDE.md` Prompts). The procedure is sliced because much of its context is reused by other
+  operations. **Delivered two ways, as the person set out on 2026-11-17:** an agent performing an intake is given the
+  sections inline in its prompt, in `sections.md` order, with no resource to read; a long-running agent is given, with
+  each tool that needs some of that context, the person's words "Must read these URI to perform ... properly" and the
+  sections' addresses. The same address named by five tools is read once in that context, which is the reason for the
+  slicing. The Rust build did only the second way.
 - A refusal carries the corrected command wherever one follows (`metaform-core/src/rules.rs`, `shape.rs`).
 
 **The person's later decisions (db78ce04, times are 2026-11-15/16), which stay:**
