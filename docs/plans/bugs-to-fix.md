@@ -53,3 +53,17 @@ recorded, each becomes a ticket on the element it concerns.
 16. **A queued-message browser test sees an extra 404.**
     `test_a_queued_message_that_fails_puts_back_only_the_persons_words_and_keeps_the_views_context` expects one console
     error (the 409 it causes) and gets a `404 (Not Found)` before it, on the committed code at `7734bfef` too.
+17. **"Allow all" also answers the system agent's plan approval.** Found 2026-11-17. With a session set to approve-all
+    (the "Allow all" button on a permission card, confirmed), Claude Code's plan approval, its exit-plan permission
+    request, is answered at once like a tool permission ("Approve Plan: approved by this session's prompts=approve-all").
+    The agent took it as the person's approval and started an architect helper on the plan. A plan approval is the
+    person's decision, not a tool's permission. The person's call: whether approve-all leaves plan approval to them.
+18. **The system agent starts helpers on a plan without a ticket.** Found 2026-11-17. Its task text
+    (`tasks/resources/user_agent.txt`) says to hand a mature plan to the architect agent, and a helper has no ticket by
+    design (`dispatch helper`), so the work is not on the board. The person expected a ticket. The person's call:
+    whether the system agent writes a ticket for planned work before starting agents on it.
+19. **Other system agent behaviours keyed to role 'system' are off for the user_agent task.** Since tasks retired roles
+    (2026-10-24), `runner.py` code that checks `self.role == 'system'` or `self.system` (lines about 3249, 3294, 3766
+    and the message steering and pre-empting in the `message` op) does not apply to the system agent. The question
+    gate and the page's recognition are fixed (2026-11-17); each of the rest needs checking against what the task's
+    own instructions now do before it is switched on.
