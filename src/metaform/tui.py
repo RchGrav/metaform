@@ -509,8 +509,8 @@ class ChassisTUI:
         cli = (f'{setting.switch} or {setting.negative}' if setting.type is bool
                else f'{setting.switch} VALUE')
         return '\n'.join(line for line in (
-            f'{setting.owner}.{setting.key}  |  {setting.kind}  |  '
-            f'{"global" if setting.scope == "global" else "this folder and below"}'
+            (f'{setting.owner}.{setting.key}  |  {setting.kind}  |  '
+             f'{"global" if setting.scope == "global" else "this folder and below"}'),
             f'Value: {show(setting.key, value)}  ({where})' + (f': {about}' if about else ''),
             f'Risky: {risked}' if risked else '',
             f'Default: {show(setting.key, default)}',
