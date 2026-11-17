@@ -709,12 +709,28 @@ def reexamined(ctx: Context) -> Any:
     return _said({'layer': ctx.nouns['layer'], 'reexamine': False}, done)
 
 
+def _held_critic(ctx: Context) -> str | None:
+    """The project's name in the project store when its map is held there, where its challenges are records of the
+    challenges overlay (project_critic.py, decision t-legacy-keep); None for a project of the old store."""
+    name = project_store.stored_name(_store(ctx).project_id)
+    return name if project_store.holds(name) else None
+
+
 def answer(ctx: Context) -> Any:
+    held = _held_critic(ctx)
+    if held is not None:
+        from . import project_critic
+        return project_critic.answer(held, str(ctx.nouns['challenge']), str(ctx.nouns['answer']),
+                                     str(ctx.nouns['link']) if 'link' in ctx.nouns else None)
     link = _node(ctx.nouns['link']) if 'link' in ctx.nouns else None
     return _store(ctx).answer(ctx.nouns['challenge'], ctx.nouns['answer'], link)
 
 
 def approve(ctx: Context) -> Any:
+    held = _held_critic(ctx)
+    if held is not None:
+        from . import project_critic
+        return project_critic.approve(held, str(ctx.nouns['challenge']))
     return _store(ctx).approve(ctx.nouns['challenge'])
 
 
@@ -725,8 +741,12 @@ T = TypeVar('T')
 def critic(ctx: Context) -> str:
     """One critic run: a new blind-spot layer, blinded by its type, and the critic prompt with the whole base,
     LAYER-014 and LAYER-015. Fast mode, blind to the code, is the default; --critic also reads the code."""
-    store = _store(ctx)
     sighted = bool(ctx.setting('critic'))
+    held = _held_critic(ctx)
+    if held is not None:
+        from . import project_critic
+        return project_critic.critic(held, sighted)
+    store = _store(ctx)
     mode = 'critic' if sighted else 'fast'
     taken = {layer.name for layer in _every(lambda after: store.layers(after=after))}
     base = f'blind_spot_{mode}_{datetime.now(UTC).strftime("%Y%m%dt%H%M%Sz")}'
@@ -744,6 +764,10 @@ def critic(ctx: Context) -> str:
 
 def challenges(ctx: Context) -> str:
     """The answer prompt with each challenge of one blind-spot layer and its state, LAYER-015."""
+    held = _held_critic(ctx)
+    if held is not None:
+        from . import project_critic
+        return project_critic.challenges(held, str(ctx.nouns['layer']))
     store = _store(ctx)
     layer = ctx.nouns['layer']
     lines: list[str] = []
@@ -2216,6 +2240,9 @@ def challenged(folder: Path) -> bool:
     """Whether the folder's project holds a blind-spot layer, so the verbs that read and answer its challenges are
     listed over MCP, MCP-004."""
     project = project_for(folder)
+    if project is not None and project_store.holds(project_store.stored_name(project)):
+        from . import project_critic  # its challenges are records of the project store, decision t-legacy-keep
+        return project_critic.has_challenges(project_store.stored_name(project))
     return project is not None and any(layer.name.startswith('blind_spot_')
                                        for layer in Store(project).layers(limit=0).results)
 
@@ -2591,8 +2618,11 @@ _DECLARED = Module(
 # `guide` reads no map, `glossary` and `term` read the map and write the glossary overlay there (project_glossary.py),
 # and `ask`, `reply`, `reopen` and `messages` answer from the project store's questions overlay (decision
 # t-legacy-keep, kickoff 2026-11-17 Phase 3).
-ANSWERED_BESIDE_THE_STORE = frozenset({'guide', 'work', 'boards', 'glossary', 'term', 'ask', 'reply', 'reopen',
-                                       'messages'})
+# `guide` reads no map, `glossary` and `term` read the map and write the glossary overlay there
+# (project_glossary.py, decision t-legacy-keep), and `critic`, `challenges`, `answer` and `approve` keep a critic run's
+# blind spots as records of the challenges overlay there (project_critic.py, decision t-legacy-keep).
+ANSWERED_BESIDE_THE_STORE = frozenset({'answer', 'approve', 'ask', 'boards', 'challenges', 'critic', 'glossary',
+                                       'guide', 'messages', 'reopen', 'reply', 'term', 'work'})
 
 
 def _beside_the_store(verb: Verb) -> Verb:

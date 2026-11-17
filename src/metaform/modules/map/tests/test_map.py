@@ -2842,6 +2842,57 @@ def test_the_glossary_of_a_project_in_the_project_store_reads_its_map_and_keeps_
         assert not tx.rows('terms', limit=0).results
 
 
+@pytest.mark.req('LAYER-014')
+@pytest.mark.req('LAYER-015')
+@pytest.mark.req('STORE-040')
+def test_the_critic_of_a_project_in_the_project_store_keeps_its_challenges_in_its_challenges_overlay(run, in_store):
+    """Decision t-legacy-keep: a critic run on a store project defines the challenges overlay and is given the map as
+    one document; each blind spot is a record at its element, answered and approved on that record, naming the record
+    it found; a link to a join has no place there and is refused by name; the old store gets no blind-spot layer."""
+    from metaform.data import Store
+    from metaform.modules.map import challenged
+    from metaform.project import overlay_records
+    from metaform.project import run as command
+
+    def records():
+        return {one['challenge']: one for one in overlay_records('proj', 'challenges') or []}
+    served = run('map', 'critic', cwd=in_store).stdout
+    blind = re.search(r'Your critic run is (blind_spot_fast_\w+)\.', served).group(1)
+    assert 'BLIND SPOT CHALLENGE' in served and '"blinded": true' in served and 'proj.code.timer.kitchen' in served
+    sighted = run('map', 'critic', '--critic', cwd=in_store).stdout
+    assert re.search(r'Your critic run is blind_spot_critic_\w+\.', sighted) and '"blinded": false' in sighted
+    assert not challenged(in_store)
+    for address, fields in (('code.timer.kitchen', {'challenge': 'Nothing recovers a hung loop.'}),
+                            ('code.timer.kitchen', {'challenge': 'Nobody hears it.', 'want': 'proj.code.alarm.audible'}),
+                            ('code.alarm.audible', {'challenge': 'The alarm has no volume control.'})):
+        assert command({'add': {f'proj.{address}': {'challenges': [{'run': blind, 'blinded': True, **fields}]}}}) == {
+            'status': 'ok'}
+    assert challenged(in_store)
+    hang, heard, volume = (records()[one]['record'] for one in (
+        'Nothing recovers a hung loop.', 'Nobody hears it.', 'The alarm has no volume control.'))
+    listed = run('map', 'challenges', blind, cwd=in_store).stdout
+    assert f'{heard}  open  element:code.timer.kitchen want:code.alarm.audible  Nobody hears it.' in listed
+    assert run('map', 'answer', volume, 'A', cwd=in_store).returncode == 0
+    unlinked = run('map', 'answer', heard, 'C', cwd=in_store)
+    assert re.search(r'^Notice: link: ', unlinked.stdout, re.MULTILINE) and records()['Nobody hears it.']['answer'] == 'C'
+    joined = run('map', 'answer', heard, 'C', 'link=join:j1', cwd=in_store, ok=False)
+    assert 'no place in the project store' in joined.stdout + joined.stderr
+    run('map', 'answer', heard, 'C', 'link=element:code.alarm.audible', cwd=in_store)
+    assert records()['Nobody hears it.']['link'] == 'proj.code.alarm.audible'
+    assert run('map', 'approve', volume, cwd=in_store, ok=False).returncode == 2
+    planned = run('map', 'answer', hang, 'plan', cwd=in_store)
+    assert 'nothing was written' in planned.stdout and 'answer' not in records()['Nothing recovers a hung loop.']
+    run('map', 'answer', hang, 'B', cwd=in_store)
+    answered = records()['Nothing recovers a hung loop.']
+    run('map', 'approve', hang, cwd=in_store)
+    approved = records()['Nothing recovers a hung loop.']
+    assert (approved['record'], approved['revision'], approved['answer']) == (answered['record'],
+                                                                              answered['revision'] + 1, 'plan')
+    assert f'{hang}  plan  element:code.timer.kitchen  Nothing recovers a hung loop.' in run(
+        'map', 'challenges', blind, cwd=in_store).stdout
+    assert not [one for one in Store('proj').layers(limit=0).results if one.name.startswith('blind_spot_')]
+
+
 @pytest.mark.req('MAP-021')
 def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
     """`<scope>@<layer>` reads the layer at an Address, or at a join `<receiver>:<provider>`; a hidden layer resolves
