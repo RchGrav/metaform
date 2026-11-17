@@ -227,6 +227,9 @@ def root_write(verb: str, body: object) -> None:
     if not fields:
         raise refuse(f"{verb} needs at least one field at '{project}': {takes}")
     for name, given in fields.items():
+        if name == 'technical_name':  # as the Rust form answers it (`metaform-core/src/rules.rs`): the root is the project
+            raise Refusal('TECHNICAL_NAME_ALIGNMENT_FAILURE', f"'{project}': the root is the project and has no "
+                          'technical_name', {'update': {project: {'technical_name': None}}})
         if name not in ROOT_FIELDS:
             raise refuse(f"'{name}' at '{project}': {takes}")
         if given is None and verb == 'update':

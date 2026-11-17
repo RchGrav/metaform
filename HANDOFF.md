@@ -68,9 +68,15 @@ overlay.
   node is named `Project`, because the engine's names are not case-sensitive and `Root` would collide with `ROOT`. A
   database made before is upgraded once on open. Tests: the Rust shape rule (R-4.16), records by `HOLDS`, the upgrade.
 
-**Still to do:** refusals that give no corrected command where the founder's examples and the Rust form give one; the
-"Must read these URI ..." pointers on the tools whose rules live in a section (which tools is for the person); the
-other modules' prompts from `prompts.xml` to Markdown; a fresh intake of `metaform`, after asking the person.
+- Refusals as the Rust form gives them where the founder's later decisions do not differ: a root `technical_name` is
+  `TECHNICAL_NAME_ALIGNMENT_FAILURE` with its corrected command, and an overlay's records given as an object are refused
+  with the list they must be. `{"help": "add"}` and `{"help": "update"}` carry the founder's pointer, "Must read these
+  URI to perform ... properly", from Markdown prompts beside the tool (`src/metaform/project/prompts/`), so no code
+  names a section. Kept by the founder's decisions, not the Rust form: no `goto`, no `raw dump`, one `ref`, and a field
+  an element does not define refused.
+
+**Still to do:** the other modules' prompts from `prompts.xml` to Markdown (decision 33); a fresh intake of `metaform`
+on the new delivery, after the person deletes the failed one and says to start (it spends tokens).
 
 ---
 

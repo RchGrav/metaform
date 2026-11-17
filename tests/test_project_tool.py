@@ -671,3 +671,24 @@ def test_a_database_made_before_the_tree_is_given_it_on_open(home):
         assert len(again.tree()) == 3
     finally:
         again.close()
+
+
+def test_the_root_has_no_technical_name_and_overlay_records_are_a_list(mapped):
+    """Two refusals as the Rust form gives them (`metaform-core/tests/rules.rs`), in this tool's paths: a technical
+    name at the project's root, which is the project, and an overlay's records given as an object, alone or nested
+    as steps, each with the corrected command; a name that is no overlay keeps the shape check's answer."""
+    root = run({'update': {P: {'technical_name': 'project'}}})
+    assert (root['code'], root['remediation']) == ('TECHNICAL_NAME_ALIGNMENT_FAILURE',
+                                                   {'update': {P: {'technical_name': None}}})
+    for path, fields in {f'{P}.overlay.notes': {'description': 'Notes.', 'instruction': 'Write a note.'},
+                         f'{P}.overlay.notes.text': {'type': 'text', 'rule': 'One sentence.',
+                                                     'example': 'It works.'}}.items():
+        assert run({'add': {path: fields}}) == {'status': 'ok'}, path
+    corrected = {'update': {WIDGET: {'notes': [{'text': 'an object'}]}}}
+    for command in ({'update': {WIDGET: {'notes': {'text': 'an object'}}}},
+                    {'update': {f'{P}.code.masher': {'widget': {'notes': {'text': 'an object'}}}}}):
+        answer = run(command)
+        assert (answer['code'], answer['remediation']) == ('FIELD_MISMATCH', corrected), command
+    assert run(corrected) == {'status': 'ok'}
+    other = run({'update': {WIDGET: {'cpp': {'note': 'not an overlay'}}}})
+    assert other['code'] == 'FIELD_MISMATCH' and other['remediation'] is None

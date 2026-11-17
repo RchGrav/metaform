@@ -413,3 +413,29 @@ def test_the_system_agents_question_is_put_to_the_person_not_answered_for_it(run
         for entry in entries():
             if 'pid' in entry:
                 end_group(entry['pid'])
+
+
+@pytest.mark.parametrize(('task', 'expected'), [('intake', 'max'), ('user_agent', None)])
+def test_an_intake_runs_at_the_highest_reasoning_level_its_harness_offers(monkeypatch, task, expected):
+    """The founder, 2026-11-17: an intake runs at the highest reasoning level the harness offers, the last of the
+    levels it lists, never `default`; any other session keeps the level its settings choose."""
+    import asyncio
+
+    from metaform.modules.dispatch import runner
+
+    held = object.__new__(runner.Session)
+    held.ending, held.session_id, held.node, held.launched = False, 's1', None, False
+    held.ctx, held._store, held.agent, held.task_id = None, object(), 'claude', 't1'
+    held.acp = {'task': {'name': task, 'options': {}}}
+    level = {'id': 'effort', 'category': 'thought_level', 'type': 'select', 'current': 'high',
+             'options': [{'value': value} for value in ('default', 'low', 'medium', 'high', 'xhigh', 'max')]}
+    monkeypatch.setattr(runner, 'wanted_options', lambda *args: {})
+    monkeypatch.setattr(runner.Session, 'settings', lambda self: [level])
+    asked: list[tuple[str, str]] = []
+
+    async def configure(self, setting, value):
+        asked.append((setting, value))
+        return {}
+    monkeypatch.setattr(runner.Session, 'configure', configure)
+    asyncio.run(held.apply_options())
+    assert asked == ([('effort', expected)] if expected else [])

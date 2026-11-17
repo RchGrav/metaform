@@ -11,10 +11,12 @@ first `add`, and the database is removed again if that first command is refused.
 """
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 from typing import cast
 
 from metaform import home as metaform_home
+from metaform import prompt_files
 from metaform.project import forms, intake, texts
 from metaform.project.forms import Address, Refusal, as_object, full, parse, refuse
 from metaform.project.overlays import Definition, Field, decode, definitions
@@ -116,7 +118,10 @@ def perform(command: object, owned: Owner, caller: str = '', request: str = '') 
     """Answer one command against the databases this process owns. The service calls this; other code calls `run`.
     `request` is the id of a write: a write whose id is already stored is answered and not done again."""
     try:
-        verb, body = forms.check(command)
+        try:
+            verb, body = forms.check(command)
+        except Refusal as refusal:
+            raise _as_records(command, owned) or refusal from None
         return _answer(verb, body, command, owned, caller, request)
     except Refusal as refusal:
         return refused(command, refusal)
@@ -134,6 +139,47 @@ def refused(command: object, refusal: Refusal) -> dict[str, object]:
     head = dict(entries) if entries is not None and not set(entries) & set(ANSWER_KEYS) else {'command': command}
     return {**head, 'status': 'error', 'code': refusal.code, 'message': refusal.message,
             'remediation': refusal.remediation}
+
+
+def _as_records(command: object, owned: Owner) -> Refusal | None:
+    """An add or update the shape check refused because it gives an overlay's records as an object, which reads as a
+    step beneath the element: answered as the Rust form answers it (`metaform-core/src/specification.rs`), with the
+    records as the list they must be. Only an overlay the project defines counts, read once the command is already
+    refused, so a name that is no overlay keeps the shape check's own answer."""
+    entries = as_object(command)
+    if entries is None or len(entries) != 1:
+        return None
+    ((verb, body),) = entries.items()
+    selected = as_object(body)
+    if verb not in ('add', 'update') or selected is None or len(selected) != 1:
+        return None
+    ((path, value),) = selected.items()
+    fields = as_object(value)
+    if fields is None or forms.root_of(body) is not None:
+        return None
+    try:
+        address = parse(path)
+        keys = owned.read(address.project, lambda opened: set(definitions(opened.parts())))
+    except (Refusal, Missing, StoreError):
+        return None
+
+    def found(at: str, given: dict[str, object]) -> tuple[str, str, object] | None:
+        for key, item in given.items():
+            inner = as_object(item)
+            if inner is None:
+                continue
+            if key in keys and key != 'wants':
+                return at, key, inner
+            deeper = found(f'{at}.{key}', inner)
+            if deeper is not None:
+                return deeper
+        return None
+    hit = found(address.full, fields)
+    if hit is None:
+        return None
+    holder, key, record = hit
+    return Refusal('FIELD_MISMATCH', f"'{holder}': {key}: an overlay's records are a list",
+                   {verb: {holder: {key: [record]}}})
 
 
 def _missing(project: str) -> Refusal:
@@ -192,7 +238,16 @@ def _help(body: object) -> dict[str, object]:
                          {'help': 'intake'})
         return {'help': {body: found.text}}
     if isinstance(body, str) and body in texts.HELP:
-        return {'help': {body: texts.HELP[body]}}
+        answer: dict[str, object] = {**cast(dict[str, object], texts.HELP[body])}
+        # The founder's pointer, 2026-11-17: a command whose rules live in sections of the intake procedure says so in
+        # their words, "Must read these URI to perform ... properly", naming each section's address; an agent reads
+        # an address once in a context, however many commands name it. The pointer is a Markdown prompt beside the
+        # tool, `prompts/must_read_<command>.md`, so the code names no section.
+        pointer = resources.files(__package__ or 'metaform.project') / 'prompts' / f'must_read_{body}.md'
+        if pointer.is_file():
+            answer['must_read'] = prompt_files.markdown(resources.files(__package__ or 'metaform.project'),
+                                                        f'must_read_{body}')
+        return {'help': {body: answer}}
     raise refuse('help takes {} or the name of a command', {'help': {}})
 
 
