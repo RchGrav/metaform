@@ -408,13 +408,58 @@ list; a question to the person is for a decision only they can make, never for l
   keeps reading stderr and its own process handling (its own starter to `connect`); `connect(timeout=)` covers
   `initialize` only; an `Unsupported` ask is still said in the thread.
 
-**3. The registry** (issues 8, 9, 10, 11, 17, 19)
+**3. The registry** (issues 8, 9, 10, 11, 17, 19). Settled with the person 2026-11-16: no harness is named in
+Metaform's code. ACP exists so a client drives any harness one standard way, and its registry lists them; Claude
+Code, Codex, Gemini CLI, Cursor, Goose and an adapter published tomorrow all come in by the same path. It is split
+in two, so the runner's options code is rewritten once:
 
-- Every harness is a pinned manifest under its registry id. The three in `AGENTS` become three pins a new home
-  starts with; `claude`, `codex` and `antigravity` resolve to the ids in one function. Existing homes are moved once.
-- The list in the page: installed first, then those that can run here (a distribution for this platform and its
-  runner present), then the rest; install, upgrade, remove; each harness's state and login.
-- Options for any harness, kept by option id beside the manifest, not as declared settings per name.
+*3a, before 2b: the registry is the list.*
+
+- The list is the registry (`agentclientprotocol/registry` on GitHub, read from its CDN and kept in the home). Every
+  entry that can start here is shown, its name, icon, version and state; entries found on this machine first.
+- **Found** is read from the manifest alone: its npm or PyPI package installed (global npm, uv tools) or its binary's
+  command on PATH. It catches harnesses that speak ACP themselves (Gemini CLI, Factory Droid, Kilo, OpenCode, Goose
+  and the rest) and misses adapters, whose package is not the CLI the person has (`claude-agent-acp` is not
+  `claude`). Where an adapter looks for its CLI and login is in its own code and the registry schema has no field
+  for it; writing those paths into Metaform would be a rule per harness again, so it is not done.
+- **Asked** is the standard answer, and covers adapters: start the harness, `initialize` (login methods, and login
+  status where it reports it), and a `session/new` refused `auth_required` means no one is logged in. No prompt,
+  no tokens; the first start downloads the package. Found entries are asked at once; the rest by one action that
+  says it downloads. The registry's own CI does the same daily (`.protocol-matrix/latest.json`: init, auth
+  required, login types, capabilities), which the list may show before anything is installed.
+- **A checklist.** Checking an entry installs it: pinned at the registry's version in Metaform's home (a binary
+  downloaded, checked against its sha256 and unpacked, `registry.pin`; an npx or uvx package by exact version),
+  then asked once, so the row ends ready (with its options), needs login (Log in, through the harness's own ACP
+  login: the registry requires agent or terminal auth, `AUTHENTICATION.md`) or cannot start, with why. Unchecking
+  removes the pin and its files in the home. Never installed globally (`npm -g`): the person's own installs stay
+  theirs, and logins live in their home folder, so a pinned harness sees them. Nothing installs until the person
+  checks it; a new home starts with nothing checked, not three defaults, and the first launch with none checked
+  opens the list. Existing homes keep `AGENTS` and their registry pins as checked rows, moved once. A newer registry
+  version is shown and taken by the person. The checked rows are the setting `dispatch_registry_agents`, so the
+  settings screen and `metaform config --show` show the same; `metaform dispatch registry` lists them.
+- Launch by registry id; `AGENTS`, `BUILTIN`, `PROFILE_ONLY` and the runner's `== 'claude'` go. A behaviour of one
+  harness follows what it advertises (steering, login status), never its name. Every picker (the call window, a
+  ticket, the intake window) offers the checked harnesses.
+- **Icons.** Each registry entry has a 16x16 monochrome SVG drawn with `currentColor` (`<id>/icon.svg` in the
+  registry repo). They are read with the registry and kept in the home beside it, not committed: a copy in the
+  repo would be a second list that goes stale. Drawn as a CSS mask with `background-color: currentColor`, so they
+  take the theme's colour and no outside SVG is put into the page as markup.
+  - A small logo beside every harness name: the list, the pickers, the call window, a ticket, the intake window.
+  - A badge floating at the upper left of each agent's character on the map, in 2D and 3D, so the person sees at a
+    glance which harness runs under it. The person needs this: twice they had Codex running when they thought it
+    was Claude and the reverse, spending Claude tokens they meant to save, or letting Codex do work they keep from
+    it. The characters stay: they are each agent's own identity, with its name. The badge faces the camera, sits
+    up and left in screen space after projection, keeps one size (about 14 to 16 px) at every zoom, and moves with
+    its character; in 3D the icons are one atlas and the badges one instanced draw, nothing allocated per frame.
+  - Hovering the badge shows the harness, its model, its reasoning level and its context window, for example
+    "Codex · gpt-5.x · reasoning high · context 82k / 272k (30%)": model and reasoning from the session's config
+    options by ACP category (`model`, `thought_level`), context from `usage_update` (`used`, `size`, kept as
+    `acp['usage']`), current from the session's change events. A field a harness does not report says so.
+
+*3b, after 2b: options by id.*
+
+- Options for any harness, kept by option id beside the manifest, not as declared settings per name; the settings
+  `dispatch_<agent>_<option>` go.
 - Folder-dependent options kept per project on top of the home's record.
 - A harness's record changing is announced on the bus, and the 30-second read in the call window goes.
 
