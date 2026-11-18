@@ -1136,14 +1136,21 @@ def watch(ctx: Context) -> dict[str, Any]:
                 any(table in ('work', 'messages', 'op:work', 'op:message') for table in cast(list[Any], tables)):
             events.put(('local',))
 
-    def follow() -> None:
+    def follow(taken: dict[str, tuple[object, ...]]) -> None:
+        """The links followed now, and each ticket's mark: a ticket the sync just read is marked with what it read
+        before it began, `taken`, so a write made while it talked to Paperclip is still a change to sync (review of
+        2026-11-18, F14); the sync's own writes come back as one more pass that finds nothing to do. A ticket not
+        synced keeps its mark, and a newly followed one is marked as it reads now."""
         rows = [row for row in _links(store) if _followed(store, row) or row['works'] == 'metaform']
         tickets.clear()
         tickets.update({str(row['work_id']): str(row['issue_id']) for row in rows})
         stream.followed = frozenset(tickets.values())
-        if name is not None:  # read after the sync, so what it wrote itself is never taken for a change
-            marks.clear()
-            marks.update(overlay.marks(name, set(tickets)))
+        if name is not None:
+            for work_id in [one for one in marks if one not in tickets]:
+                del marks[work_id]
+            fresh = overlay.marks(name, {one for one in tickets if one not in marks and one not in taken})
+            marks.update(fresh)
+            marks.update({work_id: held for work_id, held in taken.items() if work_id in tickets})
 
     def changed() -> set[str]:
         """The issues whose tickets or questions in the project store changed since the last sync read them."""
@@ -1155,11 +1162,13 @@ def watch(ctx: Context) -> dict[str, Any]:
     syncs = 0
     listener = ctx.listen(heard)
     try:
-        follow()
+        follow({})
         stream.start()
         only: set[str] | None = None
         while True:
             began = time.monotonic()
+            reading = {work_id for work_id, issue in tickets.items() if only is None or issue in only}
+            taken = overlay.marks(name, reading) if name is not None else {}  # what this sync reads, before it reads
             done = _synced(ctx, store, client, only)
             syncs += 1
             for one in done['changed']:
@@ -1169,7 +1178,7 @@ def watch(ctx: Context) -> dict[str, Any]:
                 ctx.say(f'{now()} failed {one}')
             if _idle(ctx, store, project, holding, record):
                 return {'state': 'idle', 'syncs': syncs}
-            follow()
+            follow(taken)
             only = set[str]()
             while only is not None and not only:  # what concerns no link is taken and nothing is synced for it
                 only, said = _next(events, began, lambda named: {tickets[one] for one in named if one in tickets},

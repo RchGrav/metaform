@@ -694,3 +694,38 @@ def test_the_watcher_of_a_project_in_the_project_store_syncs_a_link_only_when_it
     assert burst == 0
     assert ended == [{'state': 'idle', 'syncs': 2}]
     assert server.issues[shown['issue_id']]['status'] == 'cancelled'
+
+
+def test_a_ticket_changed_while_the_watcher_talks_to_paperclip_is_synced_again(held, server, monkeypatch):
+    """Review of 2026-11-18, F14: the watcher re-read each ticket's revisions after a sync, so a change made while the
+    sync waited on Paperclip was taken as already synced, and the event it raised made no sync. The person cancels
+    the ticket during the sync's read of its issue; the change's event syncs it, and the issue is cancelled."""
+    import threading
+
+    from metaform.module import Context
+    shown = verb(held, 'send', id=held_ticket('Wire the beeper'), assignee=WORKER)
+    handlers = []
+
+    class Heard:
+        def close(self):
+            return None
+    monkeypatch.setattr(Context, 'listen', lambda self, handler: (handlers.append(handler), Heard())[1])
+    answer, edited = server.answer, threading.Event()
+
+    def during(method, parts, query, body):
+        if method == 'GET' and parts[:2] == ['issues', shown['issue_id']] and not edited.is_set():
+            edited.set()  # the person cancels the ticket while the sync waits on Paperclip
+            paperclip.overlay.finish(paperclip.overlay.tickets('proj')[shown['ticket']], 'Not needed.',
+                                     'plans changed', 'cancelled')
+        return answer(method, parts, query, body)
+    monkeypatch.setattr(server, 'answer', during)
+    ended: list[Any] = []
+    running = threading.Thread(target=lambda: ended.append(verb(held, 'watch')), daemon=True)
+    running.start()
+    assert edited.wait(5)
+    threading.Event().wait(1.0)  # the first sync done
+    for handler in handlers:  # the event the cancel raised
+        handler({'project': 'proj', 'base_id': None, 'tables': ['project.map'], 'kinds': ['map']})
+    running.join(5)
+    assert server.issues[shown['issue_id']]['status'] == 'cancelled'
+    assert ended and ended[0]['state'] == 'idle'
