@@ -70,8 +70,9 @@ def clear(project: str, home: Path | None = None, said: list[str] | None = None)
     whose answer was lost, raises StoreError: the map is then still there, or may be."""
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
-    if project not in store_projects(where):
-        return False
+    folder = where / 'maps'
+    if project not in store_projects(where) and not any(folder.glob(f'{project}.lbug.*')):
+        return False  # no map, and nothing a removal that stopped part way left beside one
     answer = service.send(None, where, 'clear', clear=project)
     if said is not None:  # said of its memory whether or not the clear went through
         said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))

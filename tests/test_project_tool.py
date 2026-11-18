@@ -614,23 +614,26 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
             owner.of(home).remove('older')
     kept = owner.kept_memory(path)
     assert path.exists() and 'bell' in kept.read_text(encoding='utf-8') and 'gong' not in kept.read_text(
-        encoding='utf-8') and not kept.with_name(kept.name + '.pending').exists()
+        encoding='utf-8')
+    assert not [one.name for one in kept.parent.glob(f'{kept.name}.*')], 'nothing staged is left'
     assert owner.of(home).remove('older') and 'gong' in kept.read_text(encoding='utf-8')
-    # a removal that deletes the map's file and then fails on a file beside it still puts the memory in place
+    # a removal that deletes the map's file and then fails on a file beside it has removed the map: its memory is
+    # kept, the file left beside it is said, and the next clear removes it
     made = store.Store(path, create='older')
     made.put_memory_entity('chime', 'part', ['It tinkles.'])
     made.close()
-    real_remove = store.remove
 
     def half(gone):
         gone.unlink()
         raise OSError('a file beside it is locked')
+    said: list[str] = []
     with monkeypatch.context() as patched:
         patched.setattr(store, 'remove', half)
-        with pytest.raises(OSError, match='beside it'):
-            owner.of(home).remove('older')
+        assert owner.of(home).remove('older', said)
     assert not path.exists() and 'chime' in kept.read_text(encoding='utf-8')
-    real_remove(path)
+    assert said == ['files beside its map could not be removed, and a later clear removes them']
+    path.with_name(path.name + '.wal').write_text('left')
+    assert owner.of(home).remove('older') is False and not list(path.parent.glob(f'{path.name}.*'))
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():

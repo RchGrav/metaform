@@ -87,11 +87,16 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
 
 
 def _put_back(opened: Store) -> None:
-    """Into a database just made, the memory layer its project had when it was last cleared."""
+    """Into a database just made, the memory layer its project had when it was last cleared. A copy that cannot be
+    read is said and left where it is, never a reason the map cannot be made."""
     kept = kept_memory(opened.path)
     if not kept.exists():
         return
-    memory = json.loads(kept.read_text(encoding='utf-8'))
+    try:
+        memory = json.loads(kept.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        sys.stderr.write(f'{kept}: the memory a clear kept could not be read and is not put back: {error}\n')
+        return
     for name, kind, observations in memory['entities']:
         opened.put_memory_entity(name, kind, observations)
     for start, end, relation_type in memory['relations']:
@@ -367,37 +372,37 @@ class Owner:
                 return False
             memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
-            # Kept for the next map, LAYER-013, before the map goes, so a write that fails removes nothing. The copy an
-            # earlier clear kept is replaced, or withdrawn when this memory was read whole and holds none, so nothing
-            # deleted since comes back; never after a read that failed, when it may be the one copy left. A removal
-            # that fails while the map still stands puts that earlier copy back as it was.
-            earlier = kept.read_bytes() if kept.exists() else None
+            fresh, earlier = kept.with_name(kept.name + '.new'), kept.with_name(kept.name + '.earlier')
+            # Kept for the next map, LAYER-013: written whole to its own file first, so a write that fails removes
+            # nothing and never leaves a torn copy where the next map reads it; then the earlier clear's copy is set
+            # aside and the new one put in its place, each by a rename. The earlier copy is withdrawn when this memory
+            # was read whole and holds none, so nothing deleted since comes back, and kept after a read that failed,
+            # when it may be the one copy left. A removal that fails while the map still stands undoes both renames.
             if memory['entities']:
                 try:
-                    kept.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
-                except OSError:  # nothing is removed, and the earlier copy is as it was
-                    with contextlib.suppress(OSError):
-                        if earlier is None:
-                            kept.unlink(missing_ok=True)
-                        else:
-                            kept.write_bytes(earlier)
+                    fresh.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
+                except OSError:
+                    fresh.unlink(missing_ok=True)
                     raise
-            elif whole and earlier is not None:
-                try:
-                    kept.unlink()
-                except OSError as error:  # said, never a reason not to clear
-                    if said is not None:
-                        said.append(f'the memory an earlier clear kept at {kept} could not be withdrawn: {error}')
+            moved = kept.exists() and bool(memory['entities'] or whole)
+            if moved:
+                kept.replace(earlier)
+            if memory['entities']:
+                fresh.replace(kept)
             try:
                 store.remove(path)
-            except BaseException:
-                if path.exists():  # the map still stands: the earlier copy is as it was
+            except OSError:
+                if path.exists():  # the map still stands, and so does the copy it was cleared with
                     with contextlib.suppress(OSError):
-                        if earlier is None:
+                        if memory['entities']:
                             kept.unlink(missing_ok=True)
-                        else:
-                            kept.write_bytes(earlier)
-                raise
+                        if moved:
+                            earlier.replace(kept)
+                    raise
+                if said is not None:  # its file is gone: the map is removed, its memory kept; a file beside it stays
+                    said.append('files beside its map could not be removed, and a later clear removes them')
+            with contextlib.suppress(OSError):
+                earlier.unlink(missing_ok=True)
             return True
 
     @contextmanager

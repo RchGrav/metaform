@@ -1493,16 +1493,23 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
     again = f'metaform clear project {project_id} --confirm'
     done = ''.join([f' Its agents at work were asked to stop first: {"; ".join(stopped)}.' if stopped else '',
                     f' A backup was made first: {saved.name}.' if saved is not None else ''])
-    try:
-        folder = _folder_of_project(project_id)  # resolved before the map goes
+    try:  # resolved before the map goes; a refusal here keeps its own remedy, and says what was done first
+        folder = _folder_of_project(project_id)
         stores = _stores(folder)
+    except StoreError as error:
+        raise StoreError(f"{str(error).rstrip('.')}.{done}", error.next_step) from error
+    except OSError as error:
+        raise ClearRefused(f"{project_id} was not cleared: its folder could not be read: {error}.{done}", again) \
+            from error
+    try:
         commands.clear(commands.stored_name(project_id), said=lost)
     except NewerStore:
+        changes.note(project_id)
         raise  # newer code holds the store: handed over as it is
-    except (StoreError, MapError, OSError) as error:  # no base or report is removed
+    except (StoreError, MapError) as error:  # its map stands, and no base or report is removed
         changes.note(project_id)  # a clear whose answer was lost may have removed the map: pages read it again
         raise ClearRefused(f"{project_id} was not cleared, and none of its bases or reports was removed: "
-                           f"{str(error).rstrip('.')}.{done}{_sentences(lost)}", again) from error
+                           f"{str(error).rstrip('.')}.{done}", again) from error
     # the map is gone, and a clear never brings it back: what follows is said as unfinished, never left unsaid
     try:
         with project_db(folder, write=True) as db:
