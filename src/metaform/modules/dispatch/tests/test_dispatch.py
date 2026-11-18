@@ -1018,6 +1018,8 @@ def test_a_ticket_held_only_in_the_project_store_is_started_run_and_closed_throu
     try:
         assert project_store.run({'add': {f'proj.{NODE}': {'technical_name': 'engine', 'name': 'engine',
                                                             'role': 'Defining Element'}}}) == {'status': 'ok'}
+        assert project_store.run({'update': {'proj': {'specification': [
+            {'text': 'Proj times kitchen dishes.'}]}}}) == {'status': 'ok'}  # its own description, F10
         ticket = json.loads(run('map', 'work', 'op=add', f'node=element:{NODE}', 'title=Write notes',
                                 'task=Write notes.txt', '--json', cwd=project_folder).stdout)['id']
         log = tmp_path / 'fake.jsonl'
@@ -1033,6 +1035,10 @@ def test_a_ticket_held_only_in_the_project_store_is_started_run_and_closed_throu
         assert one['done'] and one['outcome'] == 'completed' and str(one['taken_by']).startswith('claude'), one
         with Session('proj').read() as tx:
             assert tx.execute('SELECT count(*) FROM work').fetchone()[0] == 0, 'the old store got a record'
+        prompts = [entry['message'] for line in log.read_text(encoding='utf-8').splitlines() if line.strip()
+                   if (entry := json.loads(line)).get('message', {}).get('method') == 'session/prompt']
+        first = ''.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
+        assert 'Proj times kitchen dishes.' in first and f'Functional region: {NODE}' in first, first[:2000]
     finally:
         service.stop(home)
         owner.close_all()
@@ -2633,6 +2639,20 @@ def test_record_on_finish_off_sends_nothing(dispatch, run):
     assert dispatch.process.wait(30) == 0
     assert len(turns(dispatch)) == 1
 
+
+
+@pytest.mark.req('BASE-050')
+def test_the_whole_first_prompt_stays_bounded_however_much_is_inherited_at_the_node(dispatch):
+    """Review of 2026-11-18, F10: a 100,000-character property inherited at the worker's node went into its first
+    prompt whole, while the size check measured only the part after the context. The whole first prompt is measured:
+    the property is named under `deferred` with the command that reads it, and is never sent whole."""
+    dispatch.store.add_property('parts', NODE, 'x' * 100_000)
+    dispatch.start('hold')
+    [sent] = eventually(lambda: dispatch.received('session/prompt'))
+    whole = ''.join(block.get('text', '') for block in sent['params']['prompt'])
+    assert len(whole.encode('utf-8')) < 20_000, len(whole.encode('utf-8'))
+    assert '"deferred"' in whole and f'metaform map context {NODE}' in whole and 'x' * 1000 not in whole
+    dispatch.stop()
 
 @pytest.mark.req('MCP-039')
 @pytest.mark.req('BASE-050')

@@ -1090,6 +1090,57 @@ class ActiveTurn:
     cancel_requested: bool = False
 
 
+CONTEXT_BUDGET = 4000  # characters of a node's inherited context a worker's first turn carries whole
+
+
+def bounded_context(address: str, applying: list[dict[str, Any]], knowledge: list[dict[str, Any]]) -> str:
+    """What applies at a worker's node, as its first turn carries it: each property and knowledge entry whole while
+    they fit `CONTEXT_BUDGET`, in their order, and every one past it named by its id, layer and size under `deferred`,
+    with the command that reads it, so a large inherited body is read when needed and never cut silently (review of
+    2026-11-18, F10)."""
+    kept: dict[str, list[dict[str, Any]]] = {'applying': [], 'knowledge': []}
+    deferred: list[dict[str, Any]] = []
+    used = 0
+    for kind, entries in (('applying', applying), ('knowledge', knowledge)):
+        for entry in entries:
+            size = len(json.dumps(entry, ensure_ascii=False))
+            if used + size <= CONTEXT_BUDGET:
+                kept[kind].append(entry)
+                used += size
+            else:
+                deferred.append({'kind': kind, 'id': entry.get('id') or entry.get('item_id'),
+                                 'layer': entry.get('layer'), 'characters': size})
+    payload: dict[str, Any] = {'address': address, **kept}
+    if deferred:
+        payload['deferred'] = {'read': f'metaform map context {address}', 'entries': deferred}
+    return json.dumps(payload, ensure_ascii=False)
+
+
+ORIENTATION_BUDGET = 1500  # characters of the project's own description a worker's first turn carries
+
+
+def orientation(project_id: str) -> str:
+    """The project's own description, the blocks its root holds (F07), as a worker's first turn opens with it: what
+    the project is for, before its ticket and its node. Past `ORIENTATION_BUDGET` it ends on the command that reads
+    the rest. Empty for a project whose map is not in the project store, or whose root holds no description (review
+    of 2026-11-18, F10)."""
+    name = project_store.stored_name(project_id)
+    if not project_store.holds(name):
+        return ''
+    blocks = cast(list[dict[str, Any]], cast(dict[str, Any], project_store.run({name: {}}).get(name) or {}).get(
+        'specification') or [])
+    parts = [part for one in blocks for part in (
+        f"{'#' * (1 + int(one['level']))} {one['title']}" if one.get('level') and one.get('title') else '',
+        str(one.get('text') or '')) if part]
+    whole = '\n\n'.join(parts)
+    if not whole:
+        return ''
+    if len(whole) > ORIENTATION_BUDGET:
+        whole = whole[:ORIENTATION_BUDGET].rsplit('\n\n', 1)[0] + \
+            f'\n\n(The rest of the description: metaform map specification --project {project_id})'
+    return f'# {name}\n\n{whole}'
+
+
 class Session:
     """One current contribution in an ACP conversation, with historical work bindings retained."""
 
@@ -3869,11 +3920,13 @@ class Session:
                 components.append(prompt_files.component('prompt.dispatch:communication', communication))
         if not self.probe and self.role == 'worker':
             address = self.at.partition('|')[0]
+            oriented = orientation(self.store.project_id)
+            if oriented:
+                components.append(prompt_files.component('map:project_orientation', oriented))
             if address:
                 effective = self.store.context(address)
-                components.append(prompt_files.component('map:effective_context', json.dumps({
-                    'address': address, 'applying': [one.to_dict() for one in effective.applying],
-                    'knowledge': list(effective.knowledge)}, ensure_ascii=False)))
+                components.append(prompt_files.component('map:effective_context', bounded_context(
+                    address, [one.to_dict() for one in effective.applying], list(effective.knowledge))))
             memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
             if memory:
                 memory_component = prompt_files.resolve('prompt.memory:instructions')
