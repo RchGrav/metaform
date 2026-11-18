@@ -21,7 +21,7 @@ from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from metaform import sqlite
 from metaform.project import store
@@ -41,20 +41,29 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
-def _memory_of(path: Path) -> dict[str, list[list[object]]]:
+def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list[object]]]:
     """The memory layer of a database about to be removed, kept for the next one. Opened unchecked, so a database an
     earlier version made can still be cleared; one with no memory layer keeps none."""
     with Store(path, checked=False) as opened, opened.reading():
         tables = opened.tables()
-        if 'MemoryEntity' not in tables:
-            return {'entities': [], 'relations': []}
-        try:
-            return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
-                    'relations': [list(relation) for relation in opened.memory_relations()]
-                    if 'MemoryRelation' in tables else []}
-        except StoreError as error:  # a damaged memory layer never keeps the map from being cleared; said, not hidden
-            sys.stderr.write(f'{path.stem}: its memory layer could not be read and is not kept: {error}\n')
-            return {'entities': [], 'relations': []}
+        kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
+        # each part read on its own, so what can be read is kept; what cannot never keeps the map from being cleared,
+        # and is said to whoever cleared it
+        for part, table, read in (('entities', 'MemoryEntity', lambda: [[name, kind, observations] for
+                                                                       name, kind, observations in
+                                                                       opened.memory_entities()]),
+                                  ('relations', 'MemoryRelation', lambda: [list(relation) for relation in
+                                                                         opened.memory_relations()])):
+            if table not in tables:
+                continue
+            try:
+                kept[part] = cast(list[list[object]], read())
+            except StoreError as error:
+                lost = f"{path.stem}'s memory {part} could not be read and are not kept: {error}"
+                sys.stderr.write(lost + '\n')
+                if said is not None:
+                    said.append(lost)
+        return kept
 
 
 def _put_back(opened: Store) -> None:
@@ -324,8 +333,9 @@ class Owner:
             self._open[project] = database
         return database
 
-    def remove(self, project: str) -> bool:
-        """Remove the project's database, after the writes already queued for it. False when there is none."""
+    def remove(self, project: str, said: list[str] | None = None) -> bool:
+        """Remove the project's database, after the writes already queued for it. False when there is none. What of
+        its memory could not be kept is added to `said`."""
         with self._opening:
             with self._lock:
                 database = self._open.pop(project, None)
@@ -334,7 +344,7 @@ class Owner:
             path = store.location(self.home, project)
             if not path.exists():
                 return False
-            memory = _memory_of(path)
+            memory = _memory_of(path, said)
             store.remove(path)
             if memory['entities']:  # the map goes; its memory is kept for the next one, LAYER-013
                 kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')

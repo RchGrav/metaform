@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import sys
 import time
 import uuid
 import zlib
@@ -192,7 +193,9 @@ def _settle(project: str, exchange_id: str, written: list[str], unwritten: list[
             settle(project, exchange_id, keys)
         except Exception as error:  # noqa: BLE001  the other step is still taken
             failed = failed or error
-    if failed is not None and not failing:
+    if failed is not None and failing:  # the writes' own error goes on; this one is kept in the log beside it
+        sys.stderr.write(f'A2A exchange {exchange_id}: settling its keys failed too: {failed}\n')
+    elif failed is not None:
         raise failed
 
 
@@ -220,7 +223,7 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
     # once; only a claim whose writer died is taken again, after its `stale` time.
     written: list[str] = []
     question: str | None = None
-    failing = False
+    unwritten = lambda: [key for key in taken if key not in written]  # read when the writes end
     try:
         for one in artifacts:
             key = f'artifact:{one.artifact_id}'
@@ -233,11 +236,10 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
             question = _ask(project, now.address, said, by, _title(said),
                             prompt('a2a_peer_question_why', peer=now.peer), messages)
             written += asking
-    except BaseException:
-        failing = True
+    except BaseException:  # what was written is delivered even when a later write failed; what was not is given back
+        _settle(project, exchange_id, written, unwritten(), failing=True)
         raise
-    finally:  # what was written is delivered even when a later write failed; what was not is given back
-        _settle(project, exchange_id, written, [key for key in taken if key not in written], failing)
+    _settle(project, exchange_id, written, unwritten(), failing=False)
     if question is not None and records.asking(project, exchange_id, now.asked, question):  # its answer goes back
         now = records.exchange(project, exchange_id)
     return now

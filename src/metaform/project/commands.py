@@ -64,13 +64,17 @@ def stored_name(project_id: str) -> str:
     return project_id.lower().replace('-', '_')
 
 
-def clear(project: str, home: Path | None = None) -> bool:
-    """Remove a project's database, as clearing the project does. False when the project store holds none."""
+def clear(project: str, home: Path | None = None, said: list[str] | None = None) -> bool:
+    """Remove a project's database, as clearing the project does. False when the project store holds none. What of
+    its memory could not be kept is added to `said`."""
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
     if project not in store_projects(where):
         return False
-    return service.send(None, where, 'clear', clear=project).get('status') == 'ok'
+    answer = service.send(None, where, 'clear', clear=project)
+    if said is not None:
+        said.extend(str(one) for one in cast(list[object], answer.get('notices') or []))
+    return answer.get('status') == 'ok'
 
 
 def overlay_records(project: str, key: str, home: Path | None = None, at: str | list[str] | None = None,
@@ -81,6 +85,8 @@ def overlay_records(project: str, key: str, home: Path | None = None, at: str | 
     elements beneath it too, selected in the store. Not a command of the tool, which reads an overlay's records with
     the element they are at."""
     from metaform.project import service
+    if isinstance(at, list) and below:
+        raise ValueError('records beneath elements are read for one address at a time, not a list')
     where = home if home is not None else metaform_home.home()
     if project not in store_projects(where):
         return None
@@ -611,14 +617,15 @@ def _block_key(key: int, block: specification.Block) -> object:
 
 def _exported_key(key: int, entry: list[Any]) -> object:
     """The same for an exported block's baseline entry, [record id, digest, heading digest, text digest]. An entry an
-    earlier export wrote holds other things after the digest, a level and a title, or nothing; only a value that is a
-    digest is matched as one, so such an entry is matched by its digest and as the introduction alone."""
+    earlier export wrote holds a level and a title after the digest, whose heading digest is worked out from them, or
+    nothing after it, and is then matched by its digest alone."""
     if key == 0:
         return entry[1]
+    if key == 1 and len(entry) > 3 and isinstance(entry[2], int) and isinstance(entry[3], str):  # [id, digest, level,
+        return specification.heading_digest(specification.Block(entry[2], entry[3], ''))      # title]
     if key in (1, 2):
         value = entry[key + 1] if len(entry) > key + 1 else None
-        return value if isinstance(value, str) and len(value) == 12 and all(c in '0123456789abcdef' for c in value) \
-            else None
+        return value if specification.is_digest(value) else None
     return 'introduction' if len(entry) > 2 and entry[2] is None else None
 
 

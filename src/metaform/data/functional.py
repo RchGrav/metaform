@@ -84,10 +84,9 @@ def _stored(project: str, address: str) -> dict[str, Any]:
         # the address is the stored element's own, letters, digits, '_' and '.', so it stands in the query as it is
         found = project_store.cypher(project, f"MATCH (h:Element)-[w:Wants]->(e:Element {{address: '{address}'}}) "
                                               'RETURN h.address, w.why, w.how, w.direction ORDER BY h.address')
-        if found.get('status') == 'error':  # what was read stands; the gap is said beside it
-            region = _rendered(address, nodes, requirements, [])
-            region['markdown'] += f"\n\nThe elements relying on {address} could not be read: {found.get('message')}"
-            return region
+        if found.get('status') == 'error':  # what was read stands; the gap is said where the dependents go
+            return _rendered(address, nodes, requirements, [],
+                             unread=f"The elements relying on {address} could not be read: {found.get('message')}")
         for holder, why, how, direction in cast(list[list[Any]], found.get('rows') or []):
             node(str(holder))
             dependents.append(wanted(str(holder), {'element': path, 'why': why, 'how': how,
@@ -96,8 +95,9 @@ def _stored(project: str, address: str) -> dict[str, Any]:
 
 
 def _rendered(address: str, nodes: dict[str, dict[str, str]], requirements: list[dict[str, Any]],
-              dependents: list[dict[str, Any]]) -> dict[str, Any]:
-    """The neighbourhood as a Mermaid diagram and its requirements and dependents in words."""
+              dependents: list[dict[str, Any]], unread: str | None = None) -> dict[str, Any]:
+    """The neighbourhood as a Mermaid diagram and its requirements and dependents in words. With `unread`, the
+    dependents could not be read: it is said in their place and kept as `dependents_unread`, never shown as none."""
     lines = ['```mermaid', 'flowchart LR']
     for one in nodes.values():
         lines.append(f'  {one["id"]}["{html.escape(one["name"], quote=True)}"]')
@@ -119,6 +119,7 @@ def _rendered(address: str, nodes: dict[str, dict[str, str]], requirements: list
                          f'Providers: {providers}. EF: {join["ef"] or "Unspecified"}. '
                          f'IFD: {join["ifd"] or "Unspecified"}.')
         if not joins:
-            lines.append('None recorded.')
+            lines.append(unread if unread and joins is dependents else 'None recorded.')
     return {'address': address, 'name': nodes[address]['name'], 'nodes': list(nodes.values()),
-            'requirements': requirements, 'dependents': dependents, 'markdown': '\n'.join(lines)}
+            'requirements': requirements, 'dependents': dependents, 'markdown': '\n'.join(lines),
+            **({'dependents_unread': unread} if unread else {})}

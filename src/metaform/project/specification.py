@@ -68,21 +68,33 @@ class Block:
                                                  ('text', self.text or None), ('code', self.code)) if value is not None}
 
 
+DIGEST_LENGTH = 12  # the hex characters a baseline keeps of each digest
+
+
+def _short(text: str) -> str:
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:DIGEST_LENGTH]
+
+
+def is_digest(value: object) -> bool:
+    """Whether a baseline value is one of the digests below."""
+    return isinstance(value, str) and len(value) == DIGEST_LENGTH and all(c in '0123456789abcdef' for c in value)
+
+
 def digest(block: Block) -> str:
     """A short digest of a block's fields, so a document says what each block held when it was exported."""
-    return hashlib.sha256(json.dumps(block.stored(), sort_keys=True).encode('utf-8')).hexdigest()[:12]
+    return _short(json.dumps(block.stored(), sort_keys=True))
 
 
 def heading_digest(block: Block) -> str | None:
     """A short digest of a block's heading, its level and title; None for the introduction, which has none."""
     if block.title is None:
         return None
-    return hashlib.sha256(json.dumps([block.level, block.title]).encode('utf-8')).hexdigest()[:12]
+    return _short(json.dumps([block.level, block.title]))
 
 
 def text_digest(block: Block) -> str | None:
     """A short digest of a block's text; None when it has none."""
-    return hashlib.sha256(block.text.encode('utf-8')).hexdigest()[:12] if block.text else None
+    return _short(block.text) if block.text else None
 
 
 # The export's last line: each address's blocks as they were exported, [record id, digest] in order, so an import can

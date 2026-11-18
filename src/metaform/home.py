@@ -27,7 +27,7 @@ from collections.abc import Callable, Generator, Iterable
 from contextlib import closing, contextmanager, suppress
 from contextvars import ContextVar
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from functools import lru_cache, wraps
 from pathlib import Path
@@ -1353,6 +1353,7 @@ class Cleared:
     backup: str | None = None  # the backup made before anything was removed, PROJ-030
     agents: tuple[str, ...] = ()  # the agents at work on its maps, stopped before anything was removed, `AT_WORK`
     holds: tuple[str, ...] = ()  # what each base holds, in the order of `bases`, as `holds_said` says it
+    lost: tuple[str, ...] = ()  # what of its map's memory could not be kept, said, never hidden
 
     def to_dict(self) -> dict[str, Any]:
         found: dict[str, Any] = {'project': self.project_id, 'bases': list(self.bases),
@@ -1364,6 +1365,8 @@ class Cleared:
             found['not_removed'] = [{'path': path, 'reason': reason} for path, reason in self.not_removed]
         if self.agents:
             found['stopped'] = list(self.agents)
+        if self.lost:
+            found['lost'] = list(self.lost)
         return found
 
     def _agents(self, done: bool) -> str:
@@ -1397,8 +1400,9 @@ class Cleared:
     @property
     def said(self) -> str:
         """What `clear project` removed, said after it did."""
+        lost = ''.join(f' {one}.' for one in self.lost)
         return (f'Cleared {self.project_id}: {self._bases(False)} and '
-                f'{counted(self.reports, "report file", "report files")}.{self._agents(True)} {KEPT}')
+                f'{counted(self.reports, "report file", "report files")}.{self._agents(True)} {KEPT}{lost}')
 
     @property
     def restore(self) -> str:
@@ -1457,8 +1461,9 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     with halted(project_id, 'clear'):
         cleared = _cleared(project_id, found, made_by)
         from metaform.project import commands  # the project's map in the project store goes with it
-        commands.clear(commands.stored_name(project_id))
-        return cleared
+        lost: list[str] = []
+        commands.clear(commands.stored_name(project_id), said=lost)
+        return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
 def _cleared(project_id: str, found: Cleared, made_by: str) -> Cleared:

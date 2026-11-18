@@ -215,7 +215,7 @@ def worksheet(ctx: Context) -> dict[str, Any]:
                    'them.', 'metaform tasks board')
     # Before the round in the project store, whose claims can be given back if the round is not made; the old store's
     # take cannot be undone, so its tickets are taken after the round, as before.
-    claimed = _claim(ctx, stored, tickets, by) if stored is not None else []
+    claimed = _claim(ctx, stored, tickets, by, []) if stored is not None else []
     try:
         # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
         made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
@@ -242,7 +242,7 @@ def worksheet(ctx: Context) -> dict[str, Any]:
 
 
 def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: str,
-           passed: list[dict[str, str]] | None = None) -> list[str]:
+           passed: list[dict[str, str]]) -> list[str]:
     """Claim each free ticket for `by`; the ids claimed. In the project store, `stored`, a claim is exclusive and at
     the revision read, and a refusal part way gives back the claims this call made and stops, so no ticket is left
     claimed for a worksheet that was not made. In the old store a take is shared participation, made after the round,
@@ -259,8 +259,8 @@ def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: 
             else:
                 try:
                     ctx.require_store().take_work(one['ticket'], by=by)
-                except StoreError as error:  # finished since it was listed: nothing to take; any other is said
-                    if not _done_since(ctx, str(one['ticket'])) and passed is not None:
+                except Exception as error:  # noqa: BLE001  after the round: said, never a failure of it
+                    if not _done_since(ctx, str(one['ticket'])):  # one finished since it was listed: nothing to take
                         passed.append({'ticket': str(one['ticket']), 'why': str(error)})
                     continue
             claimed.append(str(one['ticket']))

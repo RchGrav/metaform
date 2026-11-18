@@ -165,7 +165,9 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                     from metaform.project import base_maps
                     answer = base_maps.perform(cast(dict[str, Any], message['bases']), owned)
                 elif isinstance(message.get('clear'), str):  # clearing a project removes its database
-                    answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear']) else 'error'}
+                    lost: list[str] = []
+                    answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear'], lost) else 'error',
+                                                 **({'notices': lost} if lost else {})}
                 elif isinstance(message.get('drawn'), str) and isinstance(message.get('overlay'), str):
                     chosen = cast(dict[str, Any], message.get('select') or {})
                     match = cast('list[Any] | None', chosen.get('match'))
