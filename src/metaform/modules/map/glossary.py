@@ -237,8 +237,6 @@ def glossary(ctx: Context) -> Any:
     result: dict[str, Any] = {'project': store.project_id, 'total': len(listed), 'results': [one.row() for one in page]}
     if limit and start + limit < len(listed):
         result['next'] = str(start + limit)
-    if held:  # terms the old store kept before the map moved are listed apart, labelled, never mixed in
-        result.update(project_glossary.left_behind(store))
     return result
 
 

@@ -774,20 +774,14 @@ class Writer:
 
 
 def give_standing_overlays(store: Store, project: str) -> None:
-    """Define, in a project that lacks them, the overlays every project is given: tickets and memories. Called inside
-    the writer's transaction each time a database is opened, so a project made before one of them existed gains it,
-    and a project given one before an optional field was added to it gains that field: every record it holds stays
-    valid (F03). A field the project already defines is left as the project has it."""
+    """Define, in a project that lacks them, the overlays every project is given: tickets, memories and the
+    specification. Called inside the writer's transaction each time a database is opened, which is how a new project
+    gets them. A definition the project already holds is left as it is: the product is unreleased, and no older
+    definition is patched (review of 2026-11-18, F15)."""
     from metaform.project import texts
     defined = store.parts()
     for path, definition in texts.standing_overlays().items():
         if path not in defined:
             whole = full(project, path)
             Writer(store, parse(whole), {'add': {whole: definition}}, 'add').write(whole, definition)
-            continue
-        for name, given in definition.items():
-            spec = cast(dict[str, object], given) if isinstance(given, dict) else None
-            if spec is not None and spec.get('optional') is True and f'{path}.{name}' not in defined:
-                whole = full(project, f'{path}.{name}')
-                Writer(store, parse(whole), {'add': {whole: spec}}, 'add').write(whole, spec)
 

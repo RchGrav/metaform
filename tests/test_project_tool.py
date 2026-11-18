@@ -753,38 +753,6 @@ def test_overlay_records_are_reached_from_their_element_and_go_with_it(mapped):
         opened.close()
 
 
-def test_a_database_made_before_the_tree_is_given_it_on_open(home):
-    """A project database from before the tree and `HOLDS` were stored, with its root named `Root` and its records
-    tied to elements by an address column, is brought to the graph's structure once, when the writer opens it."""
-    path = store.location(home, P)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    old = store._Engine(path)
-    for statement in (('CREATE NODE TABLE Element(address STRING PRIMARY KEY, `technical_name` STRING, `name` STRING, '
-                       '`role` STRING, `ref` STRING, `status` STRING)'),
-                      'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
-                      ('CREATE NODE TABLE ov_notes(id SERIAL PRIMARY KEY, address STRING, position INT64, ref STRING, '
-                       'f_text STRING)'),
-                      "CREATE (:Root {k: 'root', name: 'Mashtrac'})",
-                      "CREATE (:Element {address: 'code'})", "CREATE (:Element {address: 'code.loop.main'})",
-                      "CREATE (:ov_notes {address: 'code.loop.main', position: 0, f_text: 'Kept.'})"):
-        old.rows(statement, {})
-    old.close()
-    opened = store.Store(path)
-    try:
-        assert opened.root()['name'] == 'Mashtrac'
-        assert opened.tree() == [('.', 'code'), ('code', 'code.loop'), ('code.loop', 'code.loop.main')]
-        (kept,) = opened.records('notes', 'code.loop.main', ['text'])
-        assert {name: kept[name] for name in ('ref', 'text', 'revision')} == {'ref': None, 'text': 'Kept.', 'revision': 1}
-        assert str(kept['record']).startswith('r-')  # a record made before ids is given one, its content untouched
-    finally:
-        opened.close()
-    again = store.Store(path)  # a second open finds the structure in place and changes nothing
-    try:
-        assert len(again.tree()) == 3
-    finally:
-        again.close()
-
-
 def test_the_root_has_no_technical_name_and_overlay_records_are_a_list(mapped):
     """Two refusals as the Rust form gives them (`metaform-core/tests/rules.rs`), in this tool's paths: a technical
     name at the project's root, which is the project, and an overlay's records given as an object, alone or nested
@@ -1080,7 +1048,7 @@ def test_map_work_reads_and_writes_the_tickets_of_a_project_in_the_project_store
         'done', 'completed', 'Snooze added.\n\nResolution: Snooze works. Why: Tested.')  # the note is kept
     assert project_work(P, 'list', {})['results'] == []
     assert [row['id'] for row in project_work(P, 'list', {'open': False})['results']] == [other['id']]
-    for op, nouns, said in (('plan', {'id': other['id']}, 'op=plan has no place'),
+    for op, nouns, said in (('move', {'id': other['id']}, 'op=move has no place'),
                             ('take', {'id': other['id']}, 'names who takes'),
                             ('add', {'node': node, 'title': 't', 'task': 't', 'condition': 'broken'}, 'condition'),
                             ('add', {'receiver': 'code.masher.widget', 'title': 't', 'task': 't'}, 'receiver'),
@@ -1107,7 +1075,7 @@ def test_the_page_reads_memory_from_the_memory_layer_the_memory_tools_write(serv
     assert by_name['watch']['entityType'] == 'behaviour'
     assert shown['relations'] == [{'from': 'watch', 'to': WIDGET, 'relationType': 'reads'}]
     assert [join['address'] for join in shown['joins']] == ['code.masher.widget']
-    assert shown['overlay_records'] == []
+    assert 'overlay_records' not in shown  # no older-overlay records are shown apart (review of 2026-11-18, F15)
 
 
 def test_the_walk_beneath_an_element_reaches_every_level_however_deep(mapped):
@@ -1121,36 +1089,6 @@ def test_the_walk_beneath_an_element_reaches_every_level_however_deep(mapped):
     # deleting the top of it is refused while elements are beneath, naming the deepest
     answer = run({'delete': {f'{P}.code.s0': {}}})
     assert answer['code'] == 'ELEMENTS_BENEATH' and answer['remediation'] == {'delete': {deep: {}}}
-
-
-def test_an_upgrade_that_would_leave_the_graph_incomplete_changes_nothing_and_says_why(home, mapped):
-    """F15: an upgrade is finished only when the graph it leaves is whole, checked inside its transaction. A record
-    an old database ties to no element would be left unheld, so the upgrade is refused by name and the old database
-    is left as it was; a whole graph reports nothing."""
-    assert owner.of(metaform_home.home()).read(P, lambda opened: opened.integrity()) == []
-    owner.close_all()
-    path = store.location(home, 'oldproject')
-    path.parent.mkdir(parents=True, exist_ok=True)
-    old = store._Engine(path)
-    for statement in (('CREATE NODE TABLE Element(address STRING PRIMARY KEY, `technical_name` STRING, `name` STRING, '
-                       '`role` STRING, `ref` STRING, `status` STRING)'),
-                      'CREATE NODE TABLE Root(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
-                      ('CREATE NODE TABLE ov_notes(id SERIAL PRIMARY KEY, address STRING, position INT64, ref STRING, '
-                       'f_text STRING)'),
-                      "CREATE (:Root {k: 'root', name: 'Old'})", "CREATE (:Element {address: 'code'})",
-                      "CREATE (:ov_notes {address: 'code.gone', position: 0, f_text: 'Held by nothing.'})"):
-        old.rows(statement, {})
-    old.close()
-    with pytest.raises(store.StoreError, match='notes records are not held by exactly one element'):
-        store.Store(path)
-    again = store._Engine(path)
-    try:  # left as it was: still the old root, no map, the record's text untouched
-        tables = {str(row[0]) for row in again.rows('CALL show_tables() RETURN name', {})}
-        assert 'Root' in tables and 'Map' not in tables and 'MemoryEntity' not in tables
-        assert 'record' not in {str(row[0]) for row in again.rows("CALL table_info('ov_notes') RETURN name", {})}
-        assert again.rows('MATCH (r:ov_notes) RETURN r.f_text', {}) == [['Held by nothing.']]
-    finally:
-        again.close()
 
 
 def test_a_ticket_id_names_one_ticket_and_a_claim_is_exclusive(served):
@@ -1322,7 +1260,6 @@ def test_the_projects_root_holds_its_own_description_and_no_other_overlay(home, 
     assert run({'update': {P: {'name': 'Mashtrac', 'specification': blocks}}}) == {'status': 'ok'}
     read = run({P: {}})[P]
     assert read['name'] == 'Mashtrac' and fields_only(read['specification']) == blocks
-    assert owner.of(metaform_home.home()).read(P, lambda opened: opened.integrity()) == []
     for command, code in (({'update': {P: {'tickets': [{'id': 't-1', 'title': 'T', 'task': 'T.'}]}}},
                            'OVERLAY_NOT_AT_ROOT'),
                           ({'update': {P: {'specification': [{'level': 2, 'title': 'Skips'}]}}},

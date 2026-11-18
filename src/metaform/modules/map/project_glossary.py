@@ -93,22 +93,6 @@ def terms(project: str, drawn: dict[str, Any] | None = None) -> list[glossary.Te
     return glossary.merged(derived(project, drawn), [_row(project, one) for one in _records(project)], said)
 
 
-def left_behind(store: Any) -> dict[str, Any]:
-    """The terms the old store kept for this project before its map moved to the project store, listed apart and
-    labelled; nothing when it kept none."""
-    try:
-        with store.tables(write=False) as tx:
-            rows = [dict(row) for row in tx.rows('terms', limit=0).results]
-    except Exception:  # noqa: BLE001  an old store without the table kept no terms
-        return {}
-    if not rows:
-        return {}
-    return {'old_store': {'note': ("Terms the old store kept before this project's map moved to the project store. "
-                                   'They are not in the glossary; add each one again with metaform map term.'),
-                          'results': [{name: row[name] for name in ('term', 'state', 'definition', 'why', 'source',
-                                                                     'address') if row.get(name)} for row in rows]}}
-
-
 def _done(answer: dict[str, object]) -> None:
     if answer.get('status') == 'error':
         raise Stop(str(answer.get('message') or 'The term was not changed.'), str(answer.get('remediation') or HELP))

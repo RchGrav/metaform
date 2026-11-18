@@ -261,9 +261,7 @@ def memories(project: str) -> dict[str, Any] | None:
     (F05, kickoff 2026-11-17). The founder set on 2026-11-17 that memory is "all stored in the memory layer", never an
     overlay. Each entity comes with its observations and the relations among the entities; an entity named by an
     element's address shows at that element, and one tied to an object the map no longer holds is hidden by the layer
-    itself. Records an older version wrote to the memories overlay are not mixed into the graph: they are listed apart
-    as `overlay_records`, labelled, so nothing is lost or counted twice. None when the project store holds no such
-    project."""
+    itself. None when the project store holds no such project."""
     name = commands.stored_name(project)
     if not commands.holds(name):
         return None
@@ -280,10 +278,7 @@ def memories(project: str) -> dict[str, Any] | None:
         {'join_id': f"{str(entity['name'])[lead:]}:{entity['name']}", 'entity': str(entity['name']),
          'address': str(entity['name'])[lead:], 'by': '', 'orphaned': False, 'shows': True}
         for entity in entities if str(entity['name']).startswith(f'{name}.')]
-    older = commands.overlay_records(name, 'memories') or []
-    return {'entities': entities, 'relations': list(graph.get('relations') or []), 'joins': joins,
-            'overlay_records': [{**record, 'kept_in': 'memories overlay, from before the memory layer'}
-                                for record in older]}
+    return {'entities': entities, 'relations': list(graph.get('relations') or []), 'joins': joins}
 
 
 

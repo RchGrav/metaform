@@ -525,23 +525,6 @@ def test_a_ticket_on_a_join_is_refused_by_name_on_a_project_in_the_project_store
     assert overlay_tickets() == {}
 
 
-def test_a_project_given_tickets_before_steps_existed_gains_them_on_open_and_keeps_its_records(stored, home):
-    """give_standing_overlays brings an existing project's tickets definition up to the standing one with its new
-    optional fields only (F03): the records stay as they were."""
-    from metaform.project import owner, service
-    from metaform.project import run as command
-    for name in ('steps', 'steps_done'):
-        assert command({'delete': {f'proj.overlay.tickets.{name}': {}}}) == {'status': 'ok'}
-    assert 'steps' not in command({'proj.overlay.tickets': {}})['proj.overlay.tickets']
-    ticket = stored.call('ticket', node=NODE, summary='Fix it', text='Fix the timer.')['ticket']
-    before = overlay_tickets()[ticket]
-    service.stop(home)
-    owner.close_all()
-    definition = command({'proj.overlay.tickets': {}})['proj.overlay.tickets']
-    assert definition['steps']['optional'] is True and definition['steps_done']['type'] == 'number'
-    assert overlay_tickets()[ticket] == before
-
-
 def old_work(project):
     """The old store's work rows: none is read or made for a project held in the project store (review of
     2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
