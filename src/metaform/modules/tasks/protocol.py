@@ -157,7 +157,8 @@ def tickets_of(ctx: Context, name: str) -> list[dict[str, Any]]:
     stored = project_tickets.held(ctx)
     if stored is not None:
         found = project_tickets.records(stored)
-        return [{'ticket': ident, 'taken': bool(one.get('taken_by')), 'title': str(one.get('title') or '')}
+        return [{'ticket': ident, 'taken': bool(one.get('taken_by')), 'taken_by': one.get('taken_by') or None,
+                 'title': str(one.get('title') or '')}
                 for ident in idents if (one := found.get(ident)) is not None and not one.get('done') and one.get('task')]
     store = ctx.require_store()
     for ident in idents:
@@ -166,7 +167,7 @@ def tickets_of(ctx: Context, name: str) -> list[dict[str, Any]]:
         except StoreError:
             continue
         if record.done is None and record.task:
-            listed.append({'ticket': ident, 'taken': record.taken is not None})
+            listed.append({'ticket': ident, 'taken': record.taken is not None, 'taken_by': record.taken_by})
     titles: dict[str, Any] = store.numbers_of('work', [one['ticket'] for one in listed]) if listed else {}
     for one in listed:
         one['title'] = titles.get(one['ticket'], ('', None, None))[1] or ''
@@ -200,28 +201,68 @@ def worksheet(ctx: Context) -> dict[str, Any]:
     if held and not held['completed'] and holder != str(held['holder']):
         raise Stop(f'{name} is held by {held["holder"]}: pair with them (tasks pair) or message them; only the holder '
                    'registers its worksheet again.', 'metaform tasks board')
-    # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
-    made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
+    # Each ticket's own owner, not only the worksheet's holder: a ticket another agent claimed directly is theirs, and
+    # a worksheet over it is refused before anything is claimed or saved (review of 2026-11-18, F6).
+    by = actor(ctx) or holder
+    owned = [one for one in tickets if one.get('taken_by') and one['taken_by'] not in (by, holder)]
+    if owned:
+        said = ', '.join(f"{one['ticket']} is taken by {one['taken_by']}" for one in owned)
+        raise Stop(f'{said}: a worksheet '
+                   'takes only tickets that are free or already yours. Pair with the holder (tasks pair) or message '
+                   'them.', 'metaform tasks board')
+    claimed = _claim(ctx, tickets, by)  # before the round: a refused claim leaves no worksheet
     try:
+        # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
+        made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
         result = data.set_round(name, str(tickets[0]['title'] or ''), holder, items, nodes,
                                 agent_id(ctx, ctx.nouns.get('partner')) or None,
                                 [one['ticket'] for one in tickets])
     except ValueError as error:
+        _release(ctx, claimed, by)
         raise Stop(str(error), 'metaform tasks worksheet') from None
-    stored = project_tickets.held(ctx)
-    found = project_tickets.records(stored) if stored is not None else {}
-    for one in tickets:
-        if not one['taken']:
-            if stored is not None:
-                project_tickets.take(project_tickets.found(stored, found, one['ticket']), actor(ctx) or holder)
-            else:
-                ctx.require_store().take_work(one['ticket'], by=actor(ctx) or holder)
+    except BaseException:
+        _release(ctx, claimed, by)
+        raise
     _sync_progress(ctx, result)
     changed(ctx, [holder], name, result['tickets'])
     if made is None:
         return {**result, 'folder': str(ctx.folder), 'branch': None}
     return {**result, 'folder': made['folder'], 'branch': made['branch'],
             **({'notice': made['notice']} if made.get('notice') else {})}
+
+
+def _claim(ctx: Context, tickets: list[dict[str, Any]], by: str) -> list[str]:
+    """Claim each free ticket for `by`, exclusively and at the revision read; the ids claimed. A refusal part way
+    gives back the claims this call made and stops, so no ticket is left claimed for a worksheet that was not made."""
+    stored = project_tickets.held(ctx)
+    found = project_tickets.records(stored) if stored is not None else {}
+    claimed: list[str] = []
+    try:
+        for one in tickets:
+            if one['taken']:
+                continue
+            if stored is not None:
+                project_tickets.take(project_tickets.found(stored, found, one['ticket']), by)
+            else:
+                ctx.require_store().take_work(one['ticket'], by=by)
+            claimed.append(str(one['ticket']))
+    except BaseException:
+        _release(ctx, claimed, by)
+        raise
+    return claimed
+
+
+def _release(ctx: Context, claimed: list[str], by: str) -> None:
+    """Give back the claims a worksheet made when it was not made after all: each ticket still held by `by` is
+    freed. Only the project store's tickets: the old store's take is a shared participation with nothing to undo."""
+    stored = project_tickets.held(ctx)
+    if stored is None or not claimed:
+        return
+    found = project_tickets.records(stored)
+    for ident in claimed:
+        one = found.get(ident)
+        if one is not None and one.get('taken_by') == by:
+            project_tickets.change(one, {'taken_by': None}, exact=True)
 
 
 def pair(ctx: Context) -> dict[str, Any]:

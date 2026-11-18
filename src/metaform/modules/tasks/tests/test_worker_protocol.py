@@ -498,6 +498,27 @@ def test_a_pairs_worksheet_on_a_project_in_the_project_store_runs_on_its_tickets
     assert not stored.store.work(limit=0).results
 
 
+
+def test_a_worksheet_never_takes_a_ticket_another_agent_claimed_and_a_refusal_claims_nothing(stored, monkeypatch):
+    """Review of 2026-11-18, F6: Bob claimed a ticket directly, no worksheet held it, and Alice's worksheet over it was
+    saved with Alice as holder while Bob kept the ticket. Each ticket's own owner is checked first, and a worksheet
+    whose saving fails after its claims gives them back."""
+    from metaform.modules.tasks import project_tickets
+    ticket = stored.call('ticket', node=NODE, summary='Fix the kitchen timer', text='Repair the timer.')['ticket']
+    project_tickets.take(overlay_tickets()[ticket], 'bob')
+    with pytest.raises(Stop, match=f'{ticket} is taken by bob'):
+        stored.call('worksheet', worktree=ticket, holder='alice', items=['Inspect'])
+    assert stored.board.round(ticket) is None and overlay_tickets()[ticket]['taken_by'] == 'bob'
+    free = stored.call('ticket', node=NODE, summary='Ring the bell', text='Ring it.')['ticket']
+
+    def refused(*_args, **_kwargs):
+        raise ValueError('the round could not be saved')
+    monkeypatch.setattr(type(stored.board), 'set_round', refused)
+    with pytest.raises(Stop, match='could not be saved'):
+        stored.call('worksheet', worktree=free, holder='alice', items=['Inspect'])
+    assert not overlay_tickets()[free].get('taken_by'), 'the claim was given back'
+
+
 def test_a_ticket_on_a_join_is_refused_by_name_on_a_project_in_the_project_store(stored):
     with pytest.raises(Stop, match='a join has no tickets there yet'):
         stored.call('ticket', node='join:code.timer.kitchen->code.timer.bell', summary='Ring', text='Ring the bell.')
