@@ -237,7 +237,7 @@ export function sessionTask(session, state = D.states?.[session.session_id]) {
   const ticket = ticketOf(session.work_id);
   const conversation = isSystemState(state, session.work_id) ? 'Conversation with your system agent'
     : isIntake(session.work_id) ? 'The intake'
-    : isHelper(session.work_id) ? `Helper: ${state?.brief || 'starting'}`
+    : isHelper(session.work_id) ? (state?.brief ? `Helper: ${state.brief}` : 'A helper your system agent started')
     : state?.about ? `Conversation about ${state.about.replace(/^[^:]+:/, '')}`
     : ticket?.held ? 'Conversation' : null;
   return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;

@@ -4981,8 +4981,21 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
     return kept, states
 
 
-ENDED_STATE = ('task_name', 'about', 'brief', 'notification', 'title', 'role', 'authored_role_uri',
-               'assignment_id', 'team_id', 'latest_message_id', 'latest_message_text', 'updated_at', 'name')
+# What the agents key carries of each session's state: what names it, never what it was asked or said. A brief, a
+# task's input, a compaction summary and a message body are read only by naming the session (`id=` or `session=`), so a
+# lead listing its team is not handed other agents' assignments (review of 2026-11-18, finding 1).
+KEY_STATE = ('task_name', 'about', 'notification', 'title', 'role', 'authored_role_uri',
+             'assignment_id', 'team_id', 'latest_message_id', 'updated_at', 'name')
+KEY_SETTINGS = ('model', 'thought_level')  # a running session's model and thinking level, as the key shows them
+
+
+def key_state(state: dict[str, Any], running: bool) -> dict[str, Any]:
+    """One session's state as the agents key carries it: the fields that name it, and a running one's model."""
+    kept = {name: state[name] for name in KEY_STATE if name in state}
+    if running:
+        kept['settings'] = [one for one in cast(list[Any], state.get('settings') or [])
+                            if isinstance(one, dict) and cast(dict[str, Any], one).get('category') in KEY_SETTINGS]
+    return kept
 def held_here(row: dict[str, Any]) -> bool:
     """Whether a stored session row is recorded running by this home, so its runner may still be at work on it; one
     another home started reads as ended here, session_status."""
@@ -5118,11 +5131,11 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     for state in states.values():
         state['task_name'] = cast(dict[str, Any], state.get('task') or {}).get('name')
     if agents_key:
-        # The agents key's read of every ticket, done on each change it hears: an ended session keeps only what names
-        # it in the Agents menu, not its commands, capabilities and options, which made this read megabytes.
+        # The agents key's read of every ticket, done on each change it hears: each session keeps only what names it in
+        # the Agents menu, not its commands, capabilities and options, which made this read megabytes, nor its brief,
+        # task input or summaries, which are another agent's assignment.
         running = {session['session_id'] for session in found if session.get('state') == 'running'}
-        states = {key: state if key in running else {name: state[name] for name in ENDED_STATE if name in state}
-                  for key, state in states.items()}
+        states = {key: key_state(state, key in running) for key, state in states.items()}
     # A subagent the agent started, when it advertises them, is a child session of its own, P016: its line in the
     # parent's thread names it, and its own thread is kept under its session id, read here with it.
     children: list[dict[str, Any]] = []

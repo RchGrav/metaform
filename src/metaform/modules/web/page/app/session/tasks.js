@@ -3,7 +3,8 @@ import {h, fill} from '/page/app/core/dom.js';
 import {taskAssignForm} from '/page/app/agents/tasks.js';
 
 export const notificationState = state => state?.notification === true || state?.role === 'notification';
-export const taskSummary = state => state?.task?.name?.replace(/_/g, ' ') || '';
+// the agents key names a session's task by `task_name`; a session read by name carries the task itself
+export const taskSummary = state => (state?.task?.name || state?.task_name || '').replace(/_/g, ' ');
 
 export function drawTask(box, state, openSession = null) {
   const task = state?.task;

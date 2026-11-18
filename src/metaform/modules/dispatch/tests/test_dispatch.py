@@ -1404,9 +1404,9 @@ def test_a_line_of_the_thread_announces_only_dispatchs_tables_and_a_write_to_the
 
 @pytest.mark.req('VIEW-039')
 def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
-    """The agents key needs only the sessions; the threads of every session are read only for the window that shows
-    one."""
-    from metaform.modules.dispatch import ENDED_STATE
+    """The agents key needs only the sessions and what names them; the threads of every session, and a session's
+    task, brief and summaries, are read only for the window that names one."""
+    from metaform.modules.dispatch import KEY_STATE
     dispatch.start('ask')
     eventually(dispatch.questions)
     whole = json.loads(run('dispatch', 'sessions', '--json', cwd=dispatch.folder).stdout)
@@ -1414,10 +1414,12 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     bare = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
     assert bare['sessions'] == whole['sessions'][:len(bare['sessions'])] and bare['lines'] == []
     [session] = [one['session_id'] for one in bare['sessions'] if one['state'] == 'running']
-    assert bare['states'][session] == whole['states'][session] and len(bare['states'][session]) > 2
+    assert 'task' in whole['states'][session], 'the whole read carries the task'
+    assert set(bare['states'][session]) <= {*KEY_STATE, 'settings'}, 'a running session in the key is named only'
+    assert all(one['category'] in ('model', 'thought_level') for one in bare['states'][session]['settings'])
     dispatch.stop()
     ended = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['states']
-    assert set(ended.get(session, {})) <= set(ENDED_STATE), 'an ended session keeps only what names it'
+    assert set(ended.get(session, {})) <= set(KEY_STATE), 'an ended session keeps only what names it'
     detail = json.loads(run('dispatch', 'sessions', f'id={session}', '--json', cwd=dispatch.folder).stdout)
     metadata = json.loads(run('dispatch', 'sessions', f'id={session}', 'thread=false', '--json',
                               cwd=dispatch.folder).stdout)
