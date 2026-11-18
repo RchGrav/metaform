@@ -63,6 +63,11 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
                 sys.stderr.write(lost + '\n')
                 if said is not None:
                     said.append(lost)
+        if kept['relations'] and not kept['entities']:  # relations are kept only with their entities
+            dropped = f"{path.stem}'s {len(kept['relations'])} memory relations are not kept, since their entities are not"
+            sys.stderr.write(dropped + '\n')
+            if said is not None:
+                said.append(dropped)
         return kept
 
 

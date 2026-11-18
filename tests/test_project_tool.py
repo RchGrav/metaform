@@ -586,6 +586,23 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home)
     with pytest.raises(store.StoreError, match='lacks MemoryEntity.*metaform clear project older'):
         store.Store(path)
     assert owner.of(home).remove('older') and not path.exists(), 'the clear it names still clears it'
+    # a clear the service refuses is said, never reported as done
+    said: list[str] = []
+    store.Store(path, create='older').close()
+    real_send = service.send
+    try:
+        service.send = lambda *args, **kwargs: {'status': 'error', 'code': 'INTERNAL_ERROR', 'message': 'it died'}
+        assert commands.clear('older', home, said) is False
+    finally:
+        service.send = real_send
+    assert said == ["older's map in the project store was not removed: it died"]
+    assert owner.of(home).remove('older')
+    from metaform.data.functional import _rendered
+    region = _rendered('code.x', {'code.x': {'id': 'n0', 'address': 'code.x', 'name': 'X'}}, [], [],
+                       unread='The elements relying on code.x could not be read: busy')
+    assert region['dependents_unread'] and region['markdown'].endswith(
+        '### Functionality relying on this element\n\nThe elements relying on code.x could not be read: busy')
+    assert '### Requirements\n\nNone recorded.' in region['markdown']
     # a database with memory but no relations table keeps its memory when cleared
     made = store.Store(path, create='older')
     made.put_memory_entity('bell', 'part', ['It rings.'])

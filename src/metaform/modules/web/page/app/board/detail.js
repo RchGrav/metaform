@@ -34,15 +34,16 @@ function graphThumb(functionality, serial) {
 function joinList(functionality) {
   const names = new Map((functionality.nodes || []).map(one => [one.address, one.name]));
   const named = address => names.get(address) || address;
-  const list = (joins, line) => joins.length ? h('ul', {class: 'joins'}, joins.map(line))
-    : h('p', {class: 'quiet'}, 'None recorded.');
+  // an empty list reads "None recorded." unless the read of it failed, which is said instead (`dependents_unread`)
+  const list = (joins, line, unread = '') => joins.length ? h('ul', {class: 'joins'}, joins.map(line))
+    : h('p', {class: 'quiet'}, unread || 'None recorded.');
   return [
     h('h4', {}, 'Requires'),
     list(functionality.requirements || [], join => h('li', {}, join.purpose || 'No purpose recorded',
       h('small', {}, join.providers.map(named).join(', ') || 'No provider recorded'))),
     h('h4', {}, 'Relied on by'),
     list(functionality.dependents || [], join => h('li', {}, named(join.receiver),
-      h('small', {}, join.purpose || 'No purpose recorded')))];
+      h('small', {}, join.purpose || 'No purpose recorded')), functionality.dependents_unread || '')];
 }
 
 export async function ticketDetail(workId, project = S.project, base = S.base || '') {

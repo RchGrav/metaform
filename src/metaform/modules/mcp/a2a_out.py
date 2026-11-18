@@ -31,7 +31,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import sys
 import time
 import uuid
 import zlib
@@ -184,17 +183,18 @@ def _ask(project: str, address: str, said: str, by: str, title: str, why: str, m
     return str(asked['id'])
 
 
-def _settle(project: str, exchange_id: str, written: list[str], unwritten: list[str], failing: bool) -> None:
+def _settle(project: str, exchange_id: str, taken: list[str], written: list[str], failing: bool) -> None:
     """Mark what was written delivered and give back what was not, each tried whatever the other does. A failure of
     either is raised unless the writes themselves are `failing`, so the cause the caller sees is the first."""
     failed: Exception | None = None
+    unwritten = [key for key in taken if key not in written]
     for settle, keys in ((records.released, unwritten), (records.delivered, written)):
         try:
             settle(project, exchange_id, keys)
         except Exception as error:  # noqa: BLE001  the other step is still taken
             failed = failed or error
     if failed is not None and failing:  # the writes' own error goes on; this one is kept in the log beside it
-        sys.stderr.write(f'A2A exchange {exchange_id}: settling its keys failed too: {failed}\n')
+        log.warning('A2A exchange %s: settling its keys failed too: %s', exchange_id, failed)
     elif failed is not None:
         raise failed
 
@@ -223,7 +223,6 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
     # once; only a claim whose writer died is taken again, after its `stale` time.
     written: list[str] = []
     question: str | None = None
-    unwritten = lambda: [key for key in taken if key not in written]  # read when the writes end
     try:
         for one in artifacts:
             key = f'artifact:{one.artifact_id}'
@@ -237,9 +236,9 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
                             prompt('a2a_peer_question_why', peer=now.peer), messages)
             written += asking
     except BaseException:  # what was written is delivered even when a later write failed; what was not is given back
-        _settle(project, exchange_id, written, unwritten(), failing=True)
+        _settle(project, exchange_id, taken, written, failing=True)
         raise
-    _settle(project, exchange_id, written, unwritten(), failing=False)
+    _settle(project, exchange_id, taken, written, failing=False)
     if question is not None and records.asking(project, exchange_id, now.asked, question):  # its answer goes back
         now = records.exchange(project, exchange_id)
     return now

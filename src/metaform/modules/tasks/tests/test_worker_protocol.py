@@ -230,6 +230,23 @@ def test_in_the_old_store_a_worksheet_shares_a_peers_take_and_a_refused_round_ta
     monkeypatch.setattr(Store, 'take_work', refused_take, raising=False)
     made = working.call('worksheet', worktree=stuck, holder='alice', items=['Inspect'])
     assert made['worktree'] == stuck and made['not_taken'] == [{'ticket': stuck, 'why': 'the store is locked'}]
+    # a failure of another kind, which the read that follows meets too, is listed the same way
+    other = working.call('ticket', node=NODE, summary='Hands', text='Draw them.')['ticket']
+
+    read, tried = Store.__getattr__, []
+
+    def locked(self, *args, **kwargs):
+        tried.append(True)
+        raise RuntimeError('database is locked')
+
+    def ticket(self, *args, **kwargs):  # the read after the failed take meets the same lock
+        if tried:
+            raise RuntimeError('database is locked')
+        return read(self, 'ticket')(*args, **kwargs)
+    monkeypatch.setattr(Store, 'take_work', locked, raising=False)
+    monkeypatch.setattr(Store, 'ticket', ticket, raising=False)
+    made = working.call('worksheet', worktree=other, holder='alice', items=['Inspect'])
+    assert made['not_taken'] == [{'ticket': other, 'why': 'database is locked'}]
 
 def test_a_ticket_in_another_worktree_is_not_claimable_under_its_own_id(working):
     one = working.call('ticket', node=NODE, summary='Face', text='Draw it.', worktree='timer')['ticket']

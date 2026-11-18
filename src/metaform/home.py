@@ -1638,13 +1638,15 @@ class Restored:
     backup: Backup
     held_before: str | None = None
     stopped: tuple[str, ...] = ()  # the agents at work on what it replaced, stopped first by its clear, `AT_WORK`
+    lost: tuple[str, ...] = ()  # what its clear could not keep of the map's memory, said, never hidden
 
     @property
     def said(self) -> str:
         stopped = (f' Stopped {counted(len(self.stopped), "agent", "agents")} at work on what it replaced first: '
                    f'{"; ".join(self.stopped)}.' if self.stopped else '')
+        lost = ''.join(f' {one}.' for one in self.lost)
         return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.{stopped} The '
-                'conversations with agents were kept, with everything said since the backup.')
+                f'conversations with agents were kept, with everything said since the backup.{lost}')
 
     @property
     def back(self) -> str | None:
@@ -1655,7 +1657,8 @@ class Restored:
     def to_dict(self) -> dict[str, Any]:
         return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before,
                 **({'restore_before': self.back} if self.back else {}),
-                **({'stopped': list(self.stopped)} if self.stopped else {})}
+                **({'stopped': list(self.stopped)} if self.stopped else {}),
+                **({'lost': list(self.lost)} if self.lost else {})}
 
 
 def restore_caution(project_id: str, name: str | None = None) -> str:
@@ -1711,7 +1714,7 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
         carry_out(project_id)
     except (OSError, sqlite3.Error, Stop):
         pass  # the restore stands; what the backup's stores hold of them is still there, carried by the next read
-    return Restored(chosen, before, cleared.agents)
+    return Restored(chosen, before, cleared.agents, cleared.lost)
 
 
 def removal_caution(project_id: str) -> str:

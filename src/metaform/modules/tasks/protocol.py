@@ -274,7 +274,7 @@ def _done_since(ctx: Context, ticket: str) -> bool:
     """Whether an old-store ticket is done now."""
     try:
         return ctx.require_store().ticket(ticket).work.done is not None
-    except StoreError:
+    except Exception:  # noqa: BLE001  read after a take that failed, maybe for the same cause: not known done
         return False
 
 

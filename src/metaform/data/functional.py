@@ -111,7 +111,8 @@ def _rendered(address: str, nodes: dict[str, dict[str, str]], requirements: list
         lines.append(f'  {ident}{{"{label}"}} --> {nodes[join["receiver"]]["id"]}')
         lines.extend(f'  {nodes[at]["id"]} --> {ident}' for at in join['providers'])
     lines.extend(['```', '', 'Arrows show which providers serve each receiver’s requirement; IFD is recorded separately.'])
-    for title, joins in (('Requirements', requirements), ('Functionality relying on this element', dependents)):
+    for title, joins, empty in (('Requirements', requirements, 'None recorded.'),
+                                ('Functionality relying on this element', dependents, unread or 'None recorded.')):
         lines.extend(['', f'### {title}', ''])
         for join in joins:
             providers = ', '.join(nodes[at]['name'] for at in join['providers']) or 'No provider recorded'
@@ -119,7 +120,7 @@ def _rendered(address: str, nodes: dict[str, dict[str, str]], requirements: list
                          f'Providers: {providers}. EF: {join["ef"] or "Unspecified"}. '
                          f'IFD: {join["ifd"] or "Unspecified"}.')
         if not joins:
-            lines.append(unread if unread and joins is dependents else 'None recorded.')
+            lines.append(empty)
     return {'address': address, 'name': nodes[address]['name'], 'nodes': list(nodes.values()),
             'requirements': requirements, 'dependents': dependents, 'markdown': '\n'.join(lines),
             **({'dependents_unread': unread} if unread else {})}

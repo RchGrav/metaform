@@ -73,7 +73,10 @@ def clear(project: str, home: Path | None = None, said: list[str] | None = None)
         return False
     answer = service.send(None, where, 'clear', clear=project)
     if said is not None:
-        said.extend(str(one) for one in cast(list[object], answer.get('notices') or []))
+        said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))
+        if answer.get('status') != 'ok':  # a refused clear is said, never reported as cleared
+            said.append(f"{project}'s map in the project store was not removed: "
+                        f"{answer.get('message') or 'the project service refused it'}")
     return answer.get('status') == 'ok'
 
 
@@ -623,9 +626,11 @@ def _exported_key(key: int, entry: list[Any]) -> object:
         return entry[1]
     if key == 1 and len(entry) > 3 and isinstance(entry[2], int) and isinstance(entry[3], str):  # [id, digest, level,
         return specification.heading_digest(specification.Block(entry[2], entry[3], ''))      # title]
-    if key in (1, 2):
+    if key in (1, 2) and not (len(entry) > 2 and isinstance(entry[2], int)):  # the earlier form holds no digests
         value = entry[key + 1] if len(entry) > key + 1 else None
         return value if specification.is_digest(value) else None
+    if key in (1, 2):
+        return None
     return 'introduction' if len(entry) > 2 and entry[2] is None else None
 
 
