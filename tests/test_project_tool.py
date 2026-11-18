@@ -635,13 +635,23 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     assert owner.of(home).remove('older') is False and not list(path.parent.glob(f'{path.name}.*'))
     # a new map at a path where an old map's files were left is made without them; a kept copy that cannot be read
     # is left whole, never deleted by the new map's first write
-    path.with_name(path.name + '.wal').write_text('left')
+    leftover = path.with_name(path.name + '.left')  # a file of the old map's, beside its path
+    leftover.write_text('left')
     kept.write_text('{"entities": [["bell", "part"', encoding='utf-8')
     owned = owner.of(home)
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
     assert kept.read_text(encoding='utf-8') == '{"entities": [["bell", "part"'
-    wal = path.with_name(path.name + '.wal')
-    assert not wal.exists() or wal.read_bytes() != b'left', 'the old map\'s file was removed before the new one'
+    assert not leftover.exists(), "the old map's file was removed before the new one was made"
+    # a kept copy the new map's store refuses, two entities of one name, never stops the map being made
+    assert owned.remove('older')
+    kept.write_text('{"entities": [["bell", "part", ["a"]], ["bell", "part", ["b"]]], "relations": []}',
+                    encoding='utf-8')
+    owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
+    assert path.exists() and 'bell' in kept.read_text(encoding='utf-8'), 'the refused copy is left whole'
+    # a copy a clear set aside before it stopped is put back in place by the next clear, and nothing is left beside
+    earlier = kept.with_name(kept.name + '.earlier')
+    kept.replace(earlier)
+    assert owned.remove('older') and not earlier.exists() and 'new' in kept.read_text(encoding='utf-8')
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():

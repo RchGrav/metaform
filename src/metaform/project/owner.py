@@ -210,8 +210,13 @@ class Database:
             from metaform.project.writes import give_standing_overlays
             with self._writing.transaction():
                 give_standing_overlays(self._writing, self.path.stem)
-                if create is not None:
-                    self.put_back = _put_back(self._writing)
+            if create is not None:  # in its own transaction: a kept copy the store refuses never stops the map
+                try:
+                    with self._writing.transaction():
+                        self.put_back = _put_back(self._writing)
+                except StoreError as error:
+                    sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
+                                     f'and is not put back: {error}\n')
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
             self._failed = error
             opened.set()
@@ -332,7 +337,11 @@ class Owner:
                     self._discard(project, database)
                 raise
             if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
-                kept_memory(database.path).unlink(missing_ok=True)  # database now; a copy never put back stays
+                with self._opening:  # database now; a copy never put back, or kept again by a clear since, stays
+                    with self._lock:
+                        current = self._open.get(project) is database
+                    if current:
+                        kept_memory(database.path).unlink(missing_ok=True)
             database.fresh = False
             return result
 
@@ -372,7 +381,11 @@ class Owner:
         if closing is not None:
             closing.close()
         if not exists:  # a removal that stopped part way may have left the old map's files: never read into the new one
-            store.remove(path)
+            try:
+                store.remove(path)
+            except OSError as error:
+                raise StoreError(f'{project} cannot be made: files an earlier map left beside it could not be '
+                                 f'removed: {error}') from error
         database = Database(path, create=None if exists else project, committed=self.committed)
         with self._lock:
             database.users = 1
@@ -394,22 +407,23 @@ class Owner:
                 except OSError as error:  # never a refusal: a new map at this path removes them first
                     sys.stderr.write(f'{path}: files beside a removed map could not be removed: {error}\n')
                 return False
-            memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
             fresh, earlier = kept.with_name(kept.name + '.new'), kept.with_name(kept.name + '.earlier')
-            # Kept for the next map, LAYER-013: written whole to its own file first, so a write that fails removes
-            # nothing and never leaves a torn copy where the next map reads it; then the earlier clear's copy is set
-            # aside and the new one put in its place, each by a rename. The earlier copy is withdrawn when this memory
-            # was read whole and holds none, so nothing deleted since comes back, and kept after a read that failed,
-            # when it may be the one copy left. Any step that fails while the map stands undoes those before it.
-            if memory['entities']:
-                try:
-                    fresh.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
-                except OSError:
-                    fresh.unlink(missing_ok=True)
-                    raise
+            with contextlib.suppress(OSError):  # what a clear stopped part way left: its earlier copy back in place
+                if earlier.exists() and not kept.exists():
+                    earlier.replace(kept)
+                earlier.unlink(missing_ok=True)
+                fresh.unlink(missing_ok=True)
+            memory, whole = _memory_of(path, said)
+            # Kept for the next map, LAYER-013: written whole to its own file first, so a torn write never lands where
+            # the next map reads it; then the earlier clear's copy is set aside and the new one put in its place, each
+            # by a rename. The earlier copy is withdrawn when this memory was read whole and holds none, so nothing
+            # deleted since comes back, and kept after a read that failed, when it may be the one copy left. Any step
+            # that fails while the map stands undoes those before it, through `_undo` alone.
             moved = placed = False
             try:
+                if memory['entities']:
+                    fresh.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
                 if kept.exists() and (memory['entities'] or whole):
                     kept.replace(earlier)
                     moved = True
