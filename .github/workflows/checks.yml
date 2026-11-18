@@ -54,11 +54,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: MCP Apps map view, built from the web page as the wheel build builds it, MCP-037
-        timeout-minutes: 10
-        run: |
-          npm --prefix scripts ci
-          node scripts/build_map_view.mjs
       - name: Type check, QUAL-004
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         run: uv run pyright

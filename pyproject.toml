@@ -68,3 +68,5 @@ venv = ".venv"
 # until it is chosen, Ruff's default rules apply.
 line-length = 120
 target-version = "py311"
+# agent skills kept beside the code (`.claude/`) are tooling for agents, not Metaform; pyright leaves dot folders out too
+extend-exclude = ["**/.claude"]
