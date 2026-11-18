@@ -533,6 +533,40 @@ def test_a_base_added_whose_answer_is_lost_is_said_unknown_and_never_added_twice
     assert [one['name'] for one in listed['bases']].count('second') == 1, listed
     assert 'second-2' not in [one['name'] for one in listed['bases']]
 
+
+def test_a_base_switch_waits_for_a_read_already_running(mapped):
+    """Review of 2026-11-18, F13: switching a base closed the database's reading connections while a read was still
+    using one. The switch now waits for running reads to end, and admits no new one meanwhile."""
+    import threading
+    owned = owner.of(metaform_home.home())
+    started, go, outcome = threading.Event(), threading.Event(), []
+
+    def slow(opened):
+        started.set()
+        go.wait(10)
+        return opened.overlay_keys()
+
+    def reading():
+        try:
+            outcome.append(owned.read(P, slow))
+        except Exception as error:  # noqa: BLE001  the failure is what the test looks for
+            outcome.append(error)
+
+    def switching():
+        with owned.released(P):
+            outcome.append('released')
+    reader = threading.Thread(target=reading)
+    reader.start()
+    assert started.wait(10)
+    switch = threading.Thread(target=switching)
+    switch.start()
+    switch.join(0.5)
+    assert switch.is_alive(), 'the switch waits for the read'
+    go.set()
+    reader.join(10)
+    switch.join(10)
+    assert isinstance(outcome[0], list) and outcome[1] == 'released', outcome
+
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
     assert run({'add': {P: root}}) == {'status': 'ok'}  # the first write makes the project

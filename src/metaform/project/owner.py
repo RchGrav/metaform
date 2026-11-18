@@ -170,6 +170,10 @@ class Database:
                         del self._jobs[caller]
             self._commit([job for job in group if job[1].set_running_or_notify_cancel()])
         with self._wake:
+            # Every read already running ends before its connection closes (review of 2026-11-18, F13): none new is
+            # admitted once closing, and each read hands its connection back with a notify.
+            while len(self._idle) < self._made:
+                self._wake.wait()
             for reader in self._readers:
                 reader.close()
             self._readers.clear()
