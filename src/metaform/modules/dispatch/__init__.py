@@ -990,17 +990,19 @@ def end_group(pid: int, system: str | None = None) -> None:
     if (system or os.name) == 'nt':
         subprocess.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True, check=False)
         return
+    if sys.platform == 'win32':  # a POSIX system named on Windows: there is no process group to end here
+        return
     try:
-        leads = os.getpgid(pid) == pid  # type: ignore[attr-defined]  POSIX alone: Windows ends above
+        leads = os.getpgid(pid) == pid
     except ProcessLookupError:
         leads = True  # its leader is gone and the group it led can live on; no other group has its id
     except PermissionError:
         return
     try:
         if leads:
-            os.killpg(pid, signal.SIGKILL)  # type: ignore[attr-defined]  POSIX alone: Windows ends above
+            os.killpg(pid, signal.SIGKILL)
         else:
-            os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]  POSIX alone: Windows ends above
+            os.kill(pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
 

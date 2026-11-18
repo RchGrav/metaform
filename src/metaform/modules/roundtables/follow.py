@@ -57,8 +57,8 @@ class Stopped(BaseException):
     """SIGTERM or SIGHUP: the follower asked to stop, by the person's Stop all or the end of its session."""
 
 
-# the signals that stop the follower; roundtables run on POSIX alone
-STOPS: tuple[signal.Signals, ...] = (signal.SIGTERM, signal.SIGHUP)  # type: ignore[attr-defined]
+# the signals that stop the follower; Windows has no SIGHUP, and is read when the module is imported there
+STOPS: tuple[signal.Signals, ...] = (signal.SIGTERM,) if sys.platform == 'win32' else (signal.SIGTERM, signal.SIGHUP)
 
 
 def stopping(number: int, _frame: Any) -> None:
@@ -589,7 +589,7 @@ def archive(ctx: Context, row: dict[str, Any], engine_archive: str | None) -> Pa
                 selected.update(children)
             for pid in sorted(selected, reverse=True):
                 with contextlib.suppress(ProcessLookupError, OSError):
-                    os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]  roundtables run on POSIX alone
+                    os.kill(pid, signal.SIGTERM if sys.platform == 'win32' else signal.SIGKILL)
     store = ctx.require_store()
     root = Path(store.project().path)
     shelf = home.home() / 'backups' / 'roundtables' / f'{table_id}-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}'

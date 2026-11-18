@@ -73,8 +73,8 @@ class Folders:
         self.rooted = root.resolve()
         self.wanted: dict[str, set[str]] = {}  # each folder holding cited files, relative to the root: their names
         self.wake_read, self.wake_write = os.pipe()
-        # watchers run on Linux and macOS alone (`folders`)
-        os.set_blocking(self.wake_read, False)  # type: ignore[attr-defined]
+        if sys.platform != 'win32':  # watchers run on Linux and macOS alone (`folders`)
+            os.set_blocking(self.wake_read, False)
 
     def want(self, paths: set[str]) -> None:
         """Watch the folders of these cited files, as well as those already watched. A citation whose folder is not
@@ -126,6 +126,9 @@ class Folders:
         return {folder for folder in self.wanted if self.target(folder) in watched or folder in watched}
 
 
+# inotify_init1's flags; Linux alone uses them (`folders`), and Windows has neither
+INOTIFY_FLAGS = 0 if sys.platform == 'win32' else os.O_NONBLOCK | os.O_CLOEXEC
+
 class Inotify(Folders):
     """Linux: an inotify watch on each wanted folder, or its nearest existing one above."""
 
@@ -138,8 +141,7 @@ class Inotify(Folders):
         import ctypes
         self.libc: Any = ctypes.CDLL(None, use_errno=True)
         self.libc.inotify_add_watch.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32)
-        # Linux alone (`folders`)
-        self.fd = int(self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC))  # type: ignore[attr-defined]
+        self.fd = int(self.libc.inotify_init1(INOTIFY_FLAGS))
         if self.fd < 0:
             error = ctypes.get_errno()
             raise OSError(error, f'inotify: {os.strerror(error)}')

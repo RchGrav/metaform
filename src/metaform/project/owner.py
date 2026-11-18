@@ -620,9 +620,13 @@ class Owner:
             database.close()
             if database.fresh:
                 store.remove(database.path)
-        except Exception as error:  # noqa: BLE001  said: the map stays, and a clear removes it
-            what = 'could not be removed, and stays until the project is cleared' if database.fresh else \
-                'was kept, as a queued write reached it, but did not close cleanly'
+        except Exception as error:  # noqa: BLE001  said, as it stands now
+            if not database.fresh:
+                what = 'was kept, as a queued write reached it, but did not close cleanly'
+            elif database.path.exists():
+                what = 'stays, as it could not be closed or removed, until the project is cleared'
+            else:
+                what = 'is gone, and files beside it that could not be removed go at its next make'
             sys.stderr.write(f'{database.path}: a new map whose first write failed {what}: {error}\n')
 
     def close(self) -> None:

@@ -36,11 +36,10 @@ def tell(said: dict[str, Any], ready: Path | None) -> None:
     pipe no one reads any more, its asker gone, is left: the page is back all the same."""
     line = json.dumps(said).encode('utf-8') + b'\n'
     try:
-        if ready is None:
+        if ready is None or sys.platform == 'win32':  # hold, which names the pipe, runs on POSIX systems only
             os.write(sys.stdout.fileno(), line)
             return
-        # refused at once when no one reads it
-        descriptor = os.open(ready, os.O_WRONLY | os.O_NONBLOCK)  # type: ignore[attr-defined]  hold: POSIX alone
+        descriptor = os.open(ready, os.O_WRONLY | os.O_NONBLOCK)  # refused at once when no one reads it
         try:
             os.write(descriptor, line)
         finally:

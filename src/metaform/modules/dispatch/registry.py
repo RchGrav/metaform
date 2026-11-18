@@ -78,7 +78,7 @@ def _fetch(url: str) -> bytes:
     # urllib.request.url2pathname stands; only the Windows module it calls there, nturl2path, is deprecated (3.14)
     if parsed.scheme != 'file':
         return Path(url).expanduser().read_bytes()
-    path = Path(urllib.request.url2pathname(parsed.path))  # type: ignore[deprecated]  see above
+    path = Path(urllib.request.url2pathname(parsed.path))  # pyright: ignore[reportDeprecated]  see above
     return path.read_bytes()
 
 

@@ -305,7 +305,7 @@ def pidfd(pid: int) -> int | None:
             return None
     import ctypes
     import platform
-    if not sys.platform.startswith('linux') or platform.machine().lower() not in ('x86_64', 'aarch64'):
+    if platform.machine().lower() not in ('x86_64', 'aarch64'):
         return None  # 434 is pidfd_open on these two 64-bit ABIs
     try:
         call: Any = ctypes.CDLL(None, use_errno=True).syscall
@@ -672,6 +672,8 @@ def outliving(module: list[str], name: str, what: str, verb: str, limit: float) 
 def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
     """The one line written to the named pipe, as `ready_line` reads it from a process's pipe; None when no one opened
     it within `limit`, whose other end is then opened here, so the waiting reader ends."""
+    if sys.platform == 'win32':  # hold, which names the pipe, runs on POSIX systems only
+        return None
     said: list[bytes] = []
 
     def listen() -> None:
@@ -683,7 +685,7 @@ def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
     reader.join(limit)
     if reader.is_alive():
         with contextlib.suppress(OSError):
-            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))  # type: ignore[attr-defined]  hold: POSIX only
+            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
         return None
     return said[0] if said else b''
 
