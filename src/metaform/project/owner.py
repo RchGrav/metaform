@@ -37,6 +37,14 @@ GROUP = 64  # the most waiting writes committed together as one transaction
 READERS = 4  # the most reading connections one database holds; a read waits for one when all are in use
 
 
+def _standing(path: Path) -> bool:
+    """Whether a map is at `path`; True when that cannot be told, as a map that may stand is said to."""
+    try:
+        return path.exists()
+    except OSError:
+        return True
+
+
 def kept_memory(path: Path) -> Path:
     """Where a cleared project's memory layer waits for its next map: beside the database it was in. Clearing removes
     the map, and a memory whose object is gone is hidden, never deleted, so the memory is kept until the project's
@@ -623,7 +631,7 @@ class Owner:
         except Exception as error:  # noqa: BLE001  said, as it stands now
             if not database.fresh:
                 what = 'was kept, as a queued write reached it, but did not close cleanly'
-            elif database.path.exists():
+            elif _standing(database.path):
                 what = 'stays, as it could not be closed or removed, until the project is cleared'
             else:
                 what = 'is gone, and files beside it that could not be removed go at its next make'

@@ -7,6 +7,7 @@ Windows marks a downloaded file with a `Zone.Identifier` stream; a copy into WSL
     uv run python scripts/remove_zone_identifiers.py [FOLDER]   # FOLDER defaults to this repository
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,10 +16,15 @@ SUFFIX = ':Zone.Identifier'
 
 
 def main(folder: Path) -> int:
-    inside = subprocess.run(['git', '-C', str(folder), 'rev-parse', '--is-inside-work-tree'], capture_output=True,
-                            check=False).returncode == 0
+    english = {**os.environ, 'LC_ALL': 'C'}  # git's words in English, whatever the locale
+    asked = subprocess.run(['git', '-C', str(folder), 'rev-parse', '--is-inside-work-tree'], capture_output=True,
+                           check=False, env=english)
+    said = asked.stderr.decode().strip()
+    if asked.returncode and 'not a git repository' not in said:  # files git still tracks are never deleted under it
+        print(f'git could not tell whether this is a repository, so nothing was removed: {said}', file=sys.stderr)
+        return 1
     tracked: list[str] = []
-    if inside:
+    if asked.stdout.decode().strip() == 'true':
         listed = subprocess.run(['git', '-C', str(folder), 'ls-files', '-z'], capture_output=True, check=False)
         if listed.returncode:  # files git still tracks are never deleted under it
             print(f'git could not list the tracked files, so nothing was removed: {listed.stderr.decode().strip()}',

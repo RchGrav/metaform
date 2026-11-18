@@ -574,22 +574,24 @@ def archive(ctx: Context, row: dict[str, Any], engine_archive: str | None) -> Pa
     """Abort archives the run's records and files, then removes its live bridge rows."""
     table_id = str(row['table_id'])
     follower = row.get('follower')
-    if isinstance(follower, int) and follower != os.getpid() and alive(follower):
-        # One process-tree snapshot includes the follower's separate ACP and page process groups.
-        processes = subprocess.run(['ps', '-eo', 'pid=,ppid=,args='], capture_output=True, text=True, check=False)
-        entries = [line.strip().split(None, 2) for line in processes.stdout.splitlines()]
-        rows = {int(one[0]): (int(one[1]), one[2]) for one in entries if len(one) == 3}
-        command = rows.get(follower, (0, ''))[1]
-        if f'roundtables run {table_id}' in command:
-            selected = {follower}
-            for _ in range(len(rows)):
-                children = {pid for pid, (parent, _) in rows.items() if parent in selected}
-                if children <= selected:
-                    break
-                selected.update(children)
-            for pid in sorted(selected, reverse=True):
-                with contextlib.suppress(ProcessLookupError, OSError):
-                    os.kill(pid, signal.SIGTERM if sys.platform == 'win32' else signal.SIGKILL)
+    # ps, process groups and a probe by signal 0, which Windows reads as an end: roundtables run on POSIX alone
+    if sys.platform != 'win32':
+        if isinstance(follower, int) and follower != os.getpid() and alive(follower):
+            # One process-tree snapshot includes the follower's separate ACP and page process groups.
+            processes = subprocess.run(['ps', '-eo', 'pid=,ppid=,args='], capture_output=True, text=True, check=False)
+            entries = [line.strip().split(None, 2) for line in processes.stdout.splitlines()]
+            rows = {int(one[0]): (int(one[1]), one[2]) for one in entries if len(one) == 3}
+            command = rows.get(follower, (0, ''))[1]
+            if f'roundtables run {table_id}' in command:
+                selected = {follower}
+                for _ in range(len(rows)):
+                    children = {pid for pid, (parent, _) in rows.items() if parent in selected}
+                    if children <= selected:
+                        break
+                    selected.update(children)
+                for pid in sorted(selected, reverse=True):
+                    with contextlib.suppress(ProcessLookupError, OSError):
+                        os.kill(pid, signal.SIGKILL)
     store = ctx.require_store()
     root = Path(store.project().path)
     shelf = home.home() / 'backups' / 'roundtables' / f'{table_id}-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}'

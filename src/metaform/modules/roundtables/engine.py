@@ -203,6 +203,7 @@ class Page:
         if self.process.poll() is None:
             if sys.platform == 'win32':  # roundtables run on POSIX alone: a Windows process has no group to end
                 self.process.kill()
+                self.process.wait(10)
                 return
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(self.process.pid, signal.SIGTERM)

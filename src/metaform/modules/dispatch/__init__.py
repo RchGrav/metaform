@@ -990,8 +990,8 @@ def end_group(pid: int, system: str | None = None) -> None:
     if (system or os.name) == 'nt':
         subprocess.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True, check=False)
         return
-    if sys.platform == 'win32':  # a POSIX system named on Windows: there is no process group to end here
-        return
+    if sys.platform == 'win32':
+        raise ValueError('a POSIX process group cannot be ended on Windows')
     try:
         leads = os.getpgid(pid) == pid
     except ProcessLookupError:

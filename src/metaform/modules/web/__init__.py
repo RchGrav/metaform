@@ -645,9 +645,10 @@ def outliving(module: list[str], name: str, what: str, verb: str, limit: float) 
         if process.stdout is not None:
             process.stdout.close()
         return line
+    assert sys.platform != 'win32', 'hold_tool finds no hold on Windows'  # hold runs on POSIX systems only
     home.mkdir_private(run_dir())
     pipe = run_dir() / f'web-ready-{secrets.token_hex(8)}'
-    os.mkfifo(pipe, 0o600)  # type: ignore[attr-defined]  hold runs on POSIX systems only
+    os.mkfifo(pipe, 0o600)
     try:
         subprocess.run([held, 'purge', name], capture_output=True, timeout=WAIT, check=False)  # a past call's name
         # hold runs every path in a call by its real path, which takes a virtual environment's python, a link, to the
@@ -672,8 +673,7 @@ def outliving(module: list[str], name: str, what: str, verb: str, limit: float) 
 def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
     """The one line written to the named pipe, as `ready_line` reads it from a process's pipe; None when no one opened
     it within `limit`, whose other end is then opened here, so the waiting reader ends."""
-    if sys.platform == 'win32':  # hold, which names the pipe, runs on POSIX systems only
-        return None
+    assert sys.platform != 'win32', 'hold, which names the pipe, runs on POSIX systems only'
     said: list[bytes] = []
 
     def listen() -> None:
