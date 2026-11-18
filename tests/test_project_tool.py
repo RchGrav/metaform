@@ -1325,16 +1325,24 @@ def test_a_base_switch_whose_record_cannot_be_written_puts_every_file_back(mappe
     assert base_maps.perform({'project': P, 'op': 'activate', 'name': 'fresh'}, owned)['status'] == 'ok'
 
 
-def test_each_overlay_record_is_an_item_the_page_hangs_on_its_element(served):
-    """VIEW-017, "In 3D, every item of the layers turned on is its own node": for a store project the page's
-    layer-items read gives each record of the overlay as an item on the element that holds it, with the record's
-    lasting id; it once gave none, so no overlay showed in the view. The wants are joins, not items."""
+def test_each_elements_array_is_one_node_and_the_panel_completes_its_records(served):
+    """The person, 2026-11-17: "those arrays should read as a node, and you should be able to mark them complete so they
+    don't pollute other agents' contexts". The page's layer-items read gives one item per element's array of open
+    records with its count; opened, it lists them with their ids; one completed from the panel leaves the count."""
     from metaform.modules.web import project_map
-    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [{'id': 't-1', 'title': 'Ring', 'task': 'Ring.'}]}}},
-                        served) == {'status': 'ok'}
-    (item,) = project_map.layer_items(P, 'tickets')
-    assert item['target'] == {'kind': 'element', 'id': 'code.masher.widget'} and item['id'].startswith('r-')
-    assert item['value'] == {'id': 't-1', 'title': 'Ring', 'task': 'Ring.'} and item['layer'] == 'tickets'
+    tickets = [{'id': f't-{n}', 'title': n, 'task': n} for n in 'ab']
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': tickets}}}, served) == {'status': 'ok'}
+    (array,) = project_map.layer_items(P, 'tickets')
+    assert array['array'] == {'element': 'code.masher.widget', 'overlay': 'tickets', 'open': 2}
+    assert array['target'] == {'kind': 'element', 'id': 'code.masher.widget'} and array['value'] == {'tickets': '2 open'}
+    a, b = project_map.array_records(P, 'code.masher.widget', 'tickets')
+    assert (a['id'], a['position'], b['position']) == ('t-a', 0, 1) and a['record'].startswith('r-')
+    project_map.complete_record(P, 'code.masher.widget', 'tickets', a['position'], a['record'], a['revision'])
+    assert project_map.layer_items(P, 'tickets')[0]['array']['open'] == 1
+    (left,) = project_map.array_records(P, 'code.masher.widget', 'tickets')
+    assert (left['id'], left['position']) == ('t-b', 0)
+    with pytest.raises(Exception, match='no longer there|now at position|changed since'):  # a stale completion
+        project_map.complete_record(P, 'code.masher.widget', 'tickets', 0, a['record'], a['revision'])
     assert project_map.layer_items(P, 'wants') == [] and project_map.layer_items('nosuch', 'tickets') is None
 
 

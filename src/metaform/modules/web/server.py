@@ -1028,7 +1028,11 @@ class Handler(BaseHTTPRequestHandler):
             # A project in the project store: every record of the overlay, each hung on its element as its own node,
             # VIEW-017. An earlier change read nothing here, so no overlay ever showed in the view (the person,
             # 2026-11-17: "none of the other layers are rendering in the view").
-            from .project_map import layer_items
+            from .project_map import array_records, layer_items
+            if given.get('element') is not None:  # one element's array opened: its open records, each with its id
+                held_records = array_records(given.get('project', ''), given['element'], given.get('layer', ''))
+                if held_records is not None:
+                    return self.send(200, {'results': held_records, 'next': None})
             held_items = layer_items(given.get('project', ''), given.get('layer', ''))
             if held_items is not None:
                 return self.send(200, {'results': held_items, 'next': None})
@@ -1288,6 +1292,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/activate-base': self.activate_base,
                   '/api/remove-base': self.remove_base, '/api/ignore': self.write_ignore,
                   '/api/memory': self.write_memory,
+                  '/api/record-complete': self.record_complete,
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/task-assign': self.assign_task,
@@ -2109,6 +2114,21 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, written)
+
+    def record_complete(self, given: dict[str, Any]) -> None:
+        """Complete one overlay record from the page's panel: it leaves every read but by its id or a search (the
+        person's rule, 2026-11-17). The panel names the position, record id and revision it read."""
+        position, record, revision = given.get('position'), given.get('record'), given.get('revision')
+        if not (isinstance(position, int) and isinstance(record, str) and isinstance(revision, int)
+                and isinstance(given.get('overlay'), str)):
+            return self.send(400, {'error': 'A record is completed by its overlay, position, record id and revision.'})
+        from .project_map import complete_record
+        try:
+            complete_record(str(given.get('project', '')), str(given.get('element') or ''), str(given['overlay']),
+                            position, record, revision)
+        except Stop as error:
+            return self.refuse(error, 409)
+        self.send(200, {'completed': record})
 
     def write_memory(self, given: dict[str, Any]) -> None:
         """Change the memory graph as a person manages it, VIEW-031: `steps`, each a memory command that writes and

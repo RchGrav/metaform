@@ -288,19 +288,48 @@ def memories(project: str) -> dict[str, Any] | None:
 
 
 def layer_items(project: str, key: str) -> list[dict[str, Any]] | None:
-    """Every record of one overlay across a project, each as the page hangs an item on its element in 3D: VIEW-017,
-    "In 3D, every item of the layers turned on is its own node" (09-viewer.md). The item's id is the record's lasting
-    id (F02), so it stays the same across loads; its value is the record's fields as written. The wants are the base
-    map's own joins and are not items. None when the project store holds no such project."""
+    """One item for each element's array of open records in one overlay, the page hanging it as one node off that
+    element, "verifications: 31 open" (the person, 2026-11-17: "those arrays should read as a node"; VIEW-017). Opening
+    it lists its open records, `array_records`. Completed records are not counted: no one is shown what is no longer
+    relevant. The wants are the base map's own joins and are not items. None when the project store holds no such
+    project."""
     name = commands.stored_name(project)
-    if not commands.holds(name) or key == 'wants':
-        return None if not commands.holds(name) else []
+    if not commands.holds(name):
+        return None
+    if key == 'wants':
+        return []
     found = commands.overlay_records(name, key)
     if found is None:
         return None
     lead = len(name) + 1
-    return [{'id': str(record.get('record') or f"{record['element']}:{record['position']}"), 'layer_id': key,
-             'layer': key, 'target': {'kind': 'element', 'id': str(record['element'])[lead:]},
-             'value': {field: value for field, value in record.items()
-                       if field not in ('element', 'position', 'record', 'revision')}}
-            for record in found]
+    counts: dict[str, int] = {}
+    for record in found:
+        address = str(record['element'])[lead:]
+        counts[address] = counts.get(address, 0) + 1
+    return [{'id': f'{address}:{key}', 'layer_id': key, 'layer': key,
+             'target': {'kind': 'element', 'id': address}, 'value': {key: f'{count} open'},
+             'array': {'element': address, 'overlay': key, 'open': count}}
+            for address, count in sorted(counts.items())]
+
+
+def array_records(project: str, element: str, key: str) -> list[dict[str, Any]] | None:
+    """The open records of one element's array, each with its position, record id and revision, as the project tool
+    reads them, for the page's panel and its Mark complete. None when the store holds no such project or element."""
+    name = commands.stored_name(project)
+    if not commands.holds(name):
+        return None
+    path = f'{name}.{element}' if element else name
+    read = commands.run({path: {key: {}}})
+    if read.get('status') == 'error' or path not in read:
+        return None
+    records = cast(list[dict[str, Any]], cast(dict[str, Any], read[path]).get(key) or [])
+    return [{**record, 'position': position} for position, record in enumerate(records)]
+
+
+def complete_record(project: str, element: str, key: str, position: int, record: str, revision: int) -> None:
+    """Complete one record from the page, naming the position, record id and revision the panel read, so a stale one
+    is refused (F02); it then leaves every read but by its id or a search."""
+    name = commands.stored_name(project)
+    path = f'{name}.{element}' if element else name
+    _done(commands.run({'update': {path: {key: [
+        {'position': position, 'record': record, 'revision': revision, 'completed': True}]}}}))

@@ -3,7 +3,7 @@
 import '/page/app/map2d/fit.js';  // the part before runs first, so the parts run in the page's order
 import {$, reduced, h, fill} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
-import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
+import {S, MEM, read, reach, viewLayers} from '/page/app/core/reads.js';
 import {colorVar} from '/page/app/header/layers.js';
 import {joinOf} from '/page/app/graph/data.js';
 import {M, plain2d} from '/page/app/map2d/build.js';
@@ -257,9 +257,44 @@ export async function goTo(depth) {
   if (depth) await drawInside(true); else showBase(left);
   select(left, true, true);
 }
+/* An element's array of open records in one overlay, the node the map hangs off it (the person, 2026-11-17: "those
+ * arrays should read as a node, and you should be able to mark them complete so they don't pollute other agents'
+ * contexts"). Each open record with Mark complete; a completed one leaves every read but by its id or a search. */
+async function renderArray(thing) {
+  const pane = $('#p-object'), {element, overlay} = thing.item.array;
+  fill(pane, h('div', {class: 'eyebrow'}, 'Records'), h('div', {class: 'pills'}, layerPill(overlay)),
+    h('p', {class: 'meta'}, 'Reading…'));
+  let found;
+  try {
+    found = (await read('layer-items', {layer: overlay, element})).results;
+  } catch (error) { toast(error.message); return; }
+  if (S.selected !== thing.key) return;  // the person has moved on
+  const complete = async (record, row) => {
+    row.querySelector('button').disabled = true;
+    const response = await reach('/api/record-complete', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project: S.project, base: S.base, element, overlay, position: record.position,
+        record: record.record, revision: record.revision})}, 0).catch(error => ({ok: false, json: async () => ({error: error.message})}));
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { toast(body.error || 'It was not completed.'); row.querySelector('button').disabled = false; return; }
+    toast('Completed: it leaves every read, and is found again by its id or a search.');
+    renderArray(thing);  // the open records again: positions close up once one leaves
+  };
+  const rows = found.map(record => {
+    const fields = Object.fromEntries(Object.entries(record).filter(([key]) =>
+      !['record', 'revision', 'position', 'completed'].includes(key)));
+    const row = h('div', {class: 'array-record'}, h('div', {class: 'itemtext'}, itemView(fields)));
+    row.append(h('button', {class: 'btn small', title: 'It leaves every read, found again by its id or a search',
+      onclick: () => complete(record, row)}, 'Mark complete'));
+    return row;
+  });
+  fill(pane, h('div', {class: 'eyebrow'}, 'Records'), h('div', {class: 'pills'}, layerPill(overlay)),
+    h('p', {class: 'meta'}, `${found.length} open at ${element || 'the project'}`), ...rows);
+}
+
 export function renderThing(thing) {
   const pane = $('#p-object');
   if (thing.kind === 'memory') return renderEntity(thing.name);
+  if (thing.kind === 'item' && thing.item.array) return renderArray(thing);
   if (thing.kind === 'item' || thing.kind === 'property') {
     const link = keyOf(thing.item.link);
     const go = event => { event.preventDefault(); enter(link); };
