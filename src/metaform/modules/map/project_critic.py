@@ -124,8 +124,10 @@ def challenges(project: str, run: str) -> str:
         if one.get('want'):
             where += f" want:{_local(project, str(one['want']))}"
         lines.append(f"{one['record']}  {one.get('answer') or 'open'}  {where}  {one.get('challenge')}")
-    return prompt_files.required(resources.files(__package__ or 'metaform.modules.map'), 'answer_challenges',
-                                 layer=run, challenges='\n'.join(lines))
+    # the store's own answer prompt: a want has no id in the store, so C links an element only (verifier
+    # helper-ef8580be returned the old prompt, which offered link=join:<id>, refused here)
+    return prompt_files.markdown(resources.files(__package__ or 'metaform.modules.map'),
+                                 'answer_challenges_in_store', layer=run, challenges='\n'.join(lines))
 
 
 def _found(project: str, record: str) -> dict[str, Any]:

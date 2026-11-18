@@ -2887,6 +2887,7 @@ def test_the_critic_of_a_project_in_the_project_store_keeps_its_challenges_in_it
     hang, heard, volume = (records()[one]['record'] for one in (
         'Nothing recovers a hung loop.', 'Nobody hears it.', 'The alarm has no volume control.'))
     listed = run('map', 'challenges', blind, cwd=in_store).stdout
+    assert 'link=element:<address>' in listed and 'link=join' not in listed  # only what the store takes
     assert f'{heard}  open  element:code.timer.kitchen want:code.alarm.audible  Nobody hears it.' in listed
     assert run('map', 'answer', volume, 'A', cwd=in_store).returncode == 0
     unlinked = run('map', 'answer', heard, 'C', cwd=in_store)
