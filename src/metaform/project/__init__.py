@@ -54,7 +54,7 @@ def drawn(project: str, home: Path | None = None) -> dict[str, object] | None:
     return commands.drawn(project, home)
 
 
-def overlay_records(project: str, key: str, home: Path | None = None, at: str | None = None,
+def overlay_records(project: str, key: str, home: Path | None = None, at: str | list[str] | None = None,
                     below: bool = False) -> list[dict[str, object]] | None:
     """Every record of one overlay across a project, each with its element's path and its position there, for a
     display that lists them all; None when the store holds no such project. With `at`, an element's address beneath

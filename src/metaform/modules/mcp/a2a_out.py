@@ -183,6 +183,20 @@ def _ask(project: str, address: str, said: str, by: str, title: str, why: str, m
     return str(asked['id'])
 
 
+def _settle(project: str, exchange_id: str, written: list[str], unwritten: list[str]) -> None:
+    """Mark what was written delivered and give back what was not, each tried whatever the other does. A failure of
+    either is raised only when no earlier failure is already on its way, so the cause the caller sees is the first."""
+    import sys
+    failed: BaseException | None = None
+    for settle, keys in ((records.released, unwritten), (records.delivered, written)):
+        try:
+            settle(project, exchange_id, keys)
+        except Exception as error:  # noqa: BLE001  the other step is still taken
+            failed = failed or error
+    if failed is not None and sys.exc_info()[1] is None:
+        raise failed
+
+
 def heard(project: str, exchange_id: str, status: TaskStatus | None = None, artifacts: tuple[Artifact, ...] = (),
           peer_task_id: str | None = None) -> records.Exchange | None:
     """What a peer told of an exchange's task, recorded where the work lives: the state on the exchange; each new
@@ -220,8 +234,7 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
                             prompt('a2a_peer_question_why', peer=now.peer), messages)
             written += asking
     finally:  # what was written is delivered even when a later write failed; what was not is given back
-        records.delivered(project, exchange_id, written)
-        records.released(project, exchange_id, [key for key in taken if key not in written])
+        _settle(project, exchange_id, written, [key for key in taken if key not in written])
     if question is not None and records.asking(project, exchange_id, now.asked, question):  # its answer goes back
         now = records.exchange(project, exchange_id)
     return now

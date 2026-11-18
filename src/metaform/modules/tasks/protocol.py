@@ -254,13 +254,23 @@ def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: 
             else:
                 try:
                     ctx.require_store().take_work(one['ticket'], by=by)
-                except StoreError:  # finished by another agent since it was listed: nothing to take
+                except StoreError as error:  # finished since it was listed: nothing to take; any other is said
+                    if not _done_since(ctx, str(one['ticket'])):
+                        raise Stop(str(error), 'metaform tasks board') from None
                     continue
             claimed.append(str(one['ticket']))
     except BaseException:
         _release(stored, claimed, by)
         raise
     return claimed
+
+
+def _done_since(ctx: Context, ticket: str) -> bool:
+    """Whether an old-store ticket is done now."""
+    try:
+        return ctx.require_store().ticket(ticket).work.done is not None
+    except StoreError:
+        return False
 
 
 def _release(stored: str | None, claimed: list[str], by: str) -> None:

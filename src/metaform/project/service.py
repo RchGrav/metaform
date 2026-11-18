@@ -170,7 +170,8 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                     chosen = cast(dict[str, Any], message.get('select') or {})
                     match = cast('list[Any] | None', chosen.get('match'))
                     answer = commands.perform_records(message['drawn'], message['overlay'], owned,
-                                                      cast('str | None', chosen.get('at')), bool(chosen.get('below')),
+                                                      cast('str | list[str] | None', chosen.get('at')),
+                                                      bool(chosen.get('below')),
                                                       (str(match[0]), match[1]) if match else None)
                 elif isinstance(message.get('drawn'), str):  # a display's read of a whole project
                     answer = commands.perform_drawn(message['drawn'], owned)

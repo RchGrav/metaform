@@ -11,7 +11,6 @@ first `add`, and the database is removed again if that first command is refused.
 """
 from __future__ import annotations
 
-import itertools
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -74,7 +73,7 @@ def clear(project: str, home: Path | None = None) -> bool:
     return service.send(None, where, 'clear', clear=project).get('status') == 'ok'
 
 
-def overlay_records(project: str, key: str, home: Path | None = None, at: str | None = None,
+def overlay_records(project: str, key: str, home: Path | None = None, at: str | list[str] | None = None,
                     below: bool = False) -> list[dict[str, object]] | None:
     """Every record of one overlay across a project, each with the path of the element it is at and its position
     there, for a display that lists them all, as a board lists tickets. None when the store holds no such project.
@@ -105,7 +104,7 @@ def overlay_record(project: str, key: str, field: str, value: object,
     return found[0] if found else None
 
 
-def perform_records(project: str, key: str, owned: Owner, at: str | None = None,
+def perform_records(project: str, key: str, owned: Owner, at: str | list[str] | None = None,
                     below: bool = False, match: tuple[str, Scalar] | None = None) -> dict[str, object]:
     """Answer a display's read of one overlay's records in the service, at one element (and beneath it) when `at`
     names one; with `match`, the records holding one field's value, completed ones too, each with its `completed`."""
@@ -591,54 +590,51 @@ def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[s
                 {name: decode(found.fields[name].kind, row[name]) for name in names if row[name] is not None})
             ids.setdefault(full(project, address), []).append(str(row['record']))
         held = {address: specification.blocks(address, records) for address, records in rows.items()}
-    baseline = {address: [[ident, specification.digest(block), block.level, block.title]
-                          for ident, block in zip(ids[address], blocks)]
+    # digests only: an edit of the document, a find and replace among them, never reaches the baseline line
+    baseline = {address: [[ident, specification.digest(block), specification.heading_digest(block),
+                           specification.text_digest(block)] for ident, block in zip(ids[address], blocks)]
                 for address, blocks in held.items()}
     return elements, wants, held, baseline
 
 
+def _block_key(key: int, block: specification.Block) -> object:
+    """What a block is matched by at each step of `_identified`: its digest, its heading, its text, or being the
+    introduction; None when the step does not apply to it."""
+    if key == 0:
+        return specification.digest(block)
+    if key == 1:
+        return specification.heading_digest(block)
+    if key == 2:
+        return specification.text_digest(block)
+    return 'introduction' if block.title is None else None
+
+
+def _exported_key(key: int, entry: list[Any]) -> object:
+    """The same for an exported block's baseline entry, [record id, digest, heading digest, text digest]; an entry an
+    earlier export wrote holds the first two alone, and is matched by its digest only."""
+    if key == 0:
+        return entry[1]
+    if key in (1, 2):
+        return entry[key + 1] if len(entry) > key + 1 else None
+    return 'introduction' if len(entry) > 2 and entry[2] is None else None
+
+
 def _identified(found: list[specification.Block], exported: list[list[Any]]) -> list[dict[str, object]]:
     """An edited address's blocks as records to store, each keeping the record id of the exported block it is
-    (review of 2026-11-18, F5). Blocks exported as they stand are matched first, in order, as the longest run the two
-    lists share, and anchor the rest; between two anchors a block takes the id of an exported block with its heading
-    (level and title), and the blocks left pair in order only when as many were exported there as now stand there,
-    each edited in place. Any other block is new, so a block added where a deleted one stood never takes its id."""
-    digests = [specification.digest(block) for block in found]
-    old = [one[1] for one in exported]
-    # the longest common run of unchanged blocks, by digest
-    table = [[0] * (len(old) + 1) for _ in range(len(digests) + 1)]
-    for i in range(len(digests) - 1, -1, -1):
-        for j in range(len(old) - 1, -1, -1):
-            table[i][j] = table[i + 1][j + 1] + 1 if digests[i] == old[j] else max(table[i + 1][j], table[i][j + 1])
-    anchors: list[tuple[int, int]] = []
-    i = j = 0
-    while i < len(digests) and j < len(old):
-        if digests[i] == old[j]:
-            anchors.append((i, j))
-            i, j = i + 1, j + 1
-        elif table[i + 1][j] >= table[i][j + 1]:
-            i += 1
-        else:
-            j += 1
+    (review of 2026-11-18, F5), wherever it now stands: first the block exported as it stands, then the block with its
+    heading (level and title), then the block with its text, its heading renamed, then the introduction, the one block
+    with no heading. Nothing is paired by position, so a block added where a deleted one stood is new and never takes
+    the deleted block's id."""
     taken: list[str | None] = [None] * len(found)
-    for i, j in anchors:
-        taken[i] = exported[j][0]
-    bounds = [(-1, -1), *anchors, (len(found), len(exported))]
-    for (low_i, low_j), (high_i, high_j) in itertools.pairwise(bounds):
-        here = list(range(low_i + 1, high_i))
-        there = list(range(low_j + 1, high_j))
-        for at in list(here):  # the same heading: the block, its text edited
-            block = found[at]
-            if block.title is None:
-                continue
-            match = next((one for one in there if exported[one][2:4] == [block.level, block.title]), None)
+    free = list(range(len(exported)))
+    for key in range(4):
+        for at, block in enumerate(found):
+            wanted = _block_key(key, block) if taken[at] is None else None
+            match = next((one for one in free if wanted is not None and _exported_key(key, exported[one]) == wanted),
+                         None)
             if match is not None:
-                taken[at] = exported[match][0]
-                here.remove(at)
-                there.remove(match)
-        if len(here) == len(there):  # as many as were exported here: each edited in place
-            for at, one in zip(here, there):
-                taken[at] = exported[one][0]
+                taken[at] = str(exported[match][0])
+                free.remove(match)
     return [{**block.stored(), **({'record': ident} if ident else {})} for block, ident in zip(found, taken)]
 
 
@@ -669,7 +665,10 @@ def perform_specification(project: str, document: str | None, owned: Owner, call
             edited = [address for address, found in read.items()
                       if [specification.digest(block) for block in found]
                       != [one[1] for one in exported_as.get(address, [])]]
-            stale = [address for address in edited if now.get(address, []) != exported_as.get(address, [])]
+            # the id and digest of each block decide; what else an entry carries helps match ids, so an export made
+            # before an entry carried more is read the same
+            stale = [address for address in edited if [one[:2] for one in now.get(address, [])]
+                     != [one[:2] for one in exported_as.get(address, [])]]
             if stale:
                 raise Refusal('DOCUMENT_STALE', f"{', '.join(stale)} changed in the store since this document was "
                               'exported, and the document changes it too. Nothing was written. Export again, carry '

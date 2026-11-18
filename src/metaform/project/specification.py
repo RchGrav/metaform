@@ -73,11 +73,23 @@ def digest(block: Block) -> str:
     return hashlib.sha256(json.dumps(block.stored(), sort_keys=True).encode('utf-8')).hexdigest()[:12]
 
 
+def heading_digest(block: Block) -> str | None:
+    """A short digest of a block's heading, its level and title; None for the introduction, which has none."""
+    if block.title is None:
+        return None
+    return hashlib.sha256(json.dumps([block.level, block.title]).encode('utf-8')).hexdigest()[:12]
+
+
+def text_digest(block: Block) -> str | None:
+    """A short digest of a block's text; None when it has none."""
+    return hashlib.sha256(block.text.encode('utf-8')).hexdigest()[:12] if block.text else None
+
+
 # The export's last line: each address's blocks as they were exported, [record id, digest] in order, so an import can
 # tell what the person edited from what changed in the store since, and keep each block's id (review of 2026-11-18,
 # F5). An HTML comment, so the rendered Markdown does not show it.
 BASELINE = '<!-- metaform specification baseline: '
-Baseline = dict[str, list[list[Any]]]  # each block as [record id, digest, level, title]
+Baseline = dict[str, list[list[Any]]]  # each block as [record id, digest, heading digest, text digest]
 
 
 def baseline_line(held: Baseline) -> str:

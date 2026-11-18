@@ -2672,6 +2672,9 @@ def test_a_worker_handed_its_ticket_on_the_command_line_is_told_of_the_agents_at
     assert '1 other agents are at work in this project: metaform dispatch peers' in text and links == []
     preview = handoff_parts(context('dispatch', dispatch.folder, project='proj'), dispatch.id, on='cli')[0]
     assert 'other agents are at work' not in preview, 'a preview names no session and uses up no notice'
+    own = handoff_parts(context('dispatch', dispatch.folder, project='proj', session='its-own-session'),
+                        dispatch.id, on='cli')[0]
+    assert 'other agents are at work' in own, 'an agent reading its own hand-off in its shell is told'
 
 @pytest.mark.req('MCP-039')
 @pytest.mark.req('BASE-050')

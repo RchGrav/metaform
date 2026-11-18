@@ -80,9 +80,13 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     node(address, str(held.get('name') or '') or None)
     requirements = [wanted(address, one) for one in cast(list[dict[str, Any]], held.get('wants') or [])]
     dependents: list[dict[str, Any]] = []
-    if held.get('wanted_by') and "'" not in address:  # the wants naming it, with their holders, in one query
+    if held.get('wanted_by'):  # the wants naming it, with their holders, in one read-only query
+        # the address is the stored element's own, letters, digits, '_' and '.', so it stands in the query as it is
         found = project_store.cypher(project, f"MATCH (h:Element)-[w:Wants]->(e:Element {{address: '{address}'}}) "
                                               'RETURN h.address, w.why, w.how, w.direction ORDER BY h.address')
+        if found.get('status') == 'error':
+            return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
+                    'markdown': f"The elements relying on {address} could not be read: {found.get('message')}"}
         for holder, why, how, direction in cast(list[list[Any]], found.get('rows') or []):
             node(str(holder))
             dependents.append(wanted(str(holder), {'element': path, 'why': why, 'how': how,

@@ -2,7 +2,7 @@
 import pytest
 
 from metaform import home as metaform_home
-from metaform.project import commands, owner, service, store
+from metaform.project import commands, owner, service, specification, store
 
 pytestmark = pytest.mark.kind('fixture')
 
@@ -586,6 +586,13 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home)
     with pytest.raises(store.StoreError, match='lacks MemoryEntity.*metaform clear project older'):
         store.Store(path)
     assert owner.of(home).remove('older') and not path.exists(), 'the clear it names still clears it'
+    # a database with memory but no relations table keeps its memory when cleared
+    made = store.Store(path, create='older')
+    made.put_memory_entity('bell', 'part', ['It rings.'])
+    made._rows('DROP TABLE MemoryRelation')
+    made.close()
+    assert owner.of(home).remove('older')
+    assert 'bell' in owner.kept_memory(path).read_text(encoding='utf-8'), 'the memory is kept, never dropped'
 
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
@@ -1267,6 +1274,25 @@ def test_an_import_keeps_newer_edits_and_block_ids_and_takes_a_code_swap_whole(s
     edited = fresh.replace(f"### Limits\n\n{limits['text']}\n\n", '').replace('A new block.', 'A newer block.')
     assert project_store.specification_document(P, edited, served)['status'] == 'ok', edited
     assert [(one['title'], one['record']) for one in held(WIDGET)] == [('Errors', errors['record'])]
+    # two blocks swapped keep their ids; an export from before the baseline carried headings is read the same
+    assert commands.run({'update': {WIDGET: {'specification': [
+        {'level': 1, 'title': 'Purpose', 'text': 'P.'}, {'level': 1, 'title': 'Limits', 'text': 'L.'}]}}},
+        served) == {'status': 'ok'}
+    purpose, limits = held(WIDGET)
+    fresh = project_store.specification_document(P, home=served)['document']
+    body, baseline = specification.split_baseline(fresh)
+    swapped = body.replace('### Purpose\n\nP.\n\n### Limits\n\nL.', '### Limits\n\nL.\n\n### Purpose\n\nP.')
+    older = {address: [one[:2] for one in entries] for address, entries in (baseline or {}).items()}
+    assert project_store.specification_document(P, f'{swapped}\n{specification.baseline_line(older)}\n',
+                                                 served)['status'] == 'ok'
+    assert [(one['title'], one['record']) for one in held(WIDGET)] == [
+        ('Limits', limits['record']), ('Purpose', purpose['record'])]
+    # one block deleted and a new one in its place while another is edited: the new one is new
+    fresh = project_store.specification_document(P, home=served)['document']
+    replaced = fresh.replace('### Purpose\n\nP.', '### Errors\n\nE.').replace('L.', 'L, edited.')
+    assert project_store.specification_document(P, replaced, served)['status'] == 'ok'
+    after = held(WIDGET)
+    assert after[0]['record'] == limits['record'] and after[1]['record'] not in (purpose['record'], limits['record'])
     # a document without its baseline line is refused
     assert project_store.specification_document(P, prose(fresh), served)['code'] == 'DOCUMENT_REFUSED'
 

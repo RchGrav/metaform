@@ -4893,7 +4893,7 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
     lines.append('Read: ' + '  '.join(reads))
     # told to the session a runner hands the ticket to, on whichever surface, and to an agent reading it over MCP; a
     # preview on the command line names no session and uses up no one's notice
-    if (session is not None or on == 'mcp') and (peered := peers_line(ctx, store, work_id, session)):
+    if (session or ctx.session or on == 'mcp') and (peered := peers_line(ctx, store, work_id, session)):
         lines.append(peered)
     node = str(read.get('address') or ' and '.join(
         f'{name}={value}' for name, value in (('receiver', read.get('receiver_address')),

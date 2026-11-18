@@ -60,11 +60,8 @@ def _stored_scope(name: str, given: str) -> list[str]:
 def _stored_items(name: str, addresses: list[str]) -> list[dict[str, Any]]:
     """The skills held at these elements, in their order: one element's in one selected read, several in one read of
     the overlay."""
-    if len(addresses) == 1:
-        return [cast(dict[str, Any], one) for one in project_store.overlay_records(name, LAYER, at=addresses[0]) or []]
     order = {f'{name}.{address}': at for at, address in enumerate(addresses)}
-    held = [cast(dict[str, Any], one) for one in project_store.overlay_records(name, LAYER) or []
-            if str(one['element']) in order]
+    held = [cast(dict[str, Any], one) for one in project_store.overlay_records(name, LAYER, at=addresses) or []]
     return sorted(held, key=lambda one: order[str(one['element'])])
 
 

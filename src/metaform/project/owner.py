@@ -44,11 +44,12 @@ def _memory_of(path: Path) -> dict[str, list[list[object]]]:
     """The memory layer of a database about to be removed, kept for the next one. Opened unchecked, so a database an
     earlier version made can still be cleared; one with no memory layer keeps none."""
     with Store(path, checked=False) as opened, opened.reading():
-        try:
-            return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
-                    'relations': [list(relation) for relation in opened.memory_relations()]}
-        except StoreError:
+        tables = opened.tables()
+        if 'MemoryEntity' not in tables:
             return {'entities': [], 'relations': []}
+        return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
+                'relations': [list(relation) for relation in opened.memory_relations()]
+                if 'MemoryRelation' in tables else []}
 
 
 def _put_back(opened: Store) -> None:

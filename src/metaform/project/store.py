@@ -248,6 +248,10 @@ class Store:
         """The map's node and the project's root, joined by `ROOT`."""
         self._rows("MERGE (m:Map {id: $id}) MERGE (r:Project {k: 'root'}) MERGE (m)-[:ROOT]->(r)", id=project)
 
+    def tables(self) -> set[str]:
+        """The names of the database's tables."""
+        return self._tables()
+
     def _tables(self) -> set[str]:
         return {str(row[0]) for row in self._rows('CALL show_tables() RETURN name')}
 
@@ -567,7 +571,7 @@ class Store:
                           f'r.revision{columns} ORDER BY r.position', address=address)
         return [dict(zip(['ref', 'record', 'revision', *fields], row)) for row in rows]
 
-    def all_records(self, key: str, fields: list[str], completed: bool = False, at: str | None = None,
+    def all_records(self, key: str, fields: list[str], completed: bool = False, at: str | list[str] | None = None,
                     below: bool = False, match: tuple[str, Scalar] | None = None,
                     ) -> list[tuple[str, int, dict[str, Scalar]]]:
         """Every open record of an overlay in the project, each with the address of the element that holds it, `''` for
@@ -579,14 +583,18 @@ class Store:
         `completed` is given (F4)."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
         tests = [] if completed else ['r.completed IS NULL']
-        if at is not None:
+        if isinstance(at, list):  # several elements, each by its own address
+            tests.append('at IN $ats')
+        elif at is not None:
             tests.append('(at = $at OR at STARTS WITH $deeper)' if below else 'at = $at')
         if match is not None:
             tests.append(f'r.{_column(match[0])} = $value')
         where = f"WHERE {' AND '.join(tests)} " if tests else ''
         rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) WITH coalesce(e.address, '') AS at, r {where}"
                           f'RETURN at, coalesce(r.position, -1), r.ref, r.record, r.revision, r.completed{columns} '
-                          'ORDER BY at, r.position', **({'at': at, 'deeper': f'{at}.'} if at is not None else {}),
+                          'ORDER BY at, r.position',
+                          **({'ats': at} if isinstance(at, list) else {'at': at, 'deeper': f'{at}.'} if at is not None
+                             else {}),
                           **({'value': match[1]} if match is not None else {}))
         return [(str(row[0]), cast(int, row[1]),
                  dict(zip(['ref', 'record', 'revision', 'completed', *fields], row[2:]))) for row in rows]
