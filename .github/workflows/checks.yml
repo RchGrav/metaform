@@ -63,12 +63,8 @@ jobs:
       - name: Tests
         if: ${{ !cancelled() }}  # each check reports on its own, whatever the one before it did
         timeout-minutes: 30  # half an hour on one core; Windows starts processes slowest
-        env:
-          METAFORM_BUILD_VIEWS: '1'  # the map view was built above, so the views' test requires it current
         run: uv run pytest -q
       - name: Browser tests, VIEW-012
         if: ${{ !cancelled() && (steps.changes.outputs.page == 'true' || github.ref == 'refs/heads/main') }}
         timeout-minutes: 60  # about 25 minutes on four Linux cores; a hang, as Windows had, fails here
-        env:
-          METAFORM_BUILD_VIEWS: '1'
         run: uv run pytest -q -m browser  # the -m here replaces addopts' -m "not browser"
