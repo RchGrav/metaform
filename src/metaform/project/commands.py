@@ -610,12 +610,15 @@ def _block_key(key: int, block: specification.Block) -> object:
 
 
 def _exported_key(key: int, entry: list[Any]) -> object:
-    """The same for an exported block's baseline entry, [record id, digest, heading digest, text digest]; an entry an
-    earlier export wrote holds the first two alone, and is matched by its digest only."""
+    """The same for an exported block's baseline entry, [record id, digest, heading digest, text digest]. An entry an
+    earlier export wrote holds other things after the digest, a level and a title, or nothing; only a value that is a
+    digest is matched as one, so such an entry is matched by its digest and as the introduction alone."""
     if key == 0:
         return entry[1]
     if key in (1, 2):
-        return entry[key + 1] if len(entry) > key + 1 else None
+        value = entry[key + 1] if len(entry) > key + 1 else None
+        return value if isinstance(value, str) and len(value) == 12 and all(c in '0123456789abcdef' for c in value) \
+            else None
     return 'introduction' if len(entry) > 2 and entry[2] is None else None
 
 
@@ -623,8 +626,9 @@ def _identified(found: list[specification.Block], exported: list[list[Any]]) -> 
     """An edited address's blocks as records to store, each keeping the record id of the exported block it is
     (review of 2026-11-18, F5), wherever it now stands: first the block exported as it stands, then the block with its
     heading (level and title), then the block with its text, its heading renamed, then the introduction, the one block
-    with no heading. Nothing is paired by position, so a block added where a deleted one stood is new and never takes
-    the deleted block's id."""
+    with no heading. A section is its heading: a block under a deleted block's heading is that section, rewritten,
+    and keeps its id. Nothing is paired by position, so any other block added where a deleted one stood is new and
+    never takes the deleted block's id."""
     taken: list[str | None] = [None] * len(found)
     free = list(range(len(exported)))
     for key in range(4):

@@ -228,21 +228,26 @@ def worksheet(ctx: Context) -> dict[str, Any]:
     except BaseException:
         _release(stored, claimed, by)
         raise
+    passed: list[dict[str, str]] = []  # an old-store ticket the worksheet could not take, with why
     if stored is None:
-        _claim(ctx, None, tickets, by)
+        _claim(ctx, None, tickets, by, passed)
     _sync_progress(ctx, result)
     changed(ctx, [holder], name, result['tickets'])
+    if passed:
+        result = {**result, 'not_taken': passed}
     if made is None:
         return {**result, 'folder': str(ctx.folder), 'branch': None}
     return {**result, 'folder': made['folder'], 'branch': made['branch'],
             **({'notice': made['notice']} if made.get('notice') else {})}
 
 
-def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: str) -> list[str]:
+def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: str,
+           passed: list[dict[str, str]] | None = None) -> list[str]:
     """Claim each free ticket for `by`; the ids claimed. In the project store, `stored`, a claim is exclusive and at
     the revision read, and a refusal part way gives back the claims this call made and stops, so no ticket is left
     claimed for a worksheet that was not made. In the old store a take is shared participation, made after the round,
-    and a ticket finished since it was listed is passed over rather than failing a worksheet already made."""
+    and a ticket it cannot take is passed over, rather than failing a worksheet already made: one finished since it
+    was listed silently, any other named in `passed` with why."""
     found = project_tickets.records(stored) if stored is not None else {}
     claimed: list[str] = []
     try:
@@ -255,8 +260,8 @@ def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: 
                 try:
                     ctx.require_store().take_work(one['ticket'], by=by)
                 except StoreError as error:  # finished since it was listed: nothing to take; any other is said
-                    if not _done_since(ctx, str(one['ticket'])):
-                        raise Stop(str(error), 'metaform tasks board') from None
+                    if not _done_since(ctx, str(one['ticket'])) and passed is not None:
+                        passed.append({'ticket': str(one['ticket']), 'why': str(error)})
                     continue
             claimed.append(str(one['ticket']))
     except BaseException:

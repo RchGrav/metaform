@@ -1293,8 +1293,10 @@ def test_an_import_keeps_newer_edits_and_block_ids_and_takes_a_code_swap_whole(s
     assert project_store.specification_document(P, replaced, served)['status'] == 'ok'
     after = held(WIDGET)
     assert after[0]['record'] == limits['record'] and after[1]['record'] not in (purpose['record'], limits['record'])
-    # a document without its baseline line is refused
+    # a document without its baseline line is refused, and so is one whose baseline is unlike any an export writes
     assert project_store.specification_document(P, prose(fresh), served)['code'] == 'DOCUMENT_REFUSED'
+    bent = f'{prose(fresh)}\n{specification.BASELINE}{{"{WIDGET}": [5]}} -->\n'
+    assert project_store.specification_document(P, bent, served)['code'] == 'DOCUMENT_REFUSED'
 
 def test_an_elements_read_carries_its_specification_so_an_agent_reads_its_purpose_first(mapped):
     """Phase 4 step 4: the project tool's read of an element brings its specification blocks unasked, as it brings

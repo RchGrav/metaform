@@ -84,9 +84,10 @@ def _stored(project: str, address: str) -> dict[str, Any]:
         # the address is the stored element's own, letters, digits, '_' and '.', so it stands in the query as it is
         found = project_store.cypher(project, f"MATCH (h:Element)-[w:Wants]->(e:Element {{address: '{address}'}}) "
                                               'RETURN h.address, w.why, w.how, w.direction ORDER BY h.address')
-        if found.get('status') == 'error':
-            return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
-                    'markdown': f"The elements relying on {address} could not be read: {found.get('message')}"}
+        if found.get('status') == 'error':  # what was read stands; the gap is said beside it
+            region = _rendered(address, nodes, requirements, [])
+            region['markdown'] += f"\n\nThe elements relying on {address} could not be read: {found.get('message')}"
+            return region
         for holder, why, how, direction in cast(list[list[Any]], found.get('rows') or []):
             node(str(holder))
             dependents.append(wanted(str(holder), {'element': path, 'why': why, 'how': how,

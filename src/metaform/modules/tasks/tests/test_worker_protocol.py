@@ -215,10 +215,21 @@ def test_in_the_old_store_a_worksheet_shares_a_peers_take_and_a_refused_round_ta
 
     def refused(*_args, **_kwargs):
         raise ValueError('the round could not be saved')
+    saved = type(working.board).set_round
     monkeypatch.setattr(type(working.board), 'set_round', refused)
     with pytest.raises(Stop, match='could not be saved'):
         working.call('worksheet', worktree=free, holder='alice', items=['Inspect'])
     assert not working.store.ticket(free).work.taken
+    monkeypatch.setattr(type(working.board), 'set_round', saved)
+    # a take the old store refuses once the round is made is named, never a failure of the worksheet made
+    from metaform.data import Store, StoreError
+    stuck = working.call('ticket', node=NODE, summary='Face', text='Draw it.')['ticket']
+
+    def refused_take(self, *args, **kwargs):
+        raise StoreError('the store is locked', 'try again')
+    monkeypatch.setattr(Store, 'take_work', refused_take, raising=False)
+    made = working.call('worksheet', worktree=stuck, holder='alice', items=['Inspect'])
+    assert made['worktree'] == stuck and made['not_taken'] == [{'ticket': stuck, 'why': 'the store is locked'}]
 
 def test_a_ticket_in_another_worktree_is_not_claimable_under_its_own_id(working):
     one = working.call('ticket', node=NODE, summary='Face', text='Draw it.', worktree='timer')['ticket']

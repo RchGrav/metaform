@@ -96,6 +96,14 @@ def baseline_line(held: Baseline) -> str:
     return f"{BASELINE}{json.dumps(held, sort_keys=True, separators=(',', ':'))} -->"
 
 
+def _entries(entries: object) -> bool:
+    """Whether a baseline's entries for one address are as an export writes them: each a list opening with the
+    record id and the digest."""
+    return isinstance(entries, list) and all(
+        isinstance(one, list) and len(cast(list[object], one)) >= 2 and isinstance(cast(list[object], one)[0], str)
+        and isinstance(cast(list[object], one)[1], str) for one in cast(list[object], entries))
+
+
 def split_baseline(document: str) -> tuple[str, Baseline | None]:
     """A document and its baseline: the document without its baseline line, and the baseline, or None when it has
     none or the line cannot be read."""
@@ -106,8 +114,8 @@ def split_baseline(document: str) -> tuple[str, Baseline | None]:
         found = json.loads(lines[-1][len(BASELINE):-len(' -->')])
     except ValueError:
         return document, None
-    if not isinstance(found, dict):
-        return document, None
+    if not isinstance(found, dict) or not all(_entries(entries) for entries in cast(dict[str, object], found).values()):
+        return document, None  # an entry unlike any an export writes: no baseline, refused as such
     body = '\n'.join(lines[:-1]).rstrip('\n') + '\n'
     return body, cast(Baseline, found)
 

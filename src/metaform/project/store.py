@@ -230,7 +230,7 @@ class Store:
         tree and the memory layer, and each overlay's identity columns and its HOLDS pair from the root. No layout is
         upgraded, since the product is unreleased (review of 2026-11-18, F15); without this check such a database
         failed later on an engine error that named nothing."""
-        tables = self._tables()
+        tables = self.tables()
         lacking = [name for name in ('Map', 'Project', 'Element', 'MemoryEntity', 'CONTAINS') if name not in tables]
         overlays = sorted(name for name in tables if name.startswith('ov_'))
         for name in overlays:
@@ -250,9 +250,6 @@ class Store:
 
     def tables(self) -> set[str]:
         """The names of the database's tables."""
-        return self._tables()
-
-    def _tables(self) -> set[str]:
         return {str(row[0]) for row in self._rows('CALL show_tables() RETURN name')}
 
     def reader(self) -> Store:
@@ -531,7 +528,7 @@ class Store:
         table = _table(key)
         self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING, record STRING, '
                    f'revision INT64, completed STRING{fields})')
-        if HOLDS in self._tables():
+        if HOLDS in self.tables():
             for holder in HOLDERS:
                 self._rows(f'ALTER TABLE {HOLDS} ADD FROM {holder} TO {table}')
         else:
@@ -546,13 +543,13 @@ class Store:
     def drop_overlay(self, key: str) -> None:
         """The overlay's table, after its pairs in `HOLDS`; `HOLDS` itself goes with the last overlay."""
         table = _table(key)
-        others = [name for name in self._tables() if name.startswith('ov_') and name != table]
+        others = [name for name in self.tables() if name.startswith('ov_') and name != table]
         if others:
             pairs = {(str(row[0]), str(row[1])) for row in self._rows(f"CALL show_connection('{HOLDS}') RETURN *")}
             for holder in HOLDERS:
                 if (holder, table) in pairs:
                     self._rows(f'ALTER TABLE {HOLDS} DROP FROM {holder} TO {table}')
-        elif HOLDS in self._tables():
+        elif HOLDS in self.tables():
             self._rows(f'DROP TABLE {HOLDS}')
         self._rows(f'DROP TABLE {table}')
 
@@ -584,6 +581,8 @@ class Store:
         columns = ''.join(f', r.{_column(field)}' for field in fields)
         tests = [] if completed else ['r.completed IS NULL']
         if isinstance(at, list):  # several elements, each by its own address
+            if below:
+                raise StoreError('records beneath elements are read for one address at a time, not a list')
             tests.append('at IN $ats')
         elif at is not None:
             tests.append('(at = $at OR at STARTS WITH $deeper)' if below else 'at = $at')

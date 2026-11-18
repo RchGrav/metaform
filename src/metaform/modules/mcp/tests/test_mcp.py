@@ -775,6 +775,15 @@ def test_a_peers_artifact_whose_write_fails_is_written_once_when_heard_again(hom
     a2a_out.heard('proj', made.exchange_id, None, (first, second), 'peer-task')
     texts = [one['text'] for one in project.overlay_records('proj', 'questions') or []]
     assert texts.count('First.') == 1 and texts.count('Second.') == 1, texts
+    # a failure to record delivery is raised when the writes went well, even under a handler further up the stack
+    def busy(*_args):
+        raise OSError('the store is busy')
+    monkeypatch.setattr(records, 'delivered', busy)
+    try:
+        raise KeyError('handled further up')
+    except KeyError:
+        with pytest.raises(OSError, match='busy'):
+            a2a_out._settle('proj', made.exchange_id, ['artifact:x'], [], False)
 
 @pytest.mark.req('MCP-002')
 def test_a2a_push_webhooks_are_only_those_the_person_allows(run, home, mapped):

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import sys
 import threading
 from collections import OrderedDict, deque
 from collections.abc import Callable, Generator
@@ -47,9 +48,13 @@ def _memory_of(path: Path) -> dict[str, list[list[object]]]:
         tables = opened.tables()
         if 'MemoryEntity' not in tables:
             return {'entities': [], 'relations': []}
-        return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
-                'relations': [list(relation) for relation in opened.memory_relations()]
-                if 'MemoryRelation' in tables else []}
+        try:
+            return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
+                    'relations': [list(relation) for relation in opened.memory_relations()]
+                    if 'MemoryRelation' in tables else []}
+        except StoreError as error:  # a damaged memory layer never keeps the map from being cleared; said, not hidden
+            sys.stderr.write(f'{path.stem}: its memory layer could not be read and is not kept: {error}\n')
+            return {'entities': [], 'relations': []}
 
 
 def _put_back(opened: Store) -> None:
