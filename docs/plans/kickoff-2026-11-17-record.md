@@ -129,6 +129,39 @@ live data was migrated where it had to be.
 | 3D map region proposal | 1bb6d833 | document | round-trip checked | yes | yes | not imported: awaits the person | not imported |
 | Verifications overlay and records | live map only | definition on the map | n/a | n/a | yes | yes | 12 verdicts recorded |
 
+## Phase 3: every old-store feature kept and moved onto the project store
+
+Decision `t-legacy-keep`, taken under the person's standing policy reply ("use the project evidence and your judgment
+... continue useful work"): keep every feature and delete none. Reason: the person has said repeatedly that agents
+removing or changing things without permission is what has hurt the project, deleting cannot be undone, and
+`old-store-removal.md` says each kept feature becomes an overlay of the project store. Each moved in its own commit, by
+implementers working three at a time in separate worktrees. For a project not in the store the old path is unchanged.
+What has no faithful place is refused by name with the reason.
+
+| Feature | Commit | Verdict |
+|---|---|---|
+| Worker protocol (pairs, rounds, worksheets) on the store's tickets | d93c8bc0 | accepted |
+| Glossary, in a glossary overlay | a6fc63fb | accepted |
+| Questions and messages, and the page's Messages pane, in a questions overlay | fdddb62f | accepted |
+| Blind-spot critic and its challenges, in a challenges overlay | 20b09963, d63dfbef | returned (the old prompt offered join links), fixed |
+| Layers and knowledge (`layers`, `layer`, `node`, `context`, `links`, `citing`, `knowledge`) as overlays; `tag`, `untag`, `select`, `mask`, `clear`, `hide`, `unhide`, `reexamined` refused by name | 2b6a10fb | accepted |
+| Bases as whole databases of the project; `history` and `promote` refused by name | c2fe1e5d, d42c5efd, c28aa2d8 | returned (a failed record write left the project reading empty), fixed |
+| Cypher, read-only on the store's graph | 8174e980 | accepted |
+| Paperclip bridge to the store's tickets and questions | dc2cdf1e | accepted |
+| Roundtables' part, top element and tickets | 695ced01 | accepted |
+| A2A and fork review | 2cd42ea9 | accepted |
+| hello and the template show the store's way | 06c03cb4 | accepted |
+
+**Integration.** Every landing was cherry-picked onto the moving head in a scratch worktree. Every parallel pair
+collided on the same few shared lines: the map module's `ANSWERED_BESIDE_THE_STORE` list, its import line, and the
+store service's request types. Each collision was resolved as the union of both sides and checked again. Across the 38
+related test files, the combined code fails exactly the tests that fail at `c4c2e031` (11 there), and the 3 in fork and
+hello likewise: none new, none fixed. pyright reports 0 errors on every changed source file.
+
+**A regression pushed and fixed.** `d42c5efd`, the bases fix, was pushed before the bases test result was read: the
+set-aside base's counts no longer reached the record, so `main` listed as unmapped. It was fixed minutes later in
+`c28aa2d8`. Lesson: read every test result before committing.
+
 ## An incident on the live map, and how it was undone
 
 While checking the import's refusal, a test document holding only `stray text` under the project's heading was
@@ -159,9 +192,5 @@ a session can be loaded or resumed, already read what the agent advertises (`res
 2. Every decision in the table above, to keep or reverse.
 3. GitHub billing, so that CI runs.
 4. The numeric targets for widening the experiment beyond the five-pair pilot (VALIDATION_PLAN section 4).
-5. Which features with no counterpart in the store to keep (`old-store-removal.md` step 3; the kickoff's Phase 3
-   "decide retention of bases, critic, glossary, questions and other legacy features"): questions and messages, layers
-   and knowledge, bases, Cypher, the critic, the glossary. Unlike F02 and F03, the kickoff offers no proposal to
-   adopt here, and these keep or drop whole features. Then each kept module moves one per commit: the worker
-   protocol's pairs, rounds and worksheets (they need step-progress fields the tickets overlay does not have),
-   Paperclip's two-way issue bridge, roundtables, A2A, fork, and the hello and template examples.
+5. Whether to keep `t-legacy-keep` (every old feature kept and moved), or to drop any of them. Dropping one is now a
+   choice about a working feature, not about a missing one.
