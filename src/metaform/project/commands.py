@@ -255,6 +255,12 @@ def _answer(verb: str, body: object, command: object, owned: Owner, caller: str,
             project = str(body)
             return owned.read(project, lambda opened: _map(opened, project) if verb == 'map'
                               else _orphaned(opened, project))
+        if verb == 'find':
+            given = as_dict(body)
+            project = next(name for name in given if name not in ('overlay', 'completed'))
+            return owned.read(project, lambda opened: _find(opened, project, str(given[project]),
+                                                            cast('str | None', given.get('overlay')),
+                                                            given.get('completed') is True))
         if verb in ('add', 'update', 'delete'):
             ((path, value),) = as_dict(body).items()
             if forms.root_of(body) is not None:
@@ -401,15 +407,69 @@ def _read(opened: Store, address: Address, named: dict[str, object]) -> dict[str
     defs = definitions(opened.parts()) if named or specification.KEY in held else {}
     if specification.KEY in held and specification.KEY in defs:
         answer[specification.KEY] = _records(opened, defs[specification.KEY], at)
-    for name in named:
+    for name, asked in named.items():
         if name == 'wants':
             continue
         if name in defs:
-            answer[name] = _records(opened, defs[name], at) if name in tables else []
+            one = as_object(asked)
+            if one and isinstance(one.get('record'), str):  # one record by reference, open or completed
+                answer[name] = _by_reference(opened, defs[name], at, str(one['record'])) if name in tables else []
+            else:
+                answer[name] = _records(opened, defs[name], at) if name in tables else []
         else:
             raise Refusal('OVERLAY_NOT_DEFINED', f"'{name}' is not an overlay of {project}; the overlays are defined "
                           f"beneath {project}.overlay", {'map': project})
     return {address.full: answer}
+
+
+FOUND_MOST = 20  # a search gives at most this many records, and says how many more; it never lists everything
+
+
+def _by_reference(opened: Store, definition: Definition, at: str, ident: str) -> list[dict[str, object]]:
+    """The one record with this id at an element, open or completed, as a list of one; empty when there is none
+    (the person's rule, 2026-11-17: a completed record is reached by reference or by search, never in bulk)."""
+    found = [record for record in _records(opened, definition, at) if record.get('record') == ident]
+    if found:
+        return found
+    names = [name for name in definition.order if name != 'ref' and name in definition.fields]
+    row = opened.completed_record(definition.key, at, ident, names)
+    if row is None:
+        return []
+    record: dict[str, object] = {name: decode(definition.fields[name].kind, row[name]) for name in names
+                                 if row[name] is not None}
+    if row['ref'] is not None:
+        record['ref'] = row['ref']
+    record.update(record=row['record'], revision=row['revision'], completed=row['completed'])
+    return [record]
+
+
+def _find(opened: Store, project: str, words: str, overlay: str | None, completed: bool) -> dict[str, object]:
+    """Records whose fields hold every word, at most FOUND_MOST, each with where it is and what matched, and how many
+    more there are: open records, and completed ones too when asked."""
+    wanted = [word.lower() for word in words.split()]
+    defs = definitions(opened.parts())
+    keys = [key for key in sorted(defs) if key in opened.overlay_keys() and key != 'wants'
+            and (overlay is None or key == overlay)]
+    if overlay is not None and overlay not in defs:
+        raise Refusal('OVERLAY_NOT_DEFINED', f"'{overlay}' is not an overlay of {project}", {'map': project})
+    found: list[dict[str, object]] = []
+    total = 0
+    for key in keys:
+        names = [name for name in defs[key].order if name != 'ref' and name in defs[key].fields]
+        for address, _, row in opened.all_records(key, names, completed=completed):
+            text = {name: str(row[name]) for name in [*names, 'ref'] if row.get(name) is not None}
+            if not all(any(word in value.lower() for value in text.values()) for word in wanted):
+                continue
+            total += 1
+            if len(found) >= FOUND_MOST:
+                continue
+            field = next(name for name, value in text.items() if wanted[0] in value.lower()) if wanted else names[0]
+            value = text.get(field, '')
+            start = max(value.lower().find(wanted[0]) - 60, 0) if wanted else 0
+            found.append({'element': full(project, address) if address else project, 'overlay': key,
+                          'record': row['record'], 'field': field, 'matched': value[start:start + 160],
+                          **({'completed': row['completed']} if row.get('completed') else {})})
+    return {'find': found, 'more': total - len(found)}
 
 
 def _want(project: str, want: dict[str, Scalar]) -> dict[str, object]:

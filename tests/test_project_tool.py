@@ -1380,3 +1380,23 @@ def test_a_completed_record_leaves_every_default_read_and_comes_back_only_when_r
     assert [one['id'] for one in read({'tickets': {}})['tickets']] == ['t-d', 't-a']
     assert commands.run({'update': {WIDGET: {'tickets': [{'record': 'r-0000000000000000', 'completed': False}]}}},
                         served)['code'] == 'RECORD_GONE'
+
+
+def test_a_completed_record_is_reached_by_its_id_or_by_find_and_find_never_gives_everything(mapped):
+    """The person's rule, 2026-11-17: what is no longer relevant is reached by search or by reference, never in bulk.
+    A completed record is read back by its record id and found by find with completed: true; find without it looks
+    in open records only; find gives at most 20 and says how many more."""
+    run({'add': {SPEC: SPEC_DEFINITION}})
+    run({'add': {CS: {'project_specifications': [{'title': f'Relay rule n{n}x', 'level': 1} for n in range(25)]}}})
+    first = run({CS: {'project_specifications': {}}})[CS]['project_specifications'][0]
+    assert run({'update': {CS: {'project_specifications': [
+        {'position': 0, 'record': first['record'], 'completed': True}]}}}) == {'status': 'ok'}
+    (back,) = run({CS: {'project_specifications': {'record': first['record']}}})[CS]['project_specifications']
+    assert (back['title'], back['record']) == ('Relay rule n0x', first['record']) and back['completed'].startswith('20')
+    open_only = run({'find': {P: 'relay rule'}})
+    assert len(open_only['find']) == 20 and open_only['more'] == 4  # 24 open: never the whole list
+    assert first['record'] not in [one['record'] for one in open_only['find']]
+    hit = run({'find': {P: 'rule n0x', 'overlay': 'project_specifications', 'completed': True}})['find']
+    assert [(one['record'], one['element'], one['field']) for one in hit] == [(first['record'], CS, 'title')]
+    assert run({'find': {P: 'relay', 'overlay': 'nosuch'}})['code'] == 'OVERLAY_NOT_DEFINED'
+    assert run({'find': {P: ''}})['status'] == 'error' and run({'help': 'find'})['help']['find']['does']

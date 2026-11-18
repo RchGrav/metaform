@@ -104,8 +104,8 @@ def standing_overlays() -> dict[str, dict[str, object]]:
     }
 
 
-COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'help')
-HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'addressed read', 'overlay', 'help', 'intake')
+COMMANDS = ('add', 'update', 'delete', 'orphaned', 'map', 'find', 'help')
+HELP_NAMES = ('add', 'update', 'delete', 'orphaned', 'map', 'find', 'addressed read', 'overlay', 'help', 'intake')
 
 _WIDGET = {'technical_name': 'widget masher', 'name': 'mashbox', 'role': 'Coupled Element',
            'ref': './src/widgets/mashbox.c'}
@@ -169,6 +169,15 @@ HELP: dict[str, object] = {
         'examples': [{'delete': {'mashtrac.code.protocol.network.tracker.cs': {
                          'wants': ['mashtrac.code.masher.widget']}}},
                      {'delete': {'mashtrac.code.masher.widget': {}}}],
+    },
+    'find': {
+        'does': ("Searches a project's overlay records for every word given, and returns at most 20, each with its "
+                 "element, overlay, record id and the field that matched, and how many more there are. Every read "
+                 "shows open records only: a completed record is reached by this search with \"completed\": true, or "
+                 "by its id, {\"<path>\": {\"<overlay>\": {\"record\": \"r-...\"}}}, never in bulk. \"overlay\" "
+                 "looks in one overlay."),
+        'examples': [{'find': {'mashtrac': 'ring timer'}},
+                     {'find': {'mashtrac': 'relay', 'overlay': 'tickets', 'completed': True}}],
     },
     'orphaned': {
         'does': ("Returns the elements of a project that no element wants, each with its own fields. Being orphaned "

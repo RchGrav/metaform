@@ -201,6 +201,8 @@ def check(command: object) -> tuple[str, object]:
             root_write(key, body)
         else:
             Form(command).write(key, body)
+    elif key == 'find':
+        find_form(body)
     elif key == 'goto':
         target = body if isinstance(body, str) else None
         remedy: object = None
@@ -284,6 +286,26 @@ def project_name(text: str, key: str) -> None:
                      {key: fixed} if fixed else None)
 
 
+FIND_FORM = ('find takes the project and the words to look for, such as {"find": {"mashtrac": "ring timer"}}, with '
+             '"overlay": "<overlay>" to look in one overlay and "completed": true to look in completed records too')
+
+
+def find_form(body: object) -> None:
+    """A search: one project and its words, with an optional overlay and completed (the person's rule, 2026-11-17:
+    what is no longer relevant is reached by search or by reference, never in bulk)."""
+    given = as_object(body)
+    if given is None:
+        raise refuse(FIND_FORM, {'find': {'<project>': '<words>'}})
+    projects = [name for name in given if name not in ('overlay', 'completed')]
+    if len(projects) != 1 or not isinstance(given[projects[0]], str) or not str(given[projects[0]]).strip():
+        raise refuse(FIND_FORM, {'find': {'<project>': '<words>'}})
+    project_name(projects[0], 'find')
+    if 'overlay' in given and not (isinstance(given['overlay'], str) and is_name(given['overlay'])):
+        raise refuse(FIND_FORM, {'find': {projects[0]: given[projects[0]]}})
+    if 'completed' in given and not isinstance(given['completed'], bool):
+        raise refuse(FIND_FORM, {'find': {projects[0]: given[projects[0]], 'completed': True}})
+
+
 def read(key: str, body: object) -> None:
     """An addressed read: a path, and each overlay it names with {} as its value."""
     address = parse(key, lambda fixed: {fixed: body})
@@ -294,9 +316,14 @@ def read(key: str, body: object) -> None:
     for name, value in named.items():
         if not is_name(name):
             raise refuse(f"'{name}' is not an overlay name: an overlay's name is one step, such as wants")
-        if value != {}:
+        record = as_object(value)
+        if value != {} and not (record is not None and list(record) == ['record'] and isinstance(record['record'], str)
+                                and record['record'].startswith('r-')):
+            # {} reads the overlay's open records; {"record": "r-..."} reads that one record, open or completed, the
+            # way back to a completed record by reference (the person's rule, 2026-11-17)
             corrected: dict[str, object] = {each: {} for each in named}
-            raise refuse(form, accepted({key: corrected}))
+            raise refuse(form + ', or one record by its id, {"<overlay>": {"record": "r-..."}}',
+                         accepted({key: corrected}))
 
 
 def technical_name(address: Address, value: str) -> str | None:
