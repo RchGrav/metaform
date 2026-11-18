@@ -21,7 +21,6 @@ from collections import OrderedDict, deque
 from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -88,53 +87,51 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
 
 
 def _merged(kept: Path, memory: dict[str, list[list[object]]]) -> dict[str, list[list[Any]]]:
-    """A map's memory laid over the copies already kept, the map's entity winning for a name, each relation once: the
-    kept copy, and a copy an interrupted clear of an earlier version set aside as `.earlier`. A copy that cannot be read
-    is moved aside under a name of its own, never overwritten; when it cannot be moved, the clear stops."""
-    earlier: dict[str, list[list[Any]]] = {'entities': [], 'relations': []}
-    for copy in (kept.with_name(kept.name + '.earlier'), kept):
-        if not copy.exists():
-            continue
+    """A map's memory laid over the copy already kept, the map's entity winning for a name, each relation once among
+    the entities kept. A kept copy that cannot be read is moved aside under a name no other file has, never over one,
+    and the clear stops when it cannot be moved."""
+    sources: list[dict[str, list[list[Any]]]] = []
+    if kept.exists():
         try:
-            found = _read_kept(copy)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
-            copy.replace(copy.with_name(f'{kept.name}.unread-{stamp}'))  # an OSError here stops the clear
-            continue
-        named = {one[0] for one in found['entities']}
-        earlier = {'entities': [*(one for one in earlier['entities'] if one[0] not in named), *found['entities']],
-                   'relations': [*earlier['relations'], *found['relations']]}
-    ours = {str(one[0]) for one in memory['entities']}
-    entities = [*(one for one in earlier['entities'] if str(one[0]) not in ours), *memory['entities']]
-    names = {str(one[0]) for one in entities}
+            sources.append(_read_kept(kept))
+        except Exception:  # noqa: BLE001  any copy it cannot read, however it fails, is set aside whole
+            number = 1
+            while (aside := kept.with_name(f'{kept.name}.unread-{number}')).exists():
+                number += 1
+            kept.replace(aside)  # an OSError here stops the clear before anything is removed
+    sources.append(cast(dict[str, list[list[Any]]], memory))
+    entities: dict[str, list[Any]] = {}
+    for source in sources:  # in order of priority, the last winning for a name
+        for one in source['entities']:
+            entities[str(one[0])] = list(one)
     seen: set[tuple[str, str, str]] = set()
     relations: list[list[Any]] = []
-    for one in [*earlier['relations'], *memory['relations']]:
-        key = (str(one[0]), str(one[1]), str(one[2]))
-        if key[0] in names and key[1] in names and key not in seen:
-            seen.add(key)
-            relations.append(list(one))
-    return {'entities': [list(one) for one in entities], 'relations': relations}
+    for source in sources:
+        for one in source['relations']:
+            key = (str(one[0]), str(one[1]), str(one[2]))
+            if key[0] in entities and key[1] in entities and key not in seen:
+                seen.add(key)
+                relations.append(list(one))
+    return {'entities': list(entities.values()), 'relations': relations}
 
 
-def _put_back(opened: Store) -> int | None:
-    """Into a database just made, the memory layer its project had when it was last cleared; the kept copy's
-    modification time when it was put back, None when there was none to put back. A copy that cannot be read, or that
-    the store refuses, is said and left where it is, whole, never a reason the map cannot be made."""
+def _put_back(opened: Store) -> bool:
+    """Into a database just made, the memory layer its project had when it was last cleared; whether it was put
+    back. A copy that cannot be read, or that the store refuses, is said and left where it is, whole, never a reason
+    the map cannot be made."""
     kept = kept_memory(opened.path)
     if not kept.exists():
-        return None
+        return False
     try:
-        stamp = kept.stat().st_mtime_ns
         memory = _read_kept(kept)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+    except Exception as error:  # noqa: BLE001  any copy it cannot read, however it fails
         sys.stderr.write(f'{kept}: the memory a clear kept could not be read and is not put back: {error}\n')
-        return None
+        return False
     for name, kind, observations in memory['entities']:
         opened.put_memory_entity(name, kind, observations)
     for seq, (start, end, relation_type) in enumerate(memory['relations']):
         opened.add_memory_relation(start, end, relation_type, seq)
-    return stamp
+    return True
 
 
 def _read_kept(kept: Path) -> dict[str, list[list[Any]]]:
@@ -181,7 +178,7 @@ class Database:
         self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
-        self.put_back: int | None = None  # the kept memory's modification time when it was put back into it, if it was
+        self.put_back = False  # whether a cleared project's kept memory was put back into it when it was made
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
         self._turn: deque[str] = deque()  # the callers with writes waiting, in the order they are served
@@ -253,11 +250,13 @@ class Database:
             with self._writing.transaction():
                 give_standing_overlays(self._writing, self.path.stem)
             if create is not None:  # in its own transaction: a kept copy the store refuses never stops the map
+                put = False
                 try:
                     with self._writing.transaction():
-                        stamp = _put_back(self._writing)
-                    self.put_back = stamp  # only once its transaction committed
-                except Exception as error:  # noqa: BLE001  a copy it cannot take is said and left where it is
+                        put = _put_back(self._writing)
+                    self.put_back = put  # once its transaction committed
+                except StoreError as error:  # a copy the store refuses is said and left where it is
+                    self.put_back = put and error.unknown  # a commit whose outcome is unknown may hold it
                     sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
                                      f'and is not put back: {error}\n')
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
@@ -386,13 +385,12 @@ class Owner:
                 if database.fresh:
                     self._discard(project, database)
                 raise
-            if database.fresh and database.put_back is not None:  # the first write stored: the memory put back is
-                kept = kept_memory(database.path)  # held by the database now, while it is still the project's open one
-                with self._opening, contextlib.suppress(OSError):  # and the copy is the one put back; never another
-                    with self._lock:
+            if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
+                with self._opening, contextlib.suppress(OSError):  # database now, while it is the project's open one;
+                    with self._lock:  # only a clear, which first takes the database out, writes the kept copy again
                         current = self._open.get(project) is database
-                    if current and kept.stat().st_mtime_ns == database.put_back:
-                        kept.unlink()
+                    if current:
+                        kept_memory(database.path).unlink(missing_ok=True)
             database.fresh = False
             return result
 
@@ -471,8 +469,7 @@ class Owner:
                 try:
                     fresh.write_text(json.dumps(merged, ensure_ascii=False), encoding='utf-8')
                     fresh.replace(kept)
-                    kept.with_name(kept.name + '.earlier').unlink(missing_ok=True)  # merged into it
-                except OSError:
+                except (OSError, ValueError):  # a write that fails, or text that cannot be written, removes nothing
                     with contextlib.suppress(OSError):
                         fresh.unlink(missing_ok=True)
                     raise
