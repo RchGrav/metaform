@@ -44,9 +44,10 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
-# what a filesystem with no hard links answers: POSIX, Windows (ERROR_INVALID_FUNCTION and ERROR_NOT_SUPPORTED,
-# as EINVAL), and FUSE or network filesystems (ENOSYS)
-_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.EINVAL, errno.ENOSYS}
+# what a filesystem with no hard links answers: POSIX, FUSE or network filesystems (ENOSYS), and Windows, where
+# ERROR_INVALID_FUNCTION and ERROR_NOT_SUPPORTED come as EINVAL; elsewhere EINVAL is a real error, and raised
+_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.ENOSYS,
+             *((errno.EINVAL,) if os.name == 'nt' else ())}
 
 
 def held_memory(path: Path) -> Path:
@@ -256,8 +257,9 @@ class Database:
         # told the project's name after each commit that stored a write, with the kinds of what it stored: map, memory
         self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
-        self.fresh = create is not None  # made by this process and not yet written to by a command
-        self.stored = False  # whether any write to it has committed: a database holding one is never discarded
+        # made by this process and not yet written to: ended on the writer thread when a write commits, or may have,
+        # before any caller hears of it, so a discard never removes a database a write reached
+        self.fresh = create is not None
         self.put_back = False  # whether it holds the kept memory it put back, claimed as `held_memory`
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
@@ -395,13 +397,14 @@ class Database:
                     results = [work(store_) for work, _, _ in group]
             except StoreError as error:
                 if error.unknown:
+                    self._written()  # it may have committed
                     for _, future, _ in group:
                         future.set_exception(error)
                     return
             except BaseException:  # noqa: BLE001, S110  one write of the group failed: each is now run alone
                 pass
             else:
-                self.stored = True  # before any caller hears of it, so a discard never removes a committed write
+                self._written()
                 for (_, future, _), result in zip(group, results):
                     future.set_result(result)
                 self._tell({kind for _, _, kind in group})
@@ -412,13 +415,26 @@ class Database:
                 with store_.transaction():
                     result = work(store_)
             except BaseException as error:  # noqa: BLE001  the caller receives its own failure
+                if isinstance(error, StoreError) and error.unknown:
+                    self._written()  # it may have committed
                 future.set_exception(error)
             else:
-                self.stored = True
+                self._written()
                 future.set_result(result)
                 stored.add(kind)
         if stored:
             self._tell(stored)
+
+    def _written(self) -> None:
+        """A write reached this database: it is no longer fresh, and the copy of memory it put back is held by it now,
+        so its claimed copy goes. On the writer thread, while the database is open: a clear closes it, ending this
+        thread, before it touches that copy, and no newer map of the project stands while this one is open."""
+        if not self.fresh:
+            return
+        self.fresh = False
+        if self.put_back:
+            with contextlib.suppress(OSError):  # left, it is merged by the next clear or removed by the next open
+                held_memory(self.path).unlink(missing_ok=True)
 
     def _tell(self, kinds: set[str]) -> None:
         """Say once that a commit stored writes, and of which kinds: one telling for a group, however many writes it
@@ -471,14 +487,7 @@ class Owner:
                 if database.fresh:
                     self._discard(project, database)
                 raise
-            if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
-                with self._lock:  # database now, and its claimed copy goes while it is still the project's open one: a
-                    current = self._open.get(project) is database  # clear takes it out first, under this lock
-                if current:  # the file outside the lock; a clear or open that meets it merges it the same
-                    with contextlib.suppress(OSError):
-                        held_memory(database.path).unlink(missing_ok=True)
-            database.fresh = False
-            return result
+            return result  # the claimed copy is withdrawn by the writer when the write commits (`Database._written`)
 
     @contextmanager
     def _using(self, project: str, *, create: bool) -> Generator[Database]:
@@ -525,8 +534,10 @@ class Owner:
                 try:
                     _write_kept(path, {'entities': [], 'relations': []}, None)
                 except (OSError, ValueError) as error:
-                    raise StoreError(f'{project} cannot be made: the memory a discarded map claimed could not be '
-                                     f'kept again first: {error}') from error
+                    raise StoreError(f'{project} cannot be made: the memory a discarded map claimed, at '
+                                     f'{held_memory(path)}, could not be kept again first: {error}. Free space or '
+                                     'permission there, or move that file aside, and run the command again.') \
+                        from error
         if not exists:  # a removal that stopped part way may have left the old map's files: never read into the new one
             try:
                 store.remove(path)
@@ -588,7 +599,7 @@ class Owner:
         open lock, so no open finds it half removed. A copy of memory it claimed is given back by the next open."""
         with self._opening:
             with self._lock:
-                if database.users > 1 or self._open.get(project) is not database or database.stored:
+                if database.users > 1 or self._open.get(project) is not database or not database.fresh:
                     return
                 del self._open[project]
             database.close()

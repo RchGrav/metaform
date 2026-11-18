@@ -677,7 +677,7 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     assert 'Old fact.' in facts['bell']
     # a database holding a committed write is never discarded, whatever another caller's write did
     made_now = owned._open['older']
-    assert made_now.stored
+    assert not made_now.fresh  # its writer ended it when the write committed, before the caller heard
     owned._discard('older', made_now)
     assert path.exists() and owned._open['older'] is made_now
     assert owned.remove('older')
