@@ -84,8 +84,9 @@ export let G = null;
  * radius is the cube root of its value, times 3. Node sizes are the ones the person approved and used until
  * 2026-10-16 (DE 9, CQU 7, others 4; purpose 0.9, item 0.3, the rest 0.35). On 2026-10-17 agents raised them in three
  * steps, on a branch the person had not seen, to DE 127, CQU 99, others 57: about 2.4 times as wide, which crowded
- * the map. The person asked on 2026-11-16 for the balanced look from before, so they are restored here. */
-export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 9 : node.role === 'CQU' ? 7 : 4)
+ * the map. The person asked on 2026-11-16 for the balanced look from before, so they were restored, then on
+ * 2026-11-17 for the elements a notch larger: each value 1.5 times, so a ball about 15% wider (DE 14, CQU 11, others 6). */
+export const nodeSize = node => node.t === 'el' ? (node.role === 'DE' ? 14 : node.role === 'CQU' ? 11 : 6)
   : node.t === 'purpose' ? 0.9 : node.t === 'item' ? 0.3 : 0.35;
 // The link widths of the first week of October 2026 (the page of 2026-10-08), the person's sizes: on 2026-10-17 agents
 // raised them half as wide again, and with the nodes back at their sizes an edge was nearly as wide as its node. The
