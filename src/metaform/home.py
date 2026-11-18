@@ -1456,7 +1456,15 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     folder stay, PROJ-026. The rows go whatever happens to the files; a file or folder that cannot be removed is named
     in the result.
     """
-    found = to_clear(project_id, agents=False)
+    # what it holds and where, read before anything is carried out, stopped, backed up or removed: the stores listed
+    # now are the ones carried out and removed, so one made afterwards is never removed with what it holds unread
+    try:
+        found = to_clear(project_id, agents=False)
+        folder = _folder_of_project(project_id)
+        stores = _stores(folder)
+    except (OSError, sqlite3.Error) as error:
+        raise StoreError(f'{project_id} was not cleared: where it is kept could not be read: {error}.',
+                         'metaform list projects') from error
     # What the stores still hold that is not the map, a conversation written there before it had a store of its own,
     # is carried out first, and nothing goes when it cannot be: a clear starts the map again and nothing else, PROJ-026.
     try:
@@ -1470,20 +1478,14 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
     with halted(project_id, 'clear'):
         lost: list[str] = []
-        cleared = _cleared(project_id, found, made_by, lost)
+        cleared = _cleared(project_id, found, made_by, lost, folder, stores)
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
-def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> Cleared:
+def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str], folder: Path,
+             stores: list[Path]) -> Cleared:
     """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start.
     What of the map's memory could not be kept is added to `lost`."""
-    # where it is kept, read before anything is stopped, backed up or removed, so a refusal here leaves it as it was;
-    # its stores are listed just before they go, after the stops and the backup, which may add one
-    try:
-        folder = _folder_of_project(project_id)
-    except (OSError, sqlite3.Error) as error:  # nothing is done yet: the refusal says why, with its remedy
-        raise StoreError(f'{project_id} was not cleared: where it is kept could not be read: {error}.',
-                         'metaform list projects') from error
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
@@ -1511,7 +1513,6 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
                            f"{str(error).rstrip('.')}.{done}", again) from error
     # the map is gone, and a clear never brings it back: what follows is said as unfinished, never left unsaid
     try:
-        stores = _stores(folder)
         with project_db(folder, write=True) as db:
             db.execute('DELETE FROM active_bases WHERE project_id=?', (project_id,))
             db.execute('DELETE FROM bases WHERE project_id=?', (project_id,))

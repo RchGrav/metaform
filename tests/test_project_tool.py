@@ -600,8 +600,10 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     made._rows('DROP TABLE MemoryRelation')
     made.close()
     assert owner.of(home).remove('older')
-    assert 'bell' in owner.kept_memory(path).read_text(encoding='utf-8'), 'the memory is kept, never dropped'
-    # a removal that fails leaves the map and the copy an earlier clear kept as they were, and nothing pending
+    kept = owner.kept_memory(path)
+    assert 'bell' in kept.read_text(encoding='utf-8'), 'the memory is kept, never dropped'
+    # a clear never loses kept memory: a map's memory is laid over a copy never put back, and a removal that fails
+    # leaves the map standing and the copy at most fuller, with nothing staged left beside it
     made = store.Store(path, create='older')
     made.put_memory_entity('gong', 'part', ['It booms.'])
     made.close()
@@ -612,46 +614,37 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
         patched.setattr(store, 'remove', locked)
         with pytest.raises(OSError, match='locked'):
             owner.of(home).remove('older')
-    kept = owner.kept_memory(path)
-    assert path.exists() and 'bell' in kept.read_text(encoding='utf-8') and 'gong' not in kept.read_text(
-        encoding='utf-8')
+    assert path.exists() and {'bell', 'gong'} <= set(kept.read_text(encoding='utf-8').split('"'))
     assert not [one.name for one in kept.parent.glob(f'{kept.name}.*')], 'nothing staged is left'
-    assert owner.of(home).remove('older') and 'gong' in kept.read_text(encoding='utf-8')
-    # a removal that deletes the map's file and then fails on a file beside it has removed the map: its memory is
-    # kept, the file left beside it is said, and the next clear removes it
-    made = store.Store(path, create='older')
-    made.put_memory_entity('chime', 'part', ['It tinkles.'])
-    made.close()
-
+    # a removal that deletes the map's file and then fails on a file beside it has removed the map, and keeps its
+    # memory; the next clear, or the next map, removes the file left beside it
     def half(gone):
         gone.unlink()
         raise OSError('a file beside it is locked')
-    said: list[str] = []
     with monkeypatch.context() as patched:
         patched.setattr(store, 'remove', half)
-        assert owner.of(home).remove('older', said)
-    assert not path.exists() and 'chime' in kept.read_text(encoding='utf-8') and said == []
+        assert owner.of(home).remove('older')
+    assert not path.exists() and 'gong' in kept.read_text(encoding='utf-8')
     path.with_name(path.name + '.wal').write_text('left')
     assert owner.of(home).remove('older') is False and not list(path.parent.glob(f'{path.name}.*'))
-    # a new map at a path where an old map's files were left is made without them; a kept copy that cannot be read
-    # is left whole, never deleted by the new map's first write
-    leftover = path.with_name(path.name + '.left')  # a file of the old map's, beside its path
+    # a new map is made without an old map's files, and puts the kept memory back; that copy is withdrawn after the
+    # first write only while it is the copy that was put back
+    leftover = path.with_name(path.name + '.left')
     leftover.write_text('left')
-    kept.write_text('{"entities": [["bell", "part"', encoding='utf-8')
     owned = owner.of(home)
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
-    assert kept.read_text(encoding='utf-8') == '{"entities": [["bell", "part"'
-    assert not leftover.exists(), "the old map's file was removed before the new one was made"
-    # a kept copy the new map's store refuses, two entities of one name, never stops the map being made
+    assert not leftover.exists() and not kept.exists()
+    assert {one[0] for one in owned.read('older', lambda opened: opened.memory_entities())} == {'bell', 'gong', 'new'}
+    # a kept copy that cannot be read, or that the new map refuses, is left whole and never stops the map being made;
+    # the next clear sets it aside, never overwrites it
     assert owned.remove('older')
-    kept.write_text('{"entities": [["bell", "part", ["a"]], ["bell", "part", ["b"]]], "relations": []}',
-                    encoding='utf-8')
+    bad = '{"entities": [["bell", "part", ["a"]], ["bell", "part", ["b"]]], "relations": []}'
+    kept.write_text(bad, encoding='utf-8')
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
-    assert path.exists() and 'bell' in kept.read_text(encoding='utf-8'), 'the refused copy is left whole'
-    # a copy a clear set aside before it stopped is put back in place by the next clear, and nothing is left beside
-    earlier = kept.with_name(kept.name + '.earlier')
-    kept.replace(earlier)
-    assert owned.remove('older') and not earlier.exists() and 'new' in kept.read_text(encoding='utf-8')
+    assert path.exists() and kept.read_text(encoding='utf-8') == bad, 'the refused copy is left whole'
+    assert owned.remove('older')
+    assert kept.with_name(kept.name + '.unread').read_text(encoding='utf-8') == bad
+    assert 'new' in kept.read_text(encoding='utf-8')
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():

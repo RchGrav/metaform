@@ -485,9 +485,11 @@ class Store:
         """Remove these entities with every relation to or from them."""
         self._rows('MATCH (m:MemoryEntity) WHERE m.name IN $names DETACH DELETE m', names=names)
 
-    def add_memory_relation(self, start: str, end: str, relation_type: str) -> None:
-        last = self._rows('MATCH ()-[r:MemoryRelation]->() RETURN max(r.seq)')
-        seq = int(cast(int, last[0][0])) + 1 if last and last[0][0] is not None else 0
+    def add_memory_relation(self, start: str, end: str, relation_type: str, seq: int | None = None) -> None:
+        """One relation, after the last; `seq` when the caller numbers a run of them, which reads the last once."""
+        if seq is None:
+            last = self._rows('MATCH ()-[r:MemoryRelation]->() RETURN max(r.seq)')
+            seq = int(cast(int, last[0][0])) + 1 if last and last[0][0] is not None else 0
         self._rows('MATCH (a:MemoryEntity {name: $source}), (b:MemoryEntity {name: $target}) '
                    'CREATE (a)-[:MemoryRelation {relationType: $type, seq: $seq}]->(b)',
                    source=start, target=end, type=relation_type, seq=seq)
