@@ -469,7 +469,6 @@ class Owner:
         self._lock = threading.Lock()  # guards `_open` and each database's `users`
         self._opening = threading.Lock()  # one database is opened or made at a time
         self._open: OrderedDict[str, Database] = OrderedDict()
-        self._unremoved: set[Path] = set()  # new maps whose first write failed and whose removal failed
         self._closed = False
 
     def projects(self) -> list[str]:
@@ -525,13 +524,6 @@ class Owner:
         """Open or make the project's database, with `_opening` held, closing the least recently used idle one first
         when the limit is reached. When every open database is in use, the limit is exceeded for a time."""
         path = store.location(self.home, project)
-        if path in self._unremoved:  # never read as a map: it is removed first, or the open is refused
-            try:
-                store.remove(path)
-            except OSError as error:
-                raise StoreError(f'{project}: a new map whose first write failed is still at {path} and could not be '
-                                 f'removed: {error}. Close what holds it and run the command again.') from error
-            self._unremoved.discard(path)
         exists = path.exists()
         if not exists and not create:
             raise Missing(project)
@@ -616,24 +608,22 @@ class Owner:
         """A caller leaves a new map no write has reached yet, with `_opening` held. When a write of it failed and no
         caller is left in it, the map is removed: decided and done under the open lock, so no open, eviction or base
         switch comes between. Closing it serves any write still queued; one that commits ends `fresh`, and the map
-        stays. A map that cannot be removed is remembered, and the next open removes it first or refuses; the failure
-        is said, never raised, as the caller leaving may be another whose own result stands. A copy of memory the map
-        claimed is given back by the next open."""
+        stays. A map the system will not let go of stays, said and never raised, as the caller leaving may be another
+        whose own result stands; a clear removes it. A copy of memory the map claimed is given back by the next open."""
         with self._lock:
             database.users -= 1
-            if not database.fresh:
-                database.discarding = False
-            if not database.discarding or database.users or self._open.get(project) is not database:
+            if not (database.fresh and database.discarding and not database.users
+                    and self._open.get(project) is database):
                 return
             del self._open[project]
         try:
             database.close()
             if database.fresh:
                 store.remove(database.path)
-        except Exception as error:  # noqa: BLE001  said; the next open removes it first, or refuses
-            if database.fresh:
-                self._unremoved.add(database.path)
-            sys.stderr.write(f'{database.path}: a new map whose first write failed could not be removed: {error}\n')
+        except Exception as error:  # noqa: BLE001  said: the map stays, and a clear removes it
+            what = 'could not be removed, and stays until the project is cleared' if database.fresh else \
+                'was kept, as a queued write reached it, but did not close cleanly'
+            sys.stderr.write(f'{database.path}: a new map whose first write failed {what}: {error}\n')
 
     def close(self) -> None:
         with self._lock:
