@@ -185,12 +185,20 @@ a session can be loaded or resumed, already read what the agent advertises (`res
   kickoff work.
 - `src/metaform/modules/autoticket/tests/test_autoticket.py`: 2 failures, identical at `c4c2e031`.
 
-## Waiting on the person
+## Closing decisions (ticket `t-kickoff-close`)
 
-1. The placement of the 3D map's requirements (`specification-region-3d-map.proposed.md`), then
-   `metaform map specification op=import file=docs/plans/specification-region-3d-map.proposed.md --project metaform`.
-2. Every decision in the table above, to keep or reverse.
-3. GitHub billing, so that CI runs.
-4. The numeric targets for widening the experiment beyond the five-pair pilot (VALIDATION_PLAN section 4).
-5. Whether to keep `t-legacy-keep` (every old feature kept and moved), or to drop any of them. Dropping one is now a
-   choice about a working feature, not about a missing one.
+Taken under the person's standing policy reply, each with its reason:
+
+- **The 3D map's requirements are on the map.** The eight blocks were imported at `metaform.code.interface.graphical`
+  (VIEW-005, 006, 017, 025, 027, 035, 038). They are the person's own words, and an agent now reads them before
+  changing the 3D map. Phase 4 step 5 was checked: the project tool's read of the element carries them. To undo it:
+  `metaform map specification op=import file=~/.metaform/spec-before-3d-import-2026-11-17.md --project metaform`.
+- **The experiment stops at the five-pair pilot.** VALIDATION_PLAN forbids a wider trial without the owner's numeric
+  targets, and the person has said usage is short.
+- **Every decision in this record stands** until the person reverses it.
+
+## The one blocker left
+
+GitHub starts no CI job on this repository ("recent account payments have failed or your spending limit needs to be
+increased"). Only the account owner can clear it, in GitHub's Billing & plans settings. Until then, no commit has CI
+evidence; every result here comes from filtered local runs.
