@@ -663,9 +663,14 @@ class Store:
                    address=address, ident=ident, stamp=when)
         self._close_up(key, address)
 
-    def reopen_record(self, key: str, address: str, ident: str) -> None:
-        """Reopen a completed record: it comes back at the end of the list, at its next revision."""
-        position = self.next_position(key, address)
+    def reopen_record(self, key: str, address: str, ident: str, position: int | None = None) -> None:
+        """Reopen a completed record, at its next revision: back at `position`, the open records from there on moving
+        down one, or at the end of the list."""
+        if position is None:
+            position = self.next_position(key, address)
+        else:
+            self._rows(f'{self._held_at(key, address)} WHERE r.completed IS NULL AND r.position >= $position '
+                       'SET r.position = r.position + 1', address=address, position=position)
         self._rows(f'{self._held_at(key, address)} WHERE r.record = $ident AND r.completed IS NOT NULL '
                    'SET r.completed = NULL, r.position = $position, r.revision = r.revision + 1',
                    address=address, ident=ident, position=position)

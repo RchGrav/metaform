@@ -1255,6 +1255,42 @@ def test_the_root_blocks_round_trip_through_the_document_between_its_heading_and
     assert commands.perform_specification(P, None, owned)['document'] == edited
 
 
+
+def test_a_root_record_completes_and_reopens_as_an_elements_does(home, mapped):
+    """Review of 2026-11-18, F2: a root update with completed: true answered ok and changed nothing. The root's records
+    now complete as an element's do, leave the default read, are read back by their id, and reopen by their id."""
+    assert run({'update': {P: {'specification': [{'text': 'Mashtrac tracks mash packets.'},
+                                                  {'level': 1, 'title': 'Purpose', 'text': 'Obsolete.'}]}}})[
+        'status'] == 'ok'
+    intro, purpose = run({P: {}})[P]['specification']
+    assert run({'update': {P: {'specification': [{'position': 1, 'record': purpose['record'],
+                                                  'completed': True}]}}}) == {'status': 'ok'}
+    assert [one['record'] for one in run({P: {}})[P]['specification']] == [intro['record']]
+    (back,) = run({P: {'specification': {'record': purpose['record']}}})[P]['specification']
+    assert back['title'] == 'Purpose' and back['completed'].startswith('20')
+    assert run({'update': {P: {'specification': [{'record': purpose['record'], 'completed': False}]}}}) == {
+        'status': 'ok'}
+    assert [one['record'] for one in run({P: {}})[P]['specification']] == [intro['record'], purpose['record']]
+
+
+def test_a_reopened_specification_block_is_checked_and_can_come_back_where_it_was(home, mapped):
+    """Review of 2026-11-18, F12: an introduction completed and reopened came back after a heading, which the export
+    then refused. A reopen at the end that would break the block rules is refused whole; one given a position comes
+    back there, and the specification exports."""
+    owned = owner.of(metaform_home.home())
+    assert run({'update': {P: {'specification': [{'text': 'Intro.'}, {'level': 1, 'title': 'Purpose', 'text': 'R.'}]}}})[
+        'status'] == 'ok'
+    intro = run({P: {}})[P]['specification'][0]
+    assert run({'update': {P: {'specification': [{'position': 0, 'record': intro['record'],
+                                                  'completed': True}]}}}) == {'status': 'ok'}
+    refused = run({'update': {P: {'specification': [{'record': intro['record'], 'completed': False}]}}})
+    assert refused['status'] == 'error', refused
+    assert [one['title'] for one in run({P: {}})[P]['specification']] == ['Purpose'], 'the refusal changed nothing'
+    assert run({'update': {P: {'specification': [{'record': intro['record'], 'completed': False, 'position': 0}]}}}) == {
+        'status': 'ok'}
+    assert [one.get('text') for one in run({P: {}})[P]['specification']] == ['Intro.', 'R.']
+    assert commands.perform_specification(P, None, owned)['document'].startswith(f'# {P}\n\nIntro.\n\n## Purpose')
+
 def test_dispatch_waits_on_a_ticket_of_the_project_store(served):
     """Phase 3, F01: `dispatch wait` found no store ticket, since it read only the old store. A done store ticket now
     answers done at once, an open one waits out the limit as pending, and a condition a store ticket cannot meet is

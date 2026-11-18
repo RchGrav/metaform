@@ -211,8 +211,12 @@ def check(command: object) -> tuple[str, object]:
         raise refuse('there is no goto: a read of a path returns its fields, wanted_by and its overlays, such as '
                      '{"mashtrac.code.masher.widget": {}}', remedy)
     elif is_name(key) and key not in ROOTS:
-        if body != {}:
-            raise refuse(f"a read of the project's root takes {{}}, such as {{\"{key}\": {{}}}}", {key: {}})
+        named = as_object(body)
+        one = as_object(named.get('specification')) if named is not None and set(named) == {'specification'} else None
+        if body != {} and not (one is not None and set(one) == {'record'} and isinstance(one['record'], str)):
+            raise refuse(f"a read of the project's root takes {{}}, such as {{\"{key}\": {{}}}}, or one specification "
+                         f"block by its record id, such as {{\"{key}\": {{\"specification\": "
+                         '{"record": "r-..."}}}', {key: {}})
     elif '.' not in key:
         raise refuse(f"'{key}' is not a command or a path: the commands are {', '.join(COMMANDS)}, and a path to read "
                      "starts with the project's name, such as mashtrac.code.masher.widget", {'help': {}})

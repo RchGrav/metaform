@@ -268,7 +268,7 @@ def _answer(verb: str, body: object, command: object, owned: Owner, caller: str,
             return _write(verb, path, value, command, owned, caller, request)
         if '.' not in verb:  # the project's root: its own fields
             try:
-                return owned.read(verb, lambda opened: {verb: _root(opened)})
+                return owned.read(verb, lambda opened: {verb: _root(opened, as_object(body) or {})})
             except Missing:  # one word that is no project may be a command written wrongly: the answer names both
                 raise Refusal('NOT_FOUND', f"'{verb}' is not a command and not a project of this home: the commands "
                               f"are {', '.join(forms.COMMANDS)}, and {{\"map\": {{}}}} names the projects",
@@ -369,14 +369,19 @@ def _write_root(verb: str, project: str, fields: dict[str, object], owned: Owner
     return dict(OK)
 
 
-def _root(opened: Store) -> dict[str, object]:
+def _root(opened: Store, named: dict[str, object]) -> dict[str, object]:
     """The project's root: its own fields, and its specification blocks when it holds any, the project's own
-    description (F07), brought unasked as an element's are."""
+    description (F07), brought unasked as an element's are. A read naming one block by its record id gets that block,
+    open or completed, as an element's read does (review of 2026-11-18, F2)."""
     answer = _named(opened.root(), ROOT_FIELDS)
-    if specification.KEY in opened.overlay_keys() and opened.record_count(specification.KEY, ''):
-        found = definitions(opened.parts()).get(specification.KEY)
-        if found is not None:
-            answer[specification.KEY] = _records(opened, found, '')
+    if specification.KEY not in opened.overlay_keys():
+        return answer
+    found = definitions(opened.parts()).get(specification.KEY)
+    one = as_object(named.get(specification.KEY))
+    if found is not None and one and isinstance(one.get('record'), str):
+        answer[specification.KEY] = _by_reference(opened, found, '', str(one['record']))
+    elif found is not None and opened.record_count(specification.KEY, ''):
+        answer[specification.KEY] = _records(opened, found, '')
     return answer
 
 

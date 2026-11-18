@@ -150,7 +150,9 @@ HELP: dict[str, object] = {
                  "list counted from 0, changes that one record and leaves the others as they are. A read gives each "
                  "record its record id and revision: give them with the position, and an edit made from a read that "
                  "is no longer current is refused, RECORD_MOVED, RECORD_GONE or RECORD_CHANGED, instead of changing "
-                 "another record."),
+                 "another record. \"completed\": true with a position completes that record, at an element or the "
+                 "project's root: it leaves every read and keeps its id. {\"record\": \"r-...\", \"completed\": "
+                 "false} reopens it at the end of the list, or at the \"position\" given."),
         'fields': {
             'technical_name, name, role, ref, status': 'As in add.',
             'wants': ("A list of records. Each holds element, and ref to say which want when the element has "
