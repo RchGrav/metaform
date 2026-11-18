@@ -161,6 +161,7 @@ def _switch(home: Path, project: str, owned: Owner, record: dict[str, Any], sour
             if source is not None:
                 _move(source, path)
             incoming(path, memory)
+            left.update(elements=elements, held=held)  # on the record before settle writes it
             settle()
         except BaseException:
             if source is not None:
@@ -169,7 +170,6 @@ def _switch(home: Path, project: str, owned: Owner, record: dict[str, Any], sour
                 store.remove(path)
             _move(kept, path)
             raise
-    left.update(elements=elements, held=held)
     return {'name': left['name'], 'elements': elements, 'held': held}
 
 
