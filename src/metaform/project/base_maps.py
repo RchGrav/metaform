@@ -13,6 +13,7 @@ active.
 """
 from __future__ import annotations
 
+import copy as copy_module
 import json
 import os
 import threading
@@ -143,11 +144,12 @@ def _checked_name(name: str, verb: str) -> None:
 
 
 def _switch(home: Path, project: str, owned: Owner, record: dict[str, Any], source: Path | None,
-            incoming: Callable[[Path, Memory], None]) -> dict[str, Any]:
+            incoming: Callable[[Path, Memory], None], settle: Callable[[], None]) -> dict[str, Any]:
     """Set the active base aside and put another in its place, with the project's memory carried into it: the base
     set aside at `source`, or, with none, a new database `incoming` makes; `incoming` is given the path and the memory.
-    Done with the project's database closed; anything that fails puts every file back where it was. Answers what the
-    base set aside holds."""
+    Done with the project's database closed; anything that fails puts every file back where it was, and `settle`, which
+    writes the record of the bases, runs last inside that guard, so a record that cannot be written also puts every
+    file back and the files and the record never disagree. Answers what the base set aside holds."""
     left = cast(dict[str, Any], _named(record, record['active']))
     with owned.released(project) as path:
         with Store(path) as opened, opened.reading():
@@ -159,6 +161,7 @@ def _switch(home: Path, project: str, owned: Owner, record: dict[str, Any], sour
             if source is not None:
                 _move(source, path)
             incoming(path, memory)
+            settle()
         except BaseException:
             if source is not None:
                 _move(path, source)
@@ -204,8 +207,7 @@ def perform(asked: dict[str, Any], owned: Owner) -> dict[str, object]:
             if op not in ('add', 'collapse', 'activate', 'remove'):
                 raise Refused('BASE_OPERATION', f'{op} is not a base operation: list, add, activate, collapse or '
                               'remove.', 'metaform help map bases')
-            answer = _changed(home, project, owned, record, op, name)
-            _save(home, project, record)
+            answer = _changed(home, project, owned, record, op, name)  # writes the record itself, inside its guard
         if answer.get('left') is not None:  # a switch happened: a removal, or activating the active base, changes no map
             _announce(owned, project)
         return {'status': 'ok', **answer}
@@ -227,11 +229,12 @@ def _changed(home: Path, project: str, owned: Owner, record: dict[str, Any], op:
                     with Store(_aside(home, project, cast(str, record['active']))) as old:
                         _copy_map(old, fresh)
                 _put_memory(fresh, memory)
-        left = _switch(home, project, owned, record, None, made)
-        stamp = _now()
-        record['bases'].append({'name': chosen, 'created': stamp, 'activated': stamp, 'elements': None,
-                                'held': None})
-        record['active'] = chosen
+        def settle() -> None:
+            stamp = _now()
+            _saved(home, project, record, lambda new: (new['bases'].append(
+                {'name': chosen, 'created': stamp, 'activated': stamp, 'elements': None, 'held': None}),
+                new.update(active=chosen)))
+        left = _switch(home, project, owned, record, None, made, settle)
         return {'base': chosen, 'asked': name, 'left': left}
     found = _named(record, name)
     if found is None:
@@ -243,16 +246,36 @@ def _changed(home: Path, project: str, owned: Owner, record: dict[str, Any], op:
         def kept(path: Path, memory: Memory) -> None:
             with Store(path) as opened:
                 _put_memory(opened, memory)
-        left = _switch(home, project, owned, record, _aside(home, project, name), kept)
-        found.update(activated=_now(), elements=None, held=None)
-        record['active'] = name
+        def settle() -> None:
+            def change(new: dict[str, Any]) -> None:
+                cast(dict[str, Any], _named(new, name)).update(activated=_now(), elements=None, held=None)
+                new['active'] = name
+            _saved(home, project, record, change)
+        left = _switch(home, project, owned, record, _aside(home, project, name), kept, settle)
         return {'base': name, 'asked': name, 'left': left}
     if name == record['active']:  # remove
         raise Refused('BASE_ACTIVE', f'{name} is the active base of {project}; it is not removed while it is active.',
                       f'metaform map activate <another base of {project}> --confirm')
     stamp = _now().replace(':', '').replace('-', '')
     copy = home / 'backups' / 'remove-base' / project / stamp / f'{name}.lbug'
-    if _files(_aside(home, project, name)):
+    moved = bool(_files(_aside(home, project, name)))
+    if moved:
         _move(_aside(home, project, name), copy)
-    record['bases'] = [base for base in cast(list[dict[str, Any]], record['bases']) if base['name'] != name]
+    try:  # a record that cannot be written puts the base back where it was
+        _saved(home, project, record, lambda new: new.update(
+            bases=[base for base in cast(list[dict[str, Any]], new['bases']) if base['name'] != name]))
+    except BaseException:
+        if moved:
+            _move(copy, _aside(home, project, name))
+        raise
     return {'base': name, 'kept': str(copy), 'held': found.get('held') or {}, 'elements': found.get('elements')}
+
+
+def _saved(home: Path, project: str, record: dict[str, Any], change: Callable[[dict[str, Any]], object]) -> None:
+    """Write the record of the bases as `change` leaves it, and only once it is written take that state in memory too,
+    so a failed write leaves both the file and `record` as they were."""
+    new = copy_module.deepcopy(record)
+    change(new)
+    _save(home, project, new)
+    record.clear()
+    record.update(new)

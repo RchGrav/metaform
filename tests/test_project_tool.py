@@ -1296,3 +1296,30 @@ def test_the_specification_command_never_overwrites_a_document_and_a_refusal_kee
     with pytest.raises(Stop, match='Nothing was written') as stale:
         verb(ctx(op='import', file=str(path)))
     assert f'op=import file={path}' in str(stale.value.next_step) and path.read_text() == edited
+
+
+def test_a_base_switch_whose_record_cannot_be_written_puts_every_file_back(mapped, monkeypatch):
+    """Bases, after verification (helper-2cdabcb8): writing the record of the bases is the switch's last step, inside
+    its guard, so when it fails the files and the record are left as they were and the project still reads its map;
+    a removal whose record cannot be written puts the base back."""
+    from metaform.project import base_maps
+    owned = owner.of(metaform_home.home())
+    whole = run({'map': P})
+    assert base_maps.perform({'project': P, 'op': 'add', 'name': 'fresh'}, owned)['status'] == 'ok'
+    assert base_maps.perform({'project': P, 'op': 'activate', 'name': 'main'}, owned)['status'] == 'ok'
+    before = (base_maps.folder(metaform_home.home(), P) / 'bases.json').read_text()
+    real = base_maps._save
+
+    def failing(*_args: object) -> None:
+        raise OSError('disk full')
+    monkeypatch.setattr(base_maps, '_save', failing)
+    for asked in ({'op': 'add', 'name': 'other'}, {'op': 'activate', 'name': 'fresh'},
+                  {'op': 'remove', 'name': 'fresh'}):
+        with pytest.raises(OSError):
+            base_maps.perform({'project': P, **asked}, owned)
+        assert run({'map': P}) == whole, asked  # the project still reads its own map
+        assert (base_maps.folder(metaform_home.home(), P) / 'bases.json').read_text() == before, asked
+    monkeypatch.setattr(base_maps, '_save', real)
+    listed = base_maps.perform({'project': P, 'op': 'list'}, owned)
+    assert (listed['active'], [one['name'] for one in listed['bases']]) == ('main', ['main', 'fresh'])
+    assert base_maps.perform({'project': P, 'op': 'activate', 'name': 'fresh'}, owned)['status'] == 'ok'
