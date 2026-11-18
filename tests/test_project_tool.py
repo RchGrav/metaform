@@ -675,8 +675,28 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     assert not held.exists() and not kept.exists()
     facts = {one[0]: one[2] for one in owned.read('older', lambda opened: opened.memory_entities())}
     assert 'Old fact.' in facts['bell']
+    # a refused write to a map a write already reached leaves it standing, with that write
+    with pytest.raises(store.StoreError, match='refused by the test'):
+        owned.write('older', 'test', refused, create=True)
+    assert path.exists() and 'gongs' in {one[0] for one in owned.read('older', lambda opened: opened.memory_entities())}
     assert owned.remove('older')
     kept.unlink()
+    # a new map whose first write fails while another caller reads it is removed once that caller leaves
+    import threading
+    entered, go = threading.Event(), threading.Event()
+    def reading() -> None:
+        owned.read('older', lambda _opened: (entered.set(), go.wait(30)))
+    reader = threading.Thread(target=reading)
+    def failing(_opened):
+        reader.start()
+        assert entered.wait(30)
+        raise store.StoreError('refused by the test')
+    with pytest.raises(store.StoreError, match='refused by the test'):
+        owned.write('older', 'test', failing, create=True)
+    assert path.exists()  # the reader is still in it
+    go.set()
+    reader.join(30)
+    assert not path.exists()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
     odd = '{"entities": [["bell", "part", null]], "relations": []}'
     kept.write_text(odd, encoding='utf-8')
