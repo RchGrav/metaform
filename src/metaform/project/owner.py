@@ -44,7 +44,9 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
-_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK}  # a filesystem with no links
+# what a filesystem with no hard links answers: POSIX, Windows (ERROR_INVALID_FUNCTION and ERROR_NOT_SUPPORTED,
+# as EINVAL), and FUSE or network filesystems (ENOSYS)
+_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.EINVAL, errno.ENOSYS}
 
 
 def held_memory(path: Path) -> Path:
@@ -63,7 +65,8 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
     kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
 
     def lost(what: str, error: Exception) -> dict[str, list[list[object]]]:
-        said_here = f"{path.stem}'s {what} could not be read and {'are' if what.endswith('s') else 'is'} not kept: {error}"
+        verb = 'are' if what.endswith('s') else 'is'
+        said_here = f"{path.stem}'s {what} could not be read and {verb} not kept: {error}"
         sys.stderr.write(said_here + '\n')
         if said is not None:
             said.append(said_here)
@@ -100,10 +103,9 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
 def _merged(path: Path, memory: dict[str, list[list[object]]]) -> tuple[dict[str, list[list[Any]]], list[Path]]:
     """A map's memory merged with the copies already kept beside it, the held copy a new map claimed and the kept
     copy, as a union: an entity's observations from every source, each once, its type from the last source that names
-    one, and each relation once among the entities kept. Also the copies that cannot be parsed,
-    to set aside once the merged copy is written. The map's type wins when it names one, as its source comes last. A copy
-    that cannot be
-    read from disk raises OSError, so the clear stops and a retry finds it whole."""
+    one (the map's, which comes last, when it names one), and each relation once among the entities kept. Also the
+    copies that cannot be parsed, to set aside once the merged copy is written. A copy that cannot be read from disk
+    raises OSError, so the clear stops and a retry finds it whole."""
     sources: list[dict[str, list[list[Any]]]] = []
     unparsed: list[Path] = []
     for copy in (held_memory(path), kept_memory(path)):
@@ -255,6 +257,7 @@ class Database:
         self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
+        self.stored = False  # whether any write to it has committed: a database holding one is never discarded
         self.put_back = False  # whether it holds the kept memory it put back, claimed as `held_memory`
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
@@ -331,8 +334,12 @@ class Database:
                     with self._writing.transaction():
                         put = _put_back(self._writing)
                     if put:  # committed: the copy is claimed by a rename, and withdrawn after the first write
-                        kept_memory(self.path).replace(held_memory(self.path))
-                        self.put_back = True
+                        try:
+                            kept_memory(self.path).replace(held_memory(self.path))
+                            self.put_back = True
+                        except OSError as error:  # the map holds it, and the copy stays: deleted memory may come back
+                            sys.stderr.write(f'{kept_memory(self.path)}: the memory was put back into the new map, but '
+                                             f'its kept copy could not be claimed and stays: {error}\n')
                 except (StoreError, OSError) as error:  # the copy stays as it was: memory may come back, never lost
                     sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
                                      f'and is not put back: {error}\n')
@@ -394,6 +401,7 @@ class Database:
             except BaseException:  # noqa: BLE001, S110  one write of the group failed: each is now run alone
                 pass
             else:
+                self.stored = True  # before any caller hears of it, so a discard never removes a committed write
                 for (_, future, _), result in zip(group, results):
                     future.set_result(result)
                 self._tell({kind for _, _, kind in group})
@@ -406,6 +414,7 @@ class Database:
             except BaseException as error:  # noqa: BLE001  the caller receives its own failure
                 future.set_exception(error)
             else:
+                self.stored = True
                 future.set_result(result)
                 stored.add(kind)
         if stored:
@@ -463,9 +472,11 @@ class Owner:
                     self._discard(project, database)
                 raise
             if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
-                with self._lock, contextlib.suppress(OSError):  # database now, and its claimed copy goes, while it is
-                    if self._open.get(project) is database:  # still the project's open one: a clear or discard takes
-                        held_memory(database.path).unlink(missing_ok=True)  # it out first, under this lock
+                with self._lock:  # database now, and its claimed copy goes while it is still the project's open one: a
+                    current = self._open.get(project) is database  # clear takes it out first, under this lock
+                if current:  # the file outside the lock; a clear or open that meets it merges it the same
+                    with contextlib.suppress(OSError):
+                        held_memory(database.path).unlink(missing_ok=True)
             database.fresh = False
             return result
 
@@ -509,9 +520,13 @@ class Owner:
         if held_memory(path).exists():
             if exists:
                 with contextlib.suppress(OSError):
-                    held_memory(path).unlink(missing_ok=True)
-            else:
-                _write_kept(path, {'entities': [], 'relations': []}, None)
+                    held_memory(path).unlink()
+            else:  # never made without it: the memory it holds would be lost
+                try:
+                    _write_kept(path, {'entities': [], 'relations': []}, None)
+                except (OSError, ValueError) as error:
+                    raise StoreError(f'{project} cannot be made: the memory a discarded map claimed could not be '
+                                     f'kept again first: {error}') from error
         if not exists:  # a removal that stopped part way may have left the old map's files: never read into the new one
             try:
                 store.remove(path)
@@ -573,7 +588,7 @@ class Owner:
         open lock, so no open finds it half removed. A copy of memory it claimed is given back by the next open."""
         with self._opening:
             with self._lock:
-                if database.users > 1 or self._open.get(project) is not database:
+                if database.users > 1 or self._open.get(project) is not database or database.stored:
                     return
                 del self._open[project]
             database.close()
