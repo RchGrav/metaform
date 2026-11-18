@@ -15,6 +15,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import json
+import os
 import sys
 import threading
 from collections import OrderedDict, deque
@@ -40,6 +41,12 @@ def kept_memory(path: Path) -> Path:
     the map, and a memory whose object is gone is hidden, never deleted, so the memory is kept until the project's
     database is made again and is then put back into it."""
     return path.with_name(f'{path.stem}.memory.json')
+
+
+def held_memory(path: Path) -> Path:
+    """Where a new map holds the kept memory it put back until its first write is stored: the copy claimed, by a
+    rename, so a clear before then merges it again and nothing else mistakes it for a copy still to put back."""
+    return path.with_name(f'{path.stem}.memory.json.held')
 
 
 
@@ -86,60 +93,81 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
             sys.stderr.write(f'{path.stem}: closing it after reading its memory failed: {error}\n')
 
 
-def _merged(kept: Path, memory: dict[str, list[list[object]]]) -> tuple[dict[str, list[list[Any]]], bool]:
-    """A map's memory laid over the copy already kept, the map's entity winning for a name, and whether the kept copy
-    could not be parsed and must be set aside before the merged one takes its place. Two entities of one name within
-    a source give one with both their observations; each relation is kept once among the entities kept. A kept copy
-    that cannot be read from disk raises OSError, so the clear stops and a retry finds it whole."""
+def _merged(path: Path, memory: dict[str, list[list[object]]]) -> tuple[dict[str, list[list[Any]]], list[Path]]:
+    """A map's memory merged with the copies already kept beside it, the held copy a new map claimed and the kept
+    copy, as a union: an entity's observations from every source, each once, its type from the last source that names
+    one (the map's own first), and each relation once among the entities kept. Also the copies that cannot be parsed,
+    to set aside once the merged copy is written. A copy that cannot be read from disk raises OSError, so the clear
+    stops and a retry finds it whole."""
     sources: list[dict[str, list[list[Any]]]] = []
-    unparsed = False
-    if kept.exists():
+    unparsed: list[Path] = []
+    for copy in (held_memory(path), kept_memory(path)):
+        if not copy.exists():
+            continue
         try:
-            sources.append(_read_kept(kept))
+            sources.append(_read_kept(copy))
         except OSError:
             raise
         except Exception:  # noqa: BLE001  a copy that is not a kept memory, however it fails to parse
-            unparsed = True
+            unparsed.append(copy)
     sources.append(cast(dict[str, list[list[Any]]], memory))
-    entities: dict[str, list[Any]] = {}
-    for source in sources:  # in order of priority, the last winning for a name
-        within: dict[str, list[Any]] = {}
-        for one in source['entities']:
-            name = str(one[0])
-            if name in within:  # one name twice in one source: its observations together
-                within[name][2] = [*within[name][2], *(said for said in one[2] if said not in within[name][2])]
-            else:
-                within[name] = [one[0], one[1], list(one[2])]
-        entities.update(within)
+    kinds: dict[str, Any] = {}
+    observed: dict[str, dict[str, None]] = {}  # each name's observations in order, each once
+    for source in sources:
+        for name, kind, observations in source['entities']:
+            key = str(name)
+            if kind is not None or key not in kinds:
+                kinds[key] = kind
+            observed.setdefault(key, {}).update(dict.fromkeys(str(one) for one in observations))
     seen: set[tuple[str, str, str]] = set()
     relations: list[list[Any]] = []
     for source in sources:
         for one in source['relations']:
-            key = (str(one[0]), str(one[1]), str(one[2]))
-            if key[0] in entities and key[1] in entities and key not in seen:
-                seen.add(key)
-                relations.append(list(one))
-    return {'entities': list(entities.values()), 'relations': relations}, unparsed
+            key3 = (str(one[0]), str(one[1]), str(one[2]))
+            if key3[0] in kinds and key3[1] in kinds and key3 not in seen:
+                seen.add(key3)
+                relations.append(list(key3))
+    entities = [[name, kinds[name], list(observed[name])] for name in kinds]
+    return {'entities': entities, 'relations': relations}, unparsed
 
 
-def _put_back(opened: Store) -> int | None:
-    """Into a database just made, the memory layer its project had when it was last cleared; the kept copy's
-    modification time when it was put back, None otherwise. A copy that cannot be read, or that the store refuses, is
-    said and left where it is, whole, never a reason the map cannot be made."""
+def _set_aside(copy: Path) -> Path:
+    """A copy that cannot be parsed, moved under the first `.unread-<n>` name no file has: created exclusively, by a
+    hard link, so another file of that name is never overwritten."""
+    number = 1
+    while True:
+        aside = copy.with_name(f'{kept_name(copy)}.unread-{number}')
+        try:
+            os.link(copy, aside)
+        except FileExistsError:
+            number += 1
+            continue
+        copy.unlink()
+        return aside
+
+
+def kept_name(copy: Path) -> str:
+    """The kept memory's own name for a copy of it, held or kept."""
+    return copy.name.removesuffix('.held')
+
+
+def _put_back(opened: Store) -> bool:
+    """Into a database just made, the memory layer its project had when it was last cleared; whether it was put
+    back. A copy that cannot be read, or that the store refuses, is said and left where it is, whole, never a reason
+    the map cannot be made."""
     kept = kept_memory(opened.path)
     try:
         if not kept.exists():
-            return None
-        stamp = kept.stat().st_mtime_ns
+            return False
         memory = _read_kept(kept)
     except Exception as error:  # noqa: BLE001  any copy it cannot read, however it fails
         sys.stderr.write(f'{kept}: the memory a clear kept could not be read and is not put back: {error}\n')
-        return None
+        return False
     for name, kind, observations in memory['entities']:
         opened.put_memory_entity(name, kind, observations)
     for seq, (start, end, relation_type) in enumerate(memory['relations']):
         opened.add_memory_relation(start, end, relation_type, seq)
-    return stamp
+    return True
 
 
 def _read_kept(kept: Path) -> dict[str, list[list[Any]]]:
@@ -186,7 +214,7 @@ class Database:
         self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
-        self.put_back: int | None = None  # the kept memory's modification time when it was put back into it
+        self.put_back = False  # whether it holds the kept memory it put back, claimed as `held_memory`
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
         self._turn: deque[str] = deque()  # the callers with writes waiting, in the order they are served
@@ -261,8 +289,10 @@ class Database:
                 try:
                     with self._writing.transaction():
                         put = _put_back(self._writing)
-                    self.put_back = put  # once its transaction committed; a commit that failed, or whose outcome is
-                except StoreError as error:  # unknown, leaves the copy kept: memory may come back, but is never lost
+                    if put:  # committed: the copy is claimed by a rename, and withdrawn after the first write
+                        kept_memory(self.path).replace(held_memory(self.path))
+                        self.put_back = True
+                except (StoreError, OSError) as error:  # the copy stays as it was: memory may come back, never lost
                     sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
                                      f'and is not put back: {error}\n')
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
@@ -391,13 +421,9 @@ class Owner:
                 if database.fresh:
                     self._discard(project, database)
                 raise
-            if database.fresh and database.put_back is not None:  # the first write stored: the memory put back is
-                kept = kept_memory(database.path)  # held by the database now, while it is the project's open one and
-                with self._opening, contextlib.suppress(OSError):  # the copy is the one put back; any other stays
-                    with self._lock:
-                        current = self._open.get(project) is database
-                    if current and kept.stat().st_mtime_ns == database.put_back:
-                        kept.unlink()
+            if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
+                with contextlib.suppress(OSError):  # database now, and its claimed copy goes; a clear meanwhile merged it
+                    held_memory(database.path).unlink(missing_ok=True)
             database.fresh = False
             return result
 
@@ -470,19 +496,20 @@ class Owner:
             # the map's own entity winning for a name, and written whole to its own file and renamed into place, so
             # a torn write never lands where the next map reads it. The kept copy is withdrawn only once a new map
             # holds it (`write`). A removal that fails leaves the map standing and the copy at most fuller.
-            if memory['entities']:
-                merged, unparsed = _merged(kept, memory)
+            held = held_memory(path)
+            if memory['entities'] or held.exists():
+                merged, unparsed = _merged(path, memory)
                 fresh = kept.with_name(kept.name + '.new')
                 try:
                     fresh.write_text(json.dumps(merged, ensure_ascii=False), encoding='utf-8')
-                    if unparsed:  # set aside only once the merged copy is written whole, under a name no file has
-                        number = 1
-                        while (aside := kept.with_name(f'{kept.name}.unread-{number}')).exists():
-                            number += 1
-                        kept.replace(aside)
+                    for copy in unparsed:  # set aside only once the merged copy is written whole
+                        aside = _set_aside(copy)
+                        note = f'the memory kept at {copy} could not be read and is set aside as {aside}'
+                        sys.stderr.write(note + '\n')
                         if said is not None:
-                            said.append(f'the memory kept at {kept} could not be read and is set aside as {aside}')
+                            said.append(note)
                     fresh.replace(kept)
+                    held.unlink(missing_ok=True)  # merged into the kept copy
                 except (OSError, ValueError):  # a write that fails, or text that cannot be written, removes nothing
                     with contextlib.suppress(OSError):
                         fresh.unlink(missing_ok=True)

@@ -1,4 +1,6 @@
 """The project tool's command engine over its LadybugDB store (src/metaform/project)."""
+import json
+
 import pytest
 
 from metaform import home as metaform_home
@@ -652,6 +654,18 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('again', 'part', ['Fresh.']), create=True)
     assert owned.remove('older')
     assert aside.read_text(encoding='utf-8') == bad and kept.with_name(kept.name + '.unread-2').exists()
+    # a kept copy beside a map is merged with its memory as a union, never replaced: a kept fact and the map's new
+    # fact of one entity both stay, and a copy a new map holds (`held`) is merged too, then withdrawn
+    assert not path.exists()
+    owned.write('older', 'test', lambda opened: opened.put_memory_entity('bell', 'part', ['Fresh.']), create=True)
+    kept.write_text('{"entities": [["bell", "part", ["Old fact."]]], "relations": []}', encoding='utf-8')
+    held = owner.held_memory(path)
+    held.write_text('{"entities": [["chime", "part", ["It tinkles."]]], "relations": []}', encoding='utf-8')
+    assert owned.remove('older') and not held.exists()
+    union = json.loads(kept.read_text(encoding='utf-8'))
+    assert sorted((one[0], tuple(one[2])) for one in union['entities'] if one[0] in ('bell', 'chime')) == [
+        ('bell', ('Old fact.', 'Fresh.')), ('chime', ('It tinkles.',))]
+    kept.unlink()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
     odd = '{"entities": [["bell", "part", null]], "relations": []}'
     kept.write_text(odd, encoding='utf-8')
