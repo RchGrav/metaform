@@ -285,3 +285,22 @@ def memories(project: str) -> dict[str, Any] | None:
             'overlay_records': [{**record, 'kept_in': 'memories overlay, from before the memory layer'}
                                 for record in older]}
 
+
+
+def layer_items(project: str, key: str) -> list[dict[str, Any]] | None:
+    """Every record of one overlay across a project, each as the page hangs an item on its element in 3D: VIEW-017,
+    "In 3D, every item of the layers turned on is its own node" (09-viewer.md). The item's id is the record's lasting
+    id (F02), so it stays the same across loads; its value is the record's fields as written. The wants are the base
+    map's own joins and are not items. None when the project store holds no such project."""
+    name = commands.stored_name(project)
+    if not commands.holds(name) or key == 'wants':
+        return None if not commands.holds(name) else []
+    found = commands.overlay_records(name, key)
+    if found is None:
+        return None
+    lead = len(name) + 1
+    return [{'id': str(record.get('record') or f"{record['element']}:{record['position']}"), 'layer_id': key,
+             'layer': key, 'target': {'kind': 'element', 'id': str(record['element'])[lead:]},
+             'value': {field: value for field, value in record.items()
+                       if field not in ('element', 'position', 'record', 'revision')}}
+            for record in found]

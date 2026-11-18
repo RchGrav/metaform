@@ -1323,3 +1323,16 @@ def test_a_base_switch_whose_record_cannot_be_written_puts_every_file_back(mappe
     listed = base_maps.perform({'project': P, 'op': 'list'}, owned)
     assert (listed['active'], [one['name'] for one in listed['bases']]) == ('main', ['main', 'fresh'])
     assert base_maps.perform({'project': P, 'op': 'activate', 'name': 'fresh'}, owned)['status'] == 'ok'
+
+
+def test_each_overlay_record_is_an_item_the_page_hangs_on_its_element(served):
+    """VIEW-017, "In 3D, every item of the layers turned on is its own node": for a store project the page's
+    layer-items read gives each record of the overlay as an item on the element that holds it, with the record's
+    lasting id; it once gave none, so no overlay showed in the view. The wants are joins, not items."""
+    from metaform.modules.web import project_map
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [{'id': 't-1', 'title': 'Ring', 'task': 'Ring.'}]}}},
+                        served) == {'status': 'ok'}
+    (item,) = project_map.layer_items(P, 'tickets')
+    assert item['target'] == {'kind': 'element', 'id': 'code.masher.widget'} and item['id'].startswith('r-')
+    assert item['value'] == {'id': 't-1', 'title': 'Ring', 'task': 'Ring.'} and item['layer'] == 'tickets'
+    assert project_map.layer_items(P, 'wants') == [] and project_map.layer_items('nosuch', 'tickets') is None

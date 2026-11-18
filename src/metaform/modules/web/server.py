@@ -1025,11 +1025,13 @@ class Handler(BaseHTTPRequestHandler):
             if held_messages is not None:
                 return self.send(200, plain(held_messages))
         if name == 'layer-items':
-            # Nothing is read ahead for a project in the project store: an overlay's records are read with the
-            # element they are at, when the person opens it, and never the whole project's at a load.
-            from metaform import project as project_store
-            if project_store.holds(project_store.stored_name(given.get('project', ''))):
-                return self.send(200, {'results': [], 'next': None})
+            # A project in the project store: every record of the overlay, each hung on its element as its own node,
+            # VIEW-017. An earlier change read nothing here, so no overlay ever showed in the view (the person,
+            # 2026-11-17: "none of the other layers are rendering in the view").
+            from .project_map import layer_items
+            held_items = layer_items(given.get('project', ''), given.get('layer', ''))
+            if held_items is not None:
+                return self.send(200, {'results': held_items, 'next': None})
         if name == 'node':  # an element of a project in the project store, with its overlays' records
             from .project_map import node as stored_node
             held = stored_node(given.get('project', ''), given.get('target', ''), given.get('layers'))
