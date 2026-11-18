@@ -13,6 +13,7 @@ connection, against the last committed state, and never waits for a write.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import sys
 import threading
@@ -46,25 +47,42 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
     Opened unchecked, so a database an earlier version made can still be cleared; one with no memory layer keeps none,
     and says nothing. The entities, then the relations among them, are read each on its own, so what can be read is
     kept; what cannot, the database itself included, never keeps the map from being cleared, and is said to whoever
-    cleared it, once for its one cause."""
+    cleared it, once for its one cause. A failure to close the database after its reads changes neither."""
     kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
+
+    def lost(what: str, error: Exception) -> tuple[dict[str, list[list[object]]], bool]:
+        said_here = f"{path.stem}'s {what} could not be read and {'are' if what.endswith('s') else 'is'} not kept: {error}"
+        sys.stderr.write(said_here + '\n')
+        if said is not None:
+            said.append(said_here)
+        return kept, False
     try:
-        with Store(path, checked=False) as opened, opened.reading():
+        opened = Store(path, checked=False)
+    except Exception as error:  # noqa: BLE001  the engine's own errors too: a damaged database is still cleared
+        return lost('memory', error)
+    try:
+        with opened.reading():
             tables = opened.tables()
             if 'MemoryEntity' not in tables:
                 return kept, True
-            kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
-                                                         in opened.memory_entities()])
+            try:
+                kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
+                                                             in opened.memory_entities()])
+            except Exception as error:  # noqa: BLE001
+                return lost('memory', error)
             if 'MemoryRelation' in tables:
-                kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
-    except Exception as error:  # noqa: BLE001  the engine's own errors too: a damaged database is still cleared
-        lost = (f"{path.stem}'s memory relations could not be read and are not kept: {error}"
-                if kept['entities'] else f"{path.stem}'s memory could not be read and is not kept: {error}")
-        sys.stderr.write(lost + '\n')
-        if said is not None:
-            said.append(lost)
-        return kept, False
-    return kept, True
+                try:
+                    kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
+                except Exception as error:  # noqa: BLE001
+                    return lost('memory relations', error)
+            return kept, True
+    except Exception as error:  # noqa: BLE001  opening its read failed: nothing of it was read
+        return lost('memory', error)
+    finally:
+        try:
+            opened.close()
+        except Exception as error:  # noqa: BLE001  after the reads: what they read stands
+            sys.stderr.write(f'{path.stem}: closing it after reading its memory failed: {error}\n')
 
 
 def _put_back(opened: Store) -> None:
@@ -350,8 +368,11 @@ class Owner:
             # Kept for the next map, LAYER-013, before the map goes, so a write that fails leaves it whole. A memory an
             # earlier clear kept is replaced, or withdrawn when this one was read whole and holds none, so nothing
             # deleted since comes back; it is never withdrawn on a read that failed, when it may be the one copy left.
-            if memory['entities']:
+            if memory['entities'] and (whole or not kept.exists()):  # a partial read never replaces a whole copy
                 kept.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
+            elif memory['entities'] and said is not None:
+                said.append(f'the memory an earlier clear kept at {kept} is kept as it was, since this one was read '
+                            'in part')
             elif whole:
                 try:
                     kept.unlink(missing_ok=True)
@@ -361,8 +382,9 @@ class Owner:
             try:
                 store.remove(path)
             except BaseException:
-                if path.exists() and memory['entities']:  # the map is still there: what was just kept goes again
-                    kept.unlink(missing_ok=True)
+                if path.exists() and memory['entities'] and whole:  # the map is still there: what was just kept goes
+                    with contextlib.suppress(OSError):  # its own error never hides the removal's
+                        kept.unlink(missing_ok=True)
                 raise
             return True
 

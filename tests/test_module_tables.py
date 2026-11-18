@@ -417,10 +417,10 @@ def test_clear_removes_the_metaform_level_rows_keeps_the_project_level_ones_and_
         assert [row['note_id'] for row in tx.rows('notes', limit=0).results] == ['n1', 'n2', 'n3']
 
 
-def test_a_clear_or_restore_whose_project_store_map_is_refused_stops_and_says_so(ledger, monkeypatch):
-    """Review of 2026-11-18: a clear the project service refuses fails, saying the rest was cleared and backed up and
-    why the map's clear failed; a restore stops the same way, since a map left there would stand in front of the
-    bases it brings back, and goes through once the map clears."""
+def test_a_clear_or_restore_whose_project_store_map_is_refused_removes_nothing_and_says_so(ledger, monkeypatch):
+    """Review of 2026-11-18: the project-store map is cleared first of what a clear removes, so a clear the project
+    service refuses removes nothing else and says why, and a restore stopped by it leaves the project as it was and
+    goes through once the map clears."""
     from metaform.data import StoreError
     from metaform.project import commands
     from metaform.project.store import StoreError as MapError
@@ -430,12 +430,16 @@ def test_a_clear_or_restore_whose_project_store_map_is_refused_stops_and_says_so
         raise MapError(f"{project}'s map in the project store was not removed: it died.")
     with monkeypatch.context() as patched:
         patched.setattr(commands, 'clear', refused)
-        with pytest.raises(StoreError, match='cleared except its map in the project store: .*died. Its backup is'):
+        with pytest.raises(StoreError, match='was not cleared, and nothing else of it was removed: .*it died'):
             metaform_home.clear_project('proj')
-        backup = max((metaform_home.home() / 'backups' / 'clear' / 'proj').iterdir()).name
-        with pytest.raises(StoreError, match='cleared except its map in the project store'):
-            metaform_home.restore_project('proj', backup)
-    metaform_home.restore_project('proj', backup)
+        with ledger.tables(write=False) as tx:  # nothing went
+            assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']
+    cleared = metaform_home.clear_project('proj')
+    with monkeypatch.context() as patched:
+        patched.setattr(commands, 'clear', refused)
+        with pytest.raises(StoreError, match='was not cleared'):
+            metaform_home.restore_project('proj', cleared.backup)
+    metaform_home.restore_project('proj', cleared.backup)
     with Store('proj', module='ledger').tables(write=False) as tx:
         assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']
 

@@ -66,19 +66,19 @@ def stored_name(project_id: str) -> str:
 
 def clear(project: str, home: Path | None = None, said: list[str] | None = None) -> bool:
     """Remove a project's database, as clearing the project does: True when it was removed, False when the project
-    store held none. What of its memory could not be kept is added to `said`. A clear the project service refuses
-    raises StoreError, since the map is then still there."""
+    store held none. What of its memory could not be kept is added to `said`. A clear the project service refuses, or
+    whose answer was lost, raises StoreError: the map is then still there, or may be."""
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
     if project not in store_projects(where):
         return False
     answer = service.send(None, where, 'clear', clear=project)
+    if said is not None:  # said of its memory whether or not the clear went through
+        said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))
     if answer.get('status') != 'ok':
         unknown = answer.get('code') == 'OUTCOME_UNKNOWN'
         raise StoreError(f"{project}'s map in the project store {'may not have been' if unknown else 'was not'} "
                          f"removed: {answer.get('message') or 'the project service refused it'}")
-    if said is not None:
-        said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))
     return bool(answer.get('removed'))
 
 

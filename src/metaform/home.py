@@ -1459,21 +1459,14 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     # is left working, unseen and unstoppable, on a map that is gone; their conversations stay, `AT_WORK`. Every start
     # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
     with halted(project_id, 'clear'):
-        cleared = _cleared(project_id, found, made_by)
-        from metaform.project import commands  # the project's map in the project store goes with it
-        from metaform.project.store import StoreError as MapError
         lost: list[str] = []
-        try:
-            commands.clear(commands.stored_name(project_id), said=lost)
-        except (StoreError, MapError) as error:  # the rest is cleared and backed up; the map's clear is said as it is
-            raise StoreError(f"{project_id} was cleared except its map in the project store: "
-                             f"{str(error).rstrip('.')}. Its backup is {cleared.backup}.",
-                             f'metaform clear project {project_id} --confirm') from error
+        cleared = _cleared(project_id, found, made_by, lost)
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
-def _cleared(project_id: str, found: Cleared, made_by: str) -> Cleared:
-    """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start."""
+def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> Cleared:
+    """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start.
+    What of the map's memory could not be kept is added to `lost`."""
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
@@ -1483,6 +1476,16 @@ def _cleared(project_id: str, found: Cleared, made_by: str) -> Cleared:
         reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
         raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: {reason}.',
                          'metaform list backups') from error
+    # The project's map in the project store goes first of what is removed: when its clear is refused nothing else is
+    # removed, so a clear, or a restore's clear, refused there leaves the project as it was (review of 2026-11-18).
+    from metaform.project import commands
+    from metaform.project.store import StoreError as MapError
+    try:
+        commands.clear(commands.stored_name(project_id), said=lost)
+    except (StoreError, MapError) as error:
+        raise StoreError(f"{project_id} was not cleared, and nothing else of it was removed: "
+                         f"{str(error).rstrip('.')}.", 'run the same command again once the project service answers') \
+            from error
     folder = _folder_of_project(project_id)
     stores = _stores(folder)
     with project_db(folder, write=True) as db:
