@@ -1,6 +1,7 @@
 """Real ticket and board persistence for cooperative worksheet execution over worktrees."""
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -237,11 +238,11 @@ def test_in_the_old_store_a_worksheet_shares_a_peers_take_and_a_refused_round_ta
 
     def locked(self, *args, **kwargs):
         tried.append(True)
-        raise RuntimeError('database is locked')
+        raise sqlite3.OperationalError('database is locked')
 
     def ticket(self, *args, **kwargs):  # the read after the failed take meets the same lock
         if tried:
-            raise RuntimeError('database is locked')
+            raise sqlite3.OperationalError('database is locked')
         return read(self, 'ticket')(*args, **kwargs)
     monkeypatch.setattr(Store, 'take_work', locked, raising=False)
     monkeypatch.setattr(Store, 'ticket', ticket, raising=False)

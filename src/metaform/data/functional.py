@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from .store import Store
 
 
+UNAVAILABLE = 'The ticket’s functional element could not be read.'  # in place of each section, never "none"
+
+
 def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
     """Read actual joins at the ticket's receiver, never infer dependencies from adjacent namespaces."""
     address = work.address or work.receiver_address
@@ -21,7 +24,8 @@ def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
     element = store.element(address) if address else None
     if element is None:
         return {'address': address, 'name': address or work.node_id, 'nodes': [], 'requirements': [],
-                'dependents': [], 'markdown': 'The ticket’s functional element is unavailable.'}
+                'dependents': [], 'markdown': 'The ticket’s functional element is unavailable.',
+                **dict.fromkeys(('requirements_unread', 'dependents_unread'), UNAVAILABLE)}
     nodes: dict[str, dict[str, str]] = {}
 
     def node(at: str, name: str | None = None, short: str = '') -> str:
@@ -63,7 +67,8 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     read = project_store.run({path: {}})
     if read.get('status') == 'error':
         return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
-                'markdown': 'The ticket’s functional element is unavailable.'}
+                'markdown': 'The ticket’s functional element is unavailable.',
+                **dict.fromkeys(('requirements_unread', 'dependents_unread'), UNAVAILABLE)}
     held = cast(dict[str, Any], read[path])
     start = len(project) + 1
     nodes: dict[str, dict[str, str]] = {}

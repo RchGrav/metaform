@@ -40,7 +40,8 @@ function joinList(functionality) {
   return [
     h('h4', {}, 'Requires'),
     list(functionality.requirements || [], join => h('li', {}, join.purpose || 'No purpose recorded',
-      h('small', {}, join.providers.map(named).join(', ') || 'No provider recorded'))),
+      h('small', {}, join.providers.map(named).join(', ') || 'No provider recorded')),
+      functionality.requirements_unread || ''),
     h('h4', {}, 'Relied on by'),
     list(functionality.dependents || [], join => h('li', {}, named(join.receiver),
       h('small', {}, join.purpose || 'No purpose recorded')), functionality.dependents_unread || '')];

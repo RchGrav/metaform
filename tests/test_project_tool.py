@@ -574,7 +574,7 @@ def test_a_base_switch_waits_for_a_read_already_running(mapped):
     assert isinstance(outcome[0], list) and outcome[1] == 'released', outcome
 
 
-def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home):
+def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home, monkeypatch):
     """Review of 2026-11-18: no layout is upgraded, so a database made before the memory layer is refused when opened,
     naming what it lacks and the command that clears it, never left to fail on an engine error later."""
     path = store.location(home, 'older')
@@ -586,23 +586,14 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home)
     with pytest.raises(store.StoreError, match='lacks MemoryEntity.*metaform clear project older'):
         store.Store(path)
     assert owner.of(home).remove('older') and not path.exists(), 'the clear it names still clears it'
-    # a clear the service refuses is said, never reported as done
-    said: list[str] = []
+    # a clear the service refuses is raised, never reported as done; nothing to remove is no refusal
     store.Store(path, create='older').close()
-    real_send = service.send
-    try:
-        service.send = lambda *args, **kwargs: {'status': 'error', 'code': 'INTERNAL_ERROR', 'message': 'it died'}
-        assert commands.clear('older', home, said) is False
-    finally:
-        service.send = real_send
-    assert said == ["older's map in the project store was not removed: it died"]
-    assert owner.of(home).remove('older')
-    from metaform.data.functional import _rendered
-    region = _rendered('code.x', {'code.x': {'id': 'n0', 'address': 'code.x', 'name': 'X'}}, [], [],
-                       unread='The elements relying on code.x could not be read: busy')
-    assert region['dependents_unread'] and region['markdown'].endswith(
-        '### Functionality relying on this element\n\nThe elements relying on code.x could not be read: busy')
-    assert '### Requirements\n\nNone recorded.' in region['markdown']
+    with monkeypatch.context() as patched:
+        patched.setattr(service, 'send', lambda *args, **kwargs: {'status': 'error', 'code': 'INTERNAL_ERROR',
+                                                                  'message': 'it died'})
+        with pytest.raises(store.StoreError, match="older's map in the project store was not removed: it died"):
+            commands.clear('older', home, [])
+    assert owner.of(home).remove('older') is True and owner.of(home).remove('older') is False
     # a database with memory but no relations table keeps its memory when cleared
     made = store.Store(path, create='older')
     made.put_memory_entity('bell', 'part', ['It rings.'])
@@ -610,6 +601,17 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home)
     made.close()
     assert owner.of(home).remove('older')
     assert 'bell' in owner.kept_memory(path).read_text(encoding='utf-8'), 'the memory is kept, never dropped'
+
+
+def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():
+    """Review of 2026-11-18: a section whose read failed said "None recorded.", which reads as nothing there."""
+    from metaform.data.functional import _rendered
+    region = _rendered('code.x', {'code.x': {'id': 'n0', 'address': 'code.x', 'name': 'X'}}, [], [],
+                       unread='The elements relying on code.x could not be read: busy')
+    assert region['dependents_unread'] and region['markdown'].endswith(
+        '### Functionality relying on this element\n\nThe elements relying on code.x could not be read: busy')
+    assert '### Requirements\n\nNone recorded.' in region['markdown']
+
 
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}

@@ -1400,7 +1400,7 @@ class Cleared:
     @property
     def said(self) -> str:
         """What `clear project` removed, said after it did."""
-        lost = ''.join(f' {one}.' for one in self.lost)
+        lost = ''.join(f" {one.rstrip('.')}." for one in self.lost)
         return (f'Cleared {self.project_id}: {self._bases(False)} and '
                 f'{counted(self.reports, "report file", "report files")}.{self._agents(True)} {KEPT}{lost}')
 
@@ -1462,7 +1462,12 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
         cleared = _cleared(project_id, found, made_by)
         from metaform.project import commands  # the project's map in the project store goes with it
         lost: list[str] = []
-        commands.clear(commands.stored_name(project_id), said=lost)
+        try:
+            commands.clear(commands.stored_name(project_id), said=lost)
+        except StoreError as error:  # the rest is cleared and backed up; the person is told the map is still there
+            raise StoreError(f'{project_id} was cleared except its map in the project store, which is still there: '
+                             f'{error}. Its backup is {cleared.backup}.',
+                             f'metaform clear project {project_id} --confirm') from error
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
@@ -1644,7 +1649,7 @@ class Restored:
     def said(self) -> str:
         stopped = (f' Stopped {counted(len(self.stopped), "agent", "agents")} at work on what it replaced first: '
                    f'{"; ".join(self.stopped)}.' if self.stopped else '')
-        lost = ''.join(f' {one}.' for one in self.lost)
+        lost = ''.join(f" {one.rstrip('.')}." for one in self.lost)
         return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.{stopped} The '
                 f'conversations with agents were kept, with everything said since the backup.{lost}')
 

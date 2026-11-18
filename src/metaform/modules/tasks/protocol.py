@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import os
+import sqlite3
 import uuid
 from collections.abc import Callable
 from importlib import resources
@@ -274,7 +275,7 @@ def _done_since(ctx: Context, ticket: str) -> bool:
     """Whether an old-store ticket is done now."""
     try:
         return ctx.require_store().ticket(ticket).work.done is not None
-    except Exception:  # noqa: BLE001  read after a take that failed, maybe for the same cause: not known done
+    except (StoreError, sqlite3.Error):  # read after a take that failed, maybe for the same cause: not known done
         return False
 
 

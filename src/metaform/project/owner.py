@@ -47,27 +47,19 @@ def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list
     with Store(path, checked=False) as opened, opened.reading():
         tables = opened.tables()
         kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
-        # each part read on its own, so what can be read is kept; what cannot never keeps the map from being cleared,
-        # and is said to whoever cleared it
-        for part, table, read in (('entities', 'MemoryEntity', lambda: [[name, kind, observations] for
-                                                                       name, kind, observations in
-                                                                       opened.memory_entities()]),
-                                  ('relations', 'MemoryRelation', lambda: [list(relation) for relation in
-                                                                         opened.memory_relations()])):
-            if table not in tables:
-                continue
-            try:
-                kept[part] = cast(list[list[object]], read())
-            except StoreError as error:
-                lost = f"{path.stem}'s memory {part} could not be read and are not kept: {error}"
-                sys.stderr.write(lost + '\n')
-                if said is not None:
-                    said.append(lost)
-        if kept['relations'] and not kept['entities']:  # relations are kept only with their entities
-            dropped = f"{path.stem}'s {len(kept['relations'])} memory relations are not kept, since their entities are not"
-            sys.stderr.write(dropped + '\n')
+        # the entities, then the relations among them, each read on its own, so what can be read is kept; what cannot
+        # never keeps the map from being cleared, and is said to whoever cleared it, once for its one cause
+        try:
+            kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
+                                                         in opened.memory_entities()])
+            if 'MemoryRelation' in tables:
+                kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
+        except StoreError as error:
+            lost = (f"{path.stem}'s memory relations could not be read and are not kept: {error}"
+                    if kept['entities'] else f"{path.stem}'s memory could not be read and is not kept: {error}")
+            sys.stderr.write(lost + '\n')
             if said is not None:
-                said.append(dropped)
+                said.append(lost)
         return kept
 
 
@@ -350,9 +342,9 @@ class Owner:
             if not path.exists():
                 return False
             memory = _memory_of(path, said)
+            if memory['entities']:  # kept for the next map, LAYER-013, before the map goes: a write that fails leaves
+                kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')  # it whole
             store.remove(path)
-            if memory['entities']:  # the map goes; its memory is kept for the next one, LAYER-013
-                kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
             return True
 
     @contextmanager

@@ -65,19 +65,20 @@ def stored_name(project_id: str) -> str:
 
 
 def clear(project: str, home: Path | None = None, said: list[str] | None = None) -> bool:
-    """Remove a project's database, as clearing the project does. False when the project store holds none. What of
-    its memory could not be kept is added to `said`."""
+    """Remove a project's database, as clearing the project does: True when it was removed, False when the project
+    store held none. What of its memory could not be kept is added to `said`. A clear the project service refuses
+    raises StoreError, since the map is then still there."""
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
     if project not in store_projects(where):
         return False
     answer = service.send(None, where, 'clear', clear=project)
+    if answer.get('status') != 'ok':
+        raise StoreError(f"{project}'s map in the project store was not removed: "
+                         f"{answer.get('message') or 'the project service refused it'}")
     if said is not None:
         said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))
-        if answer.get('status') != 'ok':  # a refused clear is said, never reported as cleared
-            said.append(f"{project}'s map in the project store was not removed: "
-                        f"{answer.get('message') or 'the project service refused it'}")
-    return answer.get('status') == 'ok'
+    return bool(answer.get('removed'))
 
 
 def overlay_records(project: str, key: str, home: Path | None = None, at: str | list[str] | None = None,
@@ -626,11 +627,11 @@ def _exported_key(key: int, entry: list[Any]) -> object:
         return entry[1]
     if key == 1 and len(entry) > 3 and isinstance(entry[2], int) and isinstance(entry[3], str):  # [id, digest, level,
         return specification.heading_digest(specification.Block(entry[2], entry[3], ''))      # title]
-    if key in (1, 2) and not (len(entry) > 2 and isinstance(entry[2], int)):  # the earlier form holds no digests
+    if key in (1, 2):
+        if len(entry) > 2 and isinstance(entry[2], int):  # the earlier form holds a level, never a digest
+            return None
         value = entry[key + 1] if len(entry) > key + 1 else None
         return value if specification.is_digest(value) else None
-    if key in (1, 2):
-        return None
     return 'introduction' if len(entry) > 2 and entry[2] is None else None
 
 
