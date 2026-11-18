@@ -444,6 +444,13 @@ def test_a_clear_or_restore_whose_project_store_map_is_refused_removes_nothing_a
         assert refusal.value.next_step == f'metaform restore project proj {cleared.backup}'
         with ledger.tables(write=False) as tx:  # its bases and their rows stay as they were
             assert 'e9' in [row['entry_id'] for row in tx.rows('entries', limit=0).results]
+    with monkeypatch.context() as patched:  # a restore stopped for another cause keeps that cause's own remedy
+        def unwritable(*_args, **_kwargs):
+            raise OSError('the disk is full')
+        patched.setattr(metaform_home, 'backup_project', unwritable)
+        with pytest.raises(StoreError, match='could not be backed up') as refusal:
+            metaform_home.restore_project('proj', cleared.backup)
+        assert refusal.value.next_step == 'metaform list backups'
     metaform_home.restore_project('proj', cleared.backup)
     with Store('proj', module='ledger').tables(write=False) as tx:
         assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']

@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, ParamSpec, TypeVar, cast
 
 from . import changes, sqlite
-from .errors import Stop, StoreError
+from .errors import NewerStore, Stop, StoreError
 from .wording import counted, listed
 
 file_lock, Held = sqlite.file_lock, sqlite.Held  # the lock between processes, for modules, which cannot import sqlite
@@ -1400,7 +1400,7 @@ class Cleared:
     @property
     def said(self) -> str:
         """What `clear project` removed, said after it did."""
-        lost = ''.join(f" {one.rstrip('.')}." for one in self.lost)
+        lost = _sentences(self.lost)
         return (f'Cleared {self.project_id}: {self._bases(False)} and '
                 f'{counted(self.reports, "report file", "report files")}.{self._agents(True)} {KEPT}{lost}')
 
@@ -1437,6 +1437,16 @@ def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
     count = sum(1 for path in reports.iterdir() if path.is_file()) if reports is not None and reports.is_dir() else 0
     held = tuple(holds_said(holds_of(project_id, form.id)) for form in bases(project_id))
     return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else (), holds=held)
+
+
+class ClearRefused(StoreError):
+    """A clear stopped at or after its project-store map, saying what it did first; a restore names itself as the
+    command to run again."""
+
+
+def _sentences(said: Iterable[str]) -> str:
+    """Notes as sentences after a message, each ending in one period."""
+    return ''.join(f" {one.rstrip('.')}." for one in said)
 
 
 def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
@@ -1483,14 +1493,16 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
     again = f'metaform clear project {project_id} --confirm'
     done = ''.join([f' Its agents at work were asked to stop first: {"; ".join(stopped)}.' if stopped else '',
                     f' A backup was made first: {saved.name}.' if saved is not None else ''])
-    folder = _folder_of_project(project_id)  # resolved before the map goes, so a project gone from the list stops here
-    stores = _stores(folder)
     try:
+        folder = _folder_of_project(project_id)  # resolved before the map goes
+        stores = _stores(folder)
         commands.clear(commands.stored_name(project_id), said=lost)
-    except (StoreError, MapError) as error:  # nothing else is removed, and no memory is lost
+    except NewerStore:
+        raise  # newer code holds the store: handed over as it is
+    except (StoreError, MapError, OSError) as error:  # no base or report is removed
         changes.note(project_id)  # a clear whose answer was lost may have removed the map: pages read it again
-        raise StoreError(f"{project_id} was not cleared, and none of its bases or reports was removed: "
-                         f"{str(error).rstrip('.')}.{done}", again) from error
+        raise ClearRefused(f"{project_id} was not cleared, and none of its bases or reports was removed: "
+                           f"{str(error).rstrip('.')}.{done}{_sentences(lost)}", again) from error
     # the map is gone, and a clear never brings it back: what follows is said as unfinished, never left unsaid
     try:
         with project_db(folder, write=True) as db:
@@ -1500,11 +1512,13 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
         for store in stores:
             _remove_files(store, failed)
         _remove_tree(folder / 'reports', failed)
+    except NewerStore:
+        changes.note(project_id)
+        raise
     except (OSError, sqlite3.Error, StoreError) as error:
         changes.note(project_id)
-        kept_said = ''.join(f" {one.rstrip('.')}." for one in lost)
-        raise StoreError(f'{project_id} is cleared in part: its map in the project store is removed, and its bases '
-                         f"and reports are not: {str(error).rstrip('.')}.{done}{kept_said}", again) from error
+        raise ClearRefused(f'{project_id} is cleared in part: its map in the project store is removed, and its bases '
+                           f"and reports are not: {str(error).rstrip('.')}.{done}{_sentences(lost)}", again) from error
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
                    saved.name if saved is not None else None, stopped, found.holds)
@@ -1663,7 +1677,7 @@ class Restored:
     def said(self) -> str:
         stopped = (f' Stopped {counted(len(self.stopped), "agent", "agents")} at work on what it replaced first: '
                    f'{"; ".join(self.stopped)}.' if self.stopped else '')
-        lost = ''.join(f" {one.rstrip('.')}." for one in self.lost)
+        lost = _sentences(self.lost)
         return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.{stopped} The '
                 f'conversations with agents were kept, with everything said since the backup.{lost}')
 
@@ -1715,9 +1729,9 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
     # stops the restore, saying what it did first and naming this restore as the command to run again
     try:
         cleared = clear_project(project_id, made_by='restore')
-    except StoreError as error:
-        raise StoreError(str(error), f'metaform restore project {project_id}' + (f' {name}' if name else '')) \
-            from error
+    except ClearRefused as error:  # the restore, not a clear, is what runs again; any other refusal keeps its remedy
+        error.next_step = f'metaform restore project {project_id}' + (f' {name}' if name else '')
+        raise
     before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
