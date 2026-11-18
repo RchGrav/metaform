@@ -80,11 +80,13 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     node(address, str(held.get('name') or '') or None)
     requirements = [wanted(address, one) for one in cast(list[dict[str, Any]], held.get('wants') or [])]
     dependents: list[dict[str, Any]] = []
-    for holder in (str(one)[start:] for one in cast(list[Any], held.get('wanted_by') or [])):
-        node(holder)
-        theirs = cast(dict[str, Any], project_store.run({f'{project}.{holder}': {}}).get(f'{project}.{holder}') or {})
-        dependents += [wanted(holder, one) for one in cast(list[dict[str, Any]], theirs.get('wants') or [])
-                       if str(one.get('element') or '') == path]
+    if held.get('wanted_by'):  # the wants naming it, each with its holder, from one read of the map
+        drawn = project_store.drawn(project) or {}
+        for one in cast(list[dict[str, Any]], drawn.get('wants') or []):
+            if str(one.get('element') or '') == path:
+                holder = str(one.get('holder') or '')[start:]
+                node(holder)
+                dependents.append(wanted(holder, one))
     return _rendered(address, nodes, requirements, dependents)
 
 

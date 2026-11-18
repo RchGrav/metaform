@@ -2993,6 +2993,11 @@ def test_a_store_projects_reads_page_leave_done_tickets_out_and_find_a_completed
     assert back['status'] == 'done' and back['completed'].startswith('20'), back
     refused = run('map', 'work', 'op=edit', f'id={ids[0]}', 'note=more', cwd=in_store, ok=False)
     assert refused.returncode != 0 and 'changes only once reopened' in refused.stdout + refused.stderr
+    from metaform.data import Store, StoreError  # through the store's own work operations, as dispatch calls them
+    with pytest.raises(StoreError, match="'canceled' is not a status of work"):
+        Store('proj').finish_work(ids[2], 'Done.', outcome='canceled')
+    with pytest.raises(StoreError, match='No work record has the id'):
+        Store('proj').complete_delivery('t-none')
 
 @pytest.mark.req('MAP-045')
 def test_the_bases_of_a_project_in_the_project_store_are_its_databases_and_its_memory_goes_with_the_project(

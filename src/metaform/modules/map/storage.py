@@ -65,6 +65,7 @@ from . import ticket_history
 from .project_work import (
     held_name,
     project_work,
+    stored_delivered,
     stored_edit,
     stored_finish,
     stored_move,
@@ -733,11 +734,11 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
     resolution and outcome. Resolved work closes directly. Delivery receipts, commits, publication and activation
     never gate closure. `proven` remains accepted for callers using the former proof API."""
-    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
-        return stored_finish(held, work_id, resolution, why, outcome)
     ended = status.known(outcome, "map work op=done id=<id>")
     if ended not in status.TERMINAL:
         raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_finish(held, work_id, resolution, why, ended)
     notices: list[Notice] = []
     row = _work_row(tx, work_id)
     if row["done"] is not None:
@@ -760,7 +761,7 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
 def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
     """Close staged work, including faults, after dispatch records successful delivery."""
     if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
-        return stored_work(held, ids=[work_id]).results[0]
+        return stored_delivered(held, work_id)
     row = _work_row(tx, work_id)
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
     if row["done"] is not None or settings is None or not settings["landed"]:

@@ -2654,6 +2654,18 @@ def test_the_whole_first_prompt_stays_bounded_however_much_is_inherited_at_the_n
     assert '"deferred"' in whole and f'metaform map context {NODE}' in whole and 'x' * 1000 not in whole
     dispatch.stop()
 
+
+@pytest.mark.req('BASE-050')
+def test_a_worker_handed_its_ticket_on_the_command_line_is_told_of_the_agents_at_work(dispatch, monkeypatch):
+    """Review of 2026-11-18: the runner builds a worker's hand-off for the command line, and the line on the other
+    agents at work was added only for MCP, so no dispatched worker was told of them."""
+    from metaform.module import context
+    from metaform.modules.dispatch import handoff_parts, peering
+    monkeypatch.setattr(peering, 'working', lambda ctx, store: [{'work_id': 'another-ticket'}])
+    text, links = handoff_parts(context('dispatch', dispatch.folder, project='proj'), dispatch.id,
+                                session='worker-session', on='cli')
+    assert '1 other agents are at work in this project: metaform dispatch peers' in text and links == []
+
 @pytest.mark.req('MCP-039')
 @pytest.mark.req('BASE-050')
 def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kilobytes(dispatch, run):

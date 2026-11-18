@@ -202,25 +202,28 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
     if now is None or not taken:
         return now
     by = f'a2a {now.peer}'
-    left = list(taken)  # each claim is marked delivered once written, and what is left is given back on a failure
+    # What was written is marked delivered in one write after them all; what was not written is given back, so the
+    # next follower writes it. A key written and then not marked stays claimed, never freed to be written twice at
+    # once; only a claim whose writer died is taken again, after its `stale` time.
+    written: list[str] = []
+    question: str | None = None
     try:
         for one in artifacts:
             key = f'artifact:{one.artifact_id}'
             if key in taken:
                 text = _said(one.parts)
                 _tell(project, now.address, text, by, one.name or _title(text), messages)
-                records.delivered(project, exchange_id, [key])
-                left.remove(key)
+                written.append(key)
         asking = [key for key in taken if key.startswith('question:')]
         if asking and said:
             question = _ask(project, now.address, said, by, _title(said),
                             prompt('a2a_peer_question_why', peer=now.peer), messages)
-            records.delivered(project, exchange_id, asking)
-            left = [key for key in left if key not in asking]
-            if records.asking(project, exchange_id, now.asked, question):  # its answer goes back, `answered`
-                now = records.exchange(project, exchange_id)
+            written += asking
     finally:
-        records.released(project, exchange_id, left)
+        records.released(project, exchange_id, [key for key in taken if key not in written])
+    records.delivered(project, exchange_id, written)
+    if question is not None and records.asking(project, exchange_id, now.asked, question):  # its answer goes back
+        now = records.exchange(project, exchange_id)
     return now
 
 

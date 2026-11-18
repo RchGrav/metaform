@@ -204,6 +204,22 @@ def test_an_empty_worksheet_is_refused_and_claims_nothing(working):
     assert working.board.round(ticket) is None and not working.store.ticket(ticket).work.taken
 
 
+
+def test_in_the_old_store_a_worksheet_shares_a_peers_take_and_a_refused_round_takes_nothing(working, monkeypatch):
+    """The old store's take is shared participation: a worksheet over a ticket a peer took is made, and a round that
+    is refused leaves no ticket taken, since an old-store take cannot be given back (review of 2026-11-18)."""
+    shared = working.call('ticket', node=NODE, summary='Timer', text='Fix it.')['ticket']
+    working.store.take_work(shared, by='bob')
+    assert working.call('worksheet', worktree=shared, holder='alice', items=['Inspect'])['worktree'] == shared
+    free = working.call('ticket', node=NODE, summary='Bell', text='Ring it.')['ticket']
+
+    def refused(*_args, **_kwargs):
+        raise ValueError('the round could not be saved')
+    monkeypatch.setattr(type(working.board), 'set_round', refused)
+    with pytest.raises(Stop, match='could not be saved'):
+        working.call('worksheet', worktree=free, holder='alice', items=['Inspect'])
+    assert not working.store.ticket(free).work.taken
+
 def test_a_ticket_in_another_worktree_is_not_claimable_under_its_own_id(working):
     one = working.call('ticket', node=NODE, summary='Face', text='Draw it.', worktree='timer')['ticket']
     with pytest.raises(Stop, match='No open ticket'):

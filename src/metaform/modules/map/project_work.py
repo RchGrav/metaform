@@ -347,6 +347,12 @@ def stored_step(name: str, work_id: str, said: Any = None) -> StoredWork:
                                 'note': '\n\n'.join(part for part in (kept, line) if part) or None})
 
 
+def stored_delivered(name: str, work_id: str) -> StoredWork:
+    """`complete_delivery`: the ticket as it stands. The project store keeps no staged delivery to close it by, so a
+    ticket there is closed by its own `done`; a ticket that is gone is refused as the old store refuses it."""
+    return as_work(name, _one(name, work_id))
+
+
 def stored_ticket(name: str, work_id: str, **_: Any) -> Ticket:
     """`ticket`: the one ticket; the project store's map is read by the project tool, so no old-store node read
     goes with it."""

@@ -573,6 +573,19 @@ def test_a_base_switch_waits_for_a_read_already_running(mapped):
     switch.join(10)
     assert isinstance(outcome[0], list) and outcome[1] == 'released', outcome
 
+
+def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home):
+    """Review of 2026-11-18: no layout is upgraded, so a database made before the memory layer is refused when opened,
+    naming what it lacks and the command that clears it, never left to fail on an engine error later."""
+    path = store.location(home, 'older')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    made = store.Store(path, create='older')
+    made._rows('DROP TABLE MemoryRelation')
+    made._rows('DROP TABLE MemoryEntity')
+    made.close()
+    with pytest.raises(store.StoreError, match='lacks MemoryEntity.*metaform clear project older'):
+        store.Store(path)
+
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
     assert run({'add': {P: root}}) == {'status': 'ok'}  # the first write makes the project
@@ -1237,6 +1250,16 @@ def test_an_import_keeps_newer_edits_and_block_ids_and_takes_a_code_swap_whole(s
         '`T-0` Purpose', '`B-1` Purpose')
     assert project_store.specification_document(P, swapped, served)['status'] == 'ok'
     assert (held(WIDGET)[0]['code'], held(CS)[0]['code']) == ('B-1', 'A-1')
+    # a block added where a deleted one stood is new: it never takes the deleted block's id
+    fresh = project_store.specification_document(P, home=served)['document']
+    purpose, limits = held(WIDGET)
+    first = f"### `{purpose['code']}` Purpose\n\n{purpose['text']}\n\n"
+    assert first in fresh
+    added = fresh.replace(first, '').replace('Edited sibling.', 'Edited sibling.\n\n### Errors\n\nA new block.')
+    assert project_store.specification_document(P, added, served)['status'] == 'ok', added
+    after = held(WIDGET)
+    assert [one['title'] for one in after] == ['Limits', 'Errors'] and after[0]['record'] == limits['record']
+    assert purpose['record'] not in [one['record'] for one in after], 'the new block took the deleted one\'s id'
     # a document without its baseline line is refused
     assert project_store.specification_document(P, prose(fresh), served)['code'] == 'DOCUMENT_REFUSED'
 

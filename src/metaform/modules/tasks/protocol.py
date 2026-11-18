@@ -203,14 +203,18 @@ def worksheet(ctx: Context) -> dict[str, Any]:
                    'registers its worksheet again.', 'metaform tasks board')
     # Each ticket's own owner, not only the worksheet's holder: a ticket another agent claimed directly is theirs, and
     # a worksheet over it is refused before anything is claimed or saved (review of 2026-11-18, F6).
+    # The project store's claim is exclusive; the old store's take is shared participation, so it is checked there only.
     by = actor(ctx) or holder
-    owned = [one for one in tickets if one.get('taken_by') and one['taken_by'] not in (by, holder)]
+    exclusive = project_tickets.held(ctx) is not None
+    owned = [one for one in tickets if exclusive and one.get('taken_by') and one['taken_by'] not in (by, holder)]
     if owned:
         said = ', '.join(f"{one['ticket']} is taken by {one['taken_by']}" for one in owned)
         raise Stop(f'{said}: a worksheet '
                    'takes only tickets that are free or already yours. Pair with the holder (tasks pair) or message '
                    'them.', 'metaform tasks board')
-    claimed = _claim(ctx, tickets, by)  # before the round: a refused claim leaves no worksheet
+    # Before the round in the project store, whose claims can be given back if the round is not made; the old store's
+    # take cannot be undone, so its tickets are taken after the round, as before.
+    claimed = _claim(ctx, tickets, by) if exclusive else []
     try:
         # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
         made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
@@ -223,6 +227,8 @@ def worksheet(ctx: Context) -> dict[str, Any]:
     except BaseException:
         _release(ctx, claimed, by)
         raise
+    if not exclusive:
+        _claim(ctx, tickets, by)
     _sync_progress(ctx, result)
     changed(ctx, [holder], name, result['tickets'])
     if made is None:

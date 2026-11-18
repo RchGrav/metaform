@@ -597,9 +597,10 @@ def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[s
 
 def _identified(found: list[specification.Block], exported: list[list[str]]) -> list[dict[str, object]]:
     """An edited address's blocks as records to store, each keeping the record id of the exported block it is: a
-    block exported as it stands keeps its block's id, and each other block takes, in order, the id of an exported
-    block that was edited, so editing one block keeps every block's id (review of 2026-11-18, F5). A block beyond
-    those is new."""
+    block exported as it stands keeps its block's id, and a block edited in place, at the position of an exported
+    block nothing else kept, keeps that block's id, so editing one block keeps every block's id (review of
+    2026-11-18, F5). Any other block is new: a block added where a deleted one stood never takes its id, which
+    references to the deleted one still name."""
     free = list(exported)
     taken: list[str | None] = []
     for block in found:
@@ -607,9 +608,12 @@ def _identified(found: list[specification.Block], exported: list[list[str]]) -> 
         if same is not None:
             free.remove(same)
         taken.append(same[0] if same is not None else None)
-    edited = iter(one[0] for one in exported if one in free)
-    return [{**block.stored(), **({'record': ident} if (ident := given or next(edited, None)) else {})}
-            for block, given in zip(found, taken)]
+    kept = {ident for ident in taken if ident is not None}
+    for at, ident in enumerate(taken):
+        if ident is None and at < len(exported) and exported[at] in free and exported[at][0] not in kept:
+            taken[at] = exported[at][0]
+            kept.add(exported[at][0])
+    return [{**block.stored(), **({'record': ident} if ident else {})} for block, ident in zip(found, taken)]
 
 
 def perform_specification(project: str, document: str | None, owned: Owner, caller: str = '',

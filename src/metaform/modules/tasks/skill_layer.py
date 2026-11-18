@@ -38,18 +38,19 @@ def _definition() -> dict[str, object]:
     }
 
 
-def _stored_address(name: str, given: str) -> str:
-    """An element's address beneath the project, refused when the project's map holds no such element."""
+def _stored_element(name: str, given: str) -> tuple[str, dict[str, Any]]:
+    """An element's address beneath the project and its read, in one call; refused when the map holds no such
+    element."""
     address = given.removeprefix('element:')
-    if address.startswith('join:') or project_store.run({f'{name}.{address}': {}}).get('status') == 'error':
+    answer = {} if address.startswith('join:') else project_store.run({f'{name}.{address}': {}})
+    if not answer or answer.get('status') == 'error':
         raise Stop(f'No functional node {given}.', 'map node node=<address>')
-    return address
+    return address, cast(dict[str, Any], answer.get(f'{name}.{address}') or {})
 
 
 def _stored_scope(name: str, given: str) -> list[str]:
     """The element arrived at, then the elements its wants name and those whose wants name it."""
-    address = _stored_address(name, given)
-    read = cast(dict[str, Any], project_store.run({f'{name}.{address}': {}}).get(f'{name}.{address}') or {})
+    address, read = _stored_element(name, given)
     near = [str(one.get('element') or '') for one in cast(list[dict[str, Any]], read.get('wants') or [])]
     near += [str(one) for one in cast(list[Any], read.get('wanted_by') or [])]
     start = len(name) + 1
@@ -95,7 +96,7 @@ def _stored_read(name: str, skill: str, arrival: str | None) -> dict[str, Any]:
 
 def _stored_put(name: str, node: str, skill: str, text: str, description: str, skill_id: str | None,
                 files: dict[str, str] | None) -> dict[str, Any]:
-    address = _stored_address(name, node)
+    address = _stored_element(name, node)[0]
     uri = f'skill://{LAYER}/{quote(address, safe="")}/{quote(skill, safe="")}/SKILL.md'
     document: dict[str, Any] = skills.document(skill, text, description=description, files=files, uri=uri)
     bodies = cast(dict[str, bytes], document['files'])

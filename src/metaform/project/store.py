@@ -55,18 +55,18 @@ _SCHEMA = (
     'CREATE NODE TABLE Project(k STRING PRIMARY KEY, `id` STRING, `name` STRING, `project` STRING)',
     # The id of each write that was stored, written in the write's own transaction, so a write sent twice is done once.
     'CREATE NODE TABLE Request(id STRING PRIMARY KEY, seq SERIAL)',
-    *(_MEMORY := (
+    *(
         # The memory layer: the entities and relations of the MCP reference memory server, kept beside the map and
         # never in an overlay. An entity whose `entityType` is null is an object of the graph, named by its address,
         # that holds memory; its type is read from the object. `seq` keeps the order the reference returns things in.
         'CREATE NODE TABLE MemoryEntity(name STRING PRIMARY KEY, entityType STRING, observations STRING[], seq SERIAL)',
         'CREATE REL TABLE MemoryRelation(FROM MemoryEntity TO MemoryEntity, relationType STRING, seq INT64)',
-    )),
-    *(_TREE := (
+    ),
+    *(
         'CREATE NODE TABLE Map(id STRING PRIMARY KEY)',
         'CREATE REL TABLE ROOT(FROM Map TO Project)',
         'CREATE REL TABLE CONTAINS(FROM Project TO Element, FROM Element TO Element)',
-    )),
+    ),
 )
 HOLDS = 'HOLDS'  # the relationship from an element, or the root, to each of its overlay records
 HOLDERS = ('Element', 'Project')  # the tables HOLDS runs from, one pair to each overlay table from each
@@ -221,6 +221,27 @@ class Store:
                 self._plant(create)
                 for address, fields in texts.wants_definition(create).items():
                     self.put_part(address, dict(fields))
+        else:
+            self._current()
+
+    def _current(self) -> None:
+        """Refuse, by name, a database an earlier version made in a layout this one does not read: the tables of the
+        tree and the memory layer, and each overlay's identity columns and its HOLDS pair from the root. No layout is
+        upgraded, since the product is unreleased (review of 2026-11-18, F15); without this check such a database
+        failed later on an engine error that named nothing."""
+        tables = self._tables()
+        lacking = [name for name in ('Map', 'Project', 'Element', 'MemoryEntity', 'CONTAINS') if name not in tables]
+        overlays = sorted(name for name in tables if name.startswith('ov_'))
+        for name in overlays:
+            held = {str(row[0]) for row in self._rows(f"CALL table_info('{name}') RETURN name")}
+            lacking += [f'{name[3:]}.{column}' for column in ('record', 'revision', 'completed') if column not in held]
+        if overlays and HOLDS in tables:
+            pairs = {(str(row[0]), str(row[1])) for row in self._rows(f"CALL show_connection('{HOLDS}') RETURN *")}
+            lacking += [f'{HOLDS} from the root to {name[3:]}' for name in overlays if ('Project', name) not in pairs]
+        if lacking:
+            raise StoreError(f'{self.path.stem} was made by an earlier version of Metaform and lacks '
+                             f"{', '.join(lacking)}; it is not upgraded. Clear it with metaform clear project "
+                             f'{self.path.stem} and map the project again.')
 
     def _plant(self, project: str) -> None:
         """The map's node and the project's root, joined by `ROOT`."""
