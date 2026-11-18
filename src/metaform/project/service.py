@@ -152,7 +152,8 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                     asked = cast(dict[str, Any], message['specification'])
                     answer = commands.perform_specification(str(asked.get('project') or ''),
                                                             cast('str | None', asked.get('document')), owned,
-                                                            str(message.get('caller') or ''))
+                                                            str(message.get('caller') or ''),
+                                                            asked.get('baseline') is not False)
                 elif isinstance(message.get('cypher'), dict):  # a caller's Cypher query, read only
                     asked = cast(dict[str, Any], message['cypher'])
                     answer = commands.perform_cypher(str(asked.get('project') or ''), str(asked.get('query') or ''),

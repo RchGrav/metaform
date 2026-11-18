@@ -99,15 +99,16 @@ def stored_name(project_id: str) -> str:
 
 
 def specification_document(project: str, document: str | None = None, home: Path | None = None,
-                           caller: str = '') -> dict[str, object]:
+                           caller: str = '', baseline: bool = True) -> dict[str, object]:
     """A project's specification document (kickoff 2026-11-17 Phase 4): with no document, `{'document': ...}`, its
     export; with one, its import, `{'status': 'ok', 'changed': [...]}`, all or nothing. A refusal answers as the tool's
-    refusals do."""
+    refusals do. An export ends with its baseline line, which an import needs; `baseline=False` leaves it out, for a
+    reader that only reads the document."""
     from metaform import home as metaform_home
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
     return service.send(None, where, caller or 'specification',
-                        specification={'project': project, 'document': document})
+                        specification={'project': project, 'document': document, 'baseline': baseline})
 
 
 def bases(project: str, op: str = 'list', name: str = '', home: Path | None = None) -> dict[str, object]:

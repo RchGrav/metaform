@@ -101,7 +101,7 @@ def critic(project: str, sighted: bool) -> str:
     while name in taken:
         count += 1
         name = f'{base}_{count}'
-    document = project_store.specification_document(project)
+    document = project_store.specification_document(project, baseline=False)  # read only: no baseline line
     if document.get('status') == 'error':
         raise Stop(str(document.get('message')), f'the project tool: {{"map": "{project}"}}')
     folder = resources.files(__package__ or 'metaform.modules.map')

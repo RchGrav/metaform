@@ -7,6 +7,12 @@ from metaform.project import commands, owner, service, store
 pytestmark = pytest.mark.kind('fixture')
 
 
+def prose(document):
+    """A specification document without its baseline line, which changes with each import."""
+    from metaform.project import specification
+    return specification.split_baseline(document)[0]
+
+
 def run(command, caller=''):
     """The command engine in this process, on the test's own home: what the service runs for each command."""
     return commands.perform(command, owner.of(metaform_home.home()), caller)
@@ -1245,7 +1251,7 @@ def test_the_specification_round_trips_through_its_document_and_refuses_what_wou
     edited = exported.replace('One packet at a time.', 'One packet at a time, oldest first.\n\n### Errors\n\n'
                                                         'A packet that fails is dropped.')
     assert project_store.specification_document(P, edited, served) == {'status': 'ok', 'changed': [WIDGET]}
-    assert project_store.specification_document(P, home=served)['document'] == edited
+    assert prose(project_store.specification_document(P, home=served)['document']) == prose(edited)
     assert stored()[-1] == {'level': 1, 'title': 'Errors', 'text': 'A packet that fails is dropped.'}
 
     before = project_store.specification_document(P, home=served)['document']
@@ -1255,6 +1261,46 @@ def test_the_specification_round_trips_through_its_document_and_refuses_what_wou
         assert answer['code'] == 'DOCUMENT_REFUSED', answer
     assert project_store.specification_document(P, home=served)['document'] == before
 
+
+
+def test_an_import_keeps_newer_edits_and_block_ids_and_takes_a_code_swap_whole(served):
+    """Review of 2026-11-18, F5: a stale export restored old text over a newer edit, editing one block gave every
+    block at the element a new id, and a valid swap of two codes was refused at the step between the two elements."""
+    from metaform import project as project_store
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'specification': [
+        {'level': 1, 'title': 'Purpose', 'code': 'A-1', 'text': 'Original text.'},
+        {'level': 1, 'title': 'Limits', 'text': 'Sibling text.'}]}}}, served) == {'status': 'ok'}
+    assert commands.run({'add': {CS: {**CS_FIELDS, 'specification': [
+        {'level': 1, 'title': 'Relay', 'code': 'B-1', 'text': 'Relays.'}]}}}, served) == {'status': 'ok'}
+
+    def held(at):
+        return commands.run({at: {'specification': {}}}, served)[at]['specification']
+    before = [one['record'] for one in held(WIDGET)]
+    exported = project_store.specification_document(P, home=served)['document']
+    # someone edits the purpose after the export: the export's edit of the same block is refused, nothing changes
+    newer = held(WIDGET)[0]
+    assert commands.run({'update': {WIDGET: {'specification': [
+        {'position': 0, 'record': newer['record'], 'text': 'Concurrent new text.'}]}}}, served) == {'status': 'ok'}
+    stale = project_store.specification_document(P, exported.replace('Original text.', 'My text.'), served)
+    assert stale['code'] == 'DOCUMENT_STALE', stale
+    assert held(WIDGET)[0]['text'] == 'Concurrent new text.'
+    # an edit of another element from that export lands, and leaves the newer text alone
+    assert project_store.specification_document(P, exported.replace('Relays.', 'Relays each packet.'), served) == {
+        'status': 'ok', 'changed': [CS]}
+    assert held(WIDGET)[0]['text'] == 'Concurrent new text.' and held(CS)[0]['text'] == 'Relays each packet.'
+    # editing one block keeps every block's id
+    fresh = project_store.specification_document(P, home=served)['document']
+    assert project_store.specification_document(P, fresh.replace('Sibling text.', 'Edited sibling.'), served)[
+        'status'] == 'ok'
+    assert [one['record'] for one in held(WIDGET)] == before
+    # two codes swapped across two elements are taken as one change
+    fresh = project_store.specification_document(P, home=served)['document']
+    swapped = fresh.replace('`A-1` Purpose', '`T-0` Purpose').replace('`B-1` Relay', '`A-1` Relay').replace(
+        '`T-0` Purpose', '`B-1` Purpose')
+    assert project_store.specification_document(P, swapped, served)['status'] == 'ok'
+    assert (held(WIDGET)[0]['code'], held(CS)[0]['code']) == ('B-1', 'A-1')
+    # a document without its baseline line is refused
+    assert project_store.specification_document(P, prose(fresh), served)['code'] == 'DOCUMENT_REFUSED'
 
 def test_an_elements_read_carries_its_specification_so_an_agent_reads_its_purpose_first(mapped):
     """Phase 4 step 4: the project tool's read of an element brings its specification blocks unasked, as it brings
@@ -1309,11 +1355,11 @@ def test_the_root_blocks_round_trip_through_the_document_between_its_heading_and
     assert commands.perform_specification(P, exported, owned) == {'status': 'ok', 'changed': []}
     edited = exported.replace('Relay.', 'Relay each packet once.\n\n### Scope\n\nPackets only.')
     assert commands.perform_specification(P, edited, owned) == {'status': 'ok', 'changed': [P]}
-    assert commands.perform_specification(P, None, owned)['document'] == edited
+    assert prose(commands.perform_specification(P, None, owned)['document']) == prose(edited)
     assert fields_only(run({P: {}})[P]['specification'])[-1] == {'level': 2, 'title': 'Scope', 'text': 'Packets only.'}
     for broken in (edited.replace('### Scope', '#### Scope'), edited.replace('Relay each', '# Relay each')):
         assert commands.perform_specification(P, broken, owned)['code'] == 'DOCUMENT_REFUSED', broken
-    assert commands.perform_specification(P, None, owned)['document'] == edited
+    assert prose(commands.perform_specification(P, None, owned)['document']) == prose(edited)
 
 
 

@@ -2829,7 +2829,9 @@ def specification(ctx: Context) -> Any:
     """The specification document of a project held in the project store (kickoff 2026-11-17 Phase 4, F06,
     docs/plans/specifications-overlay.md): op=export, the default, prints the map and its blocks as one Markdown
     document, or writes it to file=; op=import reads an edited copy from file= and writes the changed blocks, all or
-    nothing. A stale document, one whose headings or facts differ from the map, is refused and changes nothing."""
+    nothing. A stale document, one whose headings or facts differ from the map, is refused and changes nothing. The
+    export's last line is its baseline, what each block held then: a section the copy edits that also changed in the
+    store since is refused, DOCUMENT_STALE, and each edited block keeps its record id."""
     store = ctx.require_store()
     name = project_store.stored_name(store.project_id)
     if not project_store.holds(name):

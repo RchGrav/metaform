@@ -94,6 +94,9 @@ class Writer:
         self.completing: list[tuple[str, str, str]] = []  # (overlay, address, record id) to complete after the edits
         # (overlay, address, record id, position or None for the end of the list) to reopen
         self.reopened: list[tuple[str, str, str, int | None]] = []
+        # A specification import writes many elements and checks the block rules once, after them all, so a valid
+        # change across elements, a swap of two codes, is never refused at a step between (review of 2026-11-18, F5).
+        self.deferred: set[str] | None = None  # the addresses whose blocks wait for that check, when deferring
 
     def full(self, address: str) -> str:
         return full(self.project, address)
@@ -176,7 +179,9 @@ class Writer:
             self.check_ticket_ids()
         touched = sorted({change.address.address for change, key, _ in [*overlay_writes, *placed]
                           if key == specification.KEY} | self.lifecycle_touched(specification.KEY))
-        if touched:
+        if touched and self.deferred is not None:
+            self.deferred.update(touched)
+        elif touched:
             self.check_specification(touched, defs[specification.KEY])
 
     def reopens(self, records: list[object] | None) -> bool:
@@ -244,7 +249,9 @@ class Writer:
                                                     for record in records or []], key in tables)
         # the root's records complete and reopen as an element's do, before the block rules are checked
         self.lifecycle()
-        if specification.KEY in overlays:
+        if specification.KEY in overlays and self.deferred is not None:
+            self.deferred.add('')
+        elif specification.KEY in overlays:
             self.check_specification([''], defs[specification.KEY])
 
     def check_specification(self, touched: list[str], definition: Definition) -> None:

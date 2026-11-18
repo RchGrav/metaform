@@ -18,8 +18,10 @@ the block's level, as `markdown.rs` renders them.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from metaform.project.forms import Refusal
 
@@ -64,6 +66,38 @@ class Block:
     def stored(self) -> dict[str, object]:
         return {name: value for name, value in (('level', self.level), ('title', self.title),
                                                  ('text', self.text or None), ('code', self.code)) if value is not None}
+
+
+def digest(block: Block) -> str:
+    """A short digest of a block's fields, so a document says what each block held when it was exported."""
+    return hashlib.sha256(json.dumps(block.stored(), sort_keys=True).encode('utf-8')).hexdigest()[:12]
+
+
+# The export's last line: each address's blocks as they were exported, [record id, digest] in order, so an import can
+# tell what the person edited from what changed in the store since, and keep each block's id (review of 2026-11-18,
+# F5). An HTML comment, so the rendered Markdown does not show it.
+BASELINE = '<!-- metaform specification baseline: '
+Baseline = dict[str, list[list[str]]]
+
+
+def baseline_line(held: Baseline) -> str:
+    return f"{BASELINE}{json.dumps(held, sort_keys=True, separators=(',', ':'))} -->"
+
+
+def split_baseline(document: str) -> tuple[str, Baseline | None]:
+    """A document and its baseline: the document without its baseline line, and the baseline, or None when it has
+    none or the line cannot be read."""
+    lines = document.rstrip('\n').split('\n')
+    if not lines or not lines[-1].startswith(BASELINE) or not lines[-1].endswith(' -->'):
+        return document, None
+    try:
+        found = json.loads(lines[-1][len(BASELINE):-len(' -->')])
+    except ValueError:
+        return document, None
+    if not isinstance(found, dict):
+        return document, None
+    body = '\n'.join(lines[:-1]).rstrip('\n') + '\n'
+    return body, cast(Baseline, found)
 
 
 class ParseError(Exception):

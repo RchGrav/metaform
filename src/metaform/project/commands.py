@@ -570,15 +570,17 @@ def _map(opened: Store, project: str) -> dict[str, object]:
 
 def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[str, Any]],
                                                                  dict[str, list[dict[str, Any]]],
-                                                                 dict[str, list[specification.Block]]]:
+                                                                 dict[str, list[specification.Block]],
+                                                                 specification.Baseline]:
     """The map as the specification document reads it, every address full: each element's fields, each holder's
-    wants, and each element's blocks."""
+    wants, each element's blocks, and each element's blocks as [record id, digest], the document's baseline."""
     drawn = _drawn(opened, project)
     elements = {str(row['address']): row for row in cast(list[dict[str, Any]], drawn['elements'])}
     wants: dict[str, list[dict[str, Any]]] = {}
     for want in cast(list[dict[str, Any]], drawn['wants']):
         wants.setdefault(str(want['holder']), []).append(want)
     held: dict[str, list[specification.Block]] = {}
+    ids: dict[str, list[str]] = {}
     found = definitions(opened.parts()).get(specification.KEY)
     if found is not None and specification.KEY in opened.overlay_keys():
         names = [name for name in found.order if name != 'ref' and name in found.fields]
@@ -586,31 +588,79 @@ def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[s
         for address, _, row in opened.all_records(specification.KEY, names):
             rows.setdefault(full(project, address), []).append(
                 {name: decode(found.fields[name].kind, row[name]) for name in names if row[name] is not None})
+            ids.setdefault(full(project, address), []).append(str(row['record']))
         held = {address: specification.blocks(address, records) for address, records in rows.items()}
-    return elements, wants, held
+    baseline = {address: [[ident, specification.digest(block)] for ident, block in zip(ids[address], blocks)]
+                for address, blocks in held.items()}
+    return elements, wants, held, baseline
 
 
-def perform_specification(project: str, document: str | None, owned: Owner, caller: str = '') -> dict[str, object]:
+def _identified(found: list[specification.Block], exported: list[list[str]]) -> list[dict[str, object]]:
+    """An edited address's blocks as records to store, each keeping the record id of the exported block it is: a
+    block exported as it stands keeps its block's id, and each other block takes, in order, the id of an exported
+    block that was edited, so editing one block keeps every block's id (review of 2026-11-18, F5). A block beyond
+    those is new."""
+    free = list(exported)
+    taken: list[str | None] = []
+    for block in found:
+        same = next((one for one in free if one[1] == specification.digest(block)), None)
+        if same is not None:
+            free.remove(same)
+        taken.append(same[0] if same is not None else None)
+    edited = iter(one[0] for one in exported if one in free)
+    return [{**block.stored(), **({'record': ident} if (ident := given or next(edited, None)) else {})}
+            for block, given in zip(found, taken)]
+
+
+def perform_specification(project: str, document: str | None, owned: Owner, caller: str = '',
+                          with_baseline: bool = True) -> dict[str, object]:
     """The specification document of a project (kickoff 2026-11-17 Phase 4, F06). With no document, its export: the
     map and its blocks as one Markdown document. With a document, its import: the document is read against the map
     as it is now and every changed element's blocks are written, all in one transaction, so a stale or broken document
     changes nothing. Export, edit, import and export again gives the edited document."""
     try:
         if document is None:
-            return {'document': owned.read(project, lambda opened: specification.render(
-                project, *_specification_inputs(opened, project)))}
+            def exported(opened: Store) -> str:
+                elements, wants, held, baseline = _specification_inputs(opened, project)
+                rendered = specification.render(project, elements, wants, held)
+                return f'{rendered}\n{specification.baseline_line(baseline)}\n' if with_baseline else rendered
+            return {'document': owned.read(project, exported)}
+        body, exported_as = specification.split_baseline(document)
+        if exported_as is None:
+            raise Refusal('DOCUMENT_REFUSED', 'the document has no baseline line, the last line an export writes, '
+                          'which says what each block held when it was exported; export the specification again and '
+                          'edit that copy')
 
         def work(opened: Store) -> list[str]:
-            elements, wants, held = _specification_inputs(opened, project)
-            read = specification.parse(document, project, elements, wants, held)
-            changed = [address for address, found in read.items() if found != held.get(address, [])]
+            elements, wants, held, now = _specification_inputs(opened, project)
+            read = specification.parse(body, project, elements, wants, held)
+            # what the person edited: an address whose blocks differ from the export; one that changed in the store
+            # since, as well, is refused, never overwritten (review of 2026-11-18, F5)
+            edited = [address for address, found in read.items()
+                      if [specification.digest(block) for block in found]
+                      != [one[1] for one in exported_as.get(address, [])]]
+            stale = [address for address in edited if now.get(address, []) != exported_as.get(address, [])]
+            if stale:
+                raise Refusal('DOCUMENT_STALE', f"{', '.join(stale)} changed in the store since this document was "
+                              'exported, and the document changes it too. Nothing was written. Export again, carry '
+                              'your edits to those sections over, and import that copy.')
+            changed = [address for address in edited if read[address] != held.get(address, [])]
+            checking = Writer(opened, Address(project, ()), {'specification': project}, 'update')
+            checking.deferred = set()
             for address in changed:
                 path = address
-                value: dict[str, object] = {specification.KEY: [block.stored() for block in read[address]]}
+                value: dict[str, object] = {specification.KEY: _identified(read[address],
+                                                                           exported_as.get(address, []))}
+                writer = Writer(opened, Address(project, ()) if path == project else parse(path),
+                                {'update': {path: value}}, 'update')
+                writer.deferred = checking.deferred
                 if path == project:  # the root's blocks, the project's own description (F07)
-                    Writer(opened, Address(project, ()), {'update': {path: value}}, 'update').root(value)
+                    writer.root(value)
                 else:
-                    Writer(opened, parse(path), {'update': {path: value}}, 'update').write(path, value)
+                    writer.write(path, value)
+            definition = definitions(opened.parts()).get(specification.KEY)
+            if checking.deferred and definition is not None:  # the block rules, once, over the whole result
+                checking.check_specification(sorted(checking.deferred), definition)
             return changed
 
         return {'status': 'ok', 'changed': owned.write(project, caller, work)}
