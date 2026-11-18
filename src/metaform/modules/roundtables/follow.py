@@ -57,10 +57,14 @@ class Stopped(BaseException):
     """SIGTERM or SIGHUP: the follower asked to stop, by the person's Stop all or the end of its session."""
 
 
+# the signals that stop the follower; roundtables run on POSIX alone
+STOPS: tuple[signal.Signals, ...] = (signal.SIGTERM, signal.SIGHUP)  # type: ignore[attr-defined]
+
+
 def stopping(number: int, _frame: Any) -> None:
     """The first stop raises Stopped where the follower is; later ones are ignored, since it is ending its table
     already and gives the slots back once the engine has closed the seats."""
-    for one in (signal.SIGTERM, signal.SIGHUP):
+    for one in STOPS:
         signal.signal(one, signal.SIG_IGN)
     raise Stopped(f'The follower was stopped ({signal.Signals(number).name})')
 
@@ -504,7 +508,7 @@ def outcome(table_id: str, question: str, listed: list[dict[str, Any]], answer: 
 def run(ctx: Context, table_id: str) -> dict[str, Any]:
     """The follower's whole life: hold the seats' slots, open the table when it is to be opened, say so on the first
     line of standard output for the `open` waiting on it, then follow the table to its end and give the slots back."""
-    for one in (signal.SIGTERM, signal.SIGHUP):
+    for one in STOPS:
         signal.signal(one, stopping)
     follower = Follower(ctx, table_id)
     row = follower.row() or {}
@@ -585,7 +589,7 @@ def archive(ctx: Context, row: dict[str, Any], engine_archive: str | None) -> Pa
                 selected.update(children)
             for pid in sorted(selected, reverse=True):
                 with contextlib.suppress(ProcessLookupError, OSError):
-                    os.kill(pid, signal.SIGKILL)
+                    os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]  roundtables run on POSIX alone
     store = ctx.require_store()
     root = Path(store.project().path)
     shelf = home.home() / 'backups' / 'roundtables' / f'{table_id}-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}'

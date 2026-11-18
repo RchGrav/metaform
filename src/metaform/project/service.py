@@ -221,7 +221,7 @@ def _connect(home: Path) -> Connection | None:
         with sqlite.file_lock(home / 'maps' / 'owner.lock'):  # held by that service until its databases are closed
             pass
         return None
-    return connection
+    return connection  # type: ignore[return-value]  a TCP address: never Windows' PipeConnection
 
 
 def _start(home: Path) -> Connection:

@@ -991,16 +991,16 @@ def end_group(pid: int, system: str | None = None) -> None:
         subprocess.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True, check=False)
         return
     try:
-        leads = os.getpgid(pid) == pid
+        leads = os.getpgid(pid) == pid  # type: ignore[attr-defined]  POSIX alone: Windows ends above
     except ProcessLookupError:
         leads = True  # its leader is gone and the group it led can live on; no other group has its id
     except PermissionError:
         return
     try:
         if leads:
-            os.killpg(pid, signal.SIGKILL)
+            os.killpg(pid, signal.SIGKILL)  # type: ignore[attr-defined]  POSIX alone: Windows ends above
         else:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]  POSIX alone: Windows ends above
     except (ProcessLookupError, PermissionError):
         pass
 

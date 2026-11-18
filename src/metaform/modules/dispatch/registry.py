@@ -75,7 +75,10 @@ def _fetch(url: str) -> bytes:
         request = urllib.request.Request(url, headers={'User-Agent': 'metaform-dispatch'})
         with urllib.request.urlopen(request, timeout=FETCH_LIMIT) as answer:  # http(s) only, above
             return cast(bytes, answer.read())
-    path = Path(urllib.request.url2pathname(parsed.path)) if parsed.scheme == 'file' else Path(url).expanduser()
+    # urllib.request.url2pathname stands; only the Windows module it calls there, nturl2path, is deprecated (3.14)
+    if parsed.scheme != 'file':
+        return Path(url).expanduser().read_bytes()
+    path = Path(urllib.request.url2pathname(parsed.path))  # type: ignore[deprecated]  see above
     return path.read_bytes()
 
 

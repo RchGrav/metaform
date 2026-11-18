@@ -294,6 +294,8 @@ def ended(pid: int, limit: float | None = None) -> bool | None:
 def pidfd(pid: int) -> int | None:
     """A Linux pidfd of `pid`, readable once it ends; by the system call where this Python build has no
     os.pidfd_open, as the standalone builds do; None where neither is to be had."""
+    if sys.platform != 'linux':
+        return None
     if hasattr(os, 'pidfd_open'):
         try:
             return os.pidfd_open(pid)
@@ -681,7 +683,7 @@ def heard(pipe: Path, limit: float = WAIT) -> bytes | None:
     reader.join(limit)
     if reader.is_alive():
         with contextlib.suppress(OSError):
-            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))  # type: ignore[attr-defined]  hold: POSIX only
         return None
     return said[0] if said else b''
 

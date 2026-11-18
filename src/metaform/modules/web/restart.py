@@ -39,7 +39,8 @@ def tell(said: dict[str, Any], ready: Path | None) -> None:
         if ready is None:
             os.write(sys.stdout.fileno(), line)
             return
-        descriptor = os.open(ready, os.O_WRONLY | os.O_NONBLOCK)  # refused at once when no one reads it
+        # refused at once when no one reads it
+        descriptor = os.open(ready, os.O_WRONLY | os.O_NONBLOCK)  # type: ignore[attr-defined]  hold: POSIX alone
         try:
             os.write(descriptor, line)
         finally:

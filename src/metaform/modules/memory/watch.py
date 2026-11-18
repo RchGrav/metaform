@@ -73,7 +73,8 @@ class Folders:
         self.rooted = root.resolve()
         self.wanted: dict[str, set[str]] = {}  # each folder holding cited files, relative to the root: their names
         self.wake_read, self.wake_write = os.pipe()
-        os.set_blocking(self.wake_read, False)
+        # watchers run on Linux and macOS alone (`folders`)
+        os.set_blocking(self.wake_read, False)  # type: ignore[attr-defined]
 
     def want(self, paths: set[str]) -> None:
         """Watch the folders of these cited files, as well as those already watched. A citation whose folder is not
@@ -137,7 +138,8 @@ class Inotify(Folders):
         import ctypes
         self.libc: Any = ctypes.CDLL(None, use_errno=True)
         self.libc.inotify_add_watch.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32)
-        self.fd = int(self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC))
+        # Linux alone (`folders`)
+        self.fd = int(self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC))  # type: ignore[attr-defined]
         if self.fd < 0:
             error = ctypes.get_errno()
             raise OSError(error, f'inotify: {os.strerror(error)}')

@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shlex
 import shutil
 import socket
 import subprocess
@@ -88,8 +87,10 @@ def must(*words: str, folder: Path) -> str:
 
 def agent_command() -> str:
     """The start command of every agent in the demo's home: the demo agent, run by this interpreter."""
-    return f'{shlex.quote(sys.executable)} -m metaform.demo.agent' if os.name != 'nt' else \
-        f'"{sys.executable}" -m metaform.demo.agent'
+    if os.name == 'nt':
+        return f'"{sys.executable}" -m metaform.demo.agent'
+    import shlex  # here, so a Windows type check finds no unused import
+    return f'{shlex.quote(sys.executable)} -m metaform.demo.agent'
 
 
 def project_folder(root: Path) -> Path:

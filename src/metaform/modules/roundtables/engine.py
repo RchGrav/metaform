@@ -201,10 +201,10 @@ class Page:
         with contextlib.suppress(Exception):
             self.client.close()
         if self.process.poll() is None:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(self.process.pid, signal.SIGTERM)
+            with contextlib.suppress(ProcessLookupError, PermissionError):  # roundtables run on POSIX alone
+                os.killpg(self.process.pid, signal.SIGTERM)  # type: ignore[attr-defined]
             try:
                 self.process.wait(10)
             except subprocess.TimeoutExpired:
                 with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(self.process.pid, signal.SIGKILL)
+                    os.killpg(self.process.pid, signal.SIGKILL)  # type: ignore[attr-defined]  POSIX alone

@@ -110,7 +110,7 @@ def old_processes() -> list[dict[str, Any]]:
 
 def process_ids() -> list[int]:
     """Read only PIDs from the system, so unrelated credential-bearing command lines are never printed."""
-    if sys.platform.startswith('linux'):
+    if sys.platform == 'linux':  # the form a type checker reads as the platform
         found: list[int] = []
         for path in Path('/proc').iterdir():
             try:
