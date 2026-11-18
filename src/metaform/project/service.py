@@ -250,15 +250,34 @@ def _writes(command: Any) -> bool:
     return isinstance(command, dict) and bool(set(cast(dict[object, object], command)) & {'add', 'update', 'delete'})
 
 
+def _unrepeatable(clear: str, memory: dict[str, object] | None, specification: dict[str, object] | None,
+                  bases: dict[str, object] | None) -> str:
+    """What an operation that carries no request id changes, '' when it changes nothing: a base operation other than
+    list, clearing a map, a specification import, a memory tool that changes the graph. Sent again after the service
+    ended mid-way, it may be done twice, as a base added twice under two names (review of 2026-11-18, F8)."""
+    from metaform.project import memory_layer
+    if bases and str(bases.get('op') or 'list') != 'list':
+        return f"the base operation {bases.get('op')}"
+    if clear:
+        return 'clearing the map'
+    if specification and specification.get('document') is not None:
+        return 'the specification import'
+    if memory and str(memory.get('tool')) in memory_layer.MUTATIONS:
+        return f"the memory tool {memory.get('tool')}"
+    return ''
+
+
 def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '',
          overlay: str = '', memory: dict[str, object] | None = None,
          specification: dict[str, object] | None = None, bases: dict[str, object] | None = None,
          cypher: dict[str, object] | None = None, select: dict[str, object] | None = None) -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
-    Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
-    transaction as the write, so a write that is sent again is answered and not done a second time. When the service
-    ends before it answers, the command is therefore sent again to a new service, whatever the command is."""
+    A write carries a request id of its own, and the service stores that id in the same transaction as the write, so a
+    write that is sent again is answered and not done a second time; a read changes nothing. When the service ends
+    before it answers, those are therefore sent again to a new service. An operation that changes the store with no
+    request id (`_unrepeatable`) is sent again only when it never reached the service; once sent, a lost answer is
+    said as OUTCOME_UNKNOWN, with the read that shows whether it was done, never repeated blind."""
     home = home.resolve()
     given: Any = command
     payload = json.dumps({'command': command, 'caller': caller or f'process {os.getpid()}',
@@ -271,14 +290,22 @@ def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: 
                           **({'bases': bases} if bases else {}),
                           **({'cypher': cypher} if cypher else {}),
                           **({'select': select} if select else {})}).encode('utf-8')
+    changing = _unrepeatable(clear, memory, specification, bases)
     for attempt in range(ATTEMPTS):
+        sent = False
         try:
             connection = _connection(home, fresh=attempt > 0)
             connection.send_bytes(payload)
+            sent = True
             return cast(dict[str, object], json.loads(connection.recv_bytes()))
         except owner.StoreError as error:
             return commands.refused(given, Refusal('INTERNAL_ERROR', str(error)))
         except (OSError, EOFError):
+            if sent and changing:
+                return commands.refused(given, Refusal(
+                    'OUTCOME_UNKNOWN', f'{changing} was sent and the project service ended before it answered, so it '
+                    'may have been done. Read the current state (metaform map bases, the map, or the memory graph) '
+                    'before sending it again.'))
             continue  # the service ended: the same command, with the same request id, goes to a new one
     return commands.refused(given, Refusal(
         'INTERNAL_ERROR', f'the project service could not be reached in {ATTEMPTS} attempts. Sending the same '

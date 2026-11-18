@@ -506,6 +506,33 @@ def test_a_write_after_the_service_was_killed_is_sent_again_to_a_new_one(served)
     assert commands.run({'map': P}, home=served)['wants'] == [[CS, WIDGET]]
 
 
+
+def test_a_base_added_whose_answer_is_lost_is_said_unknown_and_never_added_twice(served, monkeypatch):
+    """Review of 2026-11-18, F8: a base operation carries no request id, and a lost answer made the transport send it
+    again, which added a second base under the next free name. Once sent, a lost answer is said as OUTCOME_UNKNOWN."""
+    from metaform import project as project_store
+    from metaform.project import service
+    assert commands.run({'add': {WIDGET: WIDGET_FIELDS}}, home=served) == {'status': 'ok'}
+    real = service._connection
+
+    class Lost:  # the request reaches the service, which answers; the answer is lost on the way back
+        def __init__(self, connection):
+            self.connection = connection
+
+        def send_bytes(self, payload):
+            self.connection.send_bytes(payload)
+
+        def recv_bytes(self):
+            self.connection.recv_bytes()
+            raise EOFError
+    monkeypatch.setattr(service, '_connection', lambda home, fresh=False: Lost(real(home, fresh)))
+    answer = project_store.bases(P, 'add', 'second', served)
+    assert answer['code'] == 'OUTCOME_UNKNOWN', answer
+    monkeypatch.setattr(service, '_connection', real)
+    listed = project_store.bases(P, 'list', '', served)
+    assert [one['name'] for one in listed['bases']].count('second') == 1, listed
+    assert 'second-2' not in [one['name'] for one in listed['bases']]
+
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
     assert run({'add': {P: root}}) == {'status': 'ok'}  # the first write makes the project
