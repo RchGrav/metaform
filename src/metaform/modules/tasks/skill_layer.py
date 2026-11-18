@@ -1,15 +1,131 @@
 """The skill layer: project skills are ordinary knowledge attached to functional nodes."""
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlsplit
 
+from metaform import project as project_store
 from metaform import prompt_files, skills
 from metaform.data import Item, Layer, Node, NodeView, Store, StoreError
 from metaform.module import Context, Stop
 
 LAYER = 'skills'
 KIND = 'project_agent_skill'
+
+
+# ---- A project held in the project store: its skills are records of its `skills` overlay at an element, found from
+# the element an agent arrives at and the elements its wants name or that want it (review of 2026-11-18, F3).
+
+def _held(store: Store) -> str | None:
+    name = project_store.stored_name(store.project_id)
+    return name if project_store.holds(name) else None
+
+
+def _definition() -> dict[str, object]:
+    return {
+        'description': 'The project agent skills attached at this element: each record is one skill, a SKILL.md and '
+                       'its files, offered to an agent that arrives here.',
+        'instruction': 'Write a skill with metaform tasks skills op=write node=<element> name=<name> text=<SKILL.md>.',
+        'name': {'type': 'text', 'rule': "The skill's name, as its SKILL.md front matter gives it.",
+                 'example': 'release-checklist'},
+        'summary': {'type': 'text', 'rule': 'When to use it, one line: its front matter description.',
+                    'example': 'Use when cutting a release.'},
+        'uri': {'type': 'text', 'rule': "The skill's address, skill://skills/<element>/<name>/SKILL.md.",
+                'example': 'skill://skills/code.release/release-checklist/SKILL.md'},
+        'document': {'type': 'text', 'rule': 'The skill as JSON: its front matter, its files and its resources.',
+                     'example': '{"frontmatter": {}, "files": {"SKILL.md": "..."}, "resources": []}'},
+    }
+
+
+def _stored_address(name: str, given: str) -> str:
+    """An element's address beneath the project, refused when the project's map holds no such element."""
+    address = given.removeprefix('element:')
+    if address.startswith('join:') or project_store.run({f'{name}.{address}': {}}).get('status') == 'error':
+        raise Stop(f'No functional node {given}.', 'map node node=<address>')
+    return address
+
+
+def _stored_scope(name: str, given: str) -> list[str]:
+    """The element arrived at, then the elements its wants name and those whose wants name it."""
+    address = _stored_address(name, given)
+    read = cast(dict[str, Any], project_store.run({f'{name}.{address}': {}}).get(f'{name}.{address}') or {})
+    near = [str(one.get('element') or '') for one in cast(list[dict[str, Any]], read.get('wants') or [])]
+    near += [str(one) for one in cast(list[Any], read.get('wanted_by') or [])]
+    start = len(name) + 1
+    return list(dict.fromkeys([address, *(one[start:] if one.startswith(f'{name}.') else one for one in near if one)]))
+
+
+def _stored_items(name: str, addresses: list[str]) -> list[dict[str, Any]]:
+    return [cast(dict[str, Any], one) for address in addresses
+            for one in project_store.overlay_records(name, LAYER, at=address) or []]
+
+
+def _stored_metadata(name: str, one: dict[str, Any]) -> dict[str, Any]:
+    document = cast(dict[str, Any], json.loads(str(one.get('document') or '{}')))
+    return {'id': str(one['record']), 'name': str(one.get('name') or ''),
+            'description': str(one.get('summary') or ''), 'node': str(one['element'])[len(name) + 1:],
+            'uri': str(one.get('uri') or ''), 'frontmatter': document.get('frontmatter') or {},
+            'resources': document.get('resources') or []}
+
+
+def _stored_read(name: str, skill: str, arrival: str | None) -> dict[str, Any]:
+    uri = urlsplit(skill)
+    path = uri.path.lstrip('/').split('/')
+    if uri.scheme == 'skill' and uri.netloc == LAYER and len(path) == 3:
+        arrival = unquote(path[0])
+    if arrival is None:
+        raise Stop(f'No project agent skill {skill} at the current node.', 'tasks skills node=<functional node>')
+    available = _stored_items(name, _stored_scope(name, arrival))
+    matches = [one for one in available if skill in (one['record'], one.get('uri'))] or [
+        one for one in available if one.get('name') == skill]
+    if len(matches) != 1:
+        raise Stop(f'No project agent skill {skill} at the current node.' if not matches else
+                   f'More than one attached skill is named {skill}; select its item ID.',
+                   'tasks skills node=<functional node>')
+    one = matches[0]
+    metadata = _stored_metadata(name, one)
+    files = cast(dict[str, str], json.loads(str(one.get('document') or '{}')).get('files') or {})
+    text = str(files.get('SKILL.md') or '')
+    attachment = {'layer': LAYER, 'node': metadata['node'], 'item_id': metadata['id']}
+    component = prompt_files.component(metadata['uri'], text)
+    component.update(origin='graph', source={'kind': 'graph', **attachment})
+    return {**metadata, 'text': text, 'files': files, 'component': component, 'attachment': attachment}
+
+
+def _stored_put(name: str, node: str, skill: str, text: str, description: str, skill_id: str | None,
+                files: dict[str, str] | None) -> dict[str, Any]:
+    address = _stored_address(name, node)
+    uri = f'skill://{LAYER}/{quote(address, safe="")}/{quote(skill, safe="")}/SKILL.md'
+    document: dict[str, Any] = skills.document(skill, text, description=description, files=files, uri=uri)
+    bodies = cast(dict[str, bytes], document['files'])
+    record = {'name': skill, 'summary': str(cast(dict[str, Any], document['frontmatter']).get('description') or ''),
+              'uri': uri, 'document': json.dumps({'frontmatter': document['frontmatter'],
+                                                  'files': {path: body.decode('utf-8') for path, body in bodies.items()},
+                                                  'resources': document['resources']}, ensure_ascii=False)}
+    if not any(one.get('key') == LAYER for one in cast(list[dict[str, Any]],
+                                                          (project_store.drawn(name) or {}).get('overlays') or [])):
+        _stored_done(project_store.run({'add': {f'{name}.overlay.{LAYER}': _definition()}}))
+    held = _stored_items(name, [address])
+    existing = [one for one in held if (one['record'] == skill_id if skill_id else one.get('name') == skill)]
+    if skill_id is not None and not existing:
+        raise Stop(f'No project agent skill {skill_id} attached to {node}.', 'tasks skills node=<node>')
+    if len(existing) > 1:
+        raise Stop(f'More than one attached skill is named {skill}; select its item ID.', 'tasks skills')
+    if existing:
+        one = existing[0]
+        _stored_done(project_store.run({'update': {f'{name}.{address}': {LAYER: [
+            {'position': one['position'], 'record': one['record'], **record}]}}}))
+        made = one['record']
+    else:
+        _stored_done(project_store.run({'add': {f'{name}.{address}': {LAYER: [record]}}}))
+        made = _stored_items(name, [address])[-1]['record']
+    return next(_stored_metadata(name, one) for one in _stored_items(name, [address]) if one['record'] == made)
+
+
+def _stored_done(answer: dict[str, object]) -> None:
+    if answer.get('status') == 'error':
+        raise Stop(str(answer.get('message') or 'The skill was not written.'), f'map layer layer={LAYER}')
 
 
 def _layer(store: Store) -> Layer | None:
@@ -133,12 +249,18 @@ def catalog(ctx: Context, node: str | None = None) -> list[dict[str, Any]]:
     if arrival is None:
         return []
     store = ctx.require_store()
+    held = _held(store)
+    if held is not None:
+        return [_stored_metadata(held, one) for one in _stored_items(held, _stored_scope(held, arrival))]
     return [_metadata(store, item) for item in _items(store, _scope(store, arrival))]
 
 
 def read(ctx: Context, skill: str, node: str | None = None) -> dict[str, Any]:
     """Read one selected body, by exact scoped name or known item ID."""
     store = ctx.require_store()
+    held = _held(store)
+    if held is not None:
+        return _stored_read(held, skill, _arrival(ctx, node))
     arrival = _uri_arrival(store, skill) or _arrival(ctx, node)
     if arrival is None:
         item = _by_id(store, skill)
@@ -170,6 +292,9 @@ def put(ctx: Context, node: str, name: str, text: str, description: str = '',
     if not name.strip() or not text.strip():
         raise Stop('A project agent skill needs its name and full instructions.', 'metaform tasks skills op=write')
     store = ctx.require_store()
+    held = _held(store)
+    if held is not None:
+        return _stored_put(held, node, name, text, description, skill_id, files)
     view = _node(store, node)
     attachment = view.node.id if view.node.kind == 'join' else str(view.address)
     uri = f'skill://{LAYER}/{quote(attachment, safe="")}/{quote(name, safe="")}/SKILL.md'
@@ -206,7 +331,9 @@ def resource(ctx: Context, uri: str) -> dict[str, Any] | None:
     """Resolve one known graph skill as the shared Skills-extension document bundle."""
     if not uri.startswith(f'skill://{LAYER}/') or ctx.project is None:
         return None
-    arrival = _uri_arrival(ctx.require_store(), uri)
+    store = ctx.require_store()
+    arrival = unquote(urlsplit(uri).path.lstrip('/').split('/')[0]) if _held(store) is not None else \
+        _uri_arrival(store, uri)
     if arrival is None:
         return None
     try:

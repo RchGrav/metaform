@@ -244,7 +244,7 @@ def test_stage_tickets_of_projects_in_the_project_store_are_kept_there_and_decom
     assert [one['work'] for one in runner.launches] == list(tickets)
     first = runner.launches[0]
     assert first['node'] == f'element:{ADDRESS}' and f'work={first["work"]}' in first['text'], first
-    assert 'YOUR_TICKET' not in first['text'] and ctx.require_store().work(limit=0).results == ()
+    assert 'YOUR_TICKET' not in first['text'] and not old_work('proj')
     decide(ctx, 'yes')
     assert command({'add': {'target.code.plan': {'technical_name': 'plan', 'name': 'plan',
                                                  'role': 'Defining Element'}}}) == {'status': 'ok'}
@@ -1073,3 +1073,11 @@ def test_version_five_upgrade_preserves_pipeline_and_adds_only_pending_launch_st
         kept = tx.get('pipelines', {'table_id': TABLE})
         assert tx.rows('pending_stages', limit=0).results == ()
     assert kept['artifacts'] == artifacts and kept['digest'] == 'unchanged' and kept['revision'] == 7
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import html
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .records import WorkRecord
 
@@ -13,6 +13,11 @@ if TYPE_CHECKING:
 def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
     """Read actual joins at the ticket's receiver, never infer dependencies from adjacent namespaces."""
     address = work.address or work.receiver_address
+    if address:
+        from metaform import project as project_store
+        held = project_store.stored_name(store.project_id)
+        if project_store.holds(held):
+            return _stored(held, address)
     element = store.element(address) if address else None
     if element is None:
         return {'address': address, 'name': address or work.node_id, 'nodes': [], 'requirements': [],
@@ -41,6 +46,51 @@ def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
                 node(at, held.name, held.short_name)
             target.append({'id': join.id, 'receiver': receiver, 'purpose': join.purpose or '',
                            'ef': join.ef or '', 'ifd': join.ifd, 'providers': providers})
+    return _rendered(element.address, nodes, requirements, dependents)
+
+
+def _label(at: str) -> str:
+    """An element's name read from its address, backward, as a short name reads."""
+    return ' '.join(word if word.isupper() else word.capitalize()
+                    for word in ' '.join(reversed(at.split('.'))).replace('_', ' ').split())
+
+
+def _stored(project: str, address: str) -> dict[str, Any]:
+    """The neighbourhood of an element of a project held in the project store: the elements its wants name, each want
+    a requirement, and the elements whose wants name it, each relying on it (review of 2026-11-18, F3 and F10)."""
+    from metaform import project as project_store
+    path = f'{project}.{address}'
+    read = project_store.run({path: {}})
+    if read.get('status') == 'error':
+        return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
+                'markdown': 'The ticket’s functional element is unavailable.'}
+    held = cast(dict[str, Any], read[path])
+    start = len(project) + 1
+    nodes: dict[str, dict[str, str]] = {}
+
+    def node(at: str, name: str | None = None) -> None:
+        if at not in nodes:
+            nodes[at] = {'id': f'n{len(nodes)}', 'address': at, 'name': name or _label(at)}
+
+    def wanted(holder: str, want: dict[str, Any]) -> dict[str, Any]:
+        element = str(want.get('element') or '')[start:]
+        node(element)
+        return {'id': f'want:{holder}->{element}', 'receiver': holder, 'purpose': str(want.get('why') or ''),
+                'ef': str(want.get('how') or ''), 'ifd': want.get('direction'), 'providers': [element]}
+    node(address, str(held.get('name') or '') or None)
+    requirements = [wanted(address, one) for one in cast(list[dict[str, Any]], held.get('wants') or [])]
+    dependents: list[dict[str, Any]] = []
+    for holder in (str(one)[start:] for one in cast(list[Any], held.get('wanted_by') or [])):
+        node(holder)
+        theirs = cast(dict[str, Any], project_store.run({f'{project}.{holder}': {}}).get(f'{project}.{holder}') or {})
+        dependents += [wanted(holder, one) for one in cast(list[dict[str, Any]], theirs.get('wants') or [])
+                       if str(one.get('element') or '') == path]
+    return _rendered(address, nodes, requirements, dependents)
+
+
+def _rendered(address: str, nodes: dict[str, dict[str, str]], requirements: list[dict[str, Any]],
+              dependents: list[dict[str, Any]]) -> dict[str, Any]:
+    """The neighbourhood as a Mermaid diagram and its requirements and dependents in words."""
     lines = ['```mermaid', 'flowchart LR']
     for one in nodes.values():
         lines.append(f'  {one["id"]}["{html.escape(one["name"], quote=True)}"]')
@@ -63,5 +113,5 @@ def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
                          f'IFD: {join["ifd"] or "Unspecified"}.')
         if not joins:
             lines.append('None recorded.')
-    return {'address': element.address, 'name': nodes[element.address]['name'], 'nodes': list(nodes.values()),
+    return {'address': address, 'name': nodes[address]['name'], 'nodes': list(nodes.values()),
             'requirements': requirements, 'dependents': dependents, 'markdown': '\n'.join(lines)}

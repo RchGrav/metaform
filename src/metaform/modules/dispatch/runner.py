@@ -77,6 +77,7 @@ from acp.schema import (
 )
 
 from metaform import home, prompt_files
+from metaform import project as project_store
 from metaform.data import (
     BASE_VARIABLE,
     NewerStore,
@@ -107,6 +108,7 @@ from metaform.module import (
     record_shown,
     shown_before,
 )
+from metaform.module import surface as module_surface
 
 from . import (
     HANDED,
@@ -3435,7 +3437,9 @@ class Session:
         resource links; with no map to read it from, its one sentence alone. Ahead of it, the owner's memory prompt,
         filled with the ticket's element, a join's receiver under the Join rule, CTX-028."""
         try:
-            text, self.attached = handoff_parts(self.ctx, self.work_id, session=self.runner)
+            # built for the command line: the agent runs Metaform's commands in its shell, and its server serves no
+            # map_work tool (review of 2026-11-18, F3)
+            text, self.attached = handoff_parts(self.ctx, self.work_id, session=self.runner, on='cli')
         except Stop:
             text = work_line(self.work_id, Path(self.folder), self.at)
         return self.regional_context(text)
@@ -3447,7 +3451,7 @@ class Session:
         graph = functional_context(self.store, ticket(self.store, self.work_id))
         address = str(graph['address'] or self.at)
         legend = '\n'.join(f'- {one["id"]}: {one["name"]} ({one["address"]})' for one in graph['nodes'])
-        body = '\n\n'.join(part for part in (f'Functional region: metaform://{address}', legend,
+        body = '\n\n'.join(part for part in (f'Functional region: {address}', legend,
                                             str(graph['markdown'])) if part)
         component = prompt_files.component(f'map:functional_context:{address}', body,
                                            bindings={'project': self.store.project_id, 'element': address})
@@ -4552,11 +4556,16 @@ class Session:
         if not text:
             return ''
         root = Path(self.root)
+        if not any(module.id == 'memory' for module in module_surface(root)):
+            return ''
+        if mode == 'always' or project_store.holds(project_store.stored_name(self.store.project_id)):
+            # A project held in the project store keeps its memory in its memory layer, which records no writer, so
+            # whether this session recorded cannot be told there: it is asked, as `always` asks, and the old store's
+            # memory tables are not read for it (review of 2026-11-18, F3).
+            return text
         said = memory_read(root, self.store.project_id, 'joins', node=node)
         if said is None:
             return ''
-        if mode == 'always':
-            return text
         joined = cast(list[dict[str, Any]], said['joins'])
         if any(row['by'] == self.runner for row in joined):
             return ''

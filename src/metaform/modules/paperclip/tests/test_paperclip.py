@@ -621,7 +621,7 @@ def test_on_a_project_in_the_project_store_send_and_sync_work_its_tickets_and_qu
     assert [(one['kind'], one['text']) for one in said] == [('message', 'Looking at the cadence timer.'),
                                                             ('message', finding)]
     assert verb(held, 'sync')['changed'] == []  # closed once
-    assert not Store('proj').work(limit=0).results
+    assert not old_work('proj')
 
 
 def test_on_a_project_in_the_project_store_heartbeat_takes_issues_and_questions_cross_both_ways(
@@ -729,3 +729,11 @@ def test_a_ticket_changed_while_the_watcher_talks_to_paperclip_is_synced_again(h
     running.join(5)
     assert server.issues[shown['issue_id']]['status'] == 'cancelled'
     assert ended and ended[0]['state'] == 'idle'
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]

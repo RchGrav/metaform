@@ -683,7 +683,7 @@ def test_a2a_on_a_project_in_the_project_store_opens_and_follows_its_tickets_ove
     assert detail['item'] == task['id'] and detail['title'] == 'Make the timer louder'  # no item numbers there
     record = project.overlay_record('proj', 'tickets', 'id', task['id']) or {}
     assert record['element'] == 'proj.code.timer.kitchen' and 'peer/1' in str(record['note'])
-    assert not Store('proj').work(limit=0).results  # the old store gets no ticket
+    assert not old_work('proj')  # the old store gets no ticket
     assert old_only['error']['code'] == -32602  # an Address only the old store holds is no Address of this map
     assert asked['result']['task']['status']['state'] == 'TASK_STATE_INPUT_REQUIRED'
     offered = asked['result']['task']['metadata']['https://metaform.ing/a2a/address-context/v1']['candidates']
@@ -1507,3 +1507,11 @@ def test_an_agent_is_linked_its_rules_and_its_task_and_an_intake_agent_its_task_
     assert opening.links(person) == ['metaform://rules', 'metaform://firstrun', 'metaform://task/person']
     assert opening.links(worker) == ['metaform://rules']  # never said to an agent a runner started
     assert opening.opening(intake).splitlines()[1:] == ['metaform://task/intake']
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]

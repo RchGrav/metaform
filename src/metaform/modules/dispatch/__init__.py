@@ -4874,8 +4874,7 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
     fields.append(('linked', ', '.join(one for one in linked if one)))
     first = cast(list[Any], read.get('read_first') or [])
     if first:
-        call = f'map_work id={work_id}' if on == 'mcp' else f'metaform map work id={work_id}'
-        fields.append(('read_first', f'{len(first)} items to read before the task: {call}'))
+        fields.append(('read_first', f'{len(first)} items to read before the task: metaform map work id={work_id}'))
     lines = [f'{name}: {value}' for name, value in fields if value]
     lines += _purposes(store, read)
     at = read.get('at')
@@ -4883,16 +4882,15 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
     if around:
         lines.append(str(around))
     address = str(read.get('address') or read.get('receiver_address') or '')
-    item = cast(dict[str, Any], read.get('map') or {}).get('item') if isinstance(read.get('map'), dict) else None
+    # The reads the agent runs itself. No resource link is sent: the server an agent is started with serves its rules,
+    # its task and the project tool, never a node's brief or a ticket as a resource (review of 2026-11-18, F3).
     links: list[dict[str, str]] = []
+    reads = [f'metaform map work id={work_id}']
     if address:
-        links.append({'name': address, 'uri': f'metaform://{address}', 'title': f'The brief of {address}'})
-    if item:
-        at, _, number = str(item).rpartition('#')
-        links.append({'name': str(item), 'uri': f'metaform://{at}/items/{number}' if at and number else
-                      f'metaform://{item}', 'title': f'Ticket {item}'})
-    if links:
-        lines.append('Links: ' + '  '.join(one['uri'] for one in links))
+        stored = project_store.stored_name(store.project_id)
+        reads.append(f'project {{"{stored}.{address}": {{}}}}' if project_store.holds(stored)
+                     else f'metaform map where {address}')
+    lines.append('Read: ' + '  '.join(reads))
     if on == 'mcp' and (peered := peers_line(ctx, store, work_id, session)):
         lines.append(peered)
     node = str(read.get('address') or ' and '.join(

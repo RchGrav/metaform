@@ -2975,6 +2975,9 @@ def test_a_store_projects_reads_page_leave_done_tickets_out_and_find_a_completed
     second = j(run, 'work', 'op=list', 'limit=1', f'after={first["next"]}', cwd=in_store)
     assert [one['id'] for one in second['results']] == ids[1:2]
     assert len(j(run, 'work', 'op=list', 'limit=0', cwd=in_store)['results']) == 3
+    j(run, 'work', 'op=plan', f'id={ids[1]}', 'steps=2', cwd=in_store)  # a worker's plan and step, F3
+    stepped = j(run, 'work', 'op=step', f'id={ids[1]}', 'said=Read the timer.', cwd=in_store)
+    assert (stepped['steps'], stepped['steps_done']) == (2, 1) and 'Step 1: Read the timer.' in stepped['note']
     assert len(j(run, 'layers', 'limit=0', cwd=in_store)['results']) >= 2
     j(run, 'work', 'op=done', f'id={ids[0]}', 'resolution=Done.', 'why=Tested.', cwd=in_store)
     node = j(run, 'node', 'element:code.timer.kitchen', cwd=in_store)['layers']

@@ -216,3 +216,41 @@ def test_resource_callback_serves_one_known_graph_document_with_identical_digest
     assert skill_layer.resource(ctx, 'skill://skills/code.receiver/not-present/SKILL.md') is None
     assert skill_layer.resource(ctx, 'skill://skills/code.missing/not-present/SKILL.md') is None
     assert skill_layer.catalog(ctx) == []
+
+
+def test_a_project_held_in_the_project_store_keeps_its_skills_at_its_elements(tmp_path, monkeypatch):
+    """Review of 2026-11-18, F3: skill discovery resolved nodes through the old store, so an element held only in the
+    project store could hold no skill. Its skills are records of the skills overlay at the element, offered at the
+    element and at the elements its wants name or that want it."""
+    from metaform import project as project_store
+    from metaform.project import owner, service
+    where = tmp_path / 'home'
+    monkeypatch.setenv('METAFORM_HOME', str(where))
+    loader.reset()
+    folder = tmp_path / 'project'
+    folder.mkdir()
+    home.add_project('stored', folder)
+    try:
+        for address, wants in (('code.provider', []), ('code.receiver', [{
+                'element': 'stored.code.provider', 'why': 'get a result', 'how': 'returns it', 'direction': 'receive'}]),
+                               ('code.sibling', [])):
+            assert project_store.run({'add': {f'stored.{address}': {'technical_name': ' '.join(reversed(address.split('.'))), 'name': address,
+                                                                     'role': 'Supporting Element',
+                                                                     **({'wants': wants} if wants else {})}}}) \
+                == {'status': 'ok'}
+        ctx = context('tasks', folder, project='stored')
+        made = skill_layer.put(ctx, 'code.receiver', 'receiver-skill', document('receiver-skill', 'Do it this way.'))
+        assert [one['id'] for one in skill_layer.catalog(ctx, 'code.provider')] == [made['id']]
+        assert skill_layer.catalog(ctx, 'code.sibling') == []
+        read = skill_layer.read(ctx, 'receiver-skill', 'code.receiver')
+        assert read['id'] == made['id'] and 'Do it this way.' in read['text']
+        assert skill_layer.read(ctx, made['uri'])['id'] == made['id']
+        again = skill_layer.put(ctx, 'code.receiver', 'receiver-skill', document('receiver-skill', 'Now this way.'))
+        assert again['id'] == made['id'] and 'Now this way.' in skill_layer.read(ctx, made['id'], 'code.receiver')['text']
+        with pytest.raises(Stop, match='No functional node'):
+            skill_layer.put(ctx, 'code.missing', 'x', document('x', 'y'))
+        assert all(one.name != skill_layer.LAYER for one in ctx.require_store().layers(limit=0).results)
+    finally:
+        service.stop(where)
+        owner.close_all()
+        loader.reset()

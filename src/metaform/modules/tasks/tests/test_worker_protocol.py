@@ -495,7 +495,7 @@ def test_a_pairs_worksheet_on_a_project_in_the_project_store_runs_on_its_tickets
     assert one['note'].endswith('Resolution: Completed the registered worksheet. Why: Every participant rated at the '
                                 f'close of worktree {ticket}.')
     assert stored.call('view')['worktrees'] == []
-    assert not stored.store.work(limit=0).results
+    assert not old_work('proj')
 
 
 
@@ -540,3 +540,11 @@ def test_a_project_given_tickets_before_steps_existed_gains_them_on_open_and_kee
     definition = command({'proj.overlay.tickets': {}})['proj.overlay.tickets']
     assert definition['steps']['optional'] is True and definition['steps_done']['type'] == 'number'
     assert overlay_tickets()[ticket] == before
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]

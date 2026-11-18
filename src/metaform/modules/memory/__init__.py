@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 from importlib import resources
 from typing import Any, cast
 
+from metaform import project as project_store
 from metaform import prompt_files
 from metaform.data import Column, Index, Item, Node, Store, StoreError, Table, Tables, TableTx, prompts, reference
 from metaform.module import (
@@ -671,6 +672,36 @@ def _scope(ctx: Context, notices: list[dict[str, str]], *, carry: bool = True) -
     return store, _named(store, ctx.nouns, notices)
 
 
+NOT_HELD = object()  # what `_in_project_store` answers for a project whose memory is this module's own
+REFERENCE_ARGUMENTS = {'create_entities': ('entities',), 'create_relations': ('relations',),
+                       'add_observations': ('observations',), 'delete_entities': ('entityNames',),
+                       'delete_observations': ('deletions',), 'delete_relations': ('relations',), 'read_graph': (),
+                       'search_nodes': ('query',), 'open_nodes': ('names',)}
+
+
+def _in_project_store(ctx: Context, tool: str) -> Any:
+    """For a project held in the project store, one of the reference's nine tools run on its memory layer, the one
+    its MCP server serves (LAYER-013), so a memory written on the command line and one an agent writes over MCP are
+    the same memory (review of 2026-11-18, F3); `NOT_HELD` for a project whose memory is this module's tables. A
+    `node` has no place there: an entity is tied to an element by a relation to the element's address."""
+    store = ctx.require_store()
+    name = project_store.stored_name(store.project_id)
+    if not project_store.holds(name):
+        return NOT_HELD
+    arguments = {key: ctx.nouns[key] for key in REFERENCE_ARGUMENTS[tool] if key in ctx.nouns}
+    answer = project_store.memory(name, tool, arguments, caller=os.environ.get('METAFORM_SESSION') or 'cli')
+    if answer.get('status') != 'ok':
+        raise Stop(str(answer.get('message') or f'{tool} was refused.'), f'metaform help memory {tool}')
+    result: Any = answer.get('result')
+    if ctx.nouns.get('node') and isinstance(result, dict):
+        held = cast(dict[str, Any], result)
+        held.setdefault('notices', []).append({
+            'where': 'node', 'message': f"{name}'s memory is its project store's memory layer, where node has no "
+                                        "place: relate the entity to the element's address with create_relations."})
+        return held
+    return cast(object, result)
+
+
 class _Given:
     """A command's arguments read in the reference's shapes. A value that should be text and is another JSON value is
     kept as its JSON text and named in `notices`, BASE-044; only an argument that cannot be read stops the call."""
@@ -754,6 +785,8 @@ def apply(ctx: Context) -> Any:
 
 
 def create_entities(ctx: Context) -> Any:
+    if (held := _in_project_store(ctx, 'create_entities')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, key = _scope(ctx, given.notices)
     entities = [(one, given.text(one['name'], 'name'), given.text(one['entityType'], 'entityType'),
@@ -850,6 +883,8 @@ def _relations(given: _Given) -> list[tuple[str, str, str]]:
 def create_relations(ctx: Context) -> Any:
     """Relate memories wherever each is linked, CTX-025: an end is looked up in the whole graph, and only a name the
     graph lacks stops the call, before anything is written. A relation may touch a locked memory, CTX-023."""
+    if (held := _in_project_store(ctx, 'create_relations')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     relations = _relations(given)
@@ -879,6 +914,8 @@ def create_relations(ctx: Context) -> Any:
 def add_observations(ctx: Context) -> Any:
     """Add observations to memories anywhere in the graph, whoever wrote them, CTX-022: with a node or without, only a
     name the graph lacks stops the call. A locked memory is left as it is and named, CTX-023."""
+    if (held := _in_project_store(ctx, 'add_observations')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     members = given.objects('observations', ('entityName', 'contents'))
@@ -923,6 +960,8 @@ def _locked_said(locked: list[str]) -> str:
 def delete_entities(ctx: Context) -> Any:
     """Delete memories anywhere in the graph, whoever wrote them, CTX-022; a locked one is kept and named, CTX-023,
     in the reference's form for a partial delete. A relation goes with its deleted end."""
+    if (held := _in_project_store(ctx, 'delete_entities')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     names = given.texts(ctx.nouns.get('entityNames'), 'entityNames')
@@ -951,6 +990,8 @@ def delete_entities(ctx: Context) -> Any:
 
 def delete_observations(ctx: Context) -> Any:
     """Delete observations of memories anywhere in the graph, CTX-022; a locked memory keeps every one, CTX-023."""
+    if (held := _in_project_store(ctx, 'delete_observations')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
@@ -985,6 +1026,8 @@ def delete_observations(ctx: Context) -> Any:
 
 def delete_relations(ctx: Context) -> Any:
     """Delete relations anywhere in the graph, CTX-022; one that touches a locked memory is kept, CTX-023."""
+    if (held := _in_project_store(ctx, 'delete_relations')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     relations = _relations(given)
@@ -1066,6 +1109,8 @@ def _delivered(ctx: Context, whole: Row, key: Key | None = None, *, entry_revisi
 
 
 def read_graph(ctx: Context) -> Any:
+    if (held := _in_project_store(ctx, 'read_graph')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     view = _read(ctx, given.notices)
     return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole(), entry_revision=view.entry_revision))
@@ -1103,6 +1148,8 @@ def read_unread(ctx: Context) -> Any:
 
 
 def search_nodes(ctx: Context) -> Any:
+    if (held := _in_project_store(ctx, 'search_nodes')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     wanted = given.text(ctx.nouns.get('query'), 'query').lower()
     view = _read(ctx, given.notices)
@@ -1115,6 +1162,8 @@ def search_nodes(ctx: Context) -> Any:
 
 
 def open_nodes(ctx: Context) -> Any:
+    if (held := _in_project_store(ctx, 'open_nodes')) is not NOT_HELD:
+        return held
     given = _Given(ctx)
     names = given.texts(ctx.nouns.get('names'), 'names')
     view = _read(ctx, given.notices, names)

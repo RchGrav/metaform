@@ -62,6 +62,18 @@ from metaform.data import (
 )
 
 from . import ticket_history
+from .project_work import (
+    held_name,
+    project_work,
+    stored_edit,
+    stored_finish,
+    stored_move,
+    stored_plan,
+    stored_step,
+    stored_take,
+    stored_ticket,
+    stored_work,
+)
 
 Row = DataRow
 ANSWERS = ("A", "B", "C")
@@ -120,6 +132,8 @@ def work_sources(tx: Tx, work_id: str, source_id: str | None = None, *, contents
 
 def set_work_hold(tx: Tx, work_id: str, *, hold: bool, hold_reason: Any = None) -> WorkRecord:
     """Set the explicit execution hold, retaining each deliberate reason after release."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_edit(held, work_id, {"held": True if hold else None})
     row = _work_row(tx, work_id)
     if hold and row["task"] not in CONVERSATION_TASKS:
         _remember_hold(tx, work_id, validate_hold_reason(hold_reason))
@@ -370,6 +384,8 @@ WORDS_ONLY = frozenset({"note", "title", "links", "reviewed"})  # an edit of the
 
 def edit_work(tx: Tx, work_id: str, changes: Any, *, provenance: Any = None) -> WorkRecord:
     """Change a work record's fields, attachment or reference links in place, preserving its identity and progress."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_edit(held, work_id, changes)
     notices: list[Notice] = []
     before = _work_row(tx, work_id)
     given = as_object(changes)
@@ -548,6 +564,8 @@ def _count(value: Any, notices: list[Notice]) -> int | None:
 def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
     """The agent says how many steps it plans, or says it again when its plan changes, MAP-053. A count below the
     steps already done is raised to them, since what is done is done."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_plan(held, work_id, steps)
     notices: list[Notice] = []
     row = _work_row(tx, work_id)
     count = _count(steps, notices)
@@ -562,6 +580,8 @@ def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
 
 def worksheet_progress(tx: Tx, work_id: str, total: int, checked: int) -> WorkRecord:
     """Project a worksheet's current checklist counts without altering its provenance or completed-step log."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_edit(held, work_id, {"steps": total, "steps_done": checked})
     if type(total) is not int or type(checked) is not int or not 0 <= checked <= total:
         raise StoreError("Worksheet progress needs integer counts with 0 <= checked <= total.",
                          "give the checklist total and number checked")
@@ -574,6 +594,8 @@ def worksheet_progress(tx: Tx, work_id: str, total: int, checked: int) -> WorkRe
 def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     """The agent finished a step, and says what it did, MAP-053. Nothing is refused: a step beyond the count raises
     the count, and a step on a record never taken or already done is stored, each named in a notice."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_step(held, work_id, said)
     notices: list[Notice] = []
     row = _work_row(tx, work_id)
     if row["done"] is not None:
@@ -604,6 +626,8 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
     """An agent takes the record's task, MAP-049: it is in progress, keeps its kind, VIEW-035, records who took it, and
     waits no longer. Peers may participate in already taken work while its first taker remains recorded. Finished
     work cannot be taken. A record with no condition is taken as a ticket is."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_take(held, work_id, steps, by)
     row = _work_row(tx, work_id)
     if row["done"] is not None:
         raise StoreError(f"This work record was done at {row['done']}.", "metaform map work open=true")
@@ -627,6 +651,8 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     block, changes no other ticket, so its event names it alone (UX recheck 2026-10-17, b410f6a5); a ticket given
     back where it waited keeps its own stored place, which `position`, a place counted from the top, is not once the
     column has a gap."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_move(held, work_id, column, by=by)
     row = _work_row(tx, work_id)
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
@@ -707,6 +733,8 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
     resolution and outcome. Resolved work closes directly. Delivery receipts, commits, publication and activation
     never gate closure. `proven` remains accepted for callers using the former proof API."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_finish(held, work_id, resolution, why, outcome)
     ended = status.known(outcome, "map work op=done id=<id>")
     if ended not in status.TERMINAL:
         raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
@@ -731,6 +759,8 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
 
 def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
     """Close staged work, including faults, after dispatch records successful delivery."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_work(held, ids=[work_id]).results[0]
     row = _work_row(tx, work_id)
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
     if row["done"] is not None or settings is None or not settings["landed"]:
@@ -744,6 +774,8 @@ def remove_work(tx: Tx, work_id: str) -> dict[str, Any]:
     glyph, settings, eligible agents, order, question links and number. Its node stays, and a question it carried stays
     as the node's. Said on `map.changed` as a change to the ticket, so every page drops its card. The person's own act,
     2026-10-20: a ticket could be cancelled, which kept it in the Archive, but never deleted."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return {"removed": work_id, **{k: v for k, v in project_work(held, "remove", {"id": work_id}).items() if k in ("address", "task")}}
     row = _work_row(tx, work_id)
     record = work_record(tx, row, ())
     _remove_work_rows(tx, [work_id])
@@ -886,6 +918,8 @@ def _past_work(tx: Tx, target: Node) -> tuple[PastWork, ...]:
 
 def ticket(tx: Tx, work_id: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Ticket:
     """One ticket by its id with the where read of its node and of each node it links, MAP-048."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_ticket(held, work_id)
     res = tx.reads.resolver(selection, tx.toggled)
     row = tx.execute("SELECT * FROM work WHERE work_id=?", (work_id,)).fetchone()
     if row is None:
@@ -935,6 +969,8 @@ def work(
     provides. With ids, those tickets alone, as a page reads the ones a change named, VIEW-018. With done_since, the
     open records and those done at or after that time, as the board shows them; with done_before, those done before
     it, the board's archive (times as `home.now` writes them, so they compare as text)."""
+    if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
+        return stored_work(held, node, open, ids=ids, kind=kind, condition=condition, done_since=done_since, done_before=done_before, limit=limit, after=after)
     target = work_target(tx, node, []) if node is not None else None
     around = joins and target is not None and target[0] == "element"
 

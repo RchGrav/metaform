@@ -73,6 +73,29 @@ def where(run, address, cwd, *more):
     return json.loads(run('map', 'where', address, 'contents=true', *more, '--json', cwd=cwd).stdout)
 
 
+
+@pytest.mark.req('LAYER-013')
+def test_on_a_project_held_in_the_project_store_the_command_line_and_mcp_write_one_memory(run, home, project_folder):
+    """Review of 2026-11-18, F3: the MCP server's memory tools wrote the project store's memory layer while the
+    memory command line wrote this module's own tables, so neither saw what the other wrote. For a project held in the
+    project store the nine reference commands act on its memory layer."""
+    from metaform import project as project_store
+    from metaform.project import owner, service
+    try:
+        assert project_store.run({'add': {'proj.code.timer.kitchen': {
+            'technical_name': 'kitchen timer', 'name': 'kitchen timer', 'role': 'Defining Element'}}}) == {
+            'status': 'ok'}
+        m(run, 'create_entities', J([entity('bell', 'part', 'The bell rings once.')]), cwd=project_folder)
+        over_mcp = project_store.memory('proj', 'read_graph', {})
+        assert [one['name'] for one in over_mcp['result']['entities']] == ['bell'], over_mcp
+        assert project_store.memory('proj', 'add_observations', {'observations': [
+            {'entityName': 'bell', 'contents': ['The bell is brass.']}]})['status'] == 'ok'
+        [bell] = mj(run, 'open_nodes', J(['bell']), cwd=project_folder)['entities']
+        assert bell['observations'] == ['The bell rings once.', 'The bell is brass.']
+    finally:
+        service.stop(home)
+        owner.close_all()
+
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('STORE-020')
 def test_the_whole_graph_behaves_as_the_reference_memory_server(run, mapped):

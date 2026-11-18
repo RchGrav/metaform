@@ -5,21 +5,23 @@ person sees.
 Kickoff 2026-11-17, Phase 3: consumers are aligned one capability at a time, and a feature with no place yet in the
 project store is refused by name rather than dropped or read from the old store's empty map. The tickets overlay
 holds id, title, task, kind, held, taken_by, note, done and outcome at an element. A ticket on a join, a condition, a
-hold reason, links, boards, steps, plans, columns, glyphs and dependencies have no field there yet, so the operations
+hold reason, links, boards, columns, glyphs and dependencies have no field there yet, so the operations
 and nouns that need them are refused here. Each change names the record it found (F02), so it never lands on
 another ticket.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import secrets
 from datetime import UTC, datetime
 from typing import Any, cast
 
 from metaform import project as project_store
+from metaform.data import Notice, Page, StoreError, Ticket, WorkRecord
 from metaform.module import Stop
 
-SUPPORTED = ('list', 'read', 'add', 'edit', 'take', 'done', 'remove')
+SUPPORTED = ('list', 'read', 'add', 'edit', 'take', 'plan', 'step', 'done', 'remove')
 # the nouns each supported operation takes here; any other noun given is refused by name, never ignored
 TAKES: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'open', 'kind', 'limit', 'after'}),
@@ -27,6 +29,8 @@ TAKES: dict[str, frozenset[str]] = {
     'add': frozenset({'node', 'title', 'task', 'note', 'kind', 'held', 'hold'}),
     'edit': frozenset({'id', 'title', 'task', 'note', 'kind', 'held', 'hold'}),
     'take': frozenset({'id', 'by', 'agent', 'steps', 'model', 'effort', 'fast'}),
+    'plan': frozenset({'id', 'steps', 'said'}),
+    'step': frozenset({'id', 'said'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'remove': frozenset({'id'}),
 }
@@ -52,6 +56,16 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
     found = _found(project, str(nouns['id']))
     if op == 'read':
         return _shown(project, found)
+    if op in ('plan', 'step') and not found.get('completed'):  # a worker's count of steps and each it finishes
+        try:
+            if op == 'plan':
+                stored_plan(project, str(found['id']), int(nouns['steps']) if str(nouns.get('steps') or '').isdigit()
+                            else None)
+            else:
+                stored_step(project, str(found['id']), nouns.get('said'))
+        except StoreError as error:
+            raise Stop(str(error), HELP) from None
+        return _shown(project, _found(project, str(found['id'])))
     if found.get('completed'):  # a completed ticket is read by its id; it changes only once it is reopened
         reopen = json.dumps({'update': {found['element']: {'tickets': [
             {'record': found['record'], 'completed': False}]}}})
@@ -157,3 +171,183 @@ def _done(answer: dict[str, object]) -> None:
     if answer.get('status') == 'error':
         raise Stop(str(answer.get('message') or 'The ticket was not changed.'),
                    str(answer.get('remediation') or HELP))
+
+
+# ---- The map module's work operations on a project held in the project store (review of 2026-11-18, F3) ----
+#
+# `Store.work`, `ticket`, `take_work`, `move_work`, `finish_work`, `edit_work`, `plan_work` and `step_work` are what
+# dispatch, its runner and every other module reach tickets by. For a project held in the project store each acts on
+# the tickets overlay there and answers the same record, so a ticket made on the board is the one dispatch starts,
+# runs and closes, and no record of the old store is read or made for it.
+
+@dataclasses.dataclass(frozen=True)
+class StoredWork(WorkRecord):
+    """A ticket of the tickets overlay as a work record. The overlay keeps no time of a take, so `taken` holds who
+    took it, and its age is counted from its end alone."""
+    title: str = ''
+
+    @property
+    def age_seconds(self) -> int | None:
+        if self.done is None:
+            return None
+        ended = datetime.fromisoformat(self.done)
+        return max(0, int((datetime.now(UTC) - ended).total_seconds()))
+
+
+def held_name(project_id: str) -> str | None:
+    """The project's name in the project store when its tickets are kept there; None otherwise."""
+    name = project_store.stored_name(project_id)
+    return name if project_store.holds(name) else None
+
+
+def as_work(name: str, one: dict[str, Any], notices: tuple[Notice, ...] = ()) -> StoredWork:
+    address = str(one['element'])[len(name) + 1:]
+    note = cast('str | None', one.get('note')) or None
+    steps: Any = one.get('steps')
+    done = cast('str | None', one.get('done')) or None
+    return StoredWork(
+        id=str(one['id']), node_kind='element', node_id=address, address=address, receiver_address=None,
+        provider_address=None, condition='', note=note, task=cast('str | None', one.get('task')),
+        held=bool(one.get('held')), reviewed=False, created='', done=done,
+        resolution=_resolution(note) if done else None, notices=notices,
+        steps=int(steps) if isinstance(steps, (int, float)) else None, steps_done=int(cast(Any, one.get('steps_done')) or 0),
+        taken=cast('str | None', one.get('taken_by')) or None, taken_by=cast('str | None', one.get('taken_by')) or None,
+        position=cast('int | None', one.get('position')), kind=str(one.get('kind') or ''),
+        outcome=(cast('str | None', one.get('outcome')) or 'completed') if done else None,
+        title=str(one.get('title') or ''))
+
+
+def _resolution(note: str | None) -> str | None:
+    """The resolution `done` writes as the note's last paragraph, 'Resolution: ... Why: ...'."""
+    last = (note or '').strip().split('\n\n')[-1]
+    if not last.startswith('Resolution: '):
+        return None
+    return last[len('Resolution: '):].split(' Why: ')[0].strip() or None
+
+
+def _one(name: str, work_id: str) -> dict[str, Any]:
+    found = cast('dict[str, Any] | None', project_store.overlay_record(name, 'tickets', 'id', work_id))
+    if found is None:
+        raise StoreError(f'No work record has the id {work_id}.', 'metaform map work open=true')
+    return found
+
+
+def _changed(name: str, one: dict[str, Any], fields: dict[str, object], exact: bool = False,
+             notices: tuple[Notice, ...] = ()) -> StoredWork:
+    """One ticket changed, named by its position and record, and with `exact` by the revision read too, then read
+    again by its id."""
+    if one.get('completed'):
+        raise StoreError(f"Ticket {one['id']!r} was completed and has left the board; reopen it first.",
+                         f"metaform map work id={one['id']}")
+    answer = project_store.run({'update': {str(one['element']): {'tickets': [
+        {'position': one['position'], 'record': one['record'], **({'revision': one['revision']} if exact else {}),
+         **fields}]}}})
+    if answer.get('status') == 'error':
+        raise StoreError(str(answer.get('message') or 'The ticket was not changed.'), HELP)
+    return as_work(name, _one(name, str(one['id'])), notices)
+
+
+def stored_work(name: str, node: Any = None, open: bool | None = None, *, ids: Any = None, kind: str | None = None,
+                condition: str | None = None, done_since: str | None = None, done_before: str | None = None,
+                limit: int = LIST, after: str | None = None, **_: Any) -> Page[WorkRecord]:
+    """`Store.work` on the tickets overlay: by ids (open or completed, each by reference), else the open records,
+    selected by element in the store, filtered as the old store filters them, and paged by after and limit."""
+    if ids is not None:
+        found = [one for ident in dict.fromkeys(str(one) for one in ids)
+                 if (one := project_store.overlay_record(name, 'tickets', 'id', ident)) is not None]
+    else:
+        at = getattr(node, 'id', None) if node is not None and getattr(node, 'kind', 'element') == 'element' else None
+        if node is not None and at is None:  # a join holds no ticket in the project store
+            return Page((), None)
+        found = list(project_store.overlay_records(name, 'tickets', at=cast('str | None', at)) or [])
+    rows = [as_work(name, cast(dict[str, Any], one)) for one in found]
+    rows = [row for row in rows if (open is None or (row.done is None) == open)
+            and (kind is None or row.kind == ('' if kind == 'none' else kind))
+            and (condition is None or row.condition == condition)
+            and (done_since is None or row.done is None or row.done >= done_since)
+            and (done_before is None or (row.done is not None and row.done < done_before))]
+    start = int(after) if after and after.isdigit() else 0
+    page = rows[start:start + limit] if limit else rows[start:]
+    more = bool(limit) and start + limit < len(rows)
+    return Page(tuple(page), str(start + limit) if more else None)
+
+
+def stored_take(name: str, work_id: str, steps: Any = None, by: Any = None) -> StoredWork:
+    """`take_work`: the ticket taken by `by`, at the revision read; one already taken keeps its taker, as the old
+    store's peer participation does, and a done one is refused."""
+    one = _one(name, work_id)
+    if one.get('done'):
+        raise StoreError(f"This work record was done at {one['done']}.", 'metaform map work open=true')
+    if one.get('taken_by'):
+        return as_work(name, one, (Notice('taken', 'Peer participation keeps the recorded first taker and progress.'),))
+    fields: dict[str, object] = {'taken_by': str(by or 'agent'), 'held': None}
+    if isinstance(steps, int) and not isinstance(steps, bool):
+        fields['steps'] = steps
+    return _changed(name, one, fields, exact=True)
+
+
+def stored_move(name: str, work_id: str, column: Any, *_: Any, **__: Any) -> StoredWork:
+    """`move_work`: backlog holds it, to do frees it, doing takes it and done finishes it; one moved back out of doing
+    or done is open and untaken again."""
+    one = _one(name, work_id)
+    if column == 'done':
+        return stored_finish(name, work_id)
+    if column == 'doing':
+        return stored_take(name, work_id, by=__.get('by'))
+    if column not in ('todo', 'backlog'):
+        raise StoreError(f'{column!r} is not a column: backlog, todo, doing or done.', HELP)
+    return _changed(name, one, {'taken_by': None, 'done': None, 'outcome': None,
+                                'held': True if column == 'backlog' else None})
+
+
+def stored_finish(name: str, work_id: str, resolution: Any = None, why: Any = None, outcome: str = 'completed',
+                  **_: Any) -> StoredWork:
+    """`finish_work`: done, with how it ended and the resolution and why as the note's last paragraph; one already
+    done keeps its first resolution."""
+    one = _one(name, work_id)
+    if one.get('done'):
+        return as_work(name, one, (Notice('id', f"This work record was done at {one['done']}; its resolution was "
+                                                'kept.'),))
+    said = ' '.join(f'{label}: {value}' for label, value in (('Resolution', resolution), ('Why', why)) if value)
+    kept = str(one.get('note') or '').strip()
+    return _changed(name, one, {'done': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'), 'outcome': outcome,
+                                'note': '\n\n'.join(part for part in (kept, said) if part) or None})
+
+
+def stored_edit(name: str, work_id: str, changes: Any, **_: Any) -> StoredWork:
+    """`edit_work`: the fields the tickets overlay holds; any other is named in a notice and not kept."""
+    given = cast(dict[str, Any], changes) if isinstance(changes, dict) else {}
+    fields: dict[str, object] = {key: (value if value != "" else None) for key, value in given.items()
+              if key in ('title', 'task', 'note', 'kind', 'held', 'taken_by', 'steps', 'steps_done')}
+    left = sorted(set(given) - set(fields))
+    notices = (Notice('work', f"{', '.join(left)} {'has' if len(left) == 1 else 'have'} no field in the project "
+                              "store's tickets and was not kept."),) if left else ()
+    one = _one(name, work_id)
+    return _changed(name, one, fields, notices=notices) if fields else as_work(name, one, notices)
+
+
+def stored_plan(name: str, work_id: str, steps: Any) -> StoredWork:
+    """`plan_work`: the count of steps, never below those done."""
+    one = _one(name, work_id)
+    done = int(cast(Any, one.get('steps_done')) or 0)
+    count = max(int(steps), done) if isinstance(steps, int) and not isinstance(steps, bool) else None
+    return _changed(name, one, {'steps': count})
+
+
+def stored_step(name: str, work_id: str, said: Any = None) -> StoredWork:
+    """`step_work`: one more step done, the count raised when it goes beyond the plan, and what was said of it added to
+    the note."""
+    one = _one(name, work_id)
+    done = int(cast(Any, one.get('steps_done')) or 0) + 1
+    planned = one.get('steps')
+    count = max(int(cast(Any, planned)), done) if isinstance(planned, (int, float)) else None
+    kept = str(one.get('note') or '').strip()
+    line = f'Step {done}: {said}' if said else ''
+    return _changed(name, one, {'steps': count, 'steps_done': done,
+                                'note': '\n\n'.join(part for part in (kept, line) if part) or None})
+
+
+def stored_ticket(name: str, work_id: str, **_: Any) -> Ticket:
+    """`ticket`: the one ticket; the project store's map is read by the project tool, so no old-store node read
+    goes with it."""
+    return Ticket(as_work(name, _one(name, work_id)), None, ())

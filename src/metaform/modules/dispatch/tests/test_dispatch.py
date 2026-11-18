@@ -363,13 +363,13 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     dispatch.start('hold')
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     blocks = prompt['params']['prompt']
-    assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
-    given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with map_work')
+    assert [block['type'] for block in blocks] == ['text'], 'one prompt; no link to a resource its server lacks'
+    given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with metaform map work')
     # The node's effective context, memory instructions and regional grounding precede the work sentence.
     assert f'{{"address": "{NODE}", ' in given and handed, \
         "the node's effective context precedes the work sentence, CTX-028"
     assert 'Context diagnostic key:' not in given and 'agents_confirm' not in given
-    assert f'Functional region: metaform://{NODE}' in given and '```mermaid\nflowchart LR' in given
+    assert f'Functional region: {NODE}' in given and '```mermaid\nflowchart LR' in given
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of the work, CTX-028'
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
@@ -384,7 +384,7 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     assert session['nonce'] is None, 'the session and its identity carry the work; no nonce is requested'
     assert (session['recovery']['work_id'], session['recovery']['session_id']) == (dispatch.id, 'fake-session-1')
     read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    assert read.partition('\n')[0] == f'Work ticket {dispatch.id} with map_work{handed}'.partition('\n')[0], \
+    assert read.partition('\n')[0] == f'Work ticket {dispatch.id} with metaform map work{handed}'.partition('\n')[0], \
         'the same work line on every surface'
     assert NODE in read and LINKED in read, 'the handoff gives the agent the namespace nodes of its work'
     dispatch.stop()
@@ -1004,6 +1004,39 @@ def test_the_session_ends_when_a_turn_ends_with_the_ticket_done(dispatch):
     assert dispatch.session().extra['state'] == 'ended'
 
 
+
+@pytest.mark.req('BASE-052')
+def test_a_ticket_held_only_in_the_project_store_is_started_run_and_closed_through_dispatch(
+        run, home, project_folder, tmp_path, dispatch_runners):
+    """Review of 2026-11-18, F3: dispatch start read and took the ticket in the old store, so a ticket the board made
+    in the project store could not be started. Started through the public `dispatch start` with the fake agent, the
+    store's ticket is taken, run and closed there, `dispatch wait` sees it done, and the old store holds no record."""
+    from metaform import project as project_store
+    from metaform.data.session import Session
+    from metaform.project import owner, service
+    run('enable', 'dispatch')
+    try:
+        assert project_store.run({'add': {f'proj.{NODE}': {'technical_name': 'engine', 'name': 'engine',
+                                                            'role': 'Defining Element'}}}) == {'status': 'ok'}
+        ticket = json.loads(run('map', 'work', 'op=add', f'node=element:{NODE}', 'title=Write notes',
+                                'task=Write notes.txt', '--json', cwd=project_folder).stdout)['id']
+        log = tmp_path / 'fake.jsonl'
+        env = {**os.environ, 'METAFORM_HOME': str(home), 'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'done',
+               'FAKE_ACP_WORK': ticket}
+        started = json.loads(run('dispatch', 'start', ticket, 'claude', '--json', cwd=project_folder, env=env).stdout)
+        dispatch_runners.append((started, project_folder, log))
+        assert started['state'] == 'starting' and started['work_id'] == ticket
+        waited = json.loads(run('dispatch', 'wait', 'until=done', f'id={ticket}', '--json', cwd=project_folder,
+                                env={**env, 'METAFORM_DISPATCH_WAIT_SECONDS': str(LIMIT)}).stdout)
+        assert waited['state'] == 'done', waited
+        one = project_store.overlay_record('proj', 'tickets', 'id', ticket) or {}
+        assert one['done'] and one['outcome'] == 'completed' and str(one['taken_by']).startswith('claude'), one
+        with Session('proj').read() as tx:
+            assert tx.execute('SELECT count(*) FROM work').fetchone()[0] == 0, 'the old store got a record'
+    finally:
+        service.stop(home)
+        owner.close_all()
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('QUAL-015')
 def test_start_returns_at_once_and_the_runner_goes_on_without_it(dispatch, run, dispatch_runners):
@@ -1169,7 +1202,7 @@ def test_message_and_stop_name_the_next_step_when_no_agent_runs(dispatch, run):
 @pytest.mark.req('BASE-050')
 def test_an_agent_hands_work_on_by_ticket_id_and_the_next_agent_reads_the_work_and_its_nodes(dispatch, run):
     read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    assert f'Work ticket {dispatch.id} with map_work' in read
+    assert f'Work ticket {dispatch.id} with metaform map work' in read
     assert NODE in read and LINKED in read
     assert not dispatch.ticket().taken, 'making a hand-off takes nothing'
 
@@ -2469,7 +2502,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         third = dispatch.store.add_work(Node('element', NODE), 'unbuilt', task='Tune it.', title='Tune').id
         told = module_context('dispatch', dispatch.folder, project='proj', surface='mcp', session='overlap-test')
         said = overlap(told, third)
-        assert said.startswith(f'Other agents are at work at or around {NODE}: ') and 'dispatch_note' in said
+        assert said.startswith(f'Other agents are at work at or around {NODE}: ') and 'metaform dispatch note' in said
         assert other.id not in said and overlap(told, third) == ''  # B is elsewhere; said once for the part
         here = json.loads(run('dispatch', 'peers', 'file=src/shared.js', '--json', cwd=dispatch.folder, env=a).stdout)
         assert [one['work_id'] for one in here['peers']] == [other.id]
@@ -2502,7 +2535,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
                                   env={**os.environ, 'METAFORM_HOME': str(dispatch.home), **a},
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         [question] = eventually(lambda: [text for text in prompts(b_session) if 'May I change' in text])
-        assert '"kind"' not in question and 'reply with dispatch_note reply=' in question  # its words, and how to reply
+        assert '"kind"' not in question and 'reply with metaform dispatch note reply=' in question  # its words, and how to reply
         asked = re.search(r'reply=([0-9a-f]{16})', question).group(1)
         run('dispatch', 'note', f'reply={asked}', '--', 'Yes, go ahead', cwd=dispatch.folder, env=b)
         out, err = asking.communicate(timeout=LIMIT)
@@ -2615,19 +2648,17 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     text = f'Work ticket {dispatch.id} {text}'
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
-    assert first.startswith(f'Work ticket {dispatch.id} with map_work and the task and skills you were given.')
+    assert first.startswith(f'Work ticket {dispatch.id} with metaform map work and the task and skills you were given.')
     assert "Use the ticket's task and the specification it names." in first
     assert (f'Maintain relevant project knowledge at {NODE} according '
             'to the shared memory instructions. Keep progress, outcome and evidence in the ticket and result '
             'records.') in first
     assert text.endswith(f'\n\n{prompt("work_link")}'), 'the request to link entry points ends the first prompt'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
-    assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
-        'the reads are named as the MCP calls the agent makes'
-    assert f'Links: metaform://{NODE}  metaform://{NODE}/items/1' in rest
-    assert [(one['type'], one['uri']) for one in sent['params']['prompt'][1:]] == [
-        ('resource_link', f'metaform://{NODE}'), ('resource_link', f'metaform://{NODE}/items/1')], \
-        'the links go as ACP resource links beside the text too'
+    assert f'▶ {NODE}' in rest and f'metaform map work node={NODE}' in rest and 'map_work' not in text, \
+        'the reads are named as the commands the agent runs in its shell; its server serves no map_work tool'
+    assert f'Read: metaform map work id={dispatch.id}  metaform map where {NODE}' in rest
+    assert sent['params']['prompt'][1:] == [], 'no link to a resource its server does not serve'
     assert rest.count('engine code') == 1, 'the node is named once in its brief'
     assert '{' not in rest, 'counts with calls, never what is held'
     assert len(rest.encode('utf-8')) < 3000
@@ -4061,7 +4092,7 @@ def test_a_worker_is_asked_once_to_link_entry_points(dispatch):
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
     text = sent['params']['prompt'][0]['text']
     asked = prompt('work_link')
-    assert asked and 'dispatch_link file=' in asked and 'lock' not in asked
+    assert asked and 'metaform dispatch link file=' in asked and 'lock' not in asked
     assert text.endswith(f'\n\n{asked}') and text.count(asked) == 1
     dispatch.stop()
 

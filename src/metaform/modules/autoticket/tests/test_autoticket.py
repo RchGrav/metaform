@@ -636,14 +636,13 @@ def test_a_fault_on_a_project_in_the_project_store_is_filed_in_its_tickets_overl
         run, held_in_store):
     """old-store-removal step 1, F01: the ticket is a record of the tickets overlay the board reads, at the element
     whose ref names the failing file, its counts in its note; the old store gets none."""
-    from metaform.data import Store
     for number in range(3):
         web_fault(held_in_store, number)
     [filed] = stored_tickets()
     assert filed['element'] == 'proj.code.server.web' and filed['kind'] == 'broken'
     assert filed['title'].startswith('Web server fault: KeyError') and 'GET /api/graph' in filed['task']
     assert 'seen 3 times' in filed['note'] and 'last 20' in filed['note']
-    assert not Store('proj').work(limit=0).results
+    assert not old_work('proj')
 
 
 def test_a_stored_fault_ticket_is_found_by_its_title_reopened_when_it_recurs_and_left_when_cancelled(
@@ -691,3 +690,11 @@ def test_project_store_changes_read_no_ticket_while_no_group_waits(run, held_in_
 def lights(store, address='code.server.web'):
     """The fault lights: open work records of condition broken or trouble."""
     return [record for record in tickets(store) if record.address == address and record.condition in ('broken', 'trouble')]
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]

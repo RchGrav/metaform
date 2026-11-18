@@ -334,7 +334,7 @@ def test_muster_on_a_project_in_the_project_store_is_a_ticket_there_and_its_verd
     record = review.ticket(ctx, ctx.folder / 'good', 'Review the module.', 'CI muster of good, source abc.')
     one = stored_tickets()[record['id']]
     assert one['element'] == 'proj.code.module.good' and one['task'] == 'Review the module.'
-    assert not ctx.require_store().work(limit=0).results  # the old store gets no ticket, and no fork layer
+    assert not old_work('proj')  # the old store gets no ticket, and no fork layer
     run('map', 'work', 'op=done', f'id={one["id"]}', 'resolution={"passed": true, "reason": "Tests cover it."}',
         'why=Reviewed against the standard', cwd=ctx.folder)
     assert review.verdict(ctx, str(one['id'])) == (True, 'Tests cover it.')
@@ -500,3 +500,11 @@ def test_install_upkeep_failure_retains_manual_retry_and_continues_other_reposit
     monkeypatch.setattr(repository, 'update_worktree', lambda root, work_id: root)
     assert call(upkeep, fork_context)['tickets'] == [waiting[0].id]
     assert started == ['other', fork_context.project]
+
+
+def old_work(project):
+    """The old store's work rows: none is read or made for a project held in the project store (review of
+    2026-11-18, F3); `Store.work` reads the project store's tickets for it."""
+    from metaform.data.session import Session
+    with Session(project).read() as tx:
+        return tx.execute('SELECT count(*) FROM work').fetchone()[0]
