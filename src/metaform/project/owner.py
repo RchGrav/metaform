@@ -42,6 +42,11 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
+def pending_memory(path: Path) -> Path:
+    """Where a clear writes the memory before its map goes; put in `kept_memory`'s place once the map is gone."""
+    return path.with_name(f'{path.stem}.memory.json.pending')
+
+
 def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, list[list[object]]], bool]:
     """The memory layer of a database about to be removed, kept for the next one, and whether it was read whole.
     Opened unchecked, so a database an earlier version made can still be cleared; one with no memory layer keeps none,
@@ -85,21 +90,12 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
             sys.stderr.write(f'{path.stem}: closing it after reading its memory failed: {error}\n')
 
 
-def _carry_relations(memory: dict[str, list[list[object]]], kept: Path) -> None:
-    """Into a memory whose relations could not be read, those an earlier clear kept among the entities it still has,
-    so a partial read loses no more than it must."""
-    try:
-        earlier = json.loads(kept.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return
-    names = {str(one[0]) for one in memory['entities']}
-    memory['relations'] = [list(one) for one in cast(list[list[object]], earlier.get('relations') or [])
-                           if str(one[0]) in names and str(one[1]) in names]
-
-
 def _put_back(opened: Store) -> None:
-    """Into a database just made, the memory layer its project had when it was last cleared."""
-    kept = kept_memory(opened.path)
+    """Into a database just made, the memory layer its project had when it was last cleared: a pending copy a clear
+    left when it stopped after its map was gone comes first, since it is the newer."""
+    pending, kept = pending_memory(opened.path), kept_memory(opened.path)
+    if pending.exists():
+        pending.replace(kept)
     if not kept.exists():
         return
     memory = json.loads(kept.read_text(encoding='utf-8'))
@@ -377,31 +373,44 @@ class Owner:
                 return False
             memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
-            if not whole and memory['entities'] and kept.exists():
-                _carry_relations(memory, kept)
             # Kept for the next map, LAYER-013: written beside the map first, as pending, and put in the place of an
-            # earlier clear's copy only once the map is gone, so a removal that fails leaves the map and that copy
-            # as they were. A copy is withdrawn when this memory was read whole and holds none, so nothing deleted
-            # since comes back; never after a read that failed, when it may be the one copy left.
-            pending = kept.with_name(kept.name + '.pending')
+            # earlier clear's copy once the map is gone; a removal that fails while the map still stands leaves the
+            # map and that copy as they were. A copy is withdrawn when this memory was read whole and holds none, so
+            # nothing deleted since comes back; never after a read that failed, when it may be the one copy left.
+            pending = pending_memory(path)
             if memory['entities']:
-                pending.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
+                try:
+                    pending.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
+                except OSError:  # nothing is removed: the map keeps its memory
+                    pending.unlink(missing_ok=True)
+                    raise
             try:
                 store.remove(path)
             except BaseException:
-                with contextlib.suppress(OSError):  # its own error never hides the removal's
-                    pending.unlink(missing_ok=True)
+                if path.exists():  # the map still stands: what was kept for it goes
+                    with contextlib.suppress(OSError):
+                        pending.unlink(missing_ok=True)
+                else:  # its file is gone though a file beside it was not: its memory is put in place as on success
+                    self._put_in_place(memory, whole, kept, pending, said)
                 raise
-            try:
-                if memory['entities']:
-                    pending.replace(kept)
-                elif whole:
-                    kept.unlink(missing_ok=True)
-            except OSError as error:  # said, never a reason the clear failed: the map is gone
-                if said is not None:
-                    said.append(f'the memory kept at {pending if memory["entities"] else kept} could not be put in '
-                                f'place for the next map: {error}')
+            self._put_in_place(memory, whole, kept, pending, said)
             return True
+
+    @staticmethod
+    def _put_in_place(memory: dict[str, list[list[object]]], whole: bool, kept: Path, pending: Path,
+                      said: list[str] | None) -> None:
+        """Once the map is gone: its memory in the place of an earlier clear's copy, or that copy withdrawn when the
+        memory was read whole and holds none. A failure is said, never a reason the clear failed; a pending copy left
+        behind is still put back into the next map (`_put_back`)."""
+        try:
+            if memory['entities']:
+                pending.replace(kept)
+            elif whole:
+                kept.unlink(missing_ok=True)
+        except OSError as error:
+            if said is not None:
+                said.append(f'the memory kept at {pending if memory["entities"] else kept} could not be put in place '
+                            f'for the next map: {error}')
 
     @contextmanager
     def released(self, project: str) -> Generator[Path]:

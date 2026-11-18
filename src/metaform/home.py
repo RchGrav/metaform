@@ -1439,7 +1439,7 @@ def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
     return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else (), holds=held)
 
 
-def clear_project(project_id: str, *, made_by: str = 'clear', again: str | None = None) -> Cleared:
+def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history, the conversations with agents and everything else in the project's
@@ -1460,13 +1460,13 @@ def clear_project(project_id: str, *, made_by: str = 'clear', again: str | None 
     # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
     with halted(project_id, 'clear'):
         lost: list[str] = []
-        cleared = _cleared(project_id, found, made_by, lost, again or f'metaform clear project {project_id} --confirm')
+        cleared = _cleared(project_id, found, made_by, lost)
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
-def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str], again: str) -> Cleared:
+def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> Cleared:
     """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start.
-    What of the map's memory could not be kept is added to `lost`; `again` is the command that runs it once more."""
+    What of the map's memory could not be kept is added to `lost`."""
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
@@ -1480,18 +1480,19 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str], aga
     # report is removed, and the stops and the backup made before it are said (review of 2026-11-18).
     from metaform.project import commands
     from metaform.project.store import StoreError as MapError
-    done = ''.join([f' Its agents at work were stopped first: {"; ".join(stopped)}.' if stopped else '',
+    again = f'metaform clear project {project_id} --confirm'
+    done = ''.join([f' Its agents at work were asked to stop first: {"; ".join(stopped)}.' if stopped else '',
                     f' A backup was made first: {saved.name}.' if saved is not None else ''])
+    folder = _folder_of_project(project_id)  # resolved before the map goes, so a project gone from the list stops here
+    stores = _stores(folder)
     try:
         commands.clear(commands.stored_name(project_id), said=lost)
-    except (StoreError, MapError) as error:
-        said = ''.join([done, *(f" {one.rstrip('.')}." for one in lost)])
+    except (StoreError, MapError) as error:  # nothing else is removed, and no memory is lost
+        changes.note(project_id)  # a clear whose answer was lost may have removed the map: pages read it again
         raise StoreError(f"{project_id} was not cleared, and none of its bases or reports was removed: "
-                         f"{str(error).rstrip('.')}.{said}", again) from error
+                         f"{str(error).rstrip('.')}.{done}", again) from error
     # the map is gone, and a clear never brings it back: what follows is said as unfinished, never left unsaid
     try:
-        folder = _folder_of_project(project_id)
-        stores = _stores(folder)
         with project_db(folder, write=True) as db:
             db.execute('DELETE FROM active_bases WHERE project_id=?', (project_id,))
             db.execute('DELETE FROM bases WHERE project_id=?', (project_id,))
@@ -1499,10 +1500,11 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str], aga
         for store in stores:
             _remove_files(store, failed)
         _remove_tree(folder / 'reports', failed)
-    except (OSError, sqlite3.Error) as error:
-        said = ''.join(f" {one.rstrip('.')}." for one in lost)
+    except (OSError, sqlite3.Error, StoreError) as error:
+        changes.note(project_id)
+        kept_said = ''.join(f" {one.rstrip('.')}." for one in lost)
         raise StoreError(f'{project_id} is cleared in part: its map in the project store is removed, and its bases '
-                         f'and reports are not: {error}.{done}{said}', again) from error
+                         f"and reports are not: {str(error).rstrip('.')}.{done}{kept_said}", again) from error
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
                    saved.name if saved is not None else None, stopped, found.holds)
@@ -1711,8 +1713,11 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
                          f'metaform list backups {project_id}')
     # a map left in the project store would stand in front of the bases a restore brings back, so a clear refused there
     # stops the restore, saying what it did first and naming this restore as the command to run again
-    cleared = clear_project(project_id, made_by='restore',
-                            again=f'metaform restore project {project_id}' + (f' {name}' if name else ''))
+    try:
+        cleared = clear_project(project_id, made_by='restore')
+    except StoreError as error:
+        raise StoreError(str(error), f'metaform restore project {project_id}' + (f' {name}' if name else '')) \
+            from error
     before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))

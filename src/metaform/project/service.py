@@ -167,7 +167,8 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 elif isinstance(message.get('clear'), str):  # clearing a project removes its database
                     lost: list[str] = []
                     try:
-                        answer: dict[str, object] = {'status': 'ok', 'removed': owned.remove(message['clear'], lost)}
+                        answer = cast(dict[str, object], {'status': 'ok',
+                                                          'removed': owned.remove(message['clear'], lost)})
                     except Exception as error:  # noqa: BLE001  answered with what was said of its memory
                         answer = commands.refused({'clear': message['clear']}, Refusal(
                             'INTERNAL_ERROR', f'the service failed: {type(error).__name__}: {error}'))
