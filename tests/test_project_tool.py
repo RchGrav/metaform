@@ -628,7 +628,7 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     path.with_name(path.name + '.wal').write_text('left')
     assert owner.of(home).remove('older') is False and not list(path.parent.glob(f'{path.name}.*'))
     # a new map is made without an old map's files, and puts the kept memory back; that copy is withdrawn after the
-    # first write only while it is the copy that was put back
+    # first write, while the map is the project's open one and the file is the copy it put back
     leftover = path.with_name(path.name + '.left')
     leftover.write_text('left')
     owned = owner.of(home)
@@ -642,9 +642,16 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     kept.write_text(bad, encoding='utf-8')
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
     assert path.exists() and kept.read_text(encoding='utf-8') == bad, 'the refused copy is left whole'
-    assert owned.remove('older')
-    [aside] = kept.parent.glob(f'{kept.name}.unread-*')
+    said: list[str] = []
+    assert owned.remove('older', said)
+    aside = kept.with_name(kept.name + '.unread-1')
     assert aside.read_text(encoding='utf-8') == bad and 'new' in kept.read_text(encoding='utf-8')
+    assert said == [f'the memory kept at {kept} could not be read and is set aside as {aside}']
+    # a second copy that cannot be read is set aside beside the first, never over it
+    kept.write_text(bad, encoding='utf-8')
+    owned.write('older', 'test', lambda opened: opened.put_memory_entity('again', 'part', ['Fresh.']), create=True)
+    assert owned.remove('older')
+    assert aside.read_text(encoding='utf-8') == bad and kept.with_name(kept.name + '.unread-2').exists()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
     odd = '{"entities": [["bell", "part", null]], "relations": []}'
     kept.write_text(odd, encoding='utf-8')
