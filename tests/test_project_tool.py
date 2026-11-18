@@ -1408,3 +1408,17 @@ def test_a_completed_record_is_reached_by_its_id_or_by_find_and_find_never_gives
     assert [(one['record'], one['element'], one['field']) for one in hit] == [(first['record'], CS, 'title')]
     assert run({'find': {P: 'relay', 'overlay': 'nosuch'}})['code'] == 'OVERLAY_NOT_DEFINED'
     assert run({'find': {P: ''}})['status'] == 'error' and run({'help': 'find'})['help']['find']['does']
+
+
+def test_archiving_done_tickets_completes_them(served):
+    """The board's Archive done tickets, for a store project, completes every ticket done by the cutoff: it leaves the
+    board's read and every other, and is found again by find."""
+    from metaform.modules.web import project_map
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': [
+        {'id': 't-old', 'title': 'old', 'task': 'x', 'done': '2026-11-01T00:00:00Z', 'outcome': 'completed'},
+        {'id': 't-open', 'title': 'open', 'task': 'x'},
+        {'id': 't-new', 'title': 'new', 'task': 'x', 'done': '2026-11-20T00:00:00Z', 'outcome': 'completed'}]}}},
+        served) == {'status': 'ok'}
+    assert project_map.archive_done(P, '2026-11-17T00:00:00Z') == 1
+    assert [one['id'] for one in commands.overlay_records(P, 'tickets', served)] == ['t-open', 't-new']
+    assert [one['overlay'] for one in commands.run({'find': {P: 'old', 'completed': True}}, served)['find']] == ['tickets']

@@ -2196,6 +2196,10 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(line, str):
             return self.send(400, {'error': 'The archive cutoff is a time as text.'})
         board = str(given.get('board') or '')
+        from .project_map import archive_done
+        archived = archive_done(str(given.get('project', '')), line)
+        if archived is not None:  # a project in the project store: its done tickets are completed
+            return self.send(200, {'line': line, 'was': '', 'archived': archived})
         try:
             done = cast(dict[str, Any], module_verb(given, 'map', 'boards', {
                 'op': 'line', 'name': board, **({'line': line} if 'line' in given else {})},

@@ -333,3 +333,20 @@ def complete_record(project: str, element: str, key: str, position: int, record:
     path = f'{name}.{element}' if element else name
     _done(commands.run({'update': {path: {key: [
         {'position': position, 'record': record, 'revision': revision, 'completed': True}]}}}))
+
+def archive_done(project: str, line: str) -> int | None:
+    """The board's Archive done tickets for a project in the project store: every ticket done at or before `line` is
+    completed, so it leaves the board and every read and is found again only by its id or a search (the person's rule,
+    2026-11-17). How many; None when the store holds no such project."""
+    name = commands.stored_name(project)
+    if not commands.holds(name):
+        return None
+    count = 0
+    while True:  # one at a time, each read afresh, since a completion closes up its element's list
+        found = next((record for record in commands.overlay_records(name, 'tickets') or []
+                      if record.get('done') and str(record['done']) <= line), None)
+        if found is None:
+            return count
+        _done(commands.run({'update': {str(found['element']): {'tickets': [
+            {'position': found['position'], 'record': found['record'], 'completed': True}]}}}))
+        count += 1
