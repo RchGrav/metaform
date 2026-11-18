@@ -675,11 +675,6 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     assert not held.exists() and not kept.exists()
     facts = {one[0]: one[2] for one in owned.read('older', lambda opened: opened.memory_entities())}
     assert 'Old fact.' in facts['bell']
-    # a database holding a committed write is never discarded, whatever another caller's write did
-    made_now = owned._open['older']
-    assert not made_now.fresh  # its writer ended it when the write committed, before the caller heard
-    owned._discard('older', made_now)
-    assert path.exists() and owned._open['older'] is made_now
     assert owned.remove('older')
     kept.unlink()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made

@@ -44,10 +44,10 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
-# what a filesystem with no hard links answers: POSIX, FUSE or network filesystems (ENOSYS), and Windows, where
-# ERROR_INVALID_FUNCTION and ERROR_NOT_SUPPORTED come as EINVAL; elsewhere EINVAL is a real error, and raised
-_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.ENOSYS,
-             *((errno.EINVAL,) if os.name == 'nt' else ())}
+# what a filesystem with no hard links may answer: POSIX, FUSE or network filesystems (ENOSYS), and Windows or a
+# volume reached like one (EINVAL). The fallback it takes is safe whatever the cause: an exclusive copy, never over
+# another file.
+_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.ENOSYS, errno.EINVAL}
 
 
 def held_memory(path: Path) -> Path:
@@ -260,6 +260,7 @@ class Database:
         # made by this process and not yet written to: ended on the writer thread when a write commits, or may have,
         # before any caller hears of it, so a discard never removes a database a write reached
         self.fresh = create is not None
+        self.discarding = False  # a discard that waits for the callers in it to leave
         self.put_back = False  # whether it holds the kept memory it put back, claimed as `held_memory`
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
@@ -397,9 +398,10 @@ class Database:
                     results = [work(store_) for work, _, _ in group]
             except StoreError as error:
                 if error.unknown:
-                    self._written()  # it may have committed
+                    self._written()  # it may have committed: said as a change, as a commit is
                     for _, future, _ in group:
                         future.set_exception(error)
+                    self._tell({kind for _, _, kind in group})
                     return
             except BaseException:  # noqa: BLE001, S110  one write of the group failed: each is now run alone
                 pass
@@ -416,7 +418,8 @@ class Database:
                     result = work(store_)
             except BaseException as error:  # noqa: BLE001  the caller receives its own failure
                 if isinstance(error, StoreError) and error.unknown:
-                    self._written()  # it may have committed
+                    self._written()  # it may have committed: said as a change, as a commit is
+                    stored.add(kind)
                 future.set_exception(error)
             else:
                 self._written()
@@ -478,14 +481,14 @@ class Owner:
     def write(self, project: str, caller: str, work: Callable[[Store], T], *, create: bool = False,
               kind: str = 'map') -> T:
         """Queue one write and wait for it. With `create`, a project that has no database is made by this write; when
-        the write fails, the database it made is removed again, so a refused command leaves nothing behind. `kind`
-        is what the write changes: the map, or the memory layer."""
+        the write is refused, the database it made is removed again, so a refused command leaves nothing behind. A write
+        whose commit outcome is unknown may have landed, so its database is kept. `kind` is what the write changes: the
+        map, or the memory layer."""
         with self._using(project, create=create) as database:
             try:
                 result = database.write(caller, work, kind).result()
             except BaseException:
-                if database.fresh:
-                    self._discard(project, database)
+                self._discard(project, database)  # only a map no write has reached is removed
                 raise
             return result  # the claimed copy is withdrawn by the writer when the write commits (`Database._written`)
 
@@ -500,6 +503,9 @@ class Owner:
         finally:
             with self._lock:
                 database.users -= 1
+                waiting = database.discarding and database.users == 0
+            if waiting:  # a discard that waited for this caller to leave runs now
+                self._discard(project, database)
 
     def _take(self, project: str) -> Database | None:
         with self._lock:
@@ -534,7 +540,8 @@ class Owner:
                 try:
                     _write_kept(path, {'entities': [], 'relations': []}, None)
                 except (OSError, ValueError) as error:
-                    raise StoreError(f'{project} cannot be made: the memory a discarded map claimed, at '
+                    raise StoreError(f'{project} cannot be made: the memory a map discarded or removed part way '
+                                     'claimed, at '
                                      f'{held_memory(path)}, could not be kept again first: {error}. Free space or '
                                      'permission there, or move that file aside, and run the command again.') \
                         from error
@@ -599,7 +606,10 @@ class Owner:
         open lock, so no open finds it half removed. A copy of memory it claimed is given back by the next open."""
         with self._opening:
             with self._lock:
-                if database.users > 1 or self._open.get(project) is not database or not database.fresh:
+                if self._open.get(project) is not database or not database.fresh:
+                    return
+                if database.users > 1:  # another caller is in it: the last to leave discards it (`_using`)
+                    database.discarding = True
                     return
                 del self._open[project]
             database.close()
