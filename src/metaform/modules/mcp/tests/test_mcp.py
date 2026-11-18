@@ -730,6 +730,34 @@ def test_what_a_peer_says_on_a_project_in_the_project_store_is_its_questions_ove
     assert a2a_out._answer('proj', now) == (True, 'The kitchen one')
 
 
+
+@pytest.mark.req('MCP-041')
+def test_a_peers_artifact_whose_write_fails_is_written_once_when_heard_again(home, in_project_store, monkeypatch):
+    """Review of 2026-11-18, F7: the artifact's key was marked seen before it was written, so a write that failed left
+    it seen and a replay skipped it for good. A claim is now pending until written, and given back on a failure."""
+    from a2a.types import Artifact, Part
+
+    from metaform import project
+    from metaform.modules.mcp import a2a_out
+    from metaform.modules.mcp import a2a_records as records
+    made = records.send('proj', records.Exchange('x-2', 'peer', 'code.timer.kitchen', 'Check the bell'))
+    artifact = Artifact(artifact_id='a-1', name='report', parts=[Part(text='The bell is fine.')])
+    real, calls = a2a_out._tell, []
+
+    def once(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            raise OSError('the disk is full')
+        return real(*args, **kwargs)
+    monkeypatch.setattr(a2a_out, '_tell', once)
+    with pytest.raises(OSError):
+        a2a_out.heard('proj', made.exchange_id, None, (artifact,), 'peer-task')
+    a2a_out.heard('proj', made.exchange_id, None, (artifact,), 'peer-task')
+    a2a_out.heard('proj', made.exchange_id, None, (artifact,), 'peer-task')
+    kept = [one['text'] for one in project.overlay_records('proj', 'questions') or []]
+    assert kept == ['The bell is fine.'] and len(calls) == 2
+    assert (records.exchange('proj', made.exchange_id) or made).seen == ['artifact:a-1']
+
 @pytest.mark.req('MCP-002')
 def test_a2a_push_webhooks_are_only_those_the_person_allows(run, home, mapped):
     from metaform.modules.mcp.a2a import allowed

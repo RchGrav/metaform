@@ -286,18 +286,32 @@ def exchanges(project: str, address: str | None = None, open_only: bool = False)
     return [one for one in made if one.state not in ('completed', 'failed', 'cancelled')] if open_only else made
 
 
+PENDING = 'pending '  # a claim in `seen` not yet written at the Address: 'pending <stamp> <key>'
+
+
+def _pending(seen: list[str]) -> dict[str, str]:
+    """The keys claimed and not yet delivered, each with when it was claimed."""
+    return {parts[2]: parts[1] for one in seen if one.startswith(PENDING) and len(parts := one.split(' ', 2)) == 3}
+
+
 def moved(project: str, exchange_id: str, *, state: str | None = None, said: str | None = None,
-          peer_task_id: str | None = None, claims: tuple[str, ...] = ()) -> tuple[Exchange | None, bool, list[str]]:
+          peer_task_id: str | None = None, claims: tuple[str, ...] = (),
+          stale: float = 60.0) -> tuple[Exchange | None, bool, list[str]]:
     """Record what a peer told of an exchange's task in one transaction: its state and last word when they changed,
     and each of `claims`, the keys of the artifacts and questions not yet written at the Address. Returns the
     exchange, whether its state changed, and the claims this call took, so two followers of one task never write the
-    same item twice."""
+    same item twice. A claim is pending until `delivered` marks it written, so what failed to be written is heard
+    again: `released` gives it back at once, and a claim whose writer died is free again after `stale` seconds
+    (review of 2026-11-18, F7)."""
     with _own(project).tables() as tx:
         row = tx.get('a2a_exchanges', {'exchange_id': exchange_id})
         if row is None:
             return None, False, []
         before = _exchange(row)
-        taken = [key for key in dict.fromkeys(claims) if key not in before.seen]
+        free = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - stale))
+        pending = _pending(before.seen)
+        taken = [key for key in dict.fromkeys(claims) if key not in before.seen
+                 and (key not in pending or pending[key] < free)]
         change: dict[str, Any] = {}
         if state and state != before.state:
             change['state'] = state
@@ -306,12 +320,38 @@ def moved(project: str, exchange_id: str, *, state: str | None = None, said: str
         if peer_task_id and peer_task_id != before.peer_task_id:
             change['peer_task_id'] = peer_task_id
         if taken:
-            change['seen'] = [*before.seen, *taken]
+            stamp = _now()
+            change['seen'] = [*(one for one in before.seen if not (one.startswith(PENDING) and _pending([one]).keys()
+                                                                   & set(taken))),
+                              *(f'{PENDING}{stamp} {key}' for key in taken)]
         if not change:
             return before, False, []
         change['updated'] = _now()
         after = tx.update('a2a_exchanges', {'exchange_id': exchange_id}, change)
     return _exchange(after) if after is not None else before, 'state' in change, taken
+
+
+def delivered(project: str, exchange_id: str, keys: list[str]) -> None:
+    """Mark claimed keys written at the Address: from now on they are heard once and never again."""
+    _settle(project, exchange_id, keys, True)
+
+
+def released(project: str, exchange_id: str, keys: list[str]) -> None:
+    """Give back claimed keys that were not written, so the next follower to hear them writes them."""
+    _settle(project, exchange_id, keys, False)
+
+
+def _settle(project: str, exchange_id: str, keys: list[str], written: bool) -> None:
+    if not keys:
+        return
+    with _own(project).tables() as tx:
+        row = tx.get('a2a_exchanges', {'exchange_id': exchange_id})
+        if row is None:
+            return
+        seen = _exchange(row).seen
+        kept = [one for one in seen if not (one.startswith(PENDING) and set(_pending([one])) & set(keys))]
+        tx.update('a2a_exchanges', {'exchange_id': exchange_id},
+                  {'seen': [*kept, *(keys if written else [])], 'updated': _now()})
 
 
 def asking(project: str, exchange_id: str, was: str | None, now: str | None) -> bool:

@@ -202,15 +202,25 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
     if now is None or not taken:
         return now
     by = f'a2a {now.peer}'
-    for one in artifacts:
-        if f'artifact:{one.artifact_id}' in taken:
-            text = _said(one.parts)
-            _tell(project, now.address, text, by, one.name or _title(text), messages)
-    if any(key.startswith('question:') for key in taken) and said:
-        question = _ask(project, now.address, said, by, _title(said), prompt('a2a_peer_question_why', peer=now.peer),
-                        messages)
-        if records.asking(project, exchange_id, now.asked, question):  # its answer goes back, `answered`
-            now = records.exchange(project, exchange_id)
+    left = list(taken)  # each claim is marked delivered once written, and what is left is given back on a failure
+    try:
+        for one in artifacts:
+            key = f'artifact:{one.artifact_id}'
+            if key in taken:
+                text = _said(one.parts)
+                _tell(project, now.address, text, by, one.name or _title(text), messages)
+                records.delivered(project, exchange_id, [key])
+                left.remove(key)
+        asking = [key for key in taken if key.startswith('question:')]
+        if asking and said:
+            question = _ask(project, now.address, said, by, _title(said),
+                            prompt('a2a_peer_question_why', peer=now.peer), messages)
+            records.delivered(project, exchange_id, asking)
+            left = [key for key in left if key not in asking]
+            if records.asking(project, exchange_id, now.asked, question):  # its answer goes back, `answered`
+                now = records.exchange(project, exchange_id)
+    finally:
+        records.released(project, exchange_id, left)
     return now
 
 
