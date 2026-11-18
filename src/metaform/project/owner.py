@@ -86,21 +86,39 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
             sys.stderr.write(f'{path.stem}: closing it after reading its memory failed: {error}\n')
 
 
-def _put_back(opened: Store) -> None:
-    """Into a database just made, the memory layer its project had when it was last cleared. A copy that cannot be
-    read is said and left where it is, never a reason the map cannot be made."""
+def _undo(kept: Path, fresh: Path, earlier: Path, placed: bool, moved: bool) -> None:
+    """Put a cleared map's kept memory back as it was before its clear: the new copy out of the way, the earlier copy
+    back in its place, each step on its own, so one that fails never keeps the other from being tried."""
+    with contextlib.suppress(OSError):
+        fresh.unlink(missing_ok=True)
+    if placed:
+        with contextlib.suppress(OSError):
+            kept.unlink(missing_ok=True)
+    if moved:
+        with contextlib.suppress(OSError):
+            earlier.replace(kept)
+
+
+def _put_back(opened: Store) -> bool:
+    """Into a database just made, the memory layer its project had when it was last cleared; whether it was put
+    back. A copy that cannot be read is said and left where it is, whole, never a reason the map cannot be made."""
     kept = kept_memory(opened.path)
     if not kept.exists():
-        return
+        return False
     try:
         memory = json.loads(kept.read_text(encoding='utf-8'))
-    except (OSError, ValueError) as error:
+        entities = [(str(name), None if kind is None else str(kind), [str(one) for one in observations])
+                    for name, kind, observations in memory['entities']]
+        relations = [(str(start), str(end), str(kind))
+                     for start, end, kind in cast(list[list[Any]], memory.get('relations') or [])]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         sys.stderr.write(f'{kept}: the memory a clear kept could not be read and is not put back: {error}\n')
-        return
-    for name, kind, observations in memory['entities']:
+        return False
+    for name, kind, observations in entities:
         opened.put_memory_entity(name, kind, observations)
-    for start, end, relation_type in memory['relations']:
+    for start, end, relation_type in relations:
         opened.add_memory_relation(start, end, relation_type)
+    return True
 
 
 class Missing(Exception):
@@ -121,6 +139,7 @@ class Database:
         self._committed = committed
         self.users = 0  # callers holding this database now, counted by the owner under its lock
         self.fresh = create is not None  # made by this process and not yet written to by a command
+        self.put_back = False  # whether a cleared project's kept memory was put back into it when it was made
         self._wake = threading.Condition()
         self._jobs: dict[str, deque[tuple[Callable[[Store], Any], Future[Any], str]]] = {}
         self._turn: deque[str] = deque()  # the callers with writes waiting, in the order they are served
@@ -192,7 +211,7 @@ class Database:
             with self._writing.transaction():
                 give_standing_overlays(self._writing, self.path.stem)
                 if create is not None:
-                    _put_back(self._writing)
+                    self.put_back = _put_back(self._writing)
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
             self._failed = error
             opened.set()
@@ -312,8 +331,8 @@ class Owner:
                 if database.fresh:
                     self._discard(project, database)
                 raise
-            if database.fresh:  # the first write stored: the memory put back from a clear is held by the database now
-                kept_memory(database.path).unlink(missing_ok=True)
+            if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
+                kept_memory(database.path).unlink(missing_ok=True)  # database now; a copy never put back stays
             database.fresh = False
             return result
 
@@ -352,6 +371,8 @@ class Owner:
             closing = self._open.pop(idle) if idle is not None else None
         if closing is not None:
             closing.close()
+        if not exists:  # a removal that stopped part way may have left the old map's files: never read into the new one
+            store.remove(path)
         database = Database(path, create=None if exists else project, committed=self.committed)
         with self._lock:
             database.users = 1
@@ -367,8 +388,11 @@ class Owner:
             if database is not None:
                 database.close()
             path = store.location(self.home, project)
-            if not path.exists():  # files a removal that stopped part way left beside it go too
-                store.remove(path)
+            if not path.exists():  # files a removal that stopped part way left beside it go too, when they can
+                try:
+                    store.remove(path)
+                except OSError as error:  # never a refusal: a new map at this path removes them first
+                    sys.stderr.write(f'{path}: files beside a removed map could not be removed: {error}\n')
                 return False
             memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
@@ -377,32 +401,31 @@ class Owner:
             # nothing and never leaves a torn copy where the next map reads it; then the earlier clear's copy is set
             # aside and the new one put in its place, each by a rename. The earlier copy is withdrawn when this memory
             # was read whole and holds none, so nothing deleted since comes back, and kept after a read that failed,
-            # when it may be the one copy left. A removal that fails while the map still stands undoes both renames.
+            # when it may be the one copy left. Any step that fails while the map stands undoes those before it.
             if memory['entities']:
                 try:
                     fresh.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
                 except OSError:
                     fresh.unlink(missing_ok=True)
                     raise
-            moved = kept.exists() and bool(memory['entities'] or whole)
-            if moved:
-                kept.replace(earlier)
-            if memory['entities']:
-                fresh.replace(kept)
+            moved = placed = False
             try:
+                if kept.exists() and (memory['entities'] or whole):
+                    kept.replace(earlier)
+                    moved = True
+                if memory['entities']:
+                    fresh.replace(kept)
+                    placed = True
                 store.remove(path)
             except OSError:
                 if path.exists():  # the map still stands, and so does the copy it was cleared with
-                    with contextlib.suppress(OSError):
-                        if memory['entities']:
-                            kept.unlink(missing_ok=True)
-                        if moved:
-                            earlier.replace(kept)
+                    _undo(kept, fresh, earlier, placed, moved)
                     raise
-                if said is not None:  # its file is gone: the map is removed, its memory kept; a file beside it stays
-                    said.append('files beside its map could not be removed, and a later clear removes them')
-            with contextlib.suppress(OSError):
-                earlier.unlink(missing_ok=True)
+                sys.stderr.write(f'{path}: files beside the removed map could not be removed; a new map at this path '
+                                 'removes them first\n')
+            if moved:
+                with contextlib.suppress(OSError):
+                    earlier.unlink(missing_ok=True)
             return True
 
     @contextmanager

@@ -1477,6 +1477,9 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
 def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> Cleared:
     """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start.
     What of the map's memory could not be kept is added to `lost`."""
+    # where it is kept, read before anything is stopped, backed up or removed, so a refusal here leaves it as it was
+    folder = _folder_of_project(project_id)
+    stores = _stores(folder)
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
@@ -1493,14 +1496,6 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
     again = f'metaform clear project {project_id} --confirm'
     done = ''.join([f' Its agents at work were asked to stop first: {"; ".join(stopped)}.' if stopped else '',
                     f' A backup was made first: {saved.name}.' if saved is not None else ''])
-    try:  # resolved before the map goes; a refusal here keeps its own remedy, and says what was done first
-        folder = _folder_of_project(project_id)
-        stores = _stores(folder)
-    except StoreError as error:
-        raise StoreError(f"{str(error).rstrip('.')}.{done}", error.next_step) from error
-    except OSError as error:
-        raise ClearRefused(f"{project_id} was not cleared: its folder could not be read: {error}.{done}", again) \
-            from error
     try:
         commands.clear(commands.stored_name(project_id), said=lost)
     except NewerStore:

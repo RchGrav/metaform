@@ -630,10 +630,18 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     with monkeypatch.context() as patched:
         patched.setattr(store, 'remove', half)
         assert owner.of(home).remove('older', said)
-    assert not path.exists() and 'chime' in kept.read_text(encoding='utf-8')
-    assert said == ['files beside its map could not be removed, and a later clear removes them']
+    assert not path.exists() and 'chime' in kept.read_text(encoding='utf-8') and said == []
     path.with_name(path.name + '.wal').write_text('left')
     assert owner.of(home).remove('older') is False and not list(path.parent.glob(f'{path.name}.*'))
+    # a new map at a path where an old map's files were left is made without them; a kept copy that cannot be read
+    # is left whole, never deleted by the new map's first write
+    path.with_name(path.name + '.wal').write_text('left')
+    kept.write_text('{"entities": [["bell", "part"', encoding='utf-8')
+    owned = owner.of(home)
+    owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
+    assert kept.read_text(encoding='utf-8') == '{"entities": [["bell", "part"'
+    wal = path.with_name(path.name + '.wal')
+    assert not wal.exists() or wal.read_bytes() != b'left', 'the old map\'s file was removed before the new one'
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():
