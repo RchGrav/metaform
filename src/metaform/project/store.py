@@ -436,9 +436,10 @@ class Store:
                    'MERGE (p)-[:CONTAINS]->(e)', parent=parent, address=address)
 
     def delete_element(self, address: str, keys: list[str]) -> None:
-        """Delete an element with its own wants, a want on itself, and its records in every overlay table."""
+        """Delete an element with its own wants, a want on itself, and its records in every overlay table, the
+        completed ones too."""
         for key in keys:
-            self.delete_records(key, address)
+            self.delete_records(key, address, completed=True)
         self._rows('MATCH (e:Element {address: $address}) DETACH DELETE e', address=address)
 
     def beneath(self, address: str) -> list[str]:
@@ -593,7 +594,7 @@ class Store:
         fields = ''.join(f', {_column(field)} {_kind(kind)}' for field, kind in columns.items())
         table = _table(key)
         self._rows(f'CREATE NODE TABLE {table}(id SERIAL PRIMARY KEY, position INT64, ref STRING, record STRING, '
-                   f'revision INT64{fields})')
+                   f'revision INT64, completed STRING{fields})')
         if HOLDS in self._tables():
             for holder in HOLDERS:
                 self._rows(f'ALTER TABLE {HOLDS} ADD FROM {holder} TO {table}')
@@ -625,21 +626,49 @@ class Store:
         return f'MATCH (:{_holder(address)})-[:{HOLDS}]->(r:{_table(key)})'
 
     def records(self, key: str, address: str, fields: list[str]) -> list[dict[str, Scalar]]:
-        """The records at an element in their order, each with `ref`, its fields, and its identity: `record`, the id
-        it keeps for its life, and `revision`, counted up on each change (F02)."""
+        """The open records at an element in their order, each with `ref`, its fields, and its identity: `record`, the
+        id it keeps for its life, and `revision`, counted up on each change (F02). A completed record is not among
+        them: it has left the list and is reached by its id alone (`completed_record`), the person's rule of
+        2026-11-17 that no agent is shown what is no longer relevant."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f'{self._held_at(key, address)} RETURN r.ref, r.record, r.revision{columns} '
-                          'ORDER BY r.position', address=address)
+        rows = self._rows(f'{self._held_at(key, address)} WHERE r.completed IS NULL RETURN r.ref, r.record, '
+                          f'r.revision{columns} ORDER BY r.position', address=address)
         return [dict(zip(['ref', 'record', 'revision', *fields], row)) for row in rows]
 
-    def all_records(self, key: str, fields: list[str]) -> list[tuple[str, int, dict[str, Scalar]]]:
-        """Every record of an overlay in the project, each with the address of the element that holds it, `''` for the
-        root, and its position there."""
+    def all_records(self, key: str, fields: list[str], completed: bool = False,
+                    ) -> list[tuple[str, int, dict[str, Scalar]]]:
+        """Every open record of an overlay in the project, each with the address of the element that holds it, `''` for
+        the root, and its position there. With `completed`, the completed records too, at position -1, each with its
+        `completed` time: only for a check that must see every record, such as an id that is never reused."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) WITH coalesce(e.address, '') AS at, r "
-                          f'RETURN at, r.position, r.ref, r.record, r.revision{columns} ORDER BY at, r.position')
-        return [(str(row[0]), cast(int, row[1]), dict(zip(['ref', 'record', 'revision', *fields], row[2:])))
-                for row in rows]
+        where = '' if completed else 'WHERE r.completed IS NULL '
+        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) {where}WITH coalesce(e.address, '') AS at, r "
+                          f'RETURN at, coalesce(r.position, -1), r.ref, r.record, r.revision, r.completed{columns} '
+                          'ORDER BY at, r.position')
+        return [(str(row[0]), cast(int, row[1]),
+                 dict(zip(['ref', 'record', 'revision', 'completed', *fields], row[2:]))) for row in rows]
+
+    def completed_record(self, key: str, address: str, ident: str, fields: list[str]) -> dict[str, Scalar] | None:
+        """One completed record at an element, by its id: the only way back to it besides a search."""
+        columns = ''.join(f', r.{_column(field)}' for field in fields)
+        rows = self._rows(f'{self._held_at(key, address)} WHERE r.record = $ident AND r.completed IS NOT NULL '
+                          f'RETURN r.ref, r.record, r.revision, r.completed{columns}', address=address, ident=ident)
+        return dict(zip(['ref', 'record', 'revision', 'completed', *fields], rows[0])) if rows else None
+
+    def complete_record(self, key: str, address: str, ident: str, when: str) -> None:
+        """Complete the open record with this id: it leaves the list, its position cleared and the open records
+        closing up, so a position always names what a read shows; its revision is counted up."""
+        self._rows(f'{self._held_at(key, address)} WHERE r.record = $ident AND r.completed IS NULL '
+                   'SET r.completed = $stamp, r.position = NULL, r.revision = r.revision + 1',
+                   address=address, ident=ident, stamp=when)
+        self._close_up(key, address)
+
+    def reopen_record(self, key: str, address: str, ident: str) -> None:
+        """Reopen a completed record: it comes back at the end of the list, at its next revision."""
+        position = self.next_position(key, address)
+        self._rows(f'{self._held_at(key, address)} WHERE r.record = $ident AND r.completed IS NOT NULL '
+                   'SET r.completed = NULL, r.position = $position, r.revision = r.revision + 1',
+                   address=address, ident=ident, position=position)
 
     def give_identity(self) -> bool:
         """Every overlay record has a `record` id it keeps for its life and a `revision` (F02, kickoff 2026-11-17).
@@ -655,6 +684,9 @@ class Store:
             if 'revision' not in held:
                 self._rows(f'ALTER TABLE {name} ADD revision INT64')
                 changed = True
+            if 'completed' not in held:  # null for every record already there: none is completed by the upgrade
+                self._rows(f'ALTER TABLE {name} ADD completed STRING')
+                changed = True
             for (ident,) in self._rows(f'MATCH (r:{name}) WHERE r.record IS NULL RETURN r.id'):
                 self._rows(f'MATCH (r:{name}) WHERE r.id = $id SET r.record = $record, r.revision = 1', id=ident,
                            record=new_record_id())
@@ -662,7 +694,8 @@ class Store:
         return changed
 
     def record_count(self, key: str, address: str) -> int:
-        rows = self._rows(f'{self._held_at(key, address)} RETURN count(*)', address=address)
+        """How many open records the element holds in this overlay."""
+        rows = self._rows(f'{self._held_at(key, address)} WHERE r.completed IS NULL RETURN count(*)', address=address)
         return int(rows[0][0] or 0)
 
     def held(self, key: str) -> tuple[int, int]:
@@ -706,16 +739,24 @@ class Store:
 
     def delete_records_at(self, key: str, address: str, positions: list[int]) -> None:
         """Remove the records at `positions`, and close the gaps so a record's position stays its place in the list."""
-        self._rows(f'{self._held_at(key, address)} WHERE r.position IN $positions DETACH DELETE r', address=address,
-                   positions=positions)
-        rows = self._rows(f'{self._held_at(key, address)} RETURN r.id, r.position ORDER BY r.position', address=address)
+        self._rows(f'{self._held_at(key, address)} WHERE r.position IN $positions AND r.completed IS NULL '
+                   'DETACH DELETE r', address=address, positions=positions)
+        self._close_up(key, address)
+
+    def _close_up(self, key: str, address: str) -> None:
+        """Number the open records at an element 0, 1, 2 ... in their order, so a position is a record's place."""
+        rows = self._rows(f'{self._held_at(key, address)} WHERE r.completed IS NULL RETURN r.id, r.position '
+                          'ORDER BY r.position', address=address)
         for index, (ident, position) in enumerate(rows):
             if position != index:
                 self._rows(f'MATCH (r:{_table(key)}) WHERE r.id = $id SET r.position = $position', id=ident,
                            position=index)
 
-    def delete_records(self, key: str, address: str) -> None:
-        self._rows(f'{self._held_at(key, address)} DETACH DELETE r', address=address)
+    def delete_records(self, key: str, address: str, completed: bool = False) -> None:
+        """Remove an element's open records in one overlay, as a list written whole replaces them; a completed record
+        stays, since it has left the list. With `completed`, those too, as when the element itself is deleted."""
+        where = '' if completed else ' WHERE r.completed IS NULL'
+        self._rows(f'{self._held_at(key, address)}{where} DETACH DELETE r', address=address)
 
 
 def _holder(address: str) -> str:

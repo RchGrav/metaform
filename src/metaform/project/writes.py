@@ -8,6 +8,7 @@ definitions, wants merge into complete wants, records sit at elements, and no na
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import cast
 
 from metaform.project import specification
@@ -90,6 +91,8 @@ class Writer:
         self.project = address.project
         self.command = command
         self.verb = verb
+        self.completing: list[tuple[str, str, str]] = []  # (overlay, address, record id) to complete after the edits
+        self.reopened: list[tuple[str, str, str]] = []  # (overlay, address, record id) to reopen
 
     def full(self, address: str) -> str:
         return full(self.project, address)
@@ -120,6 +123,11 @@ class Writer:
                                   f"written only to an overlay defined beneath {self.project}.overlay, such as "
                                   f"{self.project}.overlay.wants.", {'map': self.project})
                 checked = None
+                if records is not None and self.verb == 'update' and key != 'wants' and records and all(
+                        (as_object(record) or {}).get('completed') is False and 'position' not in (
+                            as_object(record) or {}) for record in records):
+                    self.reopening(definition, change, key, records)
+                    continue
                 if records is not None and self.verb == 'update' and key != 'wants' and any(
                         'position' in (as_object(record) or {}) for record in records):
                     placed.append((change, key, self.placed(definition, change, key, records, key in tables)))
@@ -160,6 +168,11 @@ class Writer:
         for change, key, changed in placed:
             for position, record in changed:
                 self.store.replace_record(key, change.address.address, position, record)
+        when = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+        for key, address, ident in self.completing:  # by id, after the edits by position, since each closes up
+            self.store.complete_record(key, address, ident, when)
+        for key, address, ident in self.reopened:
+            self.store.reopen_record(key, address, ident)
         for change, key, records in overlay_writes:
             address = change.address.address
             self.put_records(key, address, records, named.get((address, key), []), key in tables)
@@ -225,7 +238,7 @@ class Writer:
             specification.blocks(self.full(address), self.current_records(definition, address))
         names = [name for name in definition.order if name != 'ref' and name in definition.fields]
         every: dict[str, list[dict[str, object]]] = {}
-        for address, _, row in self.store.all_records(specification.KEY, names):
+        for address, _, row in self.store.all_records(specification.KEY, names, completed=True):
             every.setdefault(self.full(address), []).append({name: row[name] for name in names})
         specification.check_codes(every)
 
@@ -235,7 +248,7 @@ class Writer:
         command's writes, in its transaction, so a command that would leave an id on two tickets is refused whole and
         nothing changes. Other overlays may hold the same value twice."""
         where: dict[str, list[str]] = {}
-        for address, position, row in self.store.all_records('tickets', ['id']):
+        for address, position, row in self.store.all_records('tickets', ['id'], completed=True):
             if row['id'] is not None:
                 where.setdefault(str(row['id']), []).append(f"'{self.full(address)}' position {position}")
         twice = next(((ident, places) for ident, places in sorted(where.items()) if len(places) > 1), None)
@@ -280,8 +293,17 @@ class Writer:
             if position in merged:
                 raise refuse(f"update of {key} at '{where}' names position {position} more than once")
             self.check_identity(key, where, change, index, given, position, identity)
-            laid = {**current[position], **{name: value for name, value in given.items()
-                                            if name not in ('position', 'record', 'revision')}}
+            done = given.get('completed')
+            if done is not None and done is not True:
+                raise refuse(f"completed at position {position} of {key} at '{where}' is true, to complete the record; "
+                             'a completed record is reopened by its record id alone, with completed: false')
+            if done is True:  # completed after any fields it gives are written (the person's rule, 2026-11-17)
+                self.completing.append((key, change.address.address, identity[position][0]))
+            fields = {name: value for name, value in given.items()
+                      if name not in ('position', 'record', 'revision', 'completed')}
+            if done is True and not fields:
+                continue
+            laid = {**current[position], **fields}
             merged[position] = {name: value for name, value in laid.items() if value is not None}
         order = sorted(merged)
         try:
@@ -290,6 +312,21 @@ class Writer:
         except Refusal as refusal:
             raise Refusal(refusal.code, refusal.message) from None
         return list(zip(order, checked))
+
+    def reopening(self, definition: Definition, change: Change, key: str, records: list[object]) -> None:
+        """Records named by their id with completed: false are reopened, each back at the end of the list; one that
+        is not a completed record of this element is refused, and nothing changes."""
+        where = change.address.full
+        for record in records:
+            given = cast(dict[str, object], as_object(record))
+            ident, extra = given.get('record'), [name for name in given if name not in ('record', 'completed')]
+            if not isinstance(ident, str) or extra:
+                raise refuse(f"reopening a {key} record at '{where}' names it by its record id alone: "
+                             '{"record": "r-...", "completed": false}')
+            if self.store.completed_record(definition.key, change.address.address, ident, []) is None:
+                raise Refusal('RECORD_GONE', f"{key} record {ident!r} at '{where}' is not a completed record there; "
+                              'find it with the find command.', {where: {key: {}}})
+            self.reopened.append((key, change.address.address, ident))
 
     def check_identity(self, key: str, where: str, change: Change, index: int, given: dict[str, object],
                        position: int, identity: list[tuple[str, Scalar]]) -> None:
@@ -471,7 +508,7 @@ class Writer:
                 continue
             names = [name for name in old.order if name != 'ref' and name in old.fields]
             broken: list[tuple[str, int, list[str]]] = []
-            for address, position, row in self.store.all_records(key, names):
+            for address, position, row in self.store.all_records(key, names, completed=True):
                 record = {name: decode(old.fields[name].kind, row[name]) for name in names if row[name] is not None}
                 wrong = [name for name in definition.order if name != 'ref' and name in definition.fields and (
                     (record.get(name) is None and not definition.fields[name].optional)

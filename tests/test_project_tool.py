@@ -1336,3 +1336,47 @@ def test_each_overlay_record_is_an_item_the_page_hangs_on_its_element(served):
     assert item['target'] == {'kind': 'element', 'id': 'code.masher.widget'} and item['id'].startswith('r-')
     assert item['value'] == {'id': 't-1', 'title': 'Ring', 'task': 'Ring.'} and item['layer'] == 'tickets'
     assert project_map.layer_items(P, 'wants') == [] and project_map.layer_items('nosuch', 'tickets') is None
+
+
+def test_a_completed_record_leaves_every_default_read_and_comes_back_only_when_reopened(served):
+    """The person's rule, 2026-11-17: agents are never shown what is no longer relevant. A record completed by an update
+    naming it leaves the element read, the named read, the overlay list, the board's read and the specification
+    blocks; it leaves the list too, so the next record takes its position and a position always names what a read
+    shows. A list written whole keeps it, its ticket id stays taken, and completed: false by its id reopens it."""
+    from metaform import project as project_store
+    tickets = [{'id': f't-{n}', 'title': n, 'task': n} for n in ('a', 'b', 'c')]
+    assert commands.run({'add': {WIDGET: {**WIDGET_FIELDS, 'tickets': tickets,
+                                          'specification': [{'level': 1, 'title': 'Old', 'text': 'Superseded.'}]}}},
+                        served) == {'status': 'ok'}
+
+    def read(named=None):
+        return commands.run({WIDGET: named or {}}, served)[WIDGET]
+    a, b, c = read({'tickets': {}})['tickets']
+    assert commands.run({'update': {WIDGET: {'tickets': [
+        {'position': 0, 'record': a['record'], 'revision': a['revision'], 'completed': True}]}}}, served) == {
+        'status': 'ok'}
+    open_now = read({'tickets': {}})['tickets']
+    assert [one['record'] for one in open_now] == [b['record'], c['record']]
+    assert [one['id'] for one in project_store.overlay_records(P, 'tickets', served)] == ['t-b', 't-c']
+    # positions close up: position 0 now names b, as the read shows
+    assert commands.run({'update': {WIDGET: {'tickets': [{'position': 0, 'record': b['record'], 'note': 'b'}]}}},
+                        served) == {'status': 'ok'}
+    # a stale completion of a, already gone from the list, is refused
+    assert commands.run({'update': {WIDGET: {'tickets': [
+        {'position': 0, 'record': a['record'], 'completed': True}]}}}, served)['code'] == 'RECORD_GONE'
+    # the specification block, completed, leaves the read an agent gets unasked, and the overlay list empties
+    (old,) = read()['specification']
+    assert commands.run({'update': {WIDGET: {'specification': [
+        {'position': 0, 'record': old['record'], 'completed': True}]}}}, served) == {'status': 'ok'}
+    assert 'specification' not in read() and 'specification' not in read()['overlays']
+    # a list written whole replaces the open records and keeps the completed one; its id stays taken
+    assert commands.run({'update': {WIDGET: {'tickets': [{'id': 't-d', 'title': 'd', 'task': 'd'}]}}}, served) == {
+        'status': 'ok'}
+    assert commands.run({'add': {WIDGET: {'tickets': [{'id': 't-a', 'title': 'again', 'task': 'x'}]}}},
+                        served)['code'] == 'TICKET_ID_TAKEN'
+    # reopened by its id, it comes back at the end of the list
+    assert commands.run({'update': {WIDGET: {'tickets': [{'record': a['record'], 'completed': False}]}}}, served) == {
+        'status': 'ok'}
+    assert [one['id'] for one in read({'tickets': {}})['tickets']] == ['t-d', 't-a']
+    assert commands.run({'update': {WIDGET: {'tickets': [{'record': 'r-0000000000000000', 'completed': False}]}}},
+                        served)['code'] == 'RECORD_GONE'

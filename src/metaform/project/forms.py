@@ -435,7 +435,8 @@ class Form:
             self.name(key, address, here)
             if as_object(value) is not None:
                 words = {'position': "a record's place in its list", 'record': "a record's id, kept for its life",
-                         'revision': "how many times a record has changed"}  # the store's own, F02
+                         'revision': "how many times a record has changed",
+                         'completed': 'when a record was completed'}  # the store's own (F02; 2026-11-17)
                 if key in words:
                     raise refuse(f"'{key}' at '{where}' cannot name a field or an overlay: it is the tool's word "
                                  f'for {words[key]}')
