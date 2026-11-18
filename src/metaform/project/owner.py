@@ -21,6 +21,7 @@ from collections import OrderedDict, deque
 from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -43,20 +44,20 @@ def kept_memory(path: Path) -> Path:
 
 
 
-def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, list[list[object]]], bool]:
-    """The memory layer of a database about to be removed, kept for the next one, and whether it was read whole.
+def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list[object]]]:
+    """The memory layer of a database about to be removed, kept for the next one.
     Opened unchecked, so a database an earlier version made can still be cleared; one with no memory layer keeps none,
     and says nothing. The entities, then the relations among them, are read each on its own, so what can be read is
     kept; what cannot, the database itself included, never keeps the map from being cleared, and is said to whoever
     cleared it, once for its one cause. A failure to close the database after its reads changes neither."""
     kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
 
-    def lost(what: str, error: Exception) -> tuple[dict[str, list[list[object]]], bool]:
+    def lost(what: str, error: Exception) -> dict[str, list[list[object]]]:
         said_here = f"{path.stem}'s {what} could not be read and {'are' if what.endswith('s') else 'is'} not kept: {error}"
         sys.stderr.write(said_here + '\n')
         if said is not None:
             said.append(said_here)
-        return kept, False
+        return kept
     try:
         opened = Store(path, checked=False)
     except Exception as error:  # noqa: BLE001  the engine's own errors too: a damaged database is still cleared
@@ -65,7 +66,7 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
         with opened.reading():
             tables = opened.tables()
             if 'MemoryEntity' not in tables:
-                return kept, True
+                return kept
             try:
                 kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
                                                              in opened.memory_entities()])
@@ -76,7 +77,7 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
                     kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
                 except Exception as error:  # noqa: BLE001
                     return lost('memory relations', error)
-            return kept, True
+            return kept
     except Exception as error:  # noqa: BLE001  opening its read failed: nothing of it was read
         return lost('memory', error)
     finally:
@@ -87,21 +88,31 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
 
 
 def _merged(kept: Path, memory: dict[str, list[list[object]]]) -> dict[str, list[list[Any]]]:
-    """A map's memory laid over the copy already kept, when that copy can be read: its entities and relations with
-    the map's, the map's entity winning for a name, each relation once."""
+    """A map's memory laid over the copies already kept, the map's entity winning for a name, each relation once: the
+    kept copy, and a copy an interrupted clear of an earlier version set aside as `.earlier`. A copy that cannot be read
+    is moved aside under a name of its own, never overwritten; when it cannot be moved, the clear stops."""
     earlier: dict[str, list[list[Any]]] = {'entities': [], 'relations': []}
-    try:
-        if kept.exists():
-            earlier = _read_kept(kept)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):  # unreadable: kept beside, never merged
-        with contextlib.suppress(OSError):
-            kept.replace(kept.with_name(kept.name + '.unread'))
+    for copy in (kept.with_name(kept.name + '.earlier'), kept):
+        if not copy.exists():
+            continue
+        try:
+            found = _read_kept(copy)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')
+            copy.replace(copy.with_name(f'{kept.name}.unread-{stamp}'))  # an OSError here stops the clear
+            continue
+        named = {one[0] for one in found['entities']}
+        earlier = {'entities': [*(one for one in earlier['entities'] if one[0] not in named), *found['entities']],
+                   'relations': [*earlier['relations'], *found['relations']]}
     ours = {str(one[0]) for one in memory['entities']}
     entities = [*(one for one in earlier['entities'] if str(one[0]) not in ours), *memory['entities']]
     names = {str(one[0]) for one in entities}
+    seen: set[tuple[str, str, str]] = set()
     relations: list[list[Any]] = []
     for one in [*earlier['relations'], *memory['relations']]:
-        if str(one[0]) in names and str(one[1]) in names and list(one) not in relations:
+        key = (str(one[0]), str(one[1]), str(one[2]))
+        if key[0] in names and key[1] in names and key not in seen:
+            seen.add(key)
             relations.append(list(one))
     return {'entities': [list(one) for one in entities], 'relations': relations}
 
@@ -120,21 +131,36 @@ def _put_back(opened: Store) -> int | None:
         sys.stderr.write(f'{kept}: the memory a clear kept could not be read and is not put back: {error}\n')
         return None
     for name, kind, observations in memory['entities']:
-        opened.put_memory_entity(str(name), None if kind is None else str(kind), [str(one) for one in observations])
+        opened.put_memory_entity(name, kind, observations)
     for seq, (start, end, relation_type) in enumerate(memory['relations']):
-        opened.add_memory_relation(str(start), str(end), str(relation_type), seq)
+        opened.add_memory_relation(start, end, relation_type, seq)
     return stamp
 
 
 def _read_kept(kept: Path) -> dict[str, list[list[Any]]]:
-    """A kept memory copy, checked for its shape: entities [name, type, observations] and relations [from, to,
-    type], each name once."""
-    memory = json.loads(kept.read_text(encoding='utf-8'))
-    entities = [list(one) for one in cast(list[list[Any]], memory['entities'])]
-    relations = [list(one) for one in cast(list[list[Any]], memory.get('relations') or [])]
-    if any(len(one) != 3 for one in [*entities, *relations]) or len({one[0] for one in entities}) != len(entities):
-        raise ValueError('it is not a kept memory: an entry of the wrong length, or one name twice')
+    """A kept memory copy, checked down to each value: entities [name, type or null, [observations]] with each
+    name once, and relations [from, to, type], every name and observation a text. ValueError when it is not one."""
+    found: Any = json.loads(kept.read_text(encoding='utf-8'))
+    memory = cast(dict[str, Any], found) if isinstance(found, dict) else {}
+    entities = _rows(memory.get('entities'))
+    relations = _rows(memory.get('relations') or [])
+    for one in entities:
+        if not (len(one) == 3 and isinstance(one[0], str) and (one[1] is None or isinstance(one[1], str))
+                and isinstance(one[2], list) and all(isinstance(said, str) for said in cast(list[Any], one[2]))):
+            raise ValueError(f'an entity of it is not [name, type, [observations]]: {one!r}')
+    for one in relations:
+        if not (len(one) == 3 and all(isinstance(part, str) for part in one)):
+            raise ValueError(f'a relation of it is not [from, to, type]: {one!r}')
+    if len({str(one[0]) for one in entities}) != len(entities):
+        raise ValueError('it names one entity twice')
     return {'entities': entities, 'relations': relations}
+
+
+def _rows(value: object) -> list[list[Any]]:
+    """A list of lists, or ValueError."""
+    if not isinstance(value, list) or not all(isinstance(one, list) for one in cast(list[Any], value)):
+        raise ValueError('it is not a kept memory')
+    return [list(cast(list[Any], one)) for one in cast(list[Any], value)]
 
 
 class Missing(Exception):
@@ -229,8 +255,9 @@ class Database:
             if create is not None:  # in its own transaction: a kept copy the store refuses never stops the map
                 try:
                     with self._writing.transaction():
-                        self.put_back = _put_back(self._writing)
-                except StoreError as error:
+                        stamp = _put_back(self._writing)
+                    self.put_back = stamp  # only once its transaction committed
+                except Exception as error:  # noqa: BLE001  a copy it cannot take is said and left where it is
                     sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
                                      f'and is not put back: {error}\n')
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
@@ -360,9 +387,11 @@ class Owner:
                     self._discard(project, database)
                 raise
             if database.fresh and database.put_back is not None:  # the first write stored: the memory put back is
-                kept = kept_memory(database.path)  # held by the database now; a copy written since, by a clear, stays
-                with contextlib.suppress(OSError):
-                    if kept.stat().st_mtime_ns == database.put_back:
+                kept = kept_memory(database.path)  # held by the database now, while it is still the project's open one
+                with self._opening, contextlib.suppress(OSError):  # and the copy is the one put back; never another
+                    with self._lock:
+                        current = self._open.get(project) is database
+                    if current and kept.stat().st_mtime_ns == database.put_back:
                         kept.unlink()
             database.fresh = False
             return result
@@ -429,7 +458,7 @@ class Owner:
                 except OSError as error:  # never a refusal: a new map at this path removes them first
                     sys.stderr.write(f'{path}: files beside a removed map could not be removed: {error}\n')
                 return False
-            memory, _ = _memory_of(path, said)
+            memory = _memory_of(path, said)
             kept = kept_memory(path)
             # Kept for the next map, LAYER-013. A clear never loses kept memory: what this map holds is laid over
             # any copy already kept (one a new map refused, or one an earlier clear kept that was never put back),
@@ -442,6 +471,7 @@ class Owner:
                 try:
                     fresh.write_text(json.dumps(merged, ensure_ascii=False), encoding='utf-8')
                     fresh.replace(kept)
+                    kept.with_name(kept.name + '.earlier').unlink(missing_ok=True)  # merged into it
                 except OSError:
                     with contextlib.suppress(OSError):
                         fresh.unlink(missing_ok=True)

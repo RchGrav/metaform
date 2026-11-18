@@ -643,8 +643,13 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
     assert path.exists() and kept.read_text(encoding='utf-8') == bad, 'the refused copy is left whole'
     assert owned.remove('older')
-    assert kept.with_name(kept.name + '.unread').read_text(encoding='utf-8') == bad
-    assert 'new' in kept.read_text(encoding='utf-8')
+    [aside] = kept.parent.glob(f'{kept.name}.unread-*')
+    assert aside.read_text(encoding='utf-8') == bad and 'new' in kept.read_text(encoding='utf-8')
+    # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
+    odd = '{"entities": [["bell", "part", null]], "relations": []}'
+    kept.write_text(odd, encoding='utf-8')
+    owned.write('older', 'test', lambda opened: opened.put_memory_entity('new', 'part', ['Fresh.']), create=True)
+    assert path.exists() and kept.read_text(encoding='utf-8') == odd
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():
