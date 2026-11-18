@@ -74,8 +74,9 @@ def clear(project: str, home: Path | None = None, said: list[str] | None = None)
         return False
     answer = service.send(None, where, 'clear', clear=project)
     if answer.get('status') != 'ok':
-        raise StoreError(f"{project}'s map in the project store was not removed: "
-                         f"{answer.get('message') or 'the project service refused it'}")
+        unknown = answer.get('code') == 'OUTCOME_UNKNOWN'
+        raise StoreError(f"{project}'s map in the project store {'may not have been' if unknown else 'was not'} "
+                         f"removed: {answer.get('message') or 'the project service refused it'}")
     if said is not None:
         said.extend(str(one) for one in cast(list[object], answer.get('lost') or []))
     return bool(answer.get('removed'))

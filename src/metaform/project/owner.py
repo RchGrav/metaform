@@ -41,28 +41,30 @@ def kept_memory(path: Path) -> Path:
     return path.with_name(f'{path.stem}.memory.json')
 
 
-def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list[object]]]:
-    """The memory layer of a database about to be removed, kept for the next one. Opened unchecked, so a database an
-    earlier version made can still be cleared; one with no memory layer keeps none, and says nothing. The entities, then
-    the relations among them, are read each on its own, so what can be read is kept; what cannot, the database itself
-    included, never keeps the map from being cleared, and is said to whoever cleared it, once for its one cause."""
+def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, list[list[object]]], bool]:
+    """The memory layer of a database about to be removed, kept for the next one, and whether it was read whole.
+    Opened unchecked, so a database an earlier version made can still be cleared; one with no memory layer keeps none,
+    and says nothing. The entities, then the relations among them, are read each on its own, so what can be read is
+    kept; what cannot, the database itself included, never keeps the map from being cleared, and is said to whoever
+    cleared it, once for its one cause."""
     kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
     try:
         with Store(path, checked=False) as opened, opened.reading():
             tables = opened.tables()
             if 'MemoryEntity' not in tables:
-                return kept
+                return kept, True
             kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
                                                          in opened.memory_entities()])
             if 'MemoryRelation' in tables:
                 kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
-    except StoreError as error:
+    except Exception as error:  # noqa: BLE001  the engine's own errors too: a damaged database is still cleared
         lost = (f"{path.stem}'s memory relations could not be read and are not kept: {error}"
                 if kept['entities'] else f"{path.stem}'s memory could not be read and is not kept: {error}")
         sys.stderr.write(lost + '\n')
         if said is not None:
             said.append(lost)
-    return kept
+        return kept, False
+    return kept, True
 
 
 def _put_back(opened: Store) -> None:
@@ -343,19 +345,24 @@ class Owner:
             path = store.location(self.home, project)
             if not path.exists():
                 return False
-            memory = _memory_of(path, said)
+            memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
-            # kept for the next map, LAYER-013, before the map goes, so a write that fails leaves it whole; a memory
-            # an earlier clear kept is replaced, or withdrawn when there is none now, and withdrawn again when the
-            # map cannot be removed after all, so no memory deleted since comes back
+            # Kept for the next map, LAYER-013, before the map goes, so a write that fails leaves it whole. A memory an
+            # earlier clear kept is replaced, or withdrawn when this one was read whole and holds none, so nothing
+            # deleted since comes back; it is never withdrawn on a read that failed, when it may be the one copy left.
             if memory['entities']:
                 kept.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
-            else:
-                kept.unlink(missing_ok=True)
+            elif whole:
+                try:
+                    kept.unlink(missing_ok=True)
+                except OSError as error:  # said, never a reason not to clear
+                    if said is not None:
+                        said.append(f'the memory an earlier clear kept at {kept} could not be withdrawn: {error}')
             try:
                 store.remove(path)
             except BaseException:
-                kept.unlink(missing_ok=True)
+                if path.exists() and memory['entities']:  # the map is still there: what was just kept goes again
+                    kept.unlink(missing_ok=True)
                 raise
             return True
 

@@ -1439,7 +1439,7 @@ def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
     return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else (), holds=held)
 
 
-def clear_project(project_id: str, *, made_by: str = 'clear', map_refused: str = 'raise') -> Cleared:
+def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history, the conversations with agents and everything else in the project's
@@ -1465,13 +1465,10 @@ def clear_project(project_id: str, *, made_by: str = 'clear', map_refused: str =
         lost: list[str] = []
         try:
             commands.clear(commands.stored_name(project_id), said=lost)
-        except (StoreError, MapError) as error:  # the rest is cleared and backed up; the map is said to be still there
-            if map_refused != 'raise':  # a restore goes on: what it brings back is beside the map, never in it
-                lost.append(str(error))
-            else:
-                raise StoreError(f"{project_id} was cleared except its map in the project store, which is still "
-                                 f"there: {str(error).rstrip('.')}. Its backup is {cleared.backup}.",
-                                 f'metaform clear project {project_id} --confirm') from error
+        except (StoreError, MapError) as error:  # the rest is cleared and backed up; the map's clear is said as it is
+            raise StoreError(f"{project_id} was cleared except its map in the project store: "
+                             f"{str(error).rstrip('.')}. Its backup is {cleared.backup}.",
+                             f'metaform clear project {project_id} --confirm') from error
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
@@ -1647,7 +1644,7 @@ class Restored:
     backup: Backup
     held_before: str | None = None
     stopped: tuple[str, ...] = ()  # the agents at work on what it replaced, stopped first by its clear, `AT_WORK`
-    lost: tuple[str, ...] = ()  # what its clear could not keep of the map's memory, said, never hidden
+    lost: tuple[str, ...] = ()  # what of its map's memory its clear could not keep, said, never hidden
 
     @property
     def said(self) -> str:
@@ -1701,7 +1698,9 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
                          f'{project_id} has no backup a clear made; each one a restore made of what it replaced is '
                          'restored by its name.' if known else f'{project_id} has no backup.',
                          f'metaform list backups {project_id}')
-    cleared = clear_project(project_id, made_by='restore', map_refused='say')
+    # a map left in the project store would stand in front of the bases a restore brings back, so a clear refused there
+    # stops the restore, which names the backup it made of what it replaced
+    cleared = clear_project(project_id, made_by='restore')
     before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))

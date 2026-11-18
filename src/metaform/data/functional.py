@@ -65,7 +65,8 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     path = f'{project}.{address}'
     read = project_store.run({path: {}})
     if read.get('status') == 'error':  # a missing element holds nothing; a read that failed is said in each section
-        failed = {} if read.get('code') == 'NOT_FOUND' else dict.fromkeys(
+        missing = read.get('code') == 'NOT_FOUND' and project_store.holds(project)  # its element, not the project
+        failed = {} if missing else dict.fromkeys(
             ('requirements_unread', 'dependents_unread'), f"{UNAVAILABLE.rstrip('.')}: {read.get('message')}")
         return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
                 'markdown': 'The ticket’s functional element is unavailable.', **failed}
