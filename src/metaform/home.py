@@ -1353,7 +1353,7 @@ class Cleared:
     backup: str | None = None  # the backup made before anything was removed, PROJ-030
     agents: tuple[str, ...] = ()  # the agents at work on its maps, stopped before anything was removed, `AT_WORK`
     holds: tuple[str, ...] = ()  # what each base holds, in the order of `bases`, as `holds_said` says it
-    lost: tuple[str, ...] = ()  # what of its map's memory could not be kept, said, never hidden
+    lost: tuple[str, ...] = ()  # what of its map and its memory the clear could not remove or keep, said, never hidden
 
     def to_dict(self) -> dict[str, Any]:
         found: dict[str, Any] = {'project': self.project_id, 'bases': list(self.bases),
@@ -1439,7 +1439,7 @@ def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
     return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else (), holds=held)
 
 
-def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
+def clear_project(project_id: str, *, made_by: str = 'clear', map_refused: str = 'raise') -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history, the conversations with agents and everything else in the project's
@@ -1461,13 +1461,17 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     with halted(project_id, 'clear'):
         cleared = _cleared(project_id, found, made_by)
         from metaform.project import commands  # the project's map in the project store goes with it
+        from metaform.project.store import StoreError as MapError
         lost: list[str] = []
         try:
             commands.clear(commands.stored_name(project_id), said=lost)
-        except StoreError as error:  # the rest is cleared and backed up; the person is told the map is still there
-            raise StoreError(f'{project_id} was cleared except its map in the project store, which is still there: '
-                             f'{error}. Its backup is {cleared.backup}.',
-                             f'metaform clear project {project_id} --confirm') from error
+        except (StoreError, MapError) as error:  # the rest is cleared and backed up; the map is said to be still there
+            if map_refused != 'raise':  # a restore goes on: what it brings back is beside the map, never in it
+                lost.append(str(error))
+            else:
+                raise StoreError(f"{project_id} was cleared except its map in the project store, which is still "
+                                 f"there: {str(error).rstrip('.')}. Its backup is {cleared.backup}.",
+                                 f'metaform clear project {project_id} --confirm') from error
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
@@ -1697,7 +1701,7 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
                          f'{project_id} has no backup a clear made; each one a restore made of what it replaced is '
                          'restored by its name.' if known else f'{project_id} has no backup.',
                          f'metaform list backups {project_id}')
-    cleared = clear_project(project_id, made_by='restore')
+    cleared = clear_project(project_id, made_by='restore', map_refused='say')
     before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))

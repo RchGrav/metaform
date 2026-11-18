@@ -43,24 +43,26 @@ def kept_memory(path: Path) -> Path:
 
 def _memory_of(path: Path, said: list[str] | None = None) -> dict[str, list[list[object]]]:
     """The memory layer of a database about to be removed, kept for the next one. Opened unchecked, so a database an
-    earlier version made can still be cleared; one with no memory layer keeps none."""
-    with Store(path, checked=False) as opened, opened.reading():
-        tables = opened.tables()
-        kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
-        # the entities, then the relations among them, each read on its own, so what can be read is kept; what cannot
-        # never keeps the map from being cleared, and is said to whoever cleared it, once for its one cause
-        try:
+    earlier version made can still be cleared; one with no memory layer keeps none, and says nothing. The entities, then
+    the relations among them, are read each on its own, so what can be read is kept; what cannot, the database itself
+    included, never keeps the map from being cleared, and is said to whoever cleared it, once for its one cause."""
+    kept: dict[str, list[list[object]]] = {'entities': [], 'relations': []}
+    try:
+        with Store(path, checked=False) as opened, opened.reading():
+            tables = opened.tables()
+            if 'MemoryEntity' not in tables:
+                return kept
             kept['entities'] = cast(list[list[object]], [[name, kind, observations] for name, kind, observations
                                                          in opened.memory_entities()])
             if 'MemoryRelation' in tables:
                 kept['relations'] = cast(list[list[object]], [list(one) for one in opened.memory_relations()])
-        except StoreError as error:
-            lost = (f"{path.stem}'s memory relations could not be read and are not kept: {error}"
-                    if kept['entities'] else f"{path.stem}'s memory could not be read and is not kept: {error}")
-            sys.stderr.write(lost + '\n')
-            if said is not None:
-                said.append(lost)
-        return kept
+    except StoreError as error:
+        lost = (f"{path.stem}'s memory relations could not be read and are not kept: {error}"
+                if kept['entities'] else f"{path.stem}'s memory could not be read and is not kept: {error}")
+        sys.stderr.write(lost + '\n')
+        if said is not None:
+            said.append(lost)
+    return kept
 
 
 def _put_back(opened: Store) -> None:
@@ -342,9 +344,19 @@ class Owner:
             if not path.exists():
                 return False
             memory = _memory_of(path, said)
-            if memory['entities']:  # kept for the next map, LAYER-013, before the map goes: a write that fails leaves
-                kept_memory(path).write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')  # it whole
-            store.remove(path)
+            kept = kept_memory(path)
+            # kept for the next map, LAYER-013, before the map goes, so a write that fails leaves it whole; a memory
+            # an earlier clear kept is replaced, or withdrawn when there is none now, and withdrawn again when the
+            # map cannot be removed after all, so no memory deleted since comes back
+            if memory['entities']:
+                kept.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
+            else:
+                kept.unlink(missing_ok=True)
+            try:
+                store.remove(path)
+            except BaseException:
+                kept.unlink(missing_ok=True)
+                raise
             return True
 
     @contextmanager

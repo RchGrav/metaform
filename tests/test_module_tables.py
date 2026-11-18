@@ -417,6 +417,27 @@ def test_clear_removes_the_metaform_level_rows_keeps_the_project_level_ones_and_
         assert [row['note_id'] for row in tx.rows('notes', limit=0).results] == ['n1', 'n2', 'n3']
 
 
+
+def test_a_clear_whose_project_store_map_is_refused_says_so_and_a_restore_goes_on(ledger, monkeypatch):
+    """Review of 2026-11-18: a clear the project service refuses fails, saying the rest was cleared and backed up and
+    the map is still there; a restore's clear says it beside what it brought back and goes on."""
+    from metaform.data import StoreError
+    from metaform.project import commands
+    from metaform.project.store import StoreError as MapError
+    fill(ledger)
+
+    def refused(project, home=None, said=None):
+        raise MapError(f"{project}'s map in the project store was not removed: it died.")
+    monkeypatch.setattr(commands, 'clear', refused)
+    with pytest.raises(StoreError, match='cleared except its map in the project store, which is still there: .*died. '
+                                         'Its backup is'):
+        metaform_home.clear_project('proj')
+    backup = max((metaform_home.home() / 'backups' / 'clear' / 'proj').iterdir()).name
+    restored = metaform_home.restore_project('proj', backup)
+    assert restored.lost == ("proj's map in the project store was not removed: it died.",)
+    with Store('proj', module='ledger').tables(write=False) as tx:
+        assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']
+
 def test_the_chassis_upgrade_of_its_layout_keeps_a_module_table(ledger):
     fill(ledger)
     path = store_file()

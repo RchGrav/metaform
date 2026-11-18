@@ -24,8 +24,7 @@ def functional_context(store: Store, work: WorkRecord) -> dict[str, Any]:
     element = store.element(address) if address else None
     if element is None:
         return {'address': address, 'name': address or work.node_id, 'nodes': [], 'requirements': [],
-                'dependents': [], 'markdown': 'The ticket’s functional element is unavailable.',
-                **dict.fromkeys(('requirements_unread', 'dependents_unread'), UNAVAILABLE)}
+                'dependents': [], 'markdown': 'The ticket’s functional element is unavailable.'}
     nodes: dict[str, dict[str, str]] = {}
 
     def node(at: str, name: str | None = None, short: str = '') -> str:
@@ -65,10 +64,11 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     from metaform import project as project_store
     path = f'{project}.{address}'
     read = project_store.run({path: {}})
-    if read.get('status') == 'error':
+    if read.get('status') == 'error':  # a missing element holds nothing; a read that failed is said in each section
+        failed = {} if read.get('code') == 'NOT_FOUND' else dict.fromkeys(
+            ('requirements_unread', 'dependents_unread'), f"{UNAVAILABLE.rstrip('.')}: {read.get('message')}")
         return {'address': address, 'name': address, 'nodes': [], 'requirements': [], 'dependents': [],
-                'markdown': 'The ticket’s functional element is unavailable.',
-                **dict.fromkeys(('requirements_unread', 'dependents_unread'), UNAVAILABLE)}
+                'markdown': 'The ticket’s functional element is unavailable.', **failed}
     held = cast(dict[str, Any], read[path])
     start = len(project) + 1
     nodes: dict[str, dict[str, str]] = {}
