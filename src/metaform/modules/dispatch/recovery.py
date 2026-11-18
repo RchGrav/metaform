@@ -177,7 +177,7 @@ def stop_group(pid: int, expected: str) -> None:
         return
     if os.getpgid(pid) != pid or identity(pid) != expected:
         raise ValueError('the surviving agent group cannot be verified')
-    if not sys.platform.startswith('linux'):
+    if sys.platform != 'linux':  # the form a type checker reads as the platform, so the rest is Linux's alone
         raise ValueError('safe process-group signalling is unavailable; the agent needs manual cleanup')
     # A second birth read alone leaves a race before killpg. A pidfd binds the signal to the inspected process,
     # even if it exits and its numeric PID is recycled before signalling. Group scope requires Linux 6.9.

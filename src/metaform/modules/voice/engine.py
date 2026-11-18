@@ -224,7 +224,8 @@ def decode(path: Path) -> Any:
     """The audio as 16 kHz mono float32 samples, decoded with PyAV, which faster-whisper brings: wav, flac, mp3, ogg
     and the webm/opus a browser's MediaRecorder writes. faster-whisper's own decode_audio passes an argument that
     newer PyAV releases no longer take, so it is done here with the calls every release has."""
-    import av  # type: ignore[import-not-found]
+    import av as av_module  # type: ignore[import-not-found]
+    av: Any = av_module  # untyped: read as Any, as numpy is below
     import numpy as numpy_module  # type: ignore[import-not-found]
     numpy: Any = numpy_module
     resampler = av.AudioResampler(format='s16', layout='mono', rate=16000)
