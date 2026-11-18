@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import errno
 import json
 import os
 import sys
@@ -41,6 +42,9 @@ def kept_memory(path: Path) -> Path:
     the map, and a memory whose object is gone is hidden, never deleted, so the memory is kept until the project's
     database is made again and is then put back into it."""
     return path.with_name(f'{path.stem}.memory.json')
+
+
+_NO_LINKS = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK}  # a filesystem with no links
 
 
 def held_memory(path: Path) -> Path:
@@ -97,7 +101,8 @@ def _merged(path: Path, memory: dict[str, list[list[object]]]) -> tuple[dict[str
     """A map's memory merged with the copies already kept beside it, the held copy a new map claimed and the kept
     copy, as a union: an entity's observations from every source, each once, its type from the last source that names
     one, and each relation once among the entities kept. Also the copies that cannot be parsed,
-    to set aside once the merged copy is written. The map's type wins, as its source comes last. A copy that cannot be
+    to set aside once the merged copy is written. The map's type wins when it names one, as its source comes last. A copy
+    that cannot be
     read from disk raises OSError, so the clear stops and a retry finds it whole."""
     sources: list[dict[str, list[list[Any]]]] = []
     unparsed: list[Path] = []
@@ -131,10 +136,33 @@ def _merged(path: Path, memory: dict[str, list[list[object]]]) -> tuple[dict[str
     return {'entities': entities, 'relations': relations}, unparsed
 
 
+def _write_kept(path: Path, memory: dict[str, list[list[object]]], said: list[str] | None) -> None:
+    """The kept copy beside `path` written as the union of `memory` with the copies already there (`_merged`): whole,
+    to its own file renamed into place, the copies that cannot be parsed set aside only once it is written, and the
+    held copy withdrawn once merged. A write that fails, or text that cannot be written, changes nothing."""
+    kept, held = kept_memory(path), held_memory(path)
+    merged, unparsed = _merged(path, memory)
+    fresh = kept.with_name(kept.name + '.new')
+    try:
+        fresh.write_text(json.dumps(merged, ensure_ascii=False), encoding='utf-8')
+        for copy in unparsed:
+            aside = _set_aside(copy)
+            note = f'the memory kept at {copy} could not be read and is set aside as {aside}'
+            sys.stderr.write(note + '\n')
+            if said is not None:
+                said.append(note)
+        fresh.replace(kept)
+    except (OSError, ValueError):
+        with contextlib.suppress(OSError):
+            fresh.unlink(missing_ok=True)
+        raise
+    held.unlink(missing_ok=True)  # merged into the kept copy
+
+
 def _set_aside(copy: Path) -> Path:
     """A copy that cannot be parsed, moved under the first `.unread-<n>` name no file has: created exclusively, by a
-    hard link, or by an exclusive copy where hard links are not had, so another file of that name is never
-    overwritten."""
+    hard link, or by an exclusive copy where the filesystem has no hard links, so another file of that name is never
+    overwritten. Any other failure is raised, with no partial copy left."""
     number = 1
     while True:
         aside = copy.with_name(f'{kept_name(copy)}.unread-{number}')
@@ -143,13 +171,18 @@ def _set_aside(copy: Path) -> Path:
         except FileExistsError:
             number += 1
             continue
-        except OSError:  # no hard links here: an exclusive create of a copy instead
+        except OSError as error:
+            if error.errno not in _NO_LINKS:
+                raise
             try:
                 with aside.open('xb') as written:
                     written.write(copy.read_bytes())
             except FileExistsError:
                 number += 1
                 continue
+            except BaseException:
+                aside.unlink(missing_ok=True)
+                raise
         copy.unlink()
         return aside
 
@@ -298,16 +331,9 @@ class Database:
                     with self._writing.transaction():
                         put = _put_back(self._writing)
                     if put:  # committed: the copy is claimed by a rename, and withdrawn after the first write
-                        try:
-                            kept_memory(self.path).replace(held_memory(self.path))
-                            self.put_back = True
-                        except OSError as error:  # the map holds the memory: the copy is withdrawn now, or said
-                            try:
-                                kept_memory(self.path).unlink()
-                            except OSError:
-                                sys.stderr.write(f'{kept_memory(self.path)}: the memory was put back into the new map, '
-                                                 f'and its kept copy could neither be claimed nor withdrawn: {error}\n')
-                except StoreError as error:  # the copy stays as it was: memory may come back, never lost
+                        kept_memory(self.path).replace(held_memory(self.path))
+                        self.put_back = True
+                except (StoreError, OSError) as error:  # the copy stays as it was: memory may come back, never lost
                     sys.stderr.write(f'{kept_memory(self.path)}: the memory a clear kept was refused by the new map '
                                      f'and is not put back: {error}\n')
         except BaseException as error:  # noqa: BLE001  handed to the thread that asked for the database
@@ -437,11 +463,9 @@ class Owner:
                     self._discard(project, database)
                 raise
             if database.fresh and database.put_back:  # the first write stored: the memory put back is held by the
-                with self._opening, contextlib.suppress(OSError):  # database now, and its claimed copy goes, while it
-                    with self._lock:  # is still the project's open one: a clear since merged it, and a newer map's
-                        current = self._open.get(project) is database  # claim is never this one's to remove
-                    if current:
-                        held_memory(database.path).unlink(missing_ok=True)
+                with self._lock, contextlib.suppress(OSError):  # database now, and its claimed copy goes, while it is
+                    if self._open.get(project) is database:  # still the project's open one: a clear or discard takes
+                        held_memory(database.path).unlink(missing_ok=True)  # it out first, under this lock
             database.fresh = False
             return result
 
@@ -480,9 +504,14 @@ class Owner:
             closing = self._open.pop(idle) if idle is not None else None
         if closing is not None:
             closing.close()
-        if exists:  # a claimed copy beside a map that stands is already in it: one whose withdrawal never ran goes now
-            with contextlib.suppress(OSError):
-                held_memory(path).unlink(missing_ok=True)
+        # The one decision on a claimed copy: beside a map that stands it is already in that map, and goes; with no map,
+        # its map was discarded or removed part way, and it goes back into the kept copy, to be put back.
+        if held_memory(path).exists():
+            if exists:
+                with contextlib.suppress(OSError):
+                    held_memory(path).unlink(missing_ok=True)
+            else:
+                _write_kept(path, {'entities': [], 'relations': []}, None)
         if not exists:  # a removal that stopped part way may have left the old map's files: never read into the new one
             try:
                 store.remove(path)
@@ -511,30 +540,13 @@ class Owner:
                     sys.stderr.write(f'{path}: files beside a removed map could not be removed: {error}\n')
                 return False
             memory = _memory_of(path, said)
-            kept = kept_memory(path)
             # Kept for the next map, LAYER-013. A clear never loses kept memory: what this map holds is merged as a
             # union with the copies kept beside it (one a new map claimed as `held`, and the kept copy), and written
             # whole to its own file renamed into place, so a torn write never lands where the next map reads it. The
             # next map claims the kept copy by a rename once it has put it back, and withdraws it after its first
             # write. A removal that fails leaves the map standing and the copy at most fuller.
-            held = held_memory(path)
-            if memory['entities'] or held.exists():
-                merged, unparsed = _merged(path, memory)
-                fresh = kept.with_name(kept.name + '.new')
-                try:
-                    fresh.write_text(json.dumps(merged, ensure_ascii=False), encoding='utf-8')
-                    for copy in unparsed:  # set aside only once the merged copy is written whole
-                        aside = _set_aside(copy)
-                        note = f'the memory kept at {copy} could not be read and is set aside as {aside}'
-                        sys.stderr.write(note + '\n')
-                        if said is not None:
-                            said.append(note)
-                    fresh.replace(kept)
-                    held.unlink(missing_ok=True)  # merged into the kept copy
-                except (OSError, ValueError):  # a write that fails, or text that cannot be written, removes nothing
-                    with contextlib.suppress(OSError):
-                        fresh.unlink(missing_ok=True)
-                    raise
+            if memory['entities'] or held_memory(path).exists():
+                _write_kept(path, memory, said)
             try:
                 store.remove(path)
             except OSError:
@@ -557,16 +569,15 @@ class Owner:
             yield store.location(self.home, project)
 
     def _discard(self, project: str, database: Database) -> None:
-        """Remove a database this process made whose first write failed, unless another caller is using it."""
-        with self._lock:
-            if database.users > 1 or self._open.get(project) is not database:
-                return
-            del self._open[project]
-        database.close()
-        store.remove(database.path)
-        if database.put_back:  # the memory it claimed goes back to be put back into the next map
-            with contextlib.suppress(OSError):
-                held_memory(database.path).replace(kept_memory(database.path))
+        """Remove a database this process made whose first write failed, unless another caller is using it; under the
+        open lock, so no open finds it half removed. A copy of memory it claimed is given back by the next open."""
+        with self._opening:
+            with self._lock:
+                if database.users > 1 or self._open.get(project) is not database:
+                    return
+                del self._open[project]
+            database.close()
+            store.remove(database.path)
 
     def close(self) -> None:
         with self._lock:
