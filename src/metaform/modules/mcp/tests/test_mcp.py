@@ -757,6 +757,24 @@ def test_a_peers_artifact_whose_write_fails_is_written_once_when_heard_again(hom
     kept = [one['text'] for one in project.overlay_records('proj', 'questions') or []]
     assert kept == ['The bell is fine.'] and len(calls) == 2
     assert (records.exchange('proj', made.exchange_id) or made).seen == ['artifact:a-1']
+    # of two, the first written and the second failing: the first is delivered, never written again
+    first = Artifact(artifact_id='a-2', name='first', parts=[Part(text='First.')])
+    second = Artifact(artifact_id='a-3', name='second', parts=[Part(text='Second.')])
+    calls.clear()
+
+    def second_fails(*args, **kwargs):
+        calls.append(args)
+        if args[2] == 'Second.' and len([one for one in calls if one[2] == 'Second.']) == 1:
+            raise OSError('the disk is full')
+        return real(*args, **kwargs)
+    monkeypatch.setattr(a2a_out, '_tell', second_fails)
+    with pytest.raises(OSError):
+        a2a_out.heard('proj', made.exchange_id, None, (first, second), 'peer-task')
+    seen = (records.exchange('proj', made.exchange_id) or made).seen
+    assert 'artifact:a-2' in seen and not any('a-3' in one for one in seen), seen  # delivered; the other given back
+    a2a_out.heard('proj', made.exchange_id, None, (first, second), 'peer-task')
+    texts = [one['text'] for one in project.overlay_records('proj', 'questions') or []]
+    assert texts.count('First.') == 1 and texts.count('Second.') == 1, texts
 
 @pytest.mark.req('MCP-002')
 def test_a2a_push_webhooks_are_only_those_the_person_allows(run, home, mapped):

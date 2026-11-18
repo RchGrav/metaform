@@ -1018,6 +1018,10 @@ def test_a_ticket_held_only_in_the_project_store_is_started_run_and_closed_throu
     try:
         assert project_store.run({'add': {f'proj.{NODE}': {'technical_name': 'engine', 'name': 'engine',
                                                             'role': 'Defining Element'}}}) == {'status': 'ok'}
+        assert project_store.run({'add': {f'proj.{LINKED}': {
+            'technical_name': 'store code', 'name': 'store', 'role': 'Supporting Element',
+            'wants': [{'element': f'proj.{NODE}', 'why': 'run the engine', 'how': 'starts it',
+                       'direction': 'receive'}]}}}) == {'status': 'ok'}  # an element relying on the ticket's
         assert project_store.run({'update': {'proj': {'specification': [
             {'text': 'Proj times kitchen dishes.'}]}}}) == {'status': 'ok'}  # its own description, F10
         ticket = json.loads(run('map', 'work', 'op=add', f'node=element:{NODE}', 'title=Write notes',
@@ -1039,6 +1043,7 @@ def test_a_ticket_held_only_in_the_project_store_is_started_run_and_closed_throu
                    if (entry := json.loads(line)).get('message', {}).get('method') == 'session/prompt']
         first = ''.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
         assert 'Proj times kitchen dishes.' in first and f'Functional region: {NODE}' in first, first[:2000]
+        assert 'Run the engine' in first or 'run the engine' in first, 'the element relying on it is in the region'
     finally:
         service.stop(home)
         owner.close_all()
@@ -2665,6 +2670,8 @@ def test_a_worker_handed_its_ticket_on_the_command_line_is_told_of_the_agents_at
     text, links = handoff_parts(context('dispatch', dispatch.folder, project='proj'), dispatch.id,
                                 session='worker-session', on='cli')
     assert '1 other agents are at work in this project: metaform dispatch peers' in text and links == []
+    preview = handoff_parts(context('dispatch', dispatch.folder, project='proj'), dispatch.id, on='cli')[0]
+    assert 'other agents are at work' not in preview, 'a preview names no session and uses up no notice'
 
 @pytest.mark.req('MCP-039')
 @pytest.mark.req('BASE-050')

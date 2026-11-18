@@ -77,7 +77,7 @@ def digest(block: Block) -> str:
 # tell what the person edited from what changed in the store since, and keep each block's id (review of 2026-11-18,
 # F5). An HTML comment, so the rendered Markdown does not show it.
 BASELINE = '<!-- metaform specification baseline: '
-Baseline = dict[str, list[list[str]]]
+Baseline = dict[str, list[list[Any]]]  # each block as [record id, digest, level, title]
 
 
 def baseline_line(held: Baseline) -> str:

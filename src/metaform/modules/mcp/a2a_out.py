@@ -219,9 +219,9 @@ def heard(project: str, exchange_id: str, status: TaskStatus | None = None, arti
             question = _ask(project, now.address, said, by, _title(said),
                             prompt('a2a_peer_question_why', peer=now.peer), messages)
             written += asking
-    finally:
+    finally:  # what was written is delivered even when a later write failed; what was not is given back
+        records.delivered(project, exchange_id, written)
         records.released(project, exchange_id, [key for key in taken if key not in written])
-    records.delivered(project, exchange_id, written)
     if question is not None and records.asking(project, exchange_id, now.asked, question):  # its answer goes back
         now = records.exchange(project, exchange_id)
     return now

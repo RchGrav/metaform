@@ -761,7 +761,8 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
 def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
     """Close staged work, including faults, after dispatch records successful delivery."""
     if (held := held_name(tx.project_id)) is not None:  # review of 2026-11-18, F3
-        return stored_delivered(held, work_id)
+        settings = tx.tables().get("ticket_settings", {"work_id": work_id})  # a landed delivery closes it, as below
+        return stored_delivered(held, work_id, bool(settings is not None and settings["landed"]))
     row = _work_row(tx, work_id)
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
     if row["done"] is not None or settings is None or not settings["landed"]:

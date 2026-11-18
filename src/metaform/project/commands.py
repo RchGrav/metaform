@@ -11,6 +11,7 @@ first `add`, and the database is removed again if that first command is refused.
 """
 from __future__ import annotations
 
+import itertools
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -590,29 +591,54 @@ def _specification_inputs(opened: Store, project: str) -> tuple[dict[str, dict[s
                 {name: decode(found.fields[name].kind, row[name]) for name in names if row[name] is not None})
             ids.setdefault(full(project, address), []).append(str(row['record']))
         held = {address: specification.blocks(address, records) for address, records in rows.items()}
-    baseline = {address: [[ident, specification.digest(block)] for ident, block in zip(ids[address], blocks)]
+    baseline = {address: [[ident, specification.digest(block), block.level, block.title]
+                          for ident, block in zip(ids[address], blocks)]
                 for address, blocks in held.items()}
     return elements, wants, held, baseline
 
 
-def _identified(found: list[specification.Block], exported: list[list[str]]) -> list[dict[str, object]]:
-    """An edited address's blocks as records to store, each keeping the record id of the exported block it is: a
-    block exported as it stands keeps its block's id, and a block edited in place, at the position of an exported
-    block nothing else kept, keeps that block's id, so editing one block keeps every block's id (review of
-    2026-11-18, F5). Any other block is new: a block added where a deleted one stood never takes its id, which
-    references to the deleted one still name."""
-    free = list(exported)
-    taken: list[str | None] = []
-    for block in found:
-        same = next((one for one in free if one[1] == specification.digest(block)), None)
-        if same is not None:
-            free.remove(same)
-        taken.append(same[0] if same is not None else None)
-    kept = {ident for ident in taken if ident is not None}
-    for at, ident in enumerate(taken):
-        if ident is None and at < len(exported) and exported[at] in free and exported[at][0] not in kept:
-            taken[at] = exported[at][0]
-            kept.add(exported[at][0])
+def _identified(found: list[specification.Block], exported: list[list[Any]]) -> list[dict[str, object]]:
+    """An edited address's blocks as records to store, each keeping the record id of the exported block it is
+    (review of 2026-11-18, F5). Blocks exported as they stand are matched first, in order, as the longest run the two
+    lists share, and anchor the rest; between two anchors a block takes the id of an exported block with its heading
+    (level and title), and the blocks left pair in order only when as many were exported there as now stand there,
+    each edited in place. Any other block is new, so a block added where a deleted one stood never takes its id."""
+    digests = [specification.digest(block) for block in found]
+    old = [one[1] for one in exported]
+    # the longest common run of unchanged blocks, by digest
+    table = [[0] * (len(old) + 1) for _ in range(len(digests) + 1)]
+    for i in range(len(digests) - 1, -1, -1):
+        for j in range(len(old) - 1, -1, -1):
+            table[i][j] = table[i + 1][j + 1] + 1 if digests[i] == old[j] else max(table[i + 1][j], table[i][j + 1])
+    anchors: list[tuple[int, int]] = []
+    i = j = 0
+    while i < len(digests) and j < len(old):
+        if digests[i] == old[j]:
+            anchors.append((i, j))
+            i, j = i + 1, j + 1
+        elif table[i + 1][j] >= table[i][j + 1]:
+            i += 1
+        else:
+            j += 1
+    taken: list[str | None] = [None] * len(found)
+    for i, j in anchors:
+        taken[i] = exported[j][0]
+    bounds = [(-1, -1), *anchors, (len(found), len(exported))]
+    for (low_i, low_j), (high_i, high_j) in itertools.pairwise(bounds):
+        here = list(range(low_i + 1, high_i))
+        there = list(range(low_j + 1, high_j))
+        for at in list(here):  # the same heading: the block, its text edited
+            block = found[at]
+            if block.title is None:
+                continue
+            match = next((one for one in there if exported[one][2:4] == [block.level, block.title]), None)
+            if match is not None:
+                taken[at] = exported[match][0]
+                here.remove(at)
+                there.remove(match)
+        if len(here) == len(there):  # as many as were exported here: each edited in place
+            for at, one in zip(here, there):
+                taken[at] = exported[one][0]
     return [{**block.stored(), **({'record': ident} if ident else {})} for block, ident in zip(found, taken)]
 
 

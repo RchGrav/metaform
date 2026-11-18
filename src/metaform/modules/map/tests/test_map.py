@@ -2998,6 +2998,10 @@ def test_a_store_projects_reads_page_leave_done_tickets_out_and_find_a_completed
         Store('proj').finish_work(ids[2], 'Done.', outcome='canceled')
     with pytest.raises(StoreError, match='No work record has the id'):
         Store('proj').complete_delivery('t-none')
+    assert not Store('proj').complete_delivery(ids[2]).done, 'no delivery landed yet: it stays open'
+    with Store('proj', module='map').tables() as tx:  # dispatch records the delivery as landed
+        tx.insert('ticket_settings', {'work_id': ids[2], 'landed': '2026-11-18T00:00:00Z'})
+    assert Store('proj').complete_delivery(ids[2]).done, 'a landed delivery closes it'
 
 @pytest.mark.req('MAP-045')
 def test_the_bases_of_a_project_in_the_project_store_are_its_databases_and_its_memory_goes_with_the_project(

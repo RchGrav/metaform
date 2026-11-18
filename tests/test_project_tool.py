@@ -585,6 +585,7 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home)
     made.close()
     with pytest.raises(store.StoreError, match='lacks MemoryEntity.*metaform clear project older'):
         store.Store(path)
+    assert owner.of(home).remove('older') and not path.exists(), 'the clear it names still clears it'
 
 def test_the_project_root_holds_the_projects_own_fields(home):
     root = {'id': 'carverj-mashtrac-2026-10-31', 'name': 'Mashtrac Protocol', 'project': 'carverj/mashtrac'}
@@ -1260,6 +1261,12 @@ def test_an_import_keeps_newer_edits_and_block_ids_and_takes_a_code_swap_whole(s
     after = held(WIDGET)
     assert [one['title'] for one in after] == ['Limits', 'Errors'] and after[0]['record'] == limits['record']
     assert purpose['record'] not in [one['record'] for one in after], 'the new block took the deleted one\'s id'
+    # a block deleted ahead of an edited one: the edited one keeps its own id, by its heading, never the deleted one's
+    fresh = project_store.specification_document(P, home=served)['document']
+    limits, errors = held(WIDGET)
+    edited = fresh.replace(f"### Limits\n\n{limits['text']}\n\n", '').replace('A new block.', 'A newer block.')
+    assert project_store.specification_document(P, edited, served)['status'] == 'ok', edited
+    assert [(one['title'], one['record']) for one in held(WIDGET)] == [('Errors', errors['record'])]
     # a document without its baseline line is refused
     assert project_store.specification_document(P, prose(fresh), served)['code'] == 'DOCUMENT_REFUSED'
 

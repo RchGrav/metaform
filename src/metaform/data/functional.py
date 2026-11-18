@@ -80,13 +80,13 @@ def _stored(project: str, address: str) -> dict[str, Any]:
     node(address, str(held.get('name') or '') or None)
     requirements = [wanted(address, one) for one in cast(list[dict[str, Any]], held.get('wants') or [])]
     dependents: list[dict[str, Any]] = []
-    if held.get('wanted_by'):  # the wants naming it, each with its holder, from one read of the map
-        drawn = project_store.drawn(project) or {}
-        for one in cast(list[dict[str, Any]], drawn.get('wants') or []):
-            if str(one.get('element') or '') == path:
-                holder = str(one.get('holder') or '')[start:]
-                node(holder)
-                dependents.append(wanted(holder, one))
+    if held.get('wanted_by') and "'" not in address:  # the wants naming it, with their holders, in one query
+        found = project_store.cypher(project, f"MATCH (h:Element)-[w:Wants]->(e:Element {{address: '{address}'}}) "
+                                              'RETURN h.address, w.why, w.how, w.direction ORDER BY h.address')
+        for holder, why, how, direction in cast(list[list[Any]], found.get('rows') or []):
+            node(str(holder))
+            dependents.append(wanted(str(holder), {'element': path, 'why': why, 'how': how,
+                                                   'direction': direction}))
     return _rendered(address, nodes, requirements, dependents)
 
 

@@ -41,9 +41,14 @@ def kept_memory(path: Path) -> Path:
 
 
 def _memory_of(path: Path) -> dict[str, list[list[object]]]:
-    with Store(path) as opened, opened.reading():
-        return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
-                'relations': [list(relation) for relation in opened.memory_relations()]}
+    """The memory layer of a database about to be removed, kept for the next one. Opened unchecked, so a database an
+    earlier version made can still be cleared; one with no memory layer keeps none."""
+    with Store(path, checked=False) as opened, opened.reading():
+        try:
+            return {'entities': [[name, kind, observations] for name, kind, observations in opened.memory_entities()],
+                    'relations': [list(relation) for relation in opened.memory_relations()]}
+        except StoreError:
+            return {'entities': [], 'relations': []}
 
 
 def _put_back(opened: Store) -> None:

@@ -4891,7 +4891,9 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
         reads.append(f'project {{"{stored}.{address}": {{}}}}' if project_store.holds(stored)
                      else f'metaform map where {address}')
     lines.append('Read: ' + '  '.join(reads))
-    if peered := peers_line(ctx, store, work_id, session):  # on every surface: a worker reads it on the CLI one
+    # told to the session a runner hands the ticket to, on whichever surface, and to an agent reading it over MCP; a
+    # preview on the command line names no session and uses up no one's notice
+    if (session is not None or on == 'mcp') and (peered := peers_line(ctx, store, work_id, session)):
         lines.append(peered)
     node = str(read.get('address') or ' and '.join(
         f'{name}={value}' for name, value in (('receiver', read.get('receiver_address')),

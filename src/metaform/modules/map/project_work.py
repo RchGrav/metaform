@@ -347,10 +347,11 @@ def stored_step(name: str, work_id: str, said: Any = None) -> StoredWork:
                                 'note': '\n\n'.join(part for part in (kept, line) if part) or None})
 
 
-def stored_delivered(name: str, work_id: str) -> StoredWork:
-    """`complete_delivery`: the ticket as it stands. The project store keeps no staged delivery to close it by, so a
-    ticket there is closed by its own `done`; a ticket that is gone is refused as the old store refuses it."""
-    return as_work(name, _one(name, work_id))
+def stored_delivered(name: str, work_id: str, landed: bool) -> StoredWork:
+    """`complete_delivery`: once dispatch recorded the ticket's delivery as landed, the ticket is closed, completed,
+    as the old store closes it; until then it stands as it is. A ticket that is gone is refused as there."""
+    one = _one(name, work_id)
+    return stored_finish(name, work_id) if landed and not one.get('done') else as_work(name, one)
 
 
 def stored_ticket(name: str, work_id: str, **_: Any) -> Ticket:

@@ -205,8 +205,9 @@ def worksheet(ctx: Context) -> dict[str, Any]:
     # a worksheet over it is refused before anything is claimed or saved (review of 2026-11-18, F6).
     # The project store's claim is exclusive; the old store's take is shared participation, so it is checked there only.
     by = actor(ctx) or holder
-    exclusive = project_tickets.held(ctx) is not None
-    owned = [one for one in tickets if exclusive and one.get('taken_by') and one['taken_by'] not in (by, holder)]
+    stored = project_tickets.held(ctx)
+    owned = [one for one in tickets if one.get('taken_by') and one['taken_by'] not in (by, holder)] \
+        if stored is not None else []
     if owned:
         said = ', '.join(f"{one['ticket']} is taken by {one['taken_by']}" for one in owned)
         raise Stop(f'{said}: a worksheet '
@@ -214,7 +215,7 @@ def worksheet(ctx: Context) -> dict[str, Any]:
                    'them.', 'metaform tasks board')
     # Before the round in the project store, whose claims can be given back if the round is not made; the old store's
     # take cannot be undone, so its tickets are taken after the round, as before.
-    claimed = _claim(ctx, tickets, by) if exclusive else []
+    claimed = _claim(ctx, stored, tickets, by) if stored is not None else []
     try:
         # before the round, so a git refusal leaves nothing claimed; none for a ticket worked in the project folder
         made = worktrees.create(ctx.folder, name) if worktrees.assigned(ctx, name) else None
@@ -222,13 +223,13 @@ def worksheet(ctx: Context) -> dict[str, Any]:
                                 agent_id(ctx, ctx.nouns.get('partner')) or None,
                                 [one['ticket'] for one in tickets])
     except ValueError as error:
-        _release(ctx, claimed, by)
+        _release(stored, claimed, by)
         raise Stop(str(error), 'metaform tasks worksheet') from None
     except BaseException:
-        _release(ctx, claimed, by)
+        _release(stored, claimed, by)
         raise
-    if not exclusive:
-        _claim(ctx, tickets, by)
+    if stored is None:
+        _claim(ctx, None, tickets, by)
     _sync_progress(ctx, result)
     changed(ctx, [holder], name, result['tickets'])
     if made is None:
@@ -237,10 +238,11 @@ def worksheet(ctx: Context) -> dict[str, Any]:
             **({'notice': made['notice']} if made.get('notice') else {})}
 
 
-def _claim(ctx: Context, tickets: list[dict[str, Any]], by: str) -> list[str]:
-    """Claim each free ticket for `by`, exclusively and at the revision read; the ids claimed. A refusal part way
-    gives back the claims this call made and stops, so no ticket is left claimed for a worksheet that was not made."""
-    stored = project_tickets.held(ctx)
+def _claim(ctx: Context, stored: str | None, tickets: list[dict[str, Any]], by: str) -> list[str]:
+    """Claim each free ticket for `by`; the ids claimed. In the project store, `stored`, a claim is exclusive and at
+    the revision read, and a refusal part way gives back the claims this call made and stops, so no ticket is left
+    claimed for a worksheet that was not made. In the old store a take is shared participation, made after the round,
+    and a ticket finished since it was listed is passed over rather than failing a worksheet already made."""
     found = project_tickets.records(stored) if stored is not None else {}
     claimed: list[str] = []
     try:
@@ -250,18 +252,20 @@ def _claim(ctx: Context, tickets: list[dict[str, Any]], by: str) -> list[str]:
             if stored is not None:
                 project_tickets.take(project_tickets.found(stored, found, one['ticket']), by)
             else:
-                ctx.require_store().take_work(one['ticket'], by=by)
+                try:
+                    ctx.require_store().take_work(one['ticket'], by=by)
+                except StoreError:  # finished by another agent since it was listed: nothing to take
+                    continue
             claimed.append(str(one['ticket']))
     except BaseException:
-        _release(ctx, claimed, by)
+        _release(stored, claimed, by)
         raise
     return claimed
 
 
-def _release(ctx: Context, claimed: list[str], by: str) -> None:
+def _release(stored: str | None, claimed: list[str], by: str) -> None:
     """Give back the claims a worksheet made when it was not made after all: each ticket still held by `by` is
     freed. Only the project store's tickets: the old store's take is a shared participation with nothing to undo."""
-    stored = project_tickets.held(ctx)
     if stored is None or not claimed:
         return
     found = project_tickets.records(stored)

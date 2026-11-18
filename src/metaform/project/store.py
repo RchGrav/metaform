@@ -207,9 +207,10 @@ class Store:
     """One connection to an open project database. `owner.Database` holds the one that writes, on its writer thread,
     and makes a `reader` for each thread that reads. Only one process may hold a database open."""
 
-    def __init__(self, path: Path, create: str | None = None) -> None:
+    def __init__(self, path: Path, create: str | None = None, checked: bool = True) -> None:
         """Open the database at `path`. With `create`, the project's name, make it: the tables, and the definition
-        of the wants overlay, so that wants are checked by the same path as every other overlay."""
+        of the wants overlay, so that wants are checked by the same path as every other overlay. Without `checked`,
+        an earlier version's layout is opened as it is, for the one read that clearing it makes."""
         if create is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
@@ -221,7 +222,7 @@ class Store:
                 self._plant(create)
                 for address, fields in texts.wants_definition(create).items():
                     self.put_part(address, dict(fields))
-        else:
+        elif checked:
             self._current()
 
     def _current(self) -> None:
