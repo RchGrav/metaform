@@ -665,6 +665,12 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     union = json.loads(kept.read_text(encoding='utf-8'))
     assert sorted((one[0], tuple(one[2])) for one in union['entities'] if one[0] in ('bell', 'chime')) == [
         ('bell', ('Old fact.', 'Fresh.')), ('chime', ('It tinkles.',))]
+    # a new map whose first write fails gives back the memory it claimed, kept for the next map
+    def refused(_opened):
+        raise store.StoreError('refused by the test')
+    with pytest.raises(store.StoreError, match='refused by the test'):
+        owned.write('older', 'test', refused, create=True)
+    assert not path.exists() and not held.exists() and 'Old fact.' in kept.read_text(encoding='utf-8')
     kept.unlink()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
     odd = '{"entities": [["bell", "part", null]], "relations": []}'
