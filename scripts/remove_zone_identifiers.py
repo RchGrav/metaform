@@ -16,6 +16,8 @@ SUFFIX = ':Zone.Identifier'
 
 def main(folder: Path) -> int:
     listed = subprocess.run(['git', '-C', str(folder), 'ls-files', '-z'], capture_output=True, check=False)
+    if listed.returncode:  # not a repository, or git failed: the files on disk still go
+        print(f'git could not list the tracked files, so none was untracked: {listed.stderr.decode().strip()}')
     tracked = [name for name in listed.stdout.decode().split('\0') if name.endswith(SUFFIX)]
     if tracked:
         subprocess.run(['git', '-C', str(folder), 'rm', '-q', '--cached', '--', *tracked], check=True)

@@ -469,6 +469,7 @@ class Owner:
         self._lock = threading.Lock()  # guards `_open` and each database's `users`
         self._opening = threading.Lock()  # one database is opened or made at a time
         self._open: OrderedDict[str, Database] = OrderedDict()
+        self._unremoved: set[Path] = set()  # new maps whose first write failed and whose removal failed
         self._closed = False
 
     def projects(self) -> list[str]:
@@ -488,8 +489,9 @@ class Owner:
             try:
                 result = database.write(caller, work, kind).result()
             except BaseException:
-                if database.fresh:  # it only ever turns false, so this read needs no lock; `_discard` checks again
-                    self._discard(project, database, own=1)
+                if database.fresh:  # discarded as its last caller leaves (`_leave`), unless a write reaches it first
+                    with self._lock:
+                        database.discarding = True
                 raise
             return result  # the claimed copy is withdrawn by the writer when the write commits (`Database._written`)
 
@@ -502,11 +504,12 @@ class Owner:
         try:
             yield database
         finally:
-            with self._lock:
-                database.users -= 1
-                waiting = database.discarding and database.fresh and database.users == 0
-            if waiting:  # a discard that waited for this caller to leave runs now
-                self._discard(project, database, own=0)
+            if database.fresh:  # `fresh` only turns false, and a map no longer fresh is never discarded
+                with self._opening:
+                    self._leave(project, database)
+            else:
+                with self._lock:
+                    database.users -= 1
 
     def _take(self, project: str) -> Database | None:
         with self._lock:
@@ -522,6 +525,13 @@ class Owner:
         """Open or make the project's database, with `_opening` held, closing the least recently used idle one first
         when the limit is reached. When every open database is in use, the limit is exceeded for a time."""
         path = store.location(self.home, project)
+        if path in self._unremoved:  # never read as a map: it is removed first, or the open is refused
+            try:
+                store.remove(path)
+            except OSError as error:
+                raise StoreError(f'{project}: a new map whose first write failed is still at {path} and could not be '
+                                 f'removed: {error}. Close what holds it and run the command again.') from error
+            self._unremoved.discard(path)
         exists = path.exists()
         if not exists and not create:
             raise Missing(project)
@@ -602,27 +612,28 @@ class Owner:
                 database.close()
             yield store.location(self.home, project)
 
-    def _discard(self, project: str, database: Database, *, own: int) -> None:
-        """Remove a database this process made whose first write failed, once no other caller is in it: `own` is how
-        many of its counted callers are the one discarding (1 from `write`, 0 from the last caller leaving). While
-        another is in it, the last to leave runs the discard (`_using`). The decision and the removal are one step under
-        the open lock, so no caller takes it and no open finds it half removed between them. A failure to remove it is
-        said, never raised, as the caller running it may be another whose own result stands. A copy of memory it
+    def _leave(self, project: str, database: Database) -> None:
+        """A caller leaves a new map no write has reached yet, with `_opening` held. When a write of it failed and no
+        caller is left in it, the map is removed: decided and done under the open lock, so no open, eviction or base
+        switch comes between. Closing it serves any write still queued; one that commits ends `fresh`, and the map
+        stays. A map that cannot be removed is remembered, and the next open removes it first or refuses; the failure
+        is said, never raised, as the caller leaving may be another whose own result stands. A copy of memory the map
         claimed is given back by the next open."""
-        with self._opening:
-            with self._lock:
-                if self._open.get(project) is not database or not database.fresh:
-                    database.discarding = False
-                    return
-                if database.users > own:
-                    database.discarding = True
-                    return
-                del self._open[project]
-            try:
-                database.close()
+        with self._lock:
+            database.users -= 1
+            if not database.fresh:
+                database.discarding = False
+            if not database.discarding or database.users or self._open.get(project) is not database:
+                return
+            del self._open[project]
+        try:
+            database.close()
+            if database.fresh:
                 store.remove(database.path)
-            except Exception as error:  # noqa: BLE001  the next open of the project clears what stays
-                sys.stderr.write(f'{database.path}: a new map whose first write failed could not be removed: {error}\n')
+        except Exception as error:  # noqa: BLE001  said; the next open removes it first, or refuses
+            if database.fresh:
+                self._unremoved.add(database.path)
+            sys.stderr.write(f'{database.path}: a new map whose first write failed could not be removed: {error}\n')
 
     def close(self) -> None:
         with self._lock:

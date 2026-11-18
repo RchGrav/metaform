@@ -684,19 +684,25 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     # a new map whose first write fails while another caller reads it is removed once that caller leaves
     import threading
     entered, go = threading.Event(), threading.Event()
+    failures: list[BaseException] = []
     def reading() -> None:
-        owned.read('older', lambda _opened: (entered.set(), go.wait(30)))
+        try:
+            owned.read('older', lambda _opened: (entered.set(), go.wait(30)))
+        except BaseException as error:  # noqa: BLE001  reported by the test's own thread
+            failures.append(error)
     reader = threading.Thread(target=reading)
     def failing(_opened):
         reader.start()
         assert entered.wait(30)
         raise store.StoreError('refused by the test')
-    with pytest.raises(store.StoreError, match='refused by the test'):
-        owned.write('older', 'test', failing, create=True)
-    assert path.exists()  # the reader is still in it
-    go.set()
-    reader.join(30)
-    assert not path.exists()
+    try:
+        with pytest.raises(store.StoreError, match='refused by the test'):
+            owned.write('older', 'test', failing, create=True)
+        assert path.exists()  # the reader is still in it
+    finally:
+        go.set()
+        reader.join(30)
+    assert not reader.is_alive() and not failures and not path.exists()
     # a copy whose values are not the memory's, observations of null, is left whole and the map is still made
     odd = '{"entities": [["bell", "part", null]], "relations": []}'
     kept.write_text(odd, encoding='utf-8')
