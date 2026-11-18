@@ -430,15 +430,20 @@ def test_a_clear_or_restore_whose_project_store_map_is_refused_removes_nothing_a
         raise MapError(f"{project}'s map in the project store was not removed: it died.")
     with monkeypatch.context() as patched:
         patched.setattr(commands, 'clear', refused)
-        with pytest.raises(StoreError, match='was not cleared, and nothing else of it was removed: .*it died'):
+        with pytest.raises(StoreError, match='was not cleared, and none of its bases or reports was removed: .*it died'):
             metaform_home.clear_project('proj')
         with ledger.tables(write=False) as tx:  # nothing went
             assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']
     cleared = metaform_home.clear_project('proj')
+    with ledger.tables() as tx:  # the project holds a base again when its restore is refused
+        tx.insert('entries', {'entry_id': 'e9', 'who': 'cy', 'amount': 9})
     with monkeypatch.context() as patched:
         patched.setattr(commands, 'clear', refused)
-        with pytest.raises(StoreError, match='was not cleared'):
+        with pytest.raises(StoreError, match='was not cleared, and none of its bases') as refusal:
             metaform_home.restore_project('proj', cleared.backup)
+        assert refusal.value.next_step == f'metaform restore project proj {cleared.backup}'
+        with ledger.tables(write=False) as tx:  # its bases and their rows stay as they were
+            assert 'e9' in [row['entry_id'] for row in tx.rows('entries', limit=0).results]
     metaform_home.restore_project('proj', cleared.backup)
     with Store('proj', module='ledger').tables(write=False) as tx:
         assert [row['entry_id'] for row in tx.rows('entries', limit=0).results] == ['e1', 'e2', 'e3']

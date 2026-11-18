@@ -167,13 +167,12 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 elif isinstance(message.get('clear'), str):  # clearing a project removes its database
                     lost: list[str] = []
                     try:
-                        removed = owned.remove(message['clear'], lost)  # False: there was nothing to remove
+                        answer: dict[str, object] = {'status': 'ok', 'removed': owned.remove(message['clear'], lost)}
                     except Exception as error:  # noqa: BLE001  answered with what was said of its memory
-                        answer = {**commands.refused({'clear': message['clear']},
-                                                     Refusal('INTERNAL_ERROR', f'the service failed: {error}')),
-                                  **({'lost': lost} if lost else {})}
-                    else:
-                        answer = {'status': 'ok', 'removed': removed, **({'lost': lost} if lost else {})}
+                        answer = commands.refused({'clear': message['clear']}, Refusal(
+                            'INTERNAL_ERROR', f'the service failed: {type(error).__name__}: {error}'))
+                    if lost:
+                        answer['lost'] = lost
                 elif isinstance(message.get('drawn'), str) and isinstance(message.get('overlay'), str):
                     chosen = cast(dict[str, Any], message.get('select') or {})
                     match = cast('list[Any] | None', chosen.get('match'))

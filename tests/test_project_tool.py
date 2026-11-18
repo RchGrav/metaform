@@ -601,6 +601,21 @@ def test_a_database_an_earlier_version_made_is_refused_by_name_when_opened(home,
     made.close()
     assert owner.of(home).remove('older')
     assert 'bell' in owner.kept_memory(path).read_text(encoding='utf-8'), 'the memory is kept, never dropped'
+    # a removal that fails leaves the map and the copy an earlier clear kept as they were, and nothing pending
+    made = store.Store(path, create='older')
+    made.put_memory_entity('gong', 'part', ['It booms.'])
+    made.close()
+
+    def locked(_path):
+        raise OSError('the file is locked')
+    with monkeypatch.context() as patched:
+        patched.setattr(store, 'remove', locked)
+        with pytest.raises(OSError, match='locked'):
+            owner.of(home).remove('older')
+    kept = owner.kept_memory(path)
+    assert path.exists() and 'bell' in kept.read_text(encoding='utf-8') and 'gong' not in kept.read_text(
+        encoding='utf-8') and not kept.with_name(kept.name + '.pending').exists()
+    assert owner.of(home).remove('older') and 'gong' in kept.read_text(encoding='utf-8')
 
 
 def test_a_functional_region_says_a_section_it_could_not_read_instead_of_none():

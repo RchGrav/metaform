@@ -1439,7 +1439,7 @@ def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
     return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else (), holds=held)
 
 
-def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
+def clear_project(project_id: str, *, made_by: str = 'clear', again: str | None = None) -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history, the conversations with agents and everything else in the project's
@@ -1460,13 +1460,13 @@ def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     # is held back from the stops to the end, `HALTS`, so none starts in their place on the map being removed.
     with halted(project_id, 'clear'):
         lost: list[str] = []
-        cleared = _cleared(project_id, found, made_by, lost)
+        cleared = _cleared(project_id, found, made_by, lost, again or f'metaform clear project {project_id} --confirm')
         return replace(cleared, lost=tuple(lost)) if lost else cleared
 
 
-def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> Cleared:
+def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str], again: str) -> Cleared:
     """`clear_project`, once what the stores hold of the conversations is carried out, under the halt of every start.
-    What of the map's memory could not be kept is added to `lost`."""
+    What of the map's memory could not be kept is added to `lost`; `again` is the command that runs it once more."""
     stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
@@ -1476,25 +1476,33 @@ def _cleared(project_id: str, found: Cleared, made_by: str, lost: list[str]) -> 
         reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
         raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: {reason}.',
                          'metaform list backups') from error
-    # The project's map in the project store goes first of what is removed: when its clear is refused nothing else is
-    # removed, so a clear, or a restore's clear, refused there leaves the project as it was (review of 2026-11-18).
+    # The project's map in the project store goes first of what is removed: when its clear is refused, no base or
+    # report is removed, and the stops and the backup made before it are said (review of 2026-11-18).
     from metaform.project import commands
     from metaform.project.store import StoreError as MapError
+    done = ''.join([f' Its agents at work were stopped first: {"; ".join(stopped)}.' if stopped else '',
+                    f' A backup was made first: {saved.name}.' if saved is not None else ''])
     try:
         commands.clear(commands.stored_name(project_id), said=lost)
     except (StoreError, MapError) as error:
-        raise StoreError(f"{project_id} was not cleared, and nothing else of it was removed: "
-                         f"{str(error).rstrip('.')}.", 'run the same command again once the project service answers') \
-            from error
-    folder = _folder_of_project(project_id)
-    stores = _stores(folder)
-    with project_db(folder, write=True) as db:
-        db.execute('DELETE FROM active_bases WHERE project_id=?', (project_id,))
-        db.execute('DELETE FROM bases WHERE project_id=?', (project_id,))
-    failed: list[tuple[str, str]] = []
-    for store in stores:
-        _remove_files(store, failed)
-    _remove_tree(folder / 'reports', failed)
+        said = ''.join([done, *(f" {one.rstrip('.')}." for one in lost)])
+        raise StoreError(f"{project_id} was not cleared, and none of its bases or reports was removed: "
+                         f"{str(error).rstrip('.')}.{said}", again) from error
+    # the map is gone, and a clear never brings it back: what follows is said as unfinished, never left unsaid
+    try:
+        folder = _folder_of_project(project_id)
+        stores = _stores(folder)
+        with project_db(folder, write=True) as db:
+            db.execute('DELETE FROM active_bases WHERE project_id=?', (project_id,))
+            db.execute('DELETE FROM bases WHERE project_id=?', (project_id,))
+        failed: list[tuple[str, str]] = []
+        for store in stores:
+            _remove_files(store, failed)
+        _remove_tree(folder / 'reports', failed)
+    except (OSError, sqlite3.Error) as error:
+        said = ''.join(f" {one.rstrip('.')}." for one in lost)
+        raise StoreError(f'{project_id} is cleared in part: its map in the project store is removed, and its bases '
+                         f'and reports are not: {error}.{done}{said}', again) from error
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
                    saved.name if saved is not None else None, stopped, found.holds)
@@ -1702,8 +1710,9 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
                          'restored by its name.' if known else f'{project_id} has no backup.',
                          f'metaform list backups {project_id}')
     # a map left in the project store would stand in front of the bases a restore brings back, so a clear refused there
-    # stops the restore, which names the backup it made of what it replaced
-    cleared = clear_project(project_id, made_by='restore')
+    # stops the restore, saying what it did first and naming this restore as the command to run again
+    cleared = clear_project(project_id, made_by='restore',
+                            again=f'metaform restore project {project_id}' + (f' {name}' if name else ''))
     before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))

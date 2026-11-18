@@ -85,6 +85,18 @@ def _memory_of(path: Path, said: list[str] | None = None) -> tuple[dict[str, lis
             sys.stderr.write(f'{path.stem}: closing it after reading its memory failed: {error}\n')
 
 
+def _carry_relations(memory: dict[str, list[list[object]]], kept: Path) -> None:
+    """Into a memory whose relations could not be read, those an earlier clear kept among the entities it still has,
+    so a partial read loses no more than it must."""
+    try:
+        earlier = json.loads(kept.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return
+    names = {str(one[0]) for one in memory['entities']}
+    memory['relations'] = [list(one) for one in cast(list[list[object]], earlier.get('relations') or [])
+                           if str(one[0]) in names and str(one[1]) in names]
+
+
 def _put_back(opened: Store) -> None:
     """Into a database just made, the memory layer its project had when it was last cleared."""
     kept = kept_memory(opened.path)
@@ -365,27 +377,30 @@ class Owner:
                 return False
             memory, whole = _memory_of(path, said)
             kept = kept_memory(path)
-            # Kept for the next map, LAYER-013, before the map goes, so a write that fails leaves it whole. A memory an
-            # earlier clear kept is replaced, or withdrawn when this one was read whole and holds none, so nothing
-            # deleted since comes back; it is never withdrawn on a read that failed, when it may be the one copy left.
-            if memory['entities'] and (whole or not kept.exists()):  # a partial read never replaces a whole copy
-                kept.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
-            elif memory['entities'] and said is not None:
-                said.append(f'the memory an earlier clear kept at {kept} is kept as it was, since this one was read '
-                            'in part')
-            elif whole:
-                try:
-                    kept.unlink(missing_ok=True)
-                except OSError as error:  # said, never a reason not to clear
-                    if said is not None:
-                        said.append(f'the memory an earlier clear kept at {kept} could not be withdrawn: {error}')
+            if not whole and memory['entities'] and kept.exists():
+                _carry_relations(memory, kept)
+            # Kept for the next map, LAYER-013: written beside the map first, as pending, and put in the place of an
+            # earlier clear's copy only once the map is gone, so a removal that fails leaves the map and that copy
+            # as they were. A copy is withdrawn when this memory was read whole and holds none, so nothing deleted
+            # since comes back; never after a read that failed, when it may be the one copy left.
+            pending = kept.with_name(kept.name + '.pending')
+            if memory['entities']:
+                pending.write_text(json.dumps(memory, ensure_ascii=False), encoding='utf-8')
             try:
                 store.remove(path)
             except BaseException:
-                if path.exists() and memory['entities'] and whole:  # the map is still there: what was just kept goes
-                    with contextlib.suppress(OSError):  # its own error never hides the removal's
-                        kept.unlink(missing_ok=True)
+                with contextlib.suppress(OSError):  # its own error never hides the removal's
+                    pending.unlink(missing_ok=True)
                 raise
+            try:
+                if memory['entities']:
+                    pending.replace(kept)
+                elif whole:
+                    kept.unlink(missing_ok=True)
+            except OSError as error:  # said, never a reason the clear failed: the map is gone
+                if said is not None:
+                    said.append(f'the memory kept at {pending if memory["entities"] else kept} could not be put in '
+                                f'place for the next map: {error}')
             return True
 
     @contextmanager
