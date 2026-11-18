@@ -166,7 +166,11 @@ def _answering(connection: Connection, key: bytes, owned: owner.Owner, stopped: 
                 elif isinstance(message.get('clear'), str):  # clearing a project removes its database
                     answer: dict[str, object] = {'status': 'ok' if owned.remove(message['clear']) else 'error'}
                 elif isinstance(message.get('drawn'), str) and isinstance(message.get('overlay'), str):
-                    answer = commands.perform_records(message['drawn'], message['overlay'], owned)
+                    chosen = cast(dict[str, Any], message.get('select') or {})
+                    match = cast('list[Any] | None', chosen.get('match'))
+                    answer = commands.perform_records(message['drawn'], message['overlay'], owned,
+                                                      cast('str | None', chosen.get('at')), bool(chosen.get('below')),
+                                                      (str(match[0]), match[1]) if match else None)
                 elif isinstance(message.get('drawn'), str):  # a display's read of a whole project
                     answer = commands.perform_drawn(message['drawn'], owned)
                 else:
@@ -249,7 +253,7 @@ def _writes(command: Any) -> bool:
 def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: str = '',
          overlay: str = '', memory: dict[str, object] | None = None,
          specification: dict[str, object] | None = None, bases: dict[str, object] | None = None,
-         cypher: dict[str, object] | None = None) -> dict[str, object]:
+         cypher: dict[str, object] | None = None, select: dict[str, object] | None = None) -> dict[str, object]:
     """Send one command to the home's service and return its answer, starting the service when none is running.
 
     Sending is safe to repeat. A write carries a request id of its own, and the service stores that id in the same
@@ -265,7 +269,8 @@ def send(command: object, home: Path, caller: str = '', drawn: str = '', clear: 
                           **({'memory': memory} if memory else {}),
                           **({'specification': specification} if specification else {}),
                           **({'bases': bases} if bases else {}),
-                          **({'cypher': cypher} if cypher else {})}).encode('utf-8')
+                          **({'cypher': cypher} if cypher else {}),
+                          **({'select': select} if select else {})}).encode('utf-8')
     for attempt in range(ATTEMPTS):
         try:
             connection = _connection(home, fresh=attempt > 0)

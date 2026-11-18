@@ -219,8 +219,9 @@ def _answer(project: str, found: records.Exchange) -> tuple[bool, str | None]:
     wherever it was moved to. A question no longer kept waits on nothing."""
     name = held(project)
     if name is not None:  # a record of the questions overlay, wherever it is now
-        one = next((one for one in project_store.overlay_records(name, 'questions') or []
-                    if one.get('id') == found.asked), None)
+        # by reference, open or completed: a question answered and then completed keeps its answer to send (review of
+        # 2026-11-18, F4)
+        one = project_store.overlay_record(name, 'questions', 'id', found.asked)
         return (True, None) if one is None else (bool(one.get('closed')), str(one.get('answer') or '').strip() or None)
     store = Store(project)
     for node in (Node('element', found.address), None):

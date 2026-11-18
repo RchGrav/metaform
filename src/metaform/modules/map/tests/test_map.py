@@ -2962,6 +2962,35 @@ def test_the_layers_of_a_project_in_the_project_store_are_its_overlays_and_its_k
     assert [one['element'] for one in overlay_records('proj', 'practices_cpp') or []] == ['proj.code.alarm.audible']
 
 
+
+def test_a_store_projects_reads_page_leave_done_tickets_out_and_find_a_completed_ticket_by_its_id(run, in_store):
+    """Review of 2026-11-18. F11: map work op=list ignored limit and after, a layer read took limit=0 for the default,
+    and context left what applies unbounded. F9: a done ticket's task stayed in the node and context reads an agent
+    gets its context from until it was archived. F4: a completed ticket read by its id was reported missing."""
+    from metaform.project import run as command
+    ids = [j(run, 'work', 'op=add', 'node=element:code.timer.kitchen', f'title=T{n}', f'task=Task {n}.',
+             cwd=in_store)['id'] for n in range(3)]
+    first = j(run, 'work', 'op=list', 'limit=1', cwd=in_store)
+    assert [one['id'] for one in first['results']] == ids[:1] and first['next'] == '1' and first['total'] == 3
+    second = j(run, 'work', 'op=list', 'limit=1', f'after={first["next"]}', cwd=in_store)
+    assert [one['id'] for one in second['results']] == ids[1:2]
+    assert len(j(run, 'work', 'op=list', 'limit=0', cwd=in_store)['results']) == 3
+    assert len(j(run, 'layers', 'limit=0', cwd=in_store)['results']) >= 2
+    j(run, 'work', 'op=done', f'id={ids[0]}', 'resolution=Done.', 'why=Tested.', cwd=in_store)
+    node = j(run, 'node', 'element:code.timer.kitchen', cwd=in_store)['layers']
+    tickets = next(group['records'] for group in node if group['layer'] == 'tickets')
+    assert [one['id'] for one in tickets] == ids[1:], 'a done ticket is no part of the node read'
+    page = j(run, 'context', 'code.timer.kitchen', 'limit=1', cwd=in_store)
+    assert len(page['applying']) + len(page['results']) == 1 and page['next'] == '1', page
+    done = next(one for one in j(run, 'work', 'op=list', 'open=false', 'limit=0', cwd=in_store)['results']
+                if one['id'] == ids[0])
+    assert command({'update': {'proj.code.timer.kitchen': {'tickets': [
+        {'position': done['position'], 'record': done['record'], 'completed': True}]}}}) == {'status': 'ok'}
+    back = j(run, 'work', f'id={ids[0]}', cwd=in_store)
+    assert back['status'] == 'done' and back['completed'].startswith('20'), back
+    refused = run('map', 'work', 'op=edit', f'id={ids[0]}', 'note=more', cwd=in_store, ok=False)
+    assert refused.returncode != 0 and 'changes only once reopened' in refused.stdout + refused.stderr
+
 @pytest.mark.req('MAP-045')
 def test_the_bases_of_a_project_in_the_project_store_are_its_databases_and_its_memory_goes_with_the_project(
         run, in_store, home):

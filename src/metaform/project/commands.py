@@ -73,31 +73,56 @@ def clear(project: str, home: Path | None = None) -> bool:
     return service.send(None, where, 'clear', clear=project).get('status') == 'ok'
 
 
-def overlay_records(project: str, key: str, home: Path | None = None) -> list[dict[str, object]] | None:
+def overlay_records(project: str, key: str, home: Path | None = None, at: str | None = None,
+                    below: bool = False) -> list[dict[str, object]] | None:
     """Every record of one overlay across a project, each with the path of the element it is at and its position
     there, for a display that lists them all, as a board lists tickets. None when the store holds no such project.
-    Not a command of the tool, which reads an overlay's records with the element they are at."""
+    With `at`, an element's address beneath the project, only the records it holds, and with `below` those of the
+    elements beneath it too, selected in the store. Not a command of the tool, which reads an overlay's records with
+    the element they are at."""
     from metaform.project import service
     where = home if home is not None else metaform_home.home()
     if project not in store_projects(where):
         return None
-    answer = service.send(None, where, 'display', drawn=project, overlay=key)
+    answer = service.send(None, where, 'display', drawn=project, overlay=key,
+                          select={'at': at, 'below': below} if at is not None else None)
     return None if answer.get('status') == 'error' else cast(list[dict[str, object]], answer['records'])
 
 
-def perform_records(project: str, key: str, owned: Owner) -> dict[str, object]:
-    """Answer a display's read of one overlay's records in the service."""
+def overlay_record(project: str, key: str, field: str, value: object,
+                   home: Path | None = None) -> dict[str, object] | None:
+    """The one record of an overlay whose `field` holds `value`, such as a ticket by its id, open or completed, as
+    `overlay_records` shows a record, with `completed` when it is: a reference resolves whatever became of what it
+    names, and nothing else completed is read (review of 2026-11-18, F4). None when no record holds it."""
+    from metaform.project import service
+    where = home if home is not None else metaform_home.home()
+    if project not in store_projects(where):
+        return None
+    answer = service.send(None, where, 'display', drawn=project, overlay=key,
+                          select={'match': [field, value]})
+    found = [] if answer.get('status') == 'error' else cast(list[dict[str, object]], answer['records'])
+    return found[0] if found else None
+
+
+def perform_records(project: str, key: str, owned: Owner, at: str | None = None,
+                    below: bool = False, match: tuple[str, Scalar] | None = None) -> dict[str, object]:
+    """Answer a display's read of one overlay's records in the service, at one element (and beneath it) when `at`
+    names one; with `match`, the records holding one field's value, completed ones too, each with its `completed`."""
     def read(opened: Store) -> dict[str, object]:
         definition = definitions(opened.parts()).get(key)
         if definition is None or key not in opened.overlay_keys():
             return {'records': []}
         names = [name for name in definition.order if name != 'ref' and name in definition.fields]
+        if match is not None and match[0] not in names:
+            return {'records': []}
         return {'records': [
             {'element': full(project, address), 'position': position,
              **{name: decode(definition.fields[name].kind, row[name]) for name in names if row[name] is not None},
              **({'ref': row['ref']} if row['ref'] is not None else {}),
-             'record': row['record'], 'revision': row['revision']}
-            for address, position, row in opened.all_records(key, names)]}
+             'record': row['record'], 'revision': row['revision'],
+             **({'completed': row['completed']} if row['completed'] is not None else {})}
+            for address, position, row in opened.all_records(key, names, completed=match is not None, at=at,
+                                                             below=below, match=match)]}
     try:
         return owned.read(project, read)
     except Missing:

@@ -34,7 +34,9 @@ def records(name: str) -> dict[str, dict[str, Any]]:
 
 
 def found(name: str, tickets: dict[str, dict[str, Any]], ident: str) -> dict[str, Any]:
-    one = tickets.get(ident)
+    """One ticket by its id: from the open ones read, else by reference, so a completed ticket is found as done
+    rather than as missing (review of 2026-11-18, F4)."""
+    one = tickets.get(ident) or cast('dict[str, Any] | None', project_store.overlay_record(name, 'tickets', 'id', ident))
     if one is None:
         raise Stop(f"No ticket {ident!r} in {name}'s tickets: it was removed from the board.", 'metaform tasks board')
     return one

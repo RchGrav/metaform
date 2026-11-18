@@ -505,8 +505,11 @@ def _works(project: str, wanted: dict[str, str]) -> dict[str, WorkRecord]:
     name = held(project)
     if name is None:
         return {work.id: work for work in Store(project).work(limit=0, joins=True).results if work.id in wanted}
-    return {str(one['id']): _stored(name, cast(dict[str, Any], one), wanted[str(one['id'])])
-            for one in project_store.overlay_records(name, 'tickets') or [] if str(one.get('id')) in wanted}
+    # each by reference, open or completed: a ticket archived after A2A opened it is still its task (review of
+    # 2026-11-18, F4)
+    found = {ident: project_store.overlay_record(name, 'tickets', 'id', ident) for ident in wanted}
+    return {ident: _stored(name, cast(dict[str, Any], one), created) for ident, created in wanted.items()
+            if (one := found[ident]) is not None}
 
 
 def _work(project: str, work_id: str, created: str = '') -> WorkRecord | None:

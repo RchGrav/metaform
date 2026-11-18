@@ -669,13 +669,19 @@ def test_a2a_on_a_project_in_the_project_store_opens_and_follows_its_tickets_ove
         run('map', 'work', 'op=done', f'id={task_id}', 'resolution=Louder now', 'why=The cook hears it', cwd=mapped)
         done = (await client.get(f'/a2a/rest/tasks/{task_id}', headers=headers)).json()
         listed = (await client.post('/a2a', json=rpc('ListTasks', {}), headers=headers)).json()
-        return first, old_only, asked, working, done, listed
-    first, old_only, asked, working, done, listed = a2a(mapped, calls)
+        # archived on the board, its record completed: the task still resolves, as completed (review of 2026-11-18, F4)
+        one = project.overlay_record('proj', 'tickets', 'id', task_id) or {}
+        assert project.run({'update': {str(one['element']): {'tickets': [
+            {'position': one['position'], 'record': one['record'], 'completed': True}]}}}) == {'status': 'ok'}
+        archived = (await client.get(f'/a2a/rest/tasks/{task_id}', headers=headers)).json()
+        return first, old_only, asked, working, done, listed, archived
+    first, old_only, asked, working, done, listed, archived = a2a(mapped, calls)
+    assert archived['status']['state'] == 'TASK_STATE_COMPLETED', archived
     task = first['result']['task']
     assert task['contextId'] == 'code.timer.kitchen' and task['status']['state'] == 'TASK_STATE_SUBMITTED'
     detail = task['metadata']['https://metaform.ing/a2a/address-context/v1']
     assert detail['item'] == task['id'] and detail['title'] == 'Make the timer louder'  # no item numbers there
-    record = next(one for one in project.overlay_records('proj', 'tickets') or [] if one['id'] == task['id'])
+    record = project.overlay_record('proj', 'tickets', 'id', task['id']) or {}
     assert record['element'] == 'proj.code.timer.kitchen' and 'peer/1' in str(record['note'])
     assert not Store('proj').work(limit=0).results  # the old store gets no ticket
     assert old_only['error']['code'] == -32602  # an Address only the old store holds is no Address of this map
@@ -716,6 +722,11 @@ def test_what_a_peer_says_on_a_project_in_the_project_store_is_its_questions_ove
                                                                       if one['kind'] == 'question')
     assert a2a_out._answer('proj', now) == (False, None)
     run('map', 'reply', f'id={now.asked}', 'answer=The kitchen one', cwd=mapped)
+    assert a2a_out._answer('proj', now) == (True, 'The kitchen one')
+    # completed before its answer was sent, the question still gives its answer (review of 2026-11-18, F4)
+    asked = project.overlay_record('proj', 'questions', 'id', now.asked) or {}
+    assert project.run({'update': {str(asked['element']): {'questions': [
+        {'position': asked['position'], 'record': asked['record'], 'completed': True}]}}}) == {'status': 'ok'}
     assert a2a_out._answer('proj', now) == (True, 'The kitchen one')
 
 

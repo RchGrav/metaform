@@ -94,8 +94,9 @@ def add(name: str, address: str, *, title: str, task: str, note: str | None = No
 
 
 def ticket(name: str, ident: str) -> dict[str, Any] | None:
-    """One ticket by its id, with the address of its element without the project's name; None when there is none."""
-    found = next((one for one in project_store.overlay_records(name, 'tickets') or [] if one.get('id') == ident), None)
+    """One ticket by its id, open or completed, with the address of its element without the project's name; None when
+    there is none."""
+    found = project_store.overlay_record(name, 'tickets', 'id', ident)
     if found is None:
         return None
     return {**found, 'address': str(found['element'])[len(name) + 1:]}

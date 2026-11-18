@@ -122,8 +122,7 @@ def _stored(ctx: Context) -> str | None:
 
 def _held(project: str, key: str) -> list[dict[str, Any]]:
     """The records of one overlay at hello's own element of a project in the project store."""
-    at = f'{project}.{HOLDER}'
-    return [record for record in project_store.overlay_records(project, key) or [] if record['element'] == at]
+    return list(project_store.overlay_records(project, key, at=HOLDER) or [])
 
 
 def _add(project: str, key: str, record: dict[str, object]) -> None:

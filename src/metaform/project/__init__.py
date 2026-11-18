@@ -10,7 +10,7 @@ from pathlib import Path
 from metaform.project.texts import COMMANDS, ROLE_WORDS
 
 __all__ = ['COMMANDS', 'MEMORY_URI', 'ROLE_WORDS', 'bases', 'clear', 'cypher', 'drawn', 'holds', 'memory', 'memory_answer',
-           'memory_tools', 'memory_tools_changing', 'overlay_records', 'run', 'specification_document',
+           'memory_tools', 'memory_tools_changing', 'overlay_record', 'overlay_records', 'run', 'specification_document',
            'stored_name']
 
 MEMORY_URI = 'memory://knowledge-graph'  # the memory layer's whole graph as a resource, as the reference serves it
@@ -54,11 +54,21 @@ def drawn(project: str, home: Path | None = None) -> dict[str, object] | None:
     return commands.drawn(project, home)
 
 
-def overlay_records(project: str, key: str, home: Path | None = None) -> list[dict[str, object]] | None:
+def overlay_records(project: str, key: str, home: Path | None = None, at: str | None = None,
+                    below: bool = False) -> list[dict[str, object]] | None:
     """Every record of one overlay across a project, each with its element's path and its position there, for a
-    display that lists them all; None when the store holds no such project."""
+    display that lists them all; None when the store holds no such project. With `at`, an element's address beneath
+    the project, only the records it holds, and with `below` those beneath it too, selected in the store."""
     from metaform.project import commands
-    return commands.overlay_records(project, key, home)
+    return commands.overlay_records(project, key, home, at, below)
+
+
+def overlay_record(project: str, key: str, field: str, value: object,
+                   home: Path | None = None) -> dict[str, object] | None:
+    """The one record of an overlay whose `field` holds `value`, such as a ticket by its id, open or completed, with
+    `completed` when it is; None when no record holds it. A reference resolves; nothing else completed is read."""
+    from metaform.project import commands
+    return commands.overlay_record(project, key, field, value, home)
 
 
 def cypher(project: str, query: str, home: Path | None = None, caller: str = '') -> dict[str, object]:

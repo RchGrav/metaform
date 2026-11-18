@@ -89,7 +89,8 @@ def _overlays(drawn: dict[str, Any]) -> list[dict[str, Any]]:
 def _page(ctx: Context, found: list[dict[str, Any]], **more: Any) -> dict[str, Any]:
     """One page of a list read: after= is how many came before, as the glossary pages its list."""
     start = int(ctx.nouns.get('after') or 0)
-    limit = int(ctx.nouns.get('limit') or LIST)
+    given = ctx.nouns.get('limit')
+    limit = LIST if given is None or given == '' else int(given)  # limit=0 is every record, as map work reads it
     page = found[start:start + limit] if limit else found[start:]
     result: dict[str, Any] = {**more, 'total': len(found), 'results': page}
     if limit and start + limit < len(found):
@@ -122,16 +123,23 @@ def _want(project: str, want: dict[str, Any]) -> dict[str, Any]:
     return shown
 
 
-def _records(project: str, drawn: dict[str, Any], key: str) -> list[dict[str, Any]]:
+def _records(project: str, drawn: dict[str, Any], key: str, at: str | None = None,
+             below: bool = False) -> list[dict[str, Any]]:
+    """An overlay's records as a layer read shows them: every one, or those an element holds (`at`) and, with
+    `below`, those beneath it, selected in the store. A done ticket is left out: these are the reads that give an
+    agent its context, and a finished task's body is no part of it (review of 2026-11-18, F9). It is read by its id
+    with `map work id=`, or among the done ones with `map work open=false`."""
     if key == WANTS:
-        return [_want(project, one) for one in cast(list[dict[str, Any]], drawn['wants'])]
-    found = cast(list[dict[str, Any]], project_store.overlay_records(project, key) or [])
-    return [_record(project, key, one) for one in found]
+        wants = [_want(project, one) for one in cast(list[dict[str, Any]], drawn['wants'])]
+        return wants if at is None else [one for one in wants if one['node'] == at or (
+            below and str(one['node']).startswith(at + '.'))]
+    found = cast(list[dict[str, Any]], project_store.overlay_records(project, key, at=at, below=below) or [])
+    return [_record(project, key, one) for one in found if not (key == 'tickets' and one.get('done'))]
 
 
-def _every(project: str, drawn: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every record of every overlay, overlay by overlay."""
-    return [one for overlay in _overlays(drawn) for one in _records(project, drawn, str(overlay['key']))]
+def _every(project: str, drawn: dict[str, Any], at: str | None = None, below: bool = False) -> list[dict[str, Any]]:
+    """Every record of every overlay, overlay by overlay; at one element, and beneath it, when `at` names one."""
+    return [one for overlay in _overlays(drawn) for one in _records(project, drawn, str(overlay['key']), at, below)]
 
 
 def _address(project: str, drawn: dict[str, Any], given: str, step: str) -> str:
@@ -180,7 +188,7 @@ def node(ctx: Context, project: str) -> Any:
     at = _address(project, drawn, str(ctx.nouns['node']), 'metaform help map node')
     groups: list[dict[str, Any]] = []
     for overlay in _overlays(drawn):
-        held = [one for one in _records(project, drawn, str(overlay['key'])) if one['node'] == at]
+        held = _records(project, drawn, str(overlay['key']), at)
         if held:
             groups.append({'layer': overlay['key'], 'records': held})
     return {'node': at, 'layers': groups}
@@ -190,11 +198,16 @@ def context(ctx: Context, project: str) -> Any:
     """The records that apply at an address, those its element holds, and those held toward the leaves from it."""
     drawn = _drawn(project)
     address = _local(project, str(ctx.nouns['address']))
-    every = _every(project, drawn)
+    every = _every(project, drawn, address, below=True)
     applying = [one for one in every if one['node'] == address]
-    below = sorted((one for one in every if str(one['node']).startswith(address + '.')),
-                   key=lambda one: str(one['node']))
-    return _page(ctx, below, address=address, applying=applying)
+    below = sorted((one for one in every if one['node'] != address), key=lambda one: str(one['node']))
+    # One page over the records that apply and then those beneath, so a limit bounds both (review of 2026-11-18,
+    # F11): `applying` holds the page's records at the address, `results` those beneath it.
+    page = _page(ctx, [*applying, *below], address=address)
+    shown = cast(list[dict[str, Any]], page['results'])
+    page['applying'] = [one for one in shown if one['node'] == address]
+    page['results'] = [one for one in shown if one['node'] != address]
+    return page
 
 
 def links(ctx: Context, project: str) -> Any:

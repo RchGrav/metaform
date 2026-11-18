@@ -70,21 +70,27 @@ class Said(Message):
     title: str | None = None
 
 
-def tickets(name: str) -> dict[str, Ticket]:
-    """Every ticket of the project, by its id, in one read."""
-    start = len(name) + 1
-    return {str(one['id']): Ticket(
+def _ticket(name: str, one: dict[str, object]) -> Ticket:
+    return Ticket(
         id=str(one['id']), element=str(one['element']), position=cast(int, one['position']),
-        record=str(one['record']), revision=cast(int, one['revision']), address=str(one['element'])[start:],
+        record=str(one['record']), revision=cast(int, one['revision']), address=str(one['element'])[len(name) + 1:],
         title=cast('str | None', one.get('title')), task=cast('str | None', one.get('task')),
         note=cast('str | None', one.get('note')), taken_by=cast('str | None', one.get('taken_by')),
         held=bool(one.get('held')), done=cast('str | None', one.get('done')),
         outcome=cast('str | None', one.get('outcome')))
-        for one in project_store.overlay_records(name, 'tickets') or [] if one.get('id')}
+
+
+def tickets(name: str) -> dict[str, Ticket]:
+    """Every open ticket of the project, by its id, in one read."""
+    return {str(one['id']): _ticket(name, one) for one in project_store.overlay_records(name, 'tickets') or []
+            if one.get('id')}
 
 
 def ticket(name: str, work_id: str) -> Ticket | None:
-    return tickets(name).get(work_id)
+    """One ticket by its id, open or completed: a ticket archived before the next sync still reports its result
+    (review of 2026-11-18, F4)."""
+    one = project_store.overlay_record(name, 'tickets', 'id', work_id)
+    return None if one is None else _ticket(name, one)
 
 
 def add(name: str, address: str, title: str, task: str, taken_by: str | None = None) -> Ticket:

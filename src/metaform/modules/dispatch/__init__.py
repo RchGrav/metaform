@@ -4779,9 +4779,9 @@ async def wait(ctx: Context) -> dict[str, Any]:
 
 
 def store_ticket(stored: str, work_id: str) -> dict[str, Any] | None:
-    """The ticket with this id in a project's tickets overlay in the project store; None when there is none."""
-    return next((record for record in cast(list[dict[str, Any]], project_store.overlay_records(stored, 'tickets') or [])
-                 if record.get('id') == work_id), None)
+    """The ticket with this id in a project's tickets overlay in the project store, open or completed; None when there
+    is none."""
+    return cast('dict[str, Any] | None', project_store.overlay_record(stored, 'tickets', 'id', work_id))
 
 
 async def wait_in_store(ctx: Context, project_id: str, stored: str, until: str, work_id: str) -> dict[str, Any]:

@@ -237,7 +237,7 @@ def add_ticket(project: str, node: str, task: str, *, kind: object = None, held:
                               'task': task.strip(), **({'kind': kind} if kind else {}), **({'held': True} if held else {})}
     path = f'{name}.{address}'
     _done(commands.run({'add': {path: {'tickets': [record]}}}))
-    made = next((one for one in commands.overlay_records(name, 'tickets') or [] if one.get('id') == record['id']), None)
+    made = commands.overlay_record(name, 'tickets', 'id', record['id'])
     return _shaped(made or {**record, 'element': path, 'position': 0}, len(name) + 1)
 
 
@@ -341,12 +341,15 @@ def archive_done(project: str, line: str) -> int | None:
     name = commands.stored_name(project)
     if not commands.holds(name):
         return None
-    count = 0
-    while True:  # one at a time, each read afresh, since a completion closes up its element's list
-        found = next((record for record in commands.overlay_records(name, 'tickets') or []
-                      if record.get('done') and str(record['done']) <= line), None)
-        if found is None:
-            return count
-        _done(commands.run({'update': {str(found['element']): {'tickets': [
-            {'position': found['position'], 'record': found['record'], 'completed': True}]}}}))
-        count += 1
+    # One read of the tickets, then one update per element completing its done ones: a completion is applied by the
+    # record id the update names, after the update's edits, so the positions of one read stay good for the whole
+    # update, and the work grows with the batch, never with a read of the project per ticket (review of 2026-11-18,
+    # F11).
+    by_element: dict[str, list[dict[str, object]]] = {}
+    for record in commands.overlay_records(name, 'tickets') or []:
+        if record.get('done') and str(record['done']) <= line:
+            by_element.setdefault(str(record['element']), []).append(
+                {'position': record['position'], 'record': record['record'], 'completed': True})
+    for element, completing in by_element.items():
+        _done(commands.run({'update': {element: {'tickets': completing}}}))
+    return sum(len(completing) for completing in by_element.values())

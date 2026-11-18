@@ -635,16 +635,27 @@ class Store:
                           f'r.revision{columns} ORDER BY r.position', address=address)
         return [dict(zip(['ref', 'record', 'revision', *fields], row)) for row in rows]
 
-    def all_records(self, key: str, fields: list[str], completed: bool = False,
+    def all_records(self, key: str, fields: list[str], completed: bool = False, at: str | None = None,
+                    below: bool = False, match: tuple[str, Scalar] | None = None,
                     ) -> list[tuple[str, int, dict[str, Scalar]]]:
         """Every open record of an overlay in the project, each with the address of the element that holds it, `''` for
         the root, and its position there. With `completed`, the completed records too, at position -1, each with its
-        `completed` time: only for a check that must see every record, such as an id that is never reused."""
+        `completed` time: only for a check that must see every record, such as an id that is never reused. With `at`,
+        only the records the element at that address holds, and with `below` those of the elements beneath it too, so
+        a read of one element never loads the project's records (review of 2026-11-18, F11). With `match`, a field and
+        a value, only the records holding that value there: a reference by id, which finds a completed record too when
+        `completed` is given (F4)."""
         columns = ''.join(f', r.{_column(field)}' for field in fields)
-        where = '' if completed else 'WHERE r.completed IS NULL '
-        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) {where}WITH coalesce(e.address, '') AS at, r "
+        tests = [] if completed else ['r.completed IS NULL']
+        if at is not None:
+            tests.append('(at = $at OR at STARTS WITH $deeper)' if below else 'at = $at')
+        if match is not None:
+            tests.append(f'r.{_column(match[0])} = $value')
+        where = f"WHERE {' AND '.join(tests)} " if tests else ''
+        rows = self._rows(f"MATCH (e)-[:{HOLDS}]->(r:{_table(key)}) WITH coalesce(e.address, '') AS at, r {where}"
                           f'RETURN at, coalesce(r.position, -1), r.ref, r.record, r.revision, r.completed{columns} '
-                          'ORDER BY at, r.position')
+                          'ORDER BY at, r.position', **({'at': at, 'deeper': f'{at}.'} if at is not None else {}),
+                          **({'value': match[1]} if match is not None else {}))
         return [(str(row[0]), cast(int, row[1]),
                  dict(zip(['ref', 'record', 'revision', 'completed', *fields], row[2:]))) for row in rows]
 

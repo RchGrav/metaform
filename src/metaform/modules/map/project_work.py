@@ -11,6 +11,7 @@ another ticket.
 """
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -30,6 +31,7 @@ TAKES: dict[str, frozenset[str]] = {
     'remove': frozenset({'id'}),
 }
 HELP = 'metaform help map work'
+LIST = 50  # a list read's page when no limit is given; limit=0 reads every ticket
 
 
 def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]:
@@ -44,12 +46,18 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
                    f"{'it' if len(extra) == 1 else 'them'}. A ticket there holds id, title, task, kind, held, taken_by, "
                    'note, done and outcome at one element.', HELP)
     if op == 'list':
-        return {'results': _listed(project, nouns), 'next': None}
+        return _paged(_listed(project, nouns), nouns)
     if op == 'add':
         return _added(project, nouns)
     found = _found(project, str(nouns['id']))
     if op == 'read':
         return _shown(project, found)
+    if found.get('completed'):  # a completed ticket is read by its id; it changes only once it is reopened
+        reopen = json.dumps({'update': {found['element']: {'tickets': [
+            {'record': found['record'], 'completed': False}]}}})
+        raise Stop(f"Ticket {found['id']!r} was completed at {found['completed']} and has left the board; it is read "
+                   f'by its id and changes only once reopened, with the project tool: {reopen}',
+                   f"metaform map work id={found['id']}")
     if op == 'remove':
         _done(project_store.run({'delete': {str(found['element']): {'tickets': [found['record']]}}}))
         return {**_shown(project, found), 'removed': True}
@@ -88,12 +96,10 @@ def project_work(project: str, op: str, nouns: dict[str, Any]) -> dict[str, Any]
     return _shown(project, _found(project, str(nouns['id'])))
 
 
-def _records(project: str) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], project_store.overlay_records(project, 'tickets') or [])
-
-
 def _found(project: str, ticket: str) -> dict[str, Any]:
-    found = next((record for record in _records(project) if record.get('id') == ticket), None)
+    """One ticket by its id, open or completed: a reference resolves whatever became of the ticket (review of
+    2026-11-18, F4), read in the store by the id alone."""
+    found = cast('dict[str, Any] | None', project_store.overlay_record(project, 'tickets', 'id', ticket))
     if found is None:
         raise Stop(f"No ticket {ticket!r} in {project}'s tickets.", 'metaform map work op=list')
     return found
@@ -109,10 +115,23 @@ def _shown(project: str, record: dict[str, Any]) -> dict[str, Any]:
 def _listed(project: str, nouns: dict[str, Any]) -> list[dict[str, Any]]:
     node = str(nouns.get('node') or '')
     at = node.partition(':')[2] if node.startswith('element:') else node or None
-    rows = [_shown(project, record) for record in _records(project)]
-    return [row for row in rows if (at is None or row['address'] == at)
-            and (nouns.get('open', True) is False or row['status'] == 'open')
+    held = cast(list[dict[str, Any]], project_store.overlay_records(project, 'tickets', at=at) or [])
+    rows = [_shown(project, record) for record in held]  # one element's tickets are selected in the store
+    return [row for row in rows if (nouns.get('open', True) is False or row['status'] == 'open')
             and (not nouns.get('kind') or row.get('kind') == nouns['kind'])]
+
+
+def _paged(rows: list[dict[str, Any]], nouns: dict[str, Any]) -> dict[str, Any]:
+    """One page of a list: after= is how many came before, as a previous page's `next` gives it, and limit= how many
+    (limit=0 every one). `next` names the page after this one, None at the end (review of 2026-11-18, F11)."""
+    after, given = str(nouns.get('after') or '0'), nouns.get('limit')
+    if not (after.isascii() and after.isdigit()):
+        raise Stop(f'after={after!r} is not a page of this list; read the list again without after.', HELP)
+    start = int(after)
+    limit = LIST if given is None or given == '' else int(given)
+    page = rows[start:start + limit] if limit else rows[start:]
+    more = bool(limit) and start + limit < len(rows)
+    return {'results': page, 'total': len(rows), 'next': str(start + limit) if more else None}
 
 
 def _added(project: str, nouns: dict[str, Any]) -> dict[str, Any]:
