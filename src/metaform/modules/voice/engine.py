@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import models
 
@@ -178,7 +178,8 @@ def loaded() -> str | None:
 
 
 def _load(name: str, prefer: str) -> Any:
-    from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+    from faster_whisper import WhisperModel as whisper_model  # type: ignore[import-not-found]
+    WhisperModel = cast(Any, whisper_model)  # absent without the voice extra, so unknown to a type check
     model = models.SERVER[name]
     folder = models.server_folder(model)
     if not models.present(folder, model):
